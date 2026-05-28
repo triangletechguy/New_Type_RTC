@@ -597,9 +597,9 @@ async function main() {
         status: 'active',
       },
       {
-        key: 'voice',
-        name: 'Demo Voice Lounge',
-        description: 'A group audio room seeded with live audio participants for mic-seat testing.',
+        key: 'music',
+        name: 'Demo Music Lounge',
+        description: 'A group music room seeded with live audio participants for stage-seat testing.',
         room_type: 'group_audio',
         privacy_type: 'public',
         max_mic_count: 6,
@@ -670,8 +670,8 @@ async function main() {
       status: 'active',
     })
 
-    const voiceSessionId = await ensureSession(connection, rooms.voice, {
-      signaling_room: `demo_voice_${tenantId}`,
+    const musicSessionId = await ensureSession(connection, rooms.music, {
+      signaling_room: `demo_music_${tenantId}`,
       session_type: 'group_audio',
       started_by: users.host,
       started_at: dateMinutesAgo(26),
@@ -691,7 +691,7 @@ async function main() {
       total_duration_seconds: durationSeconds(replayStartedAt, replayEndedAt),
     })
 
-    const demoSessionIds = [stageSessionId, voiceSessionId, replaySessionId]
+    const demoSessionIds = [stageSessionId, musicSessionId, replaySessionId]
     const demoSessionPlaceholders = demoSessionIds.map(() => '?').join(', ')
 
     await connection.execute(
@@ -709,8 +709,8 @@ async function main() {
       { session_id: stageSessionId, room_id: rooms.stage, user_id: users.moderator, peer_uid: users.moderator, role_in_room: 'moderator', joined_at: dateMinutesAgo(36), left_at: null, mic_enabled: true, camera_enabled: true, screen_shared: false, connection_status: 'connected' },
       { session_id: stageSessionId, room_id: rooms.stage, user_id: users.speaker, peer_uid: users.speaker, role_in_room: 'speaker', joined_at: dateMinutesAgo(31), left_at: null, mic_enabled: false, camera_enabled: true, screen_shared: false, connection_status: 'connected' },
       { session_id: stageSessionId, room_id: rooms.stage, user_id: users.viewer, peer_uid: users.viewer, role_in_room: 'audience', joined_at: dateMinutesAgo(18), left_at: null, mic_enabled: false, camera_enabled: false, screen_shared: false, connection_status: 'reconnecting' },
-      { session_id: voiceSessionId, room_id: rooms.voice, user_id: users.host, peer_uid: users.host, role_in_room: 'owner', joined_at: dateMinutesAgo(26), left_at: null, mic_enabled: true, camera_enabled: false, screen_shared: false, connection_status: 'connected' },
-      { session_id: voiceSessionId, room_id: rooms.voice, user_id: users.speaker, peer_uid: users.speaker, role_in_room: 'speaker', joined_at: dateMinutesAgo(20), left_at: null, mic_enabled: true, camera_enabled: false, screen_shared: false, connection_status: 'connected' },
+      { session_id: musicSessionId, room_id: rooms.music, user_id: users.host, peer_uid: users.host, role_in_room: 'owner', joined_at: dateMinutesAgo(26), left_at: null, mic_enabled: true, camera_enabled: false, screen_shared: false, connection_status: 'connected' },
+      { session_id: musicSessionId, room_id: rooms.music, user_id: users.speaker, peer_uid: users.speaker, role_in_room: 'speaker', joined_at: dateMinutesAgo(20), left_at: null, mic_enabled: true, camera_enabled: false, screen_shared: false, connection_status: 'connected' },
     ]
 
     for (const participant of activeParticipants) {
@@ -851,7 +851,7 @@ async function main() {
     console.log('Demo data seeded successfully.')
     console.log(`Demo users: ${Object.keys(users).length} users, password ${demoPassword}`)
     console.log(`Demo rooms: ${Object.keys(rooms).length} rooms, password room password ${passwordRoomPassword}`)
-    console.log(`Active sessions: stage #${stageSessionId}, voice #${voiceSessionId}`)
+    console.log(`Active sessions: stage #${stageSessionId}, music #${musicSessionId}`)
     console.log(`Ended replay session: #${replaySessionId}, participant minutes ${Number(participantMinutesTotal.toFixed(2))}`)
   } catch (error) {
     await connection.rollback()

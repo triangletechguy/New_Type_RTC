@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { apiRequest, clearSession, getToken, getUser, login as loginApi, register as registerApi } from './services/api'
+import { apiRequest, clearSession, getToken, getUser } from './services/api'
 import { createLocalMediaStream, stopMediaStream } from './services/media'
 import { NativeRtcClient } from './services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from './services/signaling'
+import { LoginScreen } from './components/auth/LoginScreen'
 import { RtcConnectionIndicator } from './components/rtc/RtcConnectionIndicator'
 import { ChatPanel } from './components/rtc/ChatPanel'
 import { VideoTile } from './components/rtc/VideoTile'
@@ -12,18 +13,18 @@ const AdminView = lazy(() => import('./components/admin/AdminView'))
 const SdkView = lazy(() => import('./components/sdk/SdkView'))
 
 const roomTypeLabels = {
-  audio: 'Voice Room',
+  audio: 'Music Room',
   video: 'Video Room',
-  group_audio: 'Group Voice',
+  group_audio: 'Group Music',
   group_video: 'Group Video',
   solo_live: 'Solo Live',
   pk_live: 'PK Live',
 }
 
 const roomTypeMeta = {
-  audio: { label: 'Voice Room', short: 'Voice', tone: 'tone-voice' },
+  audio: { label: 'Music Room', short: 'Music', tone: 'tone-music' },
   video: { label: 'Video Room', short: 'Video', tone: 'tone-video' },
-  group_audio: { label: 'Group Voice', short: 'Group', tone: 'tone-voice' },
+  group_audio: { label: 'Group Music', short: 'Music', tone: 'tone-music' },
   group_video: { label: 'Group Video', short: 'Group', tone: 'tone-video' },
   solo_live: { label: 'Solo Live', short: 'Solo', tone: 'tone-live' },
   pk_live: { label: 'PK Live', short: 'PK', tone: 'tone-pk' },
@@ -33,7 +34,7 @@ const roomFilterOptions = [
   { value: 'all', label: 'For You' },
   { value: 'live', label: 'Live' },
   { value: 'video', label: 'Video' },
-  { value: 'voice', label: 'Voice' },
+  { value: 'music', label: 'Music' },
   { value: 'pk', label: 'PK' },
 ]
 
@@ -68,7 +69,7 @@ const roomFeatureOptions = [
 ]
 
 const rtcModeOptions = [
-  { value: 'audio', label: 'Audio', detail: 'Mic only' },
+  { value: 'audio', label: 'Music', detail: 'Mic stage' },
   { value: 'video', label: 'Video', detail: 'Mic + camera' },
 ]
 
@@ -81,8 +82,8 @@ const rtcConnectSteps = [
 ]
 
 const defaultRoomForm = {
-  name: 'Enterprise Live Room',
-  description: 'A hosted RTC room for live video, voice, chat, and collaboration.',
+  name: 'talk-each-other Live Room',
+  description: 'A hosted room for live video, music, chat, and creator collaboration.',
   room_type: 'video',
   privacy_type: 'public',
   password: '',
@@ -111,7 +112,7 @@ function roomMatchesFilter(room, filter) {
   if (filter === 'all') return true
   if (filter === 'live') return ['solo_live', 'pk_live', 'group_video'].includes(room.room_type)
   if (filter === 'video') return ['video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
-  if (filter === 'voice') return ['audio', 'group_audio'].includes(room.room_type)
+  if (filter === 'music') return ['audio', 'group_audio'].includes(room.room_type)
   if (filter === 'pk') return room.room_type === 'pk_live'
   return true
 }
@@ -122,6 +123,19 @@ function roomSupportsVideo(roomType) {
 
 function defaultRtcModeForRoom(room) {
   return roomSupportsVideo(room?.room_type) ? 'video' : 'audio'
+}
+
+function getRoomFlowLabel(roomType) {
+  if (['audio', 'group_audio'].includes(roomType)) return 'Music flow'
+  if (roomType === 'pk_live') return 'PK video flow'
+  if (roomType === 'solo_live') return 'Solo video flow'
+  return 'Video flow'
+}
+
+function getSeatLabel(roomType, count) {
+  const seats = Number(count || 0)
+  const label = ['audio', 'group_audio'].includes(roomType) ? 'music seat' : 'stage seat'
+  return `${seats} ${label}${seats === 1 ? '' : 's'}`
 }
 
 function normalizeRtcMode(value, room) {
@@ -228,138 +242,14 @@ function peerMediaMapFromUsers(users = []) {
   }, {})
 }
 
-
-
-function LoginScreen({ onLogin }) {
-  const [mode, setMode] = useState('login')
-  const [name, setName] = useState('Test User')
-  const [email, setEmail] = useState('admin@rtc.com')
-  const [password, setPassword] = useState('Admin@123456')
-  const [status, setStatus] = useState('Use admin@rtc.com / Admin@123456 for the seeded admin account.')
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSubmitting(true)
-
-    try {
-      if (mode === 'register') {
-        setStatus('Creating account...')
-        await registerApi(name, email, password)
-        setStatus('Account created. Logging in...')
-      } else {
-        setStatus('Logging in...')
-      }
-
-      const data = await loginApi(email, password)
-      onLogin(data.access_token, data.user)
-    } catch (error) {
-      setStatus(error.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <main className="login-page">
-      <section className="login-showcase" aria-label="Live room preview">
-        <div className="showcase-topbar">
-          <div className="app-mark">BC</div>
-          <div>
-            <strong>BuzzCast RTC</strong>
-            <span>Enterprise live lobby</span>
-          </div>
-          <div className="online-pill"><span></span> Online</div>
-        </div>
-
-        <div className="phone-preview">
-          <div className="phone-toolbar">
-            <button type="button" className="preview-tab active">Hot</button>
-            <button type="button" className="preview-tab">Nearby</button>
-            <button type="button" className="preview-tab">New</button>
-          </div>
-
-          <div className="preview-live-card">
-            <div className="live-chip"><span></span> LIVE</div>
-            <div className="preview-host">
-              <div className="preview-avatar">M</div>
-              <div>
-                <strong>Mingtai Studio</strong>
-                <span>4 hosts on stage</span>
-              </div>
-            </div>
-            <div className="preview-meter">
-              <span>2.4K watching</span>
-              <span>Native RTC</span>
-            </div>
-          </div>
-
-          <div className="mini-live-grid">
-            <div className="mini-live-card tone-video">
-              <div>Video Room</div>
-              <strong>Daily Standup</strong>
-              <span>8 seats</span>
-            </div>
-            <div className="mini-live-card tone-voice">
-              <div>Voice Room</div>
-              <strong>Support Lounge</strong>
-              <span>12 seats</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="showcase-stats">
-          <div><span>Latency</span><strong>Low</strong></div>
-          <div><span>Rooms</span><strong>Live</strong></div>
-          <div><span>Mode</span><strong>{import.meta.env.VITE_MEDIA_MODE || 'Real'}</strong></div>
-        </div>
-      </section>
-
-      <section className="auth-card">
-        <div className="auth-heading">
-          <span className="eyebrow">Welcome back</span>
-          <h1>Enter the live lobby</h1>
-          <p>Sign in with the seeded admin account or create a host profile.</p>
-        </div>
-
-        <div className="auth-tabs">
-          <button className={mode === 'login' ? 'tab active' : 'tab'} onClick={() => setMode('login')} type="button">Login</button>
-          <button className={mode === 'register' ? 'tab active' : 'tab'} onClick={() => setMode('register')} type="button">Register</button>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          {mode === 'register' && (
-            <>
-              <label>Name</label>
-              <input value={name} onChange={(event) => setName(event.target.value)} />
-            </>
-          )}
-
-          <label>Email</label>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
-
-          <label>Password</label>
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-
-          <button className="primary-button full-width" disabled={submitting} type="submit">
-            {submitting ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create account'}
-          </button>
-        </form>
-
-        <div className="status-box">{status}</div>
-      </section>
-    </main>
-  )
-}
-
 function Sidebar({ user, currentView, onView, onLogout }) {
   return (
     <aside className="sidebar glass-card">
       <div className="logo-row">
-        <div className="logo-mark">M</div>
+        <div className="logo-mark">T</div>
         <div>
-          <strong>Mingtai RTC</strong>
-          <span>Enterprise Web</span>
+          <strong>talk-each-other</strong>
+          <span>Video and music RTC</span>
         </div>
       </div>
 
@@ -386,12 +276,19 @@ function RoomCard({ room, isSelected, onSelect, onJoin }) {
   const initial = room.name?.slice(0, 1)?.toUpperCase() || 'R'
   const needsPassword = room.privacy_type === 'password'
   const isPrivate = room.privacy_type === 'private'
+  const flowLabel = getRoomFlowLabel(room.room_type)
+  const seatLabel = getSeatLabel(room.room_type, room.max_mic_count)
 
   return (
     <article className={`room-card ${meta.tone}${isSelected ? ' selected' : ''}`}>
       <div className="room-cover">
         <div className="live-chip"><span></span> LIVE</div>
         <div className="room-type-chip">{needsPassword ? 'Locked' : isPrivate ? 'Private' : meta.short}</div>
+        <div className="room-cover-asset" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
         <div className="room-cover-content">
           <div className="room-avatar large">{initial}</div>
           <div>
@@ -404,7 +301,7 @@ function RoomCard({ room, isSelected, onSelect, onJoin }) {
         <div className="room-title-row">
           <div>
             <h3>#{room.id} - {room.name}</h3>
-            <p>{room.privacy_type} room - {room.max_mic_count} mic seats - {room.status}</p>
+            <p>{flowLabel} - {seatLabel} - {room.status}</p>
           </div>
           <div className="room-avatar">{initial}</div>
         </div>
@@ -673,7 +570,7 @@ function RoomsView({ onEnterRoom }) {
           <div className="form-title-row">
             <div>
               <span className="eyebrow">Host tools</span>
-              <h2>Create Room</h2>
+              <h2>Start Live</h2>
             </div>
             <span className="form-badge">Go live</span>
           </div>
@@ -726,7 +623,7 @@ function RoomsView({ onEnterRoom }) {
 
           <div className="field-row">
             <div>
-              <label>Mic Seats</label>
+              <label>Stage Seats</label>
               <input type="number" min="1" max="16" value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} />
             </div>
             <div>
@@ -757,7 +654,7 @@ function RoomsView({ onEnterRoom }) {
           </div>
 
           <button className="primary-button full-width" disabled={creating} type="submit">
-            {creating ? 'Creating...' : 'Create Room'}
+            {creating ? 'Creating...' : 'Create Live Room'}
           </button>
 
           {createdRoom && (
@@ -827,7 +724,7 @@ function RoomsView({ onEnterRoom }) {
           <input type="password" value={joinPassword} onChange={(event) => setJoinPassword(event.target.value)} placeholder="Only needed for locked rooms" autoComplete="current-password" />
           <button className="primary-button full-width" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open RTC Console'}</button>
           <div className="feature-list">
-            <span>Mic/Cam</span><span>Chat</span><span>Gifts</span><span>Effects</span><span>Screen Share</span><span>Usage Logs</span>
+            <span>Video Stage</span><span>Music Stage</span><span>Chat</span><span>Gifts</span><span>Effects</span><span>Screen Share</span>
           </div>
         </div>
       </section>
@@ -1055,7 +952,7 @@ function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, socket,
 
       <div className="control-summary">
         <div><span>Active</span><strong>{participants.length}</strong></div>
-        <div><span>Seats</span><strong>{activeRoom.max_mic_count || 0}</strong></div>
+        <div><span>Stage Seats</span><strong>{activeRoom.max_mic_count || 0}</strong></div>
         <div><span>Privacy</span><strong>{activeRoom.privacy_type || 'public'}</strong></div>
       </div>
 
@@ -1120,7 +1017,7 @@ function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, socket,
           </select>
         </label>
         <label>
-          <span>Mic Seats</span>
+          <span>Stage Seats</span>
           <input
             type="number"
             min="1"
@@ -1712,7 +1609,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       <main className="live-layout">
         <section className="stage glass-card">
           <div className="stage-toolbar">
-            <span>{rtcMode === 'audio' ? 'Native WebRTC Audio' : 'Native WebRTC Video'}</span>
+            <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>
             <span>{remoteList.length} remote peer(s)</span>
           </div>
           <div className="video-grid">
@@ -1749,7 +1646,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
           <div className="mic-seat-row">
             {Array.from({ length: 8 }).map((_, index) => (
               <div className="mic-seat" key={index}>
-                <div>{index + 1}</div><span>Mic {index + 1}</span>
+                <div>{index + 1}</div><span>Seat {index + 1}</span>
               </div>
             ))}
           </div>

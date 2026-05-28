@@ -128,7 +128,7 @@ function createMockVideoTrack() {
 
     context.fillStyle = '#ffffff'
     context.font = 'bold 54px Arial'
-    context.fillText('Mingtai RTC', 48, 92)
+    context.fillText('talk-each-other RTC', 48, 92)
 
     context.font = '28px Arial'
     context.fillText('Mock Video Stream', 52, 142)

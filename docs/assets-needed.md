@@ -12,7 +12,7 @@ Use this checklist for the high-quality BuzzCast-style visual pass. Put final fi
 
 ## Lobby And Room Cards
 
-- Default room cover images for voice, video, group video, solo live, PK live, private, and password rooms.
+- Default room cover images for music, video, group video, solo live, PK live, private, and password rooms.
 - Optional themed backgrounds: neon, studio, midnight, mint.
 - Empty-state illustration or image for no rooms.
 - Demo host/avatar images for seeded users.

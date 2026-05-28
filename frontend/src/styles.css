@@ -87,6 +87,12 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(56, 189, 248, .14);
 }
 
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: rgba(239, 68, 68, .72);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .12);
+}
+
 select option {
   color: #111827;
 }
@@ -425,6 +431,36 @@ pre {
 
 .tab.active {
   background: linear-gradient(135deg, var(--hot), var(--hot-2));
+}
+
+.password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.password-field input {
+  width: 100%;
+}
+
+.password-field button {
+  min-height: 47px;
+  padding: 0 14px;
+  border-color: rgba(56, 189, 248, .3);
+  background: rgba(56, 189, 248, .1);
+  color: #bfdbfe;
+}
+
+.password-strength {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.password-strength.strong {
+  color: #bbf7d0;
 }
 
 .status-box,
@@ -1106,8 +1142,8 @@ pre {
     linear-gradient(135deg, #ff3f7f, #38bdf8);
 }
 
-.tone-voice .room-cover,
-.mini-live-card.tone-voice {
+.tone-music .room-cover,
+.mini-live-card.tone-music {
   background:
     linear-gradient(180deg, rgba(8, 13, 25, .08), rgba(8, 13, 25, .88)),
     linear-gradient(135deg, #34d399, #38bdf8);
@@ -1136,6 +1172,43 @@ pre {
   position: absolute;
   top: 14px;
   right: 14px;
+}
+
+.room-cover-asset {
+  position: absolute;
+  inset: 54px 14px auto auto;
+  width: 104px;
+  height: 66px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: end;
+  gap: 7px;
+  opacity: .82;
+}
+
+.room-cover-asset span {
+  width: 18px;
+  border-radius: 999px 999px 6px 6px;
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .28);
+}
+
+.room-cover-asset span:nth-child(1) {
+  height: 40px;
+}
+
+.room-cover-asset span:nth-child(2) {
+  height: 64px;
+}
+
+.room-cover-asset span:nth-child(3) {
+  height: 28px;
+}
+
+.tone-video .room-cover-asset span,
+.tone-live .room-cover-asset span,
+.tone-pk .room-cover-asset span {
+  border-radius: 50%;
 }
 
 .room-cover-content {

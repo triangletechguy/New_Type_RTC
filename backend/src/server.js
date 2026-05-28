@@ -37,7 +37,7 @@ app.use(express.json({ limit: '10mb' }))
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    message: 'Mingtai RTC Node backend is running',
+    message: 'talk-each-other RTC Node backend is running',
     endpoints: {
       health: '/api/health',
       login: '/api/auth/login',

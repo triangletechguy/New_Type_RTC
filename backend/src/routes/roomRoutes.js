@@ -23,6 +23,7 @@ const roomTypeGroups = {
   all: null,
   live: ['solo_live', 'pk_live', 'group_video'],
   video: ['video', 'group_video', 'solo_live', 'pk_live'],
+  music: ['audio', 'group_audio'],
   voice: ['audio', 'group_audio'],
   pk: ['pk_live'],
 }

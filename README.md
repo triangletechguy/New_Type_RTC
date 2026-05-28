@@ -1,6 +1,6 @@
-# RTC Enterprise
+# talk-each-other RTC Enterprise
 
-Native WebRTC enterprise RTC platform using:
+BuzzCast-style video and music room platform using native WebRTC:
 
 - React + Vite frontend
 - Node.js + Express backend

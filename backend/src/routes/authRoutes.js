@@ -7,6 +7,29 @@ const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function validateEmail(value) {
+  const email = normalizeEmail(value)
+  const emailPattern = /^[^\s@]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i
+  if (!emailPattern.test(email)) return false
+
+  const domain = email.split('@')[1]
+  const tld = domain.split('.').pop()
+  return tld.length >= 2
+}
+
+function validateStrongPassword(value) {
+  const password = String(value || '')
+  return password.length >= 10
+    && /[a-z]/.test(password)
+    && /[A-Z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password)
+}
+
 function formatUser(user, roles = []) {
   return {
     id: user.id,
@@ -35,10 +58,15 @@ async function getUserRoles(userId) {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body || {}
+    const email = normalizeEmail(req.body?.email)
+    const password = String(req.body?.password || '')
 
     if (!email || !password) {
       return res.status(422).json({ message: 'Email and password are required.' })
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(422).json({ message: 'Enter a valid email address.' })
     }
 
     const users = await query(
@@ -101,10 +129,26 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password } = req.body || {}
+    const name = String(req.body?.name || '').trim()
+    const email = normalizeEmail(req.body?.email)
+    const password = String(req.body?.password || '')
 
     if (!name || !email || !password) {
       return res.status(422).json({ message: 'Name, email, and password are required.' })
+    }
+
+    if (name.length < 2) {
+      return res.status(422).json({ message: 'Name must be at least 2 characters.' })
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(422).json({ message: 'Use a valid Gmail, Outlook, Hotmail, or company email address.' })
+    }
+
+    if (!validateStrongPassword(password)) {
+      return res.status(422).json({
+        message: 'Password must be at least 10 characters and include uppercase, lowercase, number, and symbol.',
+      })
     }
 
     const existing = await query(

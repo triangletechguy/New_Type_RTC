@@ -6,9 +6,9 @@ const sdkTabs = [
     label: 'Web',
     title: 'Web quickstart',
     language: 'JavaScript',
-    code: `import { MingtaiRTC } from '@mingtai/rtc-web'
+    code: `import { TalkEachOtherRTC } from '@talk-each-other/rtc-web'
 
-const rtc = new MingtaiRTC({
+const rtc = new TalkEachOtherRTC({
   appKey: 'client_app_key',
   apiBaseUrl: 'https://api.example.com/api',
   signalingUrl: 'https://signal.example.com',
@@ -38,14 +38,14 @@ await rtc.leaveRoom()`,
     title: 'React room component',
     language: 'TSX',
     code: `import { useEffect, useRef, useState } from 'react'
-import { MingtaiRTC } from '@mingtai/rtc-web'
+import { TalkEachOtherRTC } from '@talk-each-other/rtc-web'
 
 export function LiveRoom({ roomId, token }) {
   const clientRef = useRef(null)
   const [peers, setPeers] = useState([])
 
   useEffect(() => {
-    const rtc = new MingtaiRTC({
+    const rtc = new TalkEachOtherRTC({
       appKey: import.meta.env.VITE_RTC_APP_KEY,
       apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
       signalingUrl: import.meta.env.VITE_SIGNALING_URL,
@@ -259,8 +259,8 @@ VITE_SIGNALING_URL=http://127.0.0.1:8000`
       </div>
 
       <div className="sdk-install-row">
-        <code>npm install @mingtai/rtc-web</code>
-        <CopyButton value="npm install @mingtai/rtc-web" />
+        <code>npm install @talk-each-other/rtc-web</code>
+        <CopyButton value="npm install @talk-each-other/rtc-web" />
       </div>
 
       <pre>{envExample}</pre>
@@ -294,7 +294,7 @@ function SdkPlayground() {
     ['leave', 'Leave'],
   ]
   const activeIndex = stages.findIndex(([id]) => id === stage)
-  const generatedCode = `const rtc = new MingtaiRTC({
+  const generatedCode = `const rtc = new TalkEachOtherRTC({
   appKey: '${config.appKey}',
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
   signalingUrl: import.meta.env.VITE_SIGNALING_URL,
