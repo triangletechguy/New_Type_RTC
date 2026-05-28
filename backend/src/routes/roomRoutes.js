@@ -1,0 +1,1482 @@
+const express = require('express')
+const bcrypt = require('bcryptjs')
+const { query, transaction } = require('../config/db')
+const { authMiddleware } = require('../middleware/auth')
+
+const router = express.Router()
+
+const validRoomTypes = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
+const validPrivacyTypes = new Set(['public', 'private', 'password'])
+const validRoomStatuses = new Set(['active', 'inactive', 'ended'])
+const validRtcModes = new Set(['audio', 'video'])
+const validControlThemes = new Set(['neon', 'midnight', 'studio', 'mint'])
+const validModerationActions = new Set(['mute', 'mute_mic', 'disable_camera', 'kick', 'ban'])
+const validBanTypes = new Set(['temporary', 'permanent'])
+const roomManagerRoles = new Set(['owner', 'admin', 'moderator'])
+const roomRoleRank = {
+  end_user: 0,
+  moderator: 1,
+  admin: 2,
+  owner: 3,
+}
+const roomTypeGroups = {
+  all: null,
+  live: ['solo_live', 'pk_live', 'group_video'],
+  video: ['video', 'group_video', 'solo_live', 'pk_live'],
+  voice: ['audio', 'group_audio'],
+  pk: ['pk_live'],
+}
+const sortOptions = {
+  newest: 'r.created_at DESC, r.id DESC',
+  oldest: 'r.created_at ASC, r.id ASC',
+  name: 'r.name ASC, r.id DESC',
+  active: 'active_participants DESC, r.created_at DESC, r.id DESC',
+}
+
+function firstQueryValue(value) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function cleanString(value, maxLength) {
+  if (value === undefined || value === null) return ''
+  return String(value).trim().slice(0, maxLength)
+}
+
+function parseInteger(value, defaultValue) {
+  if (value === undefined || value === null || value === '') return defaultValue
+  const number = Number(value)
+  if (!Number.isInteger(number)) return null
+  return number
+}
+
+function parseBoolean(value, defaultValue) {
+  if (value === undefined || value === null) return defaultValue
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false
+  return defaultValue
+}
+
+function createHttpError(status, message) {
+  const error = new Error(message)
+  error.status = status
+  return error
+}
+
+function roomSupportsVideo(roomType) {
+  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+}
+
+function defaultRtcModeForRoom(roomType) {
+  return roomSupportsVideo(roomType) ? 'video' : 'audio'
+}
+
+function serializeRoom(row) {
+  if (!row) return null
+
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    owner_id: Number(row.owner_id),
+    owner_name: row.owner_name || null,
+    name: row.name,
+    description: row.description,
+    profile_image: row.profile_image,
+    room_type: row.room_type,
+    privacy_type: row.privacy_type,
+    is_password_protected: row.privacy_type === 'password',
+    max_mic_count: Number(row.max_mic_count || 0),
+    active_participants: Number(row.active_participants || 0),
+    theme: row.theme,
+    chat_enabled: Boolean(Number(row.chat_enabled)),
+    gift_enabled: Boolean(Number(row.gift_enabled)),
+    screen_share_enabled: Boolean(Number(row.screen_share_enabled)),
+    ai_security_enabled: Boolean(Number(row.ai_security_enabled)),
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+function roomSelectSql() {
+  return `
+    SELECT
+      r.id, r.tenant_id, r.owner_id, r.name, r.description, r.profile_image,
+      r.room_type, r.privacy_type, r.max_mic_count, r.theme,
+      r.chat_enabled, r.gift_enabled, r.screen_share_enabled, r.ai_security_enabled,
+      r.status, r.created_at, r.updated_at,
+      owner.name AS owner_name,
+      COALESCE(active_counts.active_participants, 0) AS active_participants
+    FROM rooms r
+    LEFT JOIN users owner ON owner.id = r.owner_id
+    LEFT JOIN (
+      SELECT active_sessions.room_id, COUNT(active_participants.id) AS active_participants
+      FROM rtc_sessions active_sessions
+      LEFT JOIN rtc_session_participants active_participants
+        ON active_participants.session_id = active_sessions.id
+        AND active_participants.left_at IS NULL
+      WHERE active_sessions.status = 'active'
+      GROUP BY active_sessions.room_id
+    ) active_counts ON active_counts.room_id = r.id
+  `
+}
+
+async function findPublicRoomById(roomId, tenantId) {
+  const rows = await query(
+    `
+    ${roomSelectSql()}
+    WHERE r.id = :roomId
+    AND r.tenant_id = :tenantId
+    LIMIT 1
+    `,
+    { roomId, tenantId }
+  )
+
+  return serializeRoom(rows[0])
+}
+
+function addInCondition(conditions, params, column, values, paramPrefix) {
+  const keys = values.map((value, index) => {
+    const key = `${paramPrefix}${index}`
+    params[key] = value
+    return `:${key}`
+  })
+
+  conditions.push(`${column} IN (${keys.join(', ')})`)
+}
+
+function getRoomListOptions(req) {
+  const page = Math.max(1, parseInteger(firstQueryValue(req.query.page), 1) || 1)
+  const perPage = Math.min(60, Math.max(1, parseInteger(firstQueryValue(req.query.per_page), 24) || 24))
+  const search = cleanString(firstQueryValue(req.query.q || req.query.search), 80)
+  const status = cleanString(firstQueryValue(req.query.status), 20) || 'active'
+  const type = cleanString(firstQueryValue(req.query.type || req.query.room_type), 30) || 'all'
+  const privacy = cleanString(firstQueryValue(req.query.privacy || req.query.privacy_type), 30) || 'all'
+  const sort = cleanString(firstQueryValue(req.query.sort), 30) || 'newest'
+
+  if (status !== 'all' && !validRoomStatuses.has(status)) {
+    return { error: 'Invalid room status filter.' }
+  }
+
+  if (!roomTypeGroups[type] && type !== 'all' && !validRoomTypes.has(type)) {
+    return { error: 'Invalid room type filter.' }
+  }
+
+  if (privacy !== 'all' && !validPrivacyTypes.has(privacy)) {
+    return { error: 'Invalid privacy filter.' }
+  }
+
+  if (!sortOptions[sort]) {
+    return { error: 'Invalid room sort option.' }
+  }
+
+  return { page, perPage, search, status, type, privacy, sort }
+}
+
+function buildRoomListWhere(options, tenantId, userId) {
+  const conditions = ['r.tenant_id = :tenantId']
+  const params = { tenantId, viewerUserId: userId }
+
+  if (options.status !== 'all') {
+    conditions.push('r.status = :status')
+    params.status = options.status
+  }
+
+  if (options.type !== 'all') {
+    const roomTypes = roomTypeGroups[options.type] || [options.type]
+    addInCondition(conditions, params, 'r.room_type', roomTypes, 'roomType')
+  }
+
+  if (options.privacy !== 'all') {
+    conditions.push('r.privacy_type = :privacy')
+    params.privacy = options.privacy
+  }
+
+  if (options.privacy === 'private') {
+    conditions.push(`
+      (
+        r.owner_id = :viewerUserId
+        OR EXISTS (
+          SELECT 1
+          FROM room_roles viewer_roles
+          WHERE viewer_roles.room_id = r.id
+          AND viewer_roles.user_id = :viewerUserId
+        )
+      )
+    `)
+  } else {
+    conditions.push(`
+      (
+        r.privacy_type <> 'private'
+        OR r.owner_id = :viewerUserId
+        OR EXISTS (
+          SELECT 1
+          FROM room_roles viewer_roles
+          WHERE viewer_roles.room_id = r.id
+          AND viewer_roles.user_id = :viewerUserId
+        )
+      )
+    `)
+  }
+
+  if (options.search) {
+    conditions.push('(r.name LIKE :search OR r.description LIKE :search OR CAST(r.id AS CHAR) LIKE :search)')
+    params.search = `%${options.search}%`
+  }
+
+  return { whereSql: conditions.join(' AND '), params }
+}
+
+function validateRoomPayload(payload) {
+  const errors = {}
+  const name = cleanString(payload.name, 150)
+  const description = cleanString(payload.description, 700)
+  const profileImage = cleanString(payload.profile_image, 255)
+  const theme = cleanString(payload.theme, 100)
+  const roomType = cleanString(payload.room_type, 30) || 'video'
+  const privacyType = cleanString(payload.privacy_type, 30) || 'public'
+  const password = cleanString(payload.password, 100)
+  const maxMicCount = parseInteger(payload.max_mic_count, 8)
+
+  if (!name) errors.name = 'Room name is required.'
+  if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
+  if (!validRoomTypes.has(roomType)) errors.room_type = 'Invalid room type.'
+  if (!validPrivacyTypes.has(privacyType)) errors.privacy_type = 'Invalid privacy type.'
+  if (maxMicCount === null || maxMicCount < 1 || maxMicCount > 16) {
+    errors.max_mic_count = 'Max mic count must be between 1 and 16.'
+  }
+  if (privacyType === 'password' && password.length < 4) {
+    errors.password = 'Password-protected rooms need a password of at least 4 characters.'
+  }
+
+  return {
+    errors,
+    data: {
+      name,
+      description: description || null,
+      profile_image: profileImage || null,
+      room_type: roomType,
+      privacy_type: privacyType,
+      password: privacyType === 'password' ? password : '',
+      max_mic_count: maxMicCount || 8,
+      theme: theme || null,
+      chat_enabled: parseBoolean(payload.chat_enabled, true),
+      gift_enabled: parseBoolean(payload.gift_enabled, true),
+      screen_share_enabled: parseBoolean(payload.screen_share_enabled, false),
+      ai_security_enabled: parseBoolean(payload.ai_security_enabled, false),
+    },
+  }
+}
+
+function usageTypeFromRoomType(roomType) {
+  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType) ? 'video' : 'audio'
+}
+
+async function getRoomRole(connection, roomId, userId) {
+  const [rows] = await connection.execute(
+    `
+    SELECT role
+    FROM room_roles
+    WHERE room_id = ?
+    AND user_id = ?
+    ORDER BY FIELD(role, 'owner', 'admin', 'moderator')
+    LIMIT 1
+    `,
+    [roomId, userId]
+  )
+
+  if (!rows.length) return 'end_user'
+  return rows[0].role
+}
+
+function canManageRoom(role) {
+  return roomManagerRoles.has(role)
+}
+
+function canModerateTarget(actorRole, targetRole) {
+  return canManageRoom(actorRole) && (roomRoleRank[actorRole] || 0) > (roomRoleRank[targetRole] || 0)
+}
+
+async function canAccessPrivateRoom(roomId, userId, ownerId) {
+  if (ownerId === userId) return true
+
+  const rows = await query(
+    `
+    SELECT id
+    FROM room_roles
+    WHERE room_id = :roomId
+    AND user_id = :userId
+    LIMIT 1
+    `,
+    { roomId, userId }
+  )
+
+  return rows.length > 0
+}
+
+function normalizeModerationAction(action) {
+  const normalized = cleanString(action, 40)
+  return normalized === 'mute' ? 'mute_mic' : normalized
+}
+
+function parseBanOptions(payload = {}) {
+  const durationMinutes = parseInteger(payload.duration_minutes, null)
+  const requestedBanType = cleanString(payload.ban_type, 20)
+  const banType = requestedBanType || (durationMinutes ? 'temporary' : 'permanent')
+  const reason = cleanString(payload.reason, 500)
+
+  if (!validBanTypes.has(banType)) {
+    throw createHttpError(422, 'Invalid ban type.')
+  }
+
+  if (banType === 'temporary' && (!durationMinutes || durationMinutes < 1 || durationMinutes > 43200)) {
+    throw createHttpError(422, 'Temporary bans must be between 1 minute and 30 days.')
+  }
+
+  return {
+    banType,
+    durationMinutes: banType === 'temporary' ? durationMinutes : null,
+    reason: reason || null,
+  }
+}
+
+async function closeParticipantSession(connection, room, participant, userId) {
+  if (participant.left_at) {
+    return {
+      durationSeconds: Number(participant.duration_seconds || 0),
+      billableMinutes: Number((Number(participant.duration_seconds || 0) / 60).toFixed(2)),
+      usageLogId: null,
+      alreadyClosed: true,
+    }
+  }
+
+  const [durationRows] = await connection.execute(
+    `
+    SELECT TIMESTAMPDIFF(SECOND, joined_at, NOW()) AS duration_seconds
+    FROM rtc_session_participants
+    WHERE id = ?
+    `,
+    [participant.id]
+  )
+
+  const durationSeconds = Math.max(0, Number(durationRows[0]?.duration_seconds || 0))
+  const billableMinutes = Number((durationSeconds / 60).toFixed(2))
+
+  const [updateParticipant] = await connection.execute(
+    `
+    UPDATE rtc_session_participants
+    SET left_at = NOW(),
+        duration_seconds = ?,
+        connection_status = 'disconnected',
+        updated_at = NOW()
+    WHERE id = ?
+    AND left_at IS NULL
+    `,
+    [durationSeconds, participant.id]
+  )
+
+  if (!updateParticipant.affectedRows) {
+    return {
+      durationSeconds,
+      billableMinutes,
+      usageLogId: null,
+      alreadyClosed: true,
+    }
+  }
+
+  const [usageInsert] = await connection.execute(
+    `
+    INSERT INTO usage_logs (
+      tenant_id, room_id, session_id, user_id, usage_type,
+      started_at, ended_at, duration_seconds, billable_minutes, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW())
+    `,
+    [
+      room.tenant_id,
+      room.id,
+      participant.session_id,
+      userId,
+      usageTypeFromRoomType(room.room_type),
+      participant.joined_at,
+      durationSeconds,
+      billableMinutes,
+    ]
+  )
+
+  const [activeCountRows] = await connection.execute(
+    `
+    SELECT COUNT(*) AS active_count
+    FROM rtc_session_participants
+    WHERE session_id = ?
+    AND left_at IS NULL
+    `,
+    [participant.session_id]
+  )
+
+  const [totalRows] = await connection.execute(
+    `
+    SELECT COALESCE(SUM(duration_seconds), 0) AS total_seconds
+    FROM rtc_session_participants
+    WHERE session_id = ?
+    AND left_at IS NOT NULL
+    `,
+    [participant.session_id]
+  )
+
+  const activeCount = Number(activeCountRows[0]?.active_count || 0)
+  const totalParticipantMinutes = Number((Number(totalRows[0]?.total_seconds || 0) / 60).toFixed(2))
+
+  if (activeCount === 0) {
+    await connection.execute(
+      `
+      UPDATE rtc_sessions
+      SET status = 'ended',
+          ended_at = NOW(),
+          total_participant_minutes = ?,
+          total_duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW()),
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [totalParticipantMinutes, participant.session_id]
+    )
+  } else {
+    await connection.execute(
+      `
+      UPDATE rtc_sessions
+      SET total_participant_minutes = ?,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [totalParticipantMinutes, participant.session_id]
+    )
+  }
+
+  return {
+    durationSeconds,
+    billableMinutes,
+    usageLogId: usageInsert.insertId,
+    alreadyClosed: false,
+  }
+}
+
+async function getRoomControls(connection, room, userId) {
+  const role = await getRoomRole(connection, room.id, userId)
+  const [participants] = await connection.execute(
+    `
+    SELECT
+      p.id, p.session_id, p.room_id, p.user_id, p.peer_uid, p.role_in_room,
+      p.joined_at, p.left_at, p.duration_seconds, p.mic_enabled, p.camera_enabled,
+      p.screen_shared, p.connection_status, p.created_at, p.updated_at,
+      u.name AS user_name,
+      u.email AS user_email,
+      u.avatar_url AS user_avatar_url
+    FROM rtc_session_participants p
+    LEFT JOIN users u ON u.id = p.user_id
+    WHERE p.room_id = ?
+    AND p.left_at IS NULL
+    ORDER BY FIELD(p.role_in_room, 'owner', 'admin', 'moderator', 'speaker', 'audience', 'end_user'), p.joined_at ASC
+    `,
+    [room.id]
+  )
+
+  return {
+    role,
+    can_manage: canManageRoom(role),
+    room: serializeRoom(room),
+    participants: participants.map((participant) => ({
+      id: participant.id,
+      session_id: participant.session_id,
+      room_id: participant.room_id,
+      user_id: participant.user_id,
+      peer_uid: participant.peer_uid,
+      role_in_room: participant.role_in_room,
+      joined_at: participant.joined_at,
+      left_at: participant.left_at,
+      duration_seconds: Number(participant.duration_seconds || 0),
+      mic_enabled: Boolean(Number(participant.mic_enabled)),
+      camera_enabled: Boolean(Number(participant.camera_enabled)),
+      screen_shared: Boolean(Number(participant.screen_shared)),
+      connection_status: participant.connection_status,
+      user_name: participant.user_name || `User #${participant.user_id}`,
+      user_email: participant.user_email,
+      user_avatar_url: participant.user_avatar_url,
+      created_at: participant.created_at,
+      updated_at: participant.updated_at,
+    })),
+  }
+}
+
+async function isUserBanned(roomId, userId) {
+  const rows = await query(
+    `
+    SELECT id
+    FROM room_bans
+    WHERE room_id = :roomId
+    AND banned_user_id = :userId
+    AND status = 'active'
+    AND (
+      ban_type = 'permanent'
+      OR ends_at IS NULL
+      OR ends_at > NOW()
+    )
+    LIMIT 1
+    `,
+    { roomId, userId }
+  )
+
+  return rows.length > 0
+}
+
+router.get('/', authMiddleware, async (req, res, next) => {
+  try {
+    const options = getRoomListOptions(req)
+    if (options.error) return res.status(422).json({ message: options.error })
+
+    const { whereSql, params } = buildRoomListWhere(options, req.user.tenant_id, req.user.id)
+    const offset = (options.page - 1) * options.perPage
+
+    const rooms = await query(
+      `
+      ${roomSelectSql()}
+      WHERE ${whereSql}
+      ORDER BY ${sortOptions[options.sort]}
+      LIMIT :limit
+      OFFSET :offset
+      `,
+      { ...params, limit: options.perPage, offset }
+    )
+
+    const countRows = await query(
+      `
+      SELECT COUNT(*) AS total
+      FROM rooms r
+      WHERE ${whereSql}
+      `,
+      params
+    )
+
+    const total = Number(countRows[0]?.total || 0)
+    const totalPages = Math.max(1, Math.ceil(total / options.perPage))
+
+    return res.json({
+      rooms: {
+        data: rooms.map(serializeRoom),
+        meta: {
+          page: options.page,
+          per_page: options.perPage,
+          total,
+          total_pages: totalPages,
+        },
+        filters: {
+          search: options.search,
+          status: options.status,
+          type: options.type,
+          privacy: options.privacy,
+          sort: options.sort,
+        },
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/', authMiddleware, async (req, res, next) => {
+  try {
+    const { errors, data } = validateRoomPayload(req.body || {})
+
+    if (Object.keys(errors).length) {
+      return res.status(422).json({
+        message: 'Please fix the room details and try again.',
+        errors,
+      })
+    }
+
+    const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : null
+
+    const roomId = await transaction(async (connection) => {
+      const [insertResult] = await connection.execute(
+        `
+        INSERT INTO rooms (
+          tenant_id, owner_id, name, description, profile_image, room_type,
+          privacy_type, password_hash, max_mic_count, theme,
+          chat_enabled, gift_enabled, screen_share_enabled, ai_security_enabled,
+          status, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+        `,
+        [
+          req.user.tenant_id,
+          req.user.id,
+          data.name,
+          data.description,
+          data.profile_image,
+          data.room_type,
+          data.privacy_type,
+          passwordHash,
+          data.max_mic_count,
+          data.theme,
+          data.chat_enabled ? 1 : 0,
+          data.gift_enabled ? 1 : 0,
+          data.screen_share_enabled ? 1 : 0,
+          data.ai_security_enabled ? 1 : 0,
+        ]
+      )
+
+      await connection.execute(
+        `
+        INSERT INTO room_roles (room_id, user_id, role, created_at)
+        VALUES (?, ?, 'owner', NOW())
+        `,
+        [insertResult.insertId, req.user.id]
+      )
+
+      return insertResult.insertId
+    })
+
+    const room = await findPublicRoomById(roomId, req.user.tenant_id)
+
+    return res.status(201).json({ message: 'Room created successfully', room })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const room = await findPublicRoomById(roomId, req.user.tenant_id)
+    if (!room) return res.status(404).json({ message: 'Room not found.' })
+    if (room.privacy_type === 'private' && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))) {
+      return res.status(403).json({ message: 'This room is private.' })
+    }
+    return res.json({ room })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/:id/controls', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const result = await transaction(async (connection) => {
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        AND tenant_id = ?
+        LIMIT 1
+        `,
+        [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      return getRoomControls(connection, rooms[0], req.user.id)
+    })
+
+    return res.json({ controls: result })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const result = await transaction(async (connection) => {
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        AND tenant_id = ?
+        LIMIT 1
+        `,
+        [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      const role = await getRoomRole(connection, room.id, req.user.id)
+
+      if (!canManageRoom(role)) {
+        throw createHttpError(403, 'Only room owners and moderators can update room controls.')
+      }
+
+      const updates = []
+      const values = []
+      const booleanFields = ['chat_enabled', 'gift_enabled', 'screen_share_enabled', 'ai_security_enabled']
+
+      for (const field of booleanFields) {
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
+          updates.push(`${field} = ?`)
+          values.push(parseBoolean(req.body[field], Boolean(Number(room[field]))) ? 1 : 0)
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'theme')) {
+        const theme = cleanString(req.body.theme, 100)
+        if (theme && !validControlThemes.has(theme)) throw createHttpError(422, 'Invalid room theme.')
+        updates.push('theme = ?')
+        values.push(theme || null)
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'privacy_type')) {
+        const privacyType = cleanString(req.body.privacy_type, 30)
+        const password = cleanString(req.body?.password, 100)
+
+        if (!validPrivacyTypes.has(privacyType)) throw createHttpError(422, 'Invalid privacy type.')
+
+        updates.push('privacy_type = ?')
+        values.push(privacyType)
+
+        if (privacyType === 'password') {
+          if (password) {
+            if (password.length < 4) throw createHttpError(422, 'Room password must be at least 4 characters.')
+            updates.push('password_hash = ?')
+            values.push(await bcrypt.hash(password, 10))
+          } else if (!room.password_hash || room.privacy_type !== 'password') {
+            throw createHttpError(422, 'A password is required when switching to password privacy.')
+          }
+        } else {
+          updates.push('password_hash = NULL')
+        }
+      } else if (Object.prototype.hasOwnProperty.call(req.body || {}, 'password')) {
+        const password = cleanString(req.body.password, 100)
+        if (room.privacy_type !== 'password') throw createHttpError(422, 'Switch room privacy to password before setting a password.')
+        if (password.length < 4) throw createHttpError(422, 'Room password must be at least 4 characters.')
+        updates.push('password_hash = ?')
+        values.push(await bcrypt.hash(password, 10))
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'max_mic_count')) {
+        const maxMicCount = parseInteger(req.body.max_mic_count, null)
+        if (!maxMicCount || maxMicCount < 1 || maxMicCount > 16) {
+          throw createHttpError(422, 'Max mic count must be between 1 and 16.')
+        }
+        updates.push('max_mic_count = ?')
+        values.push(maxMicCount)
+      }
+
+      if (updates.length) {
+        await connection.execute(
+          `
+          UPDATE rooms
+          SET ${updates.join(', ')},
+              updated_at = NOW()
+          WHERE id = ?
+          AND tenant_id = ?
+          `,
+          [...values, room.id, req.user.tenant_id]
+        )
+      }
+
+      const [updatedRooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        AND tenant_id = ?
+        LIMIT 1
+        `,
+        [room.id, req.user.tenant_id]
+      )
+
+      return getRoomControls(connection, updatedRooms[0], req.user.id)
+    })
+
+    return res.json({
+      message: 'Room controls updated.',
+      controls: result,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function applyModerationAction({ roomId, targetUserId, action, actor, body = {} }) {
+  const normalizedAction = normalizeModerationAction(action)
+
+  if (!validModerationActions.has(normalizedAction)) {
+    throw createHttpError(422, 'Invalid moderation action.')
+  }
+
+  return transaction(async (connection) => {
+    const [rooms] = await connection.execute(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = ?
+      AND tenant_id = ?
+      LIMIT 1
+      `,
+      [roomId, actor.tenant_id]
+    )
+
+    if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+    const room = rooms[0]
+
+    const [targetUsers] = await connection.execute(
+      `
+      SELECT id, name, email
+      FROM users
+      WHERE id = ?
+      AND tenant_id = ?
+      LIMIT 1
+      `,
+      [targetUserId, actor.tenant_id]
+    )
+
+    if (!targetUsers.length) throw createHttpError(404, 'Target user not found.')
+
+    const targetUser = targetUsers[0]
+    const actorRole = await getRoomRole(connection, room.id, actor.id)
+    const targetRole = await getRoomRole(connection, room.id, targetUserId)
+
+    if (!canModerateTarget(actorRole, targetRole)) {
+      throw createHttpError(403, 'You can only moderate participants below your room role.')
+    }
+
+    if (['kick', 'ban'].includes(normalizedAction) && targetUserId === actor.id) {
+      throw createHttpError(422, 'Use Leave Room instead of moderating yourself.')
+    }
+
+    const [participants] = await connection.execute(
+      `
+      SELECT *
+      FROM rtc_session_participants
+      WHERE room_id = ?
+      AND user_id = ?
+      AND left_at IS NULL
+      ORDER BY id DESC
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [room.id, targetUserId]
+    )
+
+    const participant = participants[0] || null
+
+    if (normalizedAction !== 'ban' && !participant) {
+      throw createHttpError(404, 'Participant is not currently in this room.')
+    }
+
+    let ban = null
+    let eventType = 'mute_by_moderator'
+    let eventSessionId = participant?.session_id || null
+    let eventData = {
+      rtc_provider: 'native_webrtc',
+      moderation_action: normalizedAction,
+      moderator_user_id: actor.id,
+      target_user_id: targetUserId,
+    }
+
+    if (normalizedAction === 'mute_mic') {
+      await connection.execute(
+        `
+        UPDATE rtc_session_participants
+        SET mic_enabled = 0,
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [participant.id]
+      )
+      eventType = 'mute_by_moderator'
+      eventData = { ...eventData, mic_enabled: false }
+    }
+
+    if (normalizedAction === 'disable_camera') {
+      await connection.execute(
+        `
+        UPDATE rtc_session_participants
+        SET camera_enabled = 0,
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [participant.id]
+      )
+      eventType = 'camera_off'
+      eventData = { ...eventData, camera_enabled: false }
+    }
+
+    if (normalizedAction === 'kick') {
+      const leaveResult = await closeParticipantSession(connection, room, participant, targetUserId)
+      eventType = 'kick_by_moderator'
+      eventData = {
+        ...eventData,
+        duration_seconds: leaveResult.durationSeconds,
+        billable_minutes: leaveResult.billableMinutes,
+        usage_log_id: leaveResult.usageLogId,
+      }
+    }
+
+    if (normalizedAction === 'ban') {
+      const banOptions = parseBanOptions(body)
+
+      await connection.execute(
+        `
+        UPDATE room_bans
+        SET status = 'revoked',
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND banned_user_id = ?
+        AND status = 'active'
+        `,
+        [room.id, targetUserId]
+      )
+
+      let insertBan
+      if (banOptions.banType === 'temporary') {
+        ;[insertBan] = await connection.execute(
+          `
+          INSERT INTO room_bans (
+            tenant_id, room_id, banned_user_id, banned_by, ban_type,
+            reason, starts_at, ends_at, status, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, 'temporary', ?, NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), 'active', NOW(), NOW())
+          `,
+          [room.tenant_id, room.id, targetUserId, actor.id, banOptions.reason, banOptions.durationMinutes]
+        )
+      } else {
+        ;[insertBan] = await connection.execute(
+          `
+          INSERT INTO room_bans (
+            tenant_id, room_id, banned_user_id, banned_by, ban_type,
+            reason, starts_at, ends_at, status, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, 'permanent', ?, NOW(), NULL, 'active', NOW(), NOW())
+          `,
+          [room.tenant_id, room.id, targetUserId, actor.id, banOptions.reason]
+        )
+      }
+
+      const [banRows] = await connection.execute(
+        `
+        SELECT *
+        FROM room_bans
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [insertBan.insertId]
+      )
+      ban = banRows[0]
+
+      if (participant) {
+        const leaveResult = await closeParticipantSession(connection, room, participant, targetUserId)
+        eventSessionId = participant.session_id
+        eventData = {
+          ...eventData,
+          duration_seconds: leaveResult.durationSeconds,
+          billable_minutes: leaveResult.billableMinutes,
+          usage_log_id: leaveResult.usageLogId,
+        }
+      } else {
+        const [activeSessions] = await connection.execute(
+          `
+          SELECT id
+          FROM rtc_sessions
+          WHERE room_id = ?
+          AND status = 'active'
+          ORDER BY id DESC
+          LIMIT 1
+          `,
+          [room.id]
+        )
+        eventSessionId = activeSessions[0]?.id || null
+      }
+
+      eventType = 'ban_by_moderator'
+      eventData = {
+        ...eventData,
+        ban_id: ban.id,
+        ban_type: ban.ban_type,
+        reason: ban.reason,
+        ends_at: ban.ends_at,
+      }
+    }
+
+    if (eventSessionId) {
+      await connection.execute(
+        `
+        INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, NOW())
+        `,
+        [
+          room.tenant_id,
+          room.id,
+          eventSessionId,
+          targetUserId,
+          eventType,
+          JSON.stringify(eventData),
+        ]
+      )
+    }
+
+    let updatedParticipant = null
+    if (participant) {
+      const [updatedParticipants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [participant.id]
+      )
+      updatedParticipant = updatedParticipants[0] || null
+    }
+
+    return {
+      action: normalizedAction,
+      target_user_id: targetUserId,
+      target_user: targetUser,
+      participant: updatedParticipant,
+      ban,
+      controls: await getRoomControls(connection, room, actor.id),
+    }
+  })
+}
+
+async function moderationEndpoint(req, res, next, forcedAction = null) {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    const targetUserId = parseInteger(req.params.userId, null)
+    const action = forcedAction || req.body?.action
+
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!targetUserId || targetUserId < 1) return res.status(422).json({ message: 'Invalid participant user ID.' })
+
+    const result = await applyModerationAction({
+      roomId,
+      targetUserId,
+      action,
+      actor: req.user,
+      body: req.body || {},
+    })
+
+    return res.json({
+      message: 'Moderation action applied.',
+      ...result,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/participants/:userId/moderation', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next))
+router.post('/:id/participants/:userId/mute', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next, 'mute_mic'))
+router.post('/:id/participants/:userId/kick', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next, 'kick'))
+router.post('/:id/participants/:userId/ban', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next, 'ban'))
+
+router.post('/:id/join', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const rooms = await query(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = :roomId
+      AND tenant_id = :tenantId
+      AND status = 'active'
+      LIMIT 1
+      `,
+      { roomId, tenantId: req.user.tenant_id }
+    )
+
+    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+
+    const room = rooms[0]
+    const publicRoom = await findPublicRoomById(room.id, req.user.tenant_id)
+
+    if (await isUserBanned(room.id, req.user.id)) {
+      return res.status(403).json({ message: 'You are banned from this room.' })
+    }
+
+    if (room.privacy_type === 'private' && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))) {
+      return res.status(403).json({ message: 'This room is private.' })
+    }
+
+    if (room.privacy_type === 'password') {
+      const password = cleanString(req.body?.password, 100)
+      if (!password || !(await bcrypt.compare(password, room.password_hash))) {
+        return res.status(403).json({ message: 'Invalid room password.' })
+      }
+    }
+
+    const requestedRtcMode = cleanString(req.body?.rtc_mode, 20) || defaultRtcModeForRoom(room.room_type)
+
+    if (!validRtcModes.has(requestedRtcMode)) {
+      return res.status(422).json({ message: 'Invalid RTC mode.' })
+    }
+
+    if (requestedRtcMode === 'video' && !roomSupportsVideo(room.room_type)) {
+      return res.status(422).json({ message: 'Video mode is not available for this room.' })
+    }
+
+    const joinOptions = {
+      rtc_mode: requestedRtcMode,
+      mic_enabled: parseBoolean(req.body?.mic_enabled, true),
+      camera_enabled: requestedRtcMode === 'video' && parseBoolean(req.body?.camera_enabled, true),
+      screen_shared: false,
+    }
+
+    const result = await transaction(async (connection) => {
+      const [activeSessions] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_sessions
+        WHERE room_id = ?
+        AND status = 'active'
+        ORDER BY id DESC
+        LIMIT 1
+        `,
+        [room.id]
+      )
+
+      let session = activeSessions[0]
+
+      if (!session) {
+        const signalingRoom = `webrtc_tenant_${room.tenant_id}_room_${room.id}`
+
+        const [insertSession] = await connection.execute(
+          `
+          INSERT INTO rtc_sessions (
+            tenant_id, room_id, rtc_provider, signaling_room, session_type,
+            started_by, started_at, status, total_duration_seconds,
+            total_participant_minutes, created_at, updated_at
+          )
+          VALUES (?, ?, 'native_webrtc', ?, ?, ?, NOW(), 'active', 0, 0, NOW(), NOW())
+          `,
+          [room.tenant_id, room.id, signalingRoom, room.room_type, req.user.id]
+        )
+
+        const [newSessions] = await connection.execute(`SELECT * FROM rtc_sessions WHERE id = ? LIMIT 1`, [insertSession.insertId])
+        session = newSessions[0]
+      }
+
+      const [activeParticipants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE session_id = ?
+        AND user_id = ?
+        AND left_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        `,
+        [session.id, req.user.id]
+      )
+
+      if (activeParticipants.length) {
+        await connection.execute(
+          `
+          UPDATE rtc_session_participants
+          SET mic_enabled = ?,
+              camera_enabled = ?,
+              screen_shared = ?,
+              connection_status = 'connected',
+              updated_at = NOW()
+          WHERE id = ?
+          `,
+          [
+            joinOptions.mic_enabled ? 1 : 0,
+            joinOptions.camera_enabled ? 1 : 0,
+            joinOptions.screen_shared ? 1 : 0,
+            activeParticipants[0].id,
+          ]
+        )
+
+        const [participants] = await connection.execute(
+          `SELECT * FROM rtc_session_participants WHERE id = ? LIMIT 1`,
+          [activeParticipants[0].id]
+        )
+
+        return { alreadyJoined: true, session, participant: participants[0], rtcMode: joinOptions.rtc_mode }
+      }
+
+      const [activeCountRows] = await connection.execute(
+        `
+        SELECT COUNT(*) AS active_count
+        FROM rtc_session_participants
+        WHERE session_id = ?
+        AND left_at IS NULL
+        `,
+        [session.id]
+      )
+
+      const activeCount = Number(activeCountRows[0]?.active_count || 0)
+      const maxParticipants = Math.max(1, Number(room.max_mic_count || 1))
+
+      if (activeCount >= maxParticipants) {
+        throw createHttpError(409, 'Room is full. Try another room or increase the mic seat limit.')
+      }
+
+      const roleInRoom = await getRoomRole(connection, room.id, req.user.id)
+
+      const [insertParticipant] = await connection.execute(
+        `
+        INSERT INTO rtc_session_participants (
+          session_id, room_id, user_id, peer_uid, role_in_room, joined_at,
+          duration_seconds, mic_enabled, camera_enabled, screen_shared,
+          connection_status, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, NOW(), 0, ?, ?, ?, 'connected', NOW(), NOW())
+        `,
+        [
+          session.id,
+          room.id,
+          req.user.id,
+          req.user.id,
+          roleInRoom || 'end_user',
+          joinOptions.mic_enabled ? 1 : 0,
+          joinOptions.camera_enabled ? 1 : 0,
+          joinOptions.screen_shared ? 1 : 0,
+        ]
+      )
+
+      const [participants] = await connection.execute(`SELECT * FROM rtc_session_participants WHERE id = ? LIMIT 1`, [insertParticipant.insertId])
+
+      await connection.execute(
+        `
+        INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+        VALUES (?, ?, ?, ?, 'join', ?, NOW())
+        `,
+        [
+          room.tenant_id,
+          room.id,
+          session.id,
+          req.user.id,
+          JSON.stringify({
+            room_type: room.room_type,
+            rtc_provider: 'native_webrtc',
+            rtc_mode: joinOptions.rtc_mode,
+            mic_enabled: joinOptions.mic_enabled,
+            camera_enabled: joinOptions.camera_enabled,
+          }),
+        ]
+      )
+
+      return { alreadyJoined: false, session, participant: participants[0], rtcMode: joinOptions.rtc_mode }
+    })
+
+    return res.json({
+      message: result.alreadyJoined ? 'Already joined room' : 'Joined room successfully',
+      room: publicRoom,
+      session: result.session,
+      participant: result.participant,
+      rtc: {
+        provider: 'native_webrtc',
+        signaling_room: result.session.signaling_room,
+        user_id: req.user.id,
+        peer_uid: result.participant.peer_uid,
+        already_joined: result.alreadyJoined,
+        rtc_mode: result.rtcMode,
+        mic_enabled: Boolean(Number(result.participant.mic_enabled)),
+        camera_enabled: Boolean(Number(result.participant.camera_enabled)),
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const rooms = await query(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = :roomId
+      AND tenant_id = :tenantId
+      AND status = 'active'
+      LIMIT 1
+      `,
+      { roomId, tenantId: req.user.tenant_id }
+    )
+
+    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+
+    const room = rooms[0]
+
+    const result = await transaction(async (connection) => {
+      const [participants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND user_id = ?
+        AND left_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [room.id, req.user.id]
+      )
+
+      if (!participants.length) {
+        throw createHttpError(409, 'Join the room before changing mic or camera state.')
+      }
+
+      const participant = participants[0]
+      const currentMicEnabled = Boolean(Number(participant.mic_enabled))
+      const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
+      const micEnabled = parseBoolean(req.body?.mic_enabled, currentMicEnabled)
+      const cameraEnabled = roomSupportsVideo(room.room_type)
+        ? parseBoolean(req.body?.camera_enabled, currentCameraEnabled)
+        : false
+
+      await connection.execute(
+        `
+        UPDATE rtc_session_participants
+        SET mic_enabled = ?,
+            camera_enabled = ?,
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [micEnabled ? 1 : 0, cameraEnabled ? 1 : 0, participant.id]
+      )
+
+      const mediaChanges = []
+      if (currentMicEnabled !== micEnabled) mediaChanges.push(micEnabled ? 'mic_on' : 'mic_off')
+      if (currentCameraEnabled !== cameraEnabled) mediaChanges.push(cameraEnabled ? 'camera_on' : 'camera_off')
+
+      for (const eventType of mediaChanges) {
+        await connection.execute(
+          `
+          INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            participant.session_id,
+            req.user.id,
+            eventType,
+            JSON.stringify({
+              rtc_provider: 'native_webrtc',
+              mic_enabled: micEnabled,
+              camera_enabled: cameraEnabled,
+            }),
+          ]
+        )
+      }
+
+      const [updatedParticipants] = await connection.execute(
+        `SELECT * FROM rtc_session_participants WHERE id = ? LIMIT 1`,
+        [participant.id]
+      )
+
+      return { participant: updatedParticipants[0], mediaChanges }
+    })
+
+    return res.json({
+      message: 'Media state updated',
+      participant: result.participant,
+      rtc: {
+        mic_enabled: Boolean(Number(result.participant.mic_enabled)),
+        camera_enabled: Boolean(Number(result.participant.camera_enabled)),
+      },
+      events: result.mediaChanges,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/leave', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const rooms = await query(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = :roomId
+      AND tenant_id = :tenantId
+      LIMIT 1
+      `,
+      { roomId, tenantId: req.user.tenant_id }
+    )
+
+    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+
+    const room = rooms[0]
+
+    const result = await transaction(async (connection) => {
+      const [participants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND user_id = ?
+        AND left_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [room.id, req.user.id]
+      )
+
+      if (!participants.length) {
+        return { left: false, message: 'User is not currently inside this room.' }
+      }
+
+      const participant = participants[0]
+      const leaveResult = await closeParticipantSession(connection, room, participant, req.user.id)
+
+      await connection.execute(
+        `
+        INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+        VALUES (?, ?, ?, ?, 'leave', ?, NOW())
+        `,
+        [
+          room.tenant_id,
+          room.id,
+          participant.session_id,
+          req.user.id,
+          JSON.stringify({
+            duration_seconds: leaveResult.durationSeconds,
+            billable_minutes: leaveResult.billableMinutes,
+            usage_log_id: leaveResult.usageLogId,
+            rtc_provider: 'native_webrtc',
+          }),
+        ]
+      )
+
+      return {
+        left: true,
+        message: 'Left room successfully',
+        duration_seconds: leaveResult.durationSeconds,
+        billable_minutes: leaveResult.billableMinutes,
+        usage_log_id: leaveResult.usageLogId,
+        usage_logged: Boolean(leaveResult.usageLogId),
+      }
+    })
+
+    return res.json(result)
+  } catch (error) {
+    next(error)
+  }
+})
+
+module.exports = router

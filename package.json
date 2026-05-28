@@ -1,0 +1,24 @@
+{
+  "name": "rtc-enterprise",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "db:host:wsl": "node scripts/use-wsl-mysql-host.js",
+    "db:init": "npm --prefix backend run db:init",
+    "db:seed": "npm --prefix backend run db:seed",
+    "dev": "node scripts/dev.js",
+    "start": "node scripts/dev.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:start": "npm --prefix backend start",
+    "frontend:dev": "npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173",
+    "frontend:preview": "npm --prefix frontend run preview -- --host 127.0.0.1 --port 4173",
+    "backend:check": "npm --prefix backend run check",
+    "frontend:check": "npm --prefix frontend run check",
+    "check": "npm --prefix backend run check && npm --prefix frontend run check",
+    "health": "node scripts/health.js",
+    "e2e": "npm --prefix backend run e2e"
+  }
+}
