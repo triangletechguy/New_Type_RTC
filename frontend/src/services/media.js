@@ -52,7 +52,7 @@ function normalizeMediaMode(value) {
 
 function getMediaApiUnavailableMessage() {
   if (window.isSecureContext === false) {
-    return 'Camera access requires HTTPS on a deployed server. Open the app on an HTTPS domain, then allow camera and microphone permissions.'
+    return 'Your browser blocks local camera access on this HTTP site. Use an HTTPS domain; the camera will be your PC camera, not the VPS camera.'
   }
 
   return 'This browser does not expose camera and microphone access.'

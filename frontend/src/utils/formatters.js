@@ -5,6 +5,28 @@ export function formatDuration(seconds) {
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
 }
 
+export function getInitials(value) {
+  return String(value || 'U')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U'
+}
+
+export function formatChatTime(value) {
+  if (!value) return ''
+
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value))
+  } catch {
+    return ''
+  }
+}
+
 export function formatElapsed(seconds) {
   const totalSeconds = Math.max(0, Number(seconds || 0))
   const hours = Math.floor(totalSeconds / 3600)
