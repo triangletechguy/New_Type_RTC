@@ -135,7 +135,7 @@ function normalizeMediaMode(value) {
 function getInitialMediaMode() {
   const configuredMode = normalizeMediaMode(import.meta.env.VITE_MEDIA_MODE)
   if (import.meta.env.VITE_MEDIA_MODE) return configuredMode
-  return normalizeMediaMode(localStorage.getItem('media_mode'))
+  return 'real'
 }
 
 function formatRoomDate(value) {
@@ -1031,6 +1031,8 @@ function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
+  const composerRef = useRef(null)
+  const refocusComposerRef = useRef(false)
   const typingTimeoutRef = useRef(null)
 
   const realtimeConnected = Boolean(socket?.connected && signalingRoom)
@@ -1116,6 +1118,7 @@ function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
       })
       appendMessage(data.chat_message)
       setText('')
+      refocusComposerRef.current = true
       emitTyping(false)
       window.clearTimeout(typingTimeoutRef.current)
 
@@ -1193,6 +1196,13 @@ function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
   }, [messages.length])
+
+  useEffect(() => {
+    if (!sending && refocusComposerRef.current) {
+      refocusComposerRef.current = false
+      composerRef.current?.focus()
+    }
+  }, [sending])
 
   useEffect(() => {
     if (!socket) return undefined
@@ -1288,6 +1298,7 @@ function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
 
       <form className="chat-form" onSubmit={sendMessage}>
         <textarea
+          ref={composerRef}
           value={text}
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
@@ -2104,9 +2115,9 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
             })}
           </div>
           <select value={mediaMode} onChange={(event) => setAndStoreMediaMode(event.target.value)} disabled={joined || joining}>
-            <option value="mock">Mock media</option>
-            <option value="auto">Auto fallback</option>
             <option value="real">Real camera/mic</option>
+            <option value="auto">Auto fallback</option>
+            <option value="mock">Mock media</option>
           </select>
           <button onClick={handleBack} disabled={joining}>Back</button>
         </div>
