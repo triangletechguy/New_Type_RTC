@@ -1,4 +1,17 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+function defaultApiBaseUrl() {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api'
+
+  const { hostname, port, protocol, origin } = window.location
+  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
+
+  if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
+    return `${protocol}//${hostname}:8000/api`
+  }
+
+  return `${origin}/api`
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl()
 
 export function getToken() {
   return localStorage.getItem('rtc_access_token') || ''

@@ -1,6 +1,19 @@
 import { io } from 'socket.io-client'
 
-const SIGNALING_SERVER_URL = import.meta.env.VITE_SIGNALING_SERVER_URL || 'http://127.0.0.1:8000'
+function defaultSignalingServerUrl() {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:8000'
+
+  const { hostname, port, protocol, origin } = window.location
+  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
+
+  if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
+    return `${protocol}//${hostname}:8000`
+  }
+
+  return origin
+}
+
+const SIGNALING_SERVER_URL = import.meta.env.VITE_SIGNALING_SERVER_URL || defaultSignalingServerUrl()
 
 export function createSignalingSocket() {
   return io(SIGNALING_SERVER_URL, {
