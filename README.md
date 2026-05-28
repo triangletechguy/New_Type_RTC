@@ -66,8 +66,9 @@ sessions, chat messages, moderation examples, and verified usage logs.
 
 - Use `http://localhost:5173` locally, not HTTPS.
 - Backend and Socket.IO signaling run together on `http://127.0.0.1:8000`.
-- Frontend uses `VITE_MEDIA_MODE=mock` by default, so it works even without a camera.
-- Change `VITE_MEDIA_MODE=real` in `frontend/.env` to use real camera/microphone.
+- Frontend uses `VITE_MEDIA_MODE=real` by default for real camera/microphone.
+- Use `VITE_MEDIA_MODE=mock` in `frontend/.env` only when you need a generated test stream.
+- Browsers require HTTPS for real camera/microphone access on deployed servers.
 
 ## WSL Ubuntu run order
 

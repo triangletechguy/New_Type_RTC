@@ -128,6 +128,16 @@ function normalizeRtcMode(value, room) {
   return nextMode
 }
 
+function normalizeMediaMode(value) {
+  return ['real', 'auto', 'mock'].includes(value) ? value : 'real'
+}
+
+function getInitialMediaMode() {
+  const configuredMode = normalizeMediaMode(import.meta.env.VITE_MEDIA_MODE)
+  if (import.meta.env.VITE_MEDIA_MODE) return configuredMode
+  return normalizeMediaMode(localStorage.getItem('media_mode'))
+}
+
 function formatRoomDate(value) {
   if (!value) return 'New'
 
@@ -320,12 +330,24 @@ function VideoTile({ stream, label, muted = false, badge, micOn = true, cameraOn
   const initials = getInitials(label)
 
   useEffect(() => {
-    if (videoRef.current && stream && showVideo) {
-      videoRef.current.srcObject = stream
+    const video = videoRef.current
+
+    if (video && stream && showVideo) {
+      if (video.srcObject !== stream) video.srcObject = stream
+      const playPromise = video.play()
+      if (playPromise?.catch) playPromise.catch(() => {})
+    } else if (video) {
+      video.srcObject = null
     }
 
-    if (audioRef.current && stream && !showVideo) {
-      audioRef.current.srcObject = stream
+    const audio = audioRef.current
+
+    if (audio && stream && !showVideo) {
+      if (audio.srcObject !== stream) audio.srcObject = stream
+      const playPromise = audio.play()
+      if (playPromise?.catch) playPromise.catch(() => {})
+    } else if (audio) {
+      audio.srcObject = null
     }
   }, [stream, showVideo])
 
@@ -443,7 +465,7 @@ function LoginScreen({ onLogin }) {
         <div className="showcase-stats">
           <div><span>Latency</span><strong>Low</strong></div>
           <div><span>Rooms</span><strong>Live</strong></div>
-          <div><span>Mode</span><strong>{import.meta.env.VITE_MEDIA_MODE || 'Mock'}</strong></div>
+          <div><span>Mode</span><strong>{import.meta.env.VITE_MEDIA_MODE || 'Real'}</strong></div>
         </div>
       </section>
 
@@ -1620,7 +1642,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const [signalingState, setSignalingState] = useState(autoConnect ? 'connecting' : 'idle')
   const [mediaState, setMediaState] = useState('idle')
   const [mediaUpdating, setMediaUpdating] = useState({ mic: false, camera: false })
-  const [mediaMode, setMediaMode] = useState(localStorage.getItem('media_mode') || import.meta.env.VITE_MEDIA_MODE || 'mock')
+  const [mediaMode, setMediaMode] = useState(getInitialMediaMode)
   const [rtcMode, setRtcMode] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom))
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom) === 'video')

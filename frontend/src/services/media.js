@@ -1,5 +1,5 @@
 export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'video') {
-  const requestedMediaMode = mediaMode || import.meta.env.VITE_MEDIA_MODE || 'real'
+  const requestedMediaMode = normalizeMediaMode(mediaMode || import.meta.env.VITE_MEDIA_MODE || 'real')
   const requestedRtcMode = rtcMode === 'audio' ? 'audio' : 'video'
 
   if (requestedMediaMode === 'mock') {
@@ -11,10 +11,14 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
   }
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (requestedMediaMode === 'real') {
+      throw new Error(getMediaApiUnavailableMessage())
+    }
+
     return {
       stream: createMockMediaStream(requestedRtcMode),
       mode: 'mock',
-      warning: 'Browser media API unavailable. Mock media started instead.',
+      warning: `${getMediaApiUnavailableMessage()} Mock media started instead.`,
     }
   }
 
@@ -31,15 +35,45 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
     }
   } catch (error) {
     if (requestedMediaMode === 'real') {
-      throw error
+      throw new Error(formatMediaError(error, requestedRtcMode))
     }
 
     return {
       stream: createMockMediaStream(requestedRtcMode),
       mode: 'mock',
-      warning: `${error.name || 'MediaError'}: ${error.message || 'Real camera/mic failed. Mock media started instead.'}`,
+      warning: `${formatMediaError(error, requestedRtcMode)} Mock media started instead.`,
     }
   }
+}
+
+function normalizeMediaMode(value) {
+  return ['real', 'mock', 'auto'].includes(value) ? value : 'real'
+}
+
+function getMediaApiUnavailableMessage() {
+  if (window.isSecureContext === false) {
+    return 'Camera access requires HTTPS on a deployed server. Open the app on an HTTPS domain, then allow camera and microphone permissions.'
+  }
+
+  return 'This browser does not expose camera and microphone access.'
+}
+
+function formatMediaError(error, rtcMode) {
+  const mediaLabel = rtcMode === 'audio' ? 'microphone' : 'camera/microphone'
+
+  if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+    return `Permission denied for ${mediaLabel}. Allow browser permissions and try again.`
+  }
+
+  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+    return `No ${mediaLabel} device was found.`
+  }
+
+  if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
+    return `The ${mediaLabel} is already in use by another app or browser tab.`
+  }
+
+  return `${error?.name || 'MediaError'}: ${error?.message || `Unable to start ${mediaLabel}.`}`
 }
 
 function createMockMediaStream(rtcMode = 'video') {
