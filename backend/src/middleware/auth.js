@@ -32,6 +32,17 @@ async function authMiddleware(req, res, next) {
       return res.status(403).json({ message: 'Your account is not active.' })
     }
 
+    const roles = await query(
+      `
+      SELECT roles.name
+      FROM user_roles
+      JOIN roles ON roles.id = user_roles.role_id
+      WHERE user_roles.user_id = :userId
+      `,
+      { userId: user.id }
+    )
+
+    user.roles = roles.map((role) => role.name)
     req.user = user
     next()
   } catch (error) {

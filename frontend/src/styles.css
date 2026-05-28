@@ -1785,10 +1785,36 @@ pre {
 
 .typing-line {
   min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 16px 4px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
+}
+
+.typing-line::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, .7);
+}
+
+.typing-line.active {
+  color: #bfdbfe;
+}
+
+.typing-line.active::before {
+  background: var(--sky);
+  box-shadow: 0 0 0 5px rgba(56, 189, 248, .14);
+  animation: typingPulse 1s ease-in-out infinite;
+}
+
+@keyframes typingPulse {
+  0%, 100% { transform: scale(.82); opacity: .65; }
+  50% { transform: scale(1); opacity: 1; }
 }
 
 .chat-form {

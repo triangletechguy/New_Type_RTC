@@ -27,6 +27,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
   const canSend = chatEnabled && Boolean(text.trim()) && !sending
+  const typingText = typingNames.length
+    ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
+    : realtimeConnected ? 'No one is typing' : 'Typing status starts after RTC connects'
 
   function appendMessage(message) {
     if (!message?.id) return
@@ -171,6 +174,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     }
   }
 
+  function stopTyping() {
+    window.clearTimeout(typingTimeoutRef.current)
+    emitTyping(false)
+  }
+
   useEffect(() => {
     setChatEnabled(room?.chat_enabled !== false)
   }, [room?.chat_enabled])
@@ -235,7 +243,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
           <h3>Live Chat</h3>
         </div>
         <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
-          {realtimeConnected ? 'Realtime' : 'Saved'}
+          {typingNames.length ? 'Typing' : realtimeConnected ? 'Realtime' : 'Saved'}
         </span>
       </div>
 
@@ -278,8 +286,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="typing-line">
-        {typingNames.length ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing` : '\u00a0'}
+      <div className={typingNames.length ? 'typing-line active' : 'typing-line'}>
+        {typingText}
       </div>
 
       <form className="chat-form" onSubmit={sendMessage}>
@@ -288,6 +296,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
           value={text}
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
+          onBlur={stopTyping}
           placeholder={chatEnabled ? 'Message this room' : 'Chat is disabled'}
           maxLength={1200}
           rows={2}

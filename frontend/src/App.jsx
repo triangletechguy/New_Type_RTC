@@ -1215,6 +1215,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const activeRoomIdRef = useRef(null)
   const signalingRoomRef = useRef(null)
   const joinedRef = useRef(false)
+  const negotiatedPeersRef = useRef(new Set())
 
   const remoteList = useMemo(() => Object.entries(remoteStreams), [remoteStreams])
   const liveRoomSupportsVideo = !room || roomSupportsVideo(room.room_type)
@@ -1245,6 +1246,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
     stopMediaStream(streamRef.current)
     streamRef.current = null
     signalingRoomRef.current = null
+    negotiatedPeersRef.current.clear()
     if (clearState) {
       setLocalStream(null)
       setRemoteStreams({})
@@ -1293,6 +1295,29 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
     }
 
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
+  }
+
+  async function negotiateExistingUsers(existingUsers, rtcClient) {
+    const peers = Array.isArray(existingUsers) ? existingUsers : []
+    setSignalingPeerCount(peers.length)
+    setPeerMediaStates(peerMediaMapFromUsers(peers))
+    if (!peers.length) return
+
+    setStatus(`Negotiating ${peers.length} peer connection(s)...`)
+
+    for (const remoteUser of peers) {
+      if (!remoteUser?.socketId || negotiatedPeersRef.current.has(remoteUser.socketId)) continue
+
+      negotiatedPeersRef.current.add(remoteUser.socketId)
+
+      try {
+        await rtcClient.createOffer(remoteUser.socketId)
+      } catch (error) {
+        negotiatedPeersRef.current.delete(remoteUser.socketId)
+        setConnectionIssue(`Peer negotiation failed: ${error.message}`)
+        setStatus(`Peer negotiation failed: ${error.message}`)
+      }
+    }
   }
 
   async function joinRoom() {
@@ -1393,20 +1418,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       })
 
       socket.on('existing-users', async ({ users }) => {
-        const existingUsers = Array.isArray(users) ? users : []
-        setSignalingPeerCount(existingUsers.length)
-        setPeerMediaStates(peerMediaMapFromUsers(existingUsers))
-        if (!existingUsers.length) return
-
-        setStatus(`Negotiating ${existingUsers.length} peer connection(s)...`)
-        for (const remoteUser of existingUsers) {
-          try {
-            await rtcClient.createOffer(remoteUser.socketId)
-          } catch (error) {
-            setConnectionIssue(`Peer negotiation failed: ${error.message}`)
-            setStatus(`Peer negotiation failed: ${error.message}`)
-          }
-        }
+        await negotiateExistingUsers(users, rtcClient)
       })
 
       socket.on('user-joined', (payload) => {
@@ -1522,8 +1534,11 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       })
 
       const peerCount = Array.isArray(signalingJoin.users) ? signalingJoin.users.length : 0
-      setSignalingPeerCount(peerCount)
-      setPeerMediaStates(peerMediaMapFromUsers(signalingJoin.users || []))
+      if (peerCount) await negotiateExistingUsers(signalingJoin.users, rtcClient)
+      else {
+        setSignalingPeerCount(0)
+        setPeerMediaStates({})
+      }
       setConnectStep('connected')
       setJoined(true)
       setSignalingState('connected')

@@ -1,6 +1,40 @@
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-]
+function splitUrls(value) {
+  return String(value || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean)
+}
+
+function buildIceServers() {
+  const configuredIceServers = import.meta.env.VITE_ICE_SERVERS
+
+  if (configuredIceServers) {
+    try {
+      const parsed = JSON.parse(configuredIceServers)
+      if (Array.isArray(parsed) && parsed.length) return parsed
+    } catch {
+      // Fall through to the individual env vars below.
+    }
+  }
+
+  const stunUrls = splitUrls(import.meta.env.VITE_STUN_URLS || 'stun:stun.l.google.com:19302')
+  const turnUrls = splitUrls(import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL)
+  const iceServers = []
+
+  if (stunUrls.length) iceServers.push({ urls: stunUrls })
+
+  if (turnUrls.length) {
+    iceServers.push({
+      urls: turnUrls,
+      username: import.meta.env.VITE_TURN_USERNAME || '',
+      credential: import.meta.env.VITE_TURN_CREDENTIAL || '',
+    })
+  }
+
+  return iceServers
+}
+
+const ICE_SERVERS = buildIceServers()
 
 export class NativeRtcClient {
   constructor({ socket, localStream, onRemoteStream, onPeerState }) {
@@ -25,7 +59,10 @@ export class NativeRtcClient {
       return this.peerConnections[remoteSocketId]
     }
 
-    const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    const peerConnection = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 4,
+    })
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {
