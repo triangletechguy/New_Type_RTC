@@ -232,6 +232,32 @@ release_web_ports() {
   sudo systemctl enable nginx >/dev/null 2>&1 || true
 }
 
+open_web_firewall() {
+  if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q 'Status: active'; then
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+  fi
+}
+
+restart_nginx() {
+  sudo nginx -t
+
+  if ! sudo systemctl restart nginx; then
+    sudo systemctl status nginx --no-pager -l || true
+    sudo journalctl -xeu nginx.service --no-pager -n 100 || true
+    sudo ss -ltnp 2>/dev/null | awk 'NR == 1 || $4 ~ /:80$/ || $4 ~ /:443$/ { print }' || true
+    exit 1
+  fi
+
+  sleep 1
+  if command -v ss >/dev/null 2>&1 && ! sudo ss -ltnp | awk '$4 ~ /:80$/ || $4 ~ /:443$/ { found = 1 } END { exit found ? 0 : 1 }'; then
+    printf 'nginx restarted, but it is not listening on port 80 or 443.\n' >&2
+    sudo systemctl status nginx --no-pager -l || true
+    sudo journalctl -xeu nginx.service --no-pager -n 100 || true
+    exit 1
+  fi
+}
+
 write_frontend_env() {
   log "Writing frontend production environment"
 
@@ -377,15 +403,7 @@ EOF
 
   sudo ln -sf "$nginx_site" /etc/nginx/sites-enabled/rtc-enterprise
   sudo rm -f /etc/nginx/sites-enabled/default
-  sudo nginx -t
-  if ! sudo systemctl reload nginx; then
-    if ! sudo systemctl restart nginx; then
-      sudo systemctl status nginx --no-pager -l || true
-      sudo journalctl -xeu nginx.service --no-pager -n 80 || true
-      sudo ss -ltnp 2>/dev/null | awk 'NR == 1 || $4 ~ /:80$/ || $4 ~ /:443$/ { print }' || true
-      exit 1
-    fi
-  fi
+  restart_nginx
 }
 
 ensure_https_certificate() {
@@ -408,7 +426,7 @@ ensure_https_certificate() {
     sudo apt-get install -y certbot
   fi
 
-  sudo systemctl restart nginx
+  restart_nginx
   sudo certbot certonly \
     --webroot \
     --webroot-path "$WEB_ROOT" \
@@ -417,6 +435,25 @@ ensure_https_certificate() {
     --agree-tos \
     --register-unsafely-without-email \
     --keep-until-expiring
+
+  if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
+    log "Certificate metadata exists but nginx certificate files are missing; forcing certificate repair"
+
+    sudo certbot certonly \
+      --webroot \
+      --webroot-path "$WEB_ROOT" \
+      -d "$PUBLIC_HOST" \
+      --non-interactive \
+      --agree-tos \
+      --register-unsafely-without-email \
+      --force-renewal
+  fi
+
+  if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
+    sudo certbot certificates || true
+    printf 'HTTPS certificate files were not created at %s and %s.\n' "$ssl_cert" "$ssl_key" >&2
+    exit 1
+  fi
 
   write_nginx_config
 }
@@ -456,6 +493,7 @@ main() {
   write_frontend_env
   install_and_build
   release_web_ports
+  open_web_firewall
   write_nginx_config
   ensure_https_certificate
   restart_backend
