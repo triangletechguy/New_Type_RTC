@@ -1374,12 +1374,72 @@ pre {
   color: var(--soft);
   font-weight: 900;
   margin-bottom: 14px;
+  gap: 12px;
+}
+
+.stage-toolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.stage-toolbar small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.stage-layout-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.stage-layout-button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-color: var(--line);
+  font-size: 12px;
+}
+
+.stage-layout-button.active {
+  border-color: rgba(56, 189, 248, .5);
+  background: rgba(56, 189, 248, .18);
 }
 
 .video-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.video-grid.layout-focus {
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr);
+}
+
+.video-grid.layout-focus .video-tile:first-child {
+  grid-row: span 2;
+}
+
+.video-grid.layout-cinema {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.video-grid.layout-cinema .video-tile {
+  min-height: 420px;
+}
+
+.video-grid.layout-side {
+  grid-template-columns: minmax(260px, .7fr) minmax(0, 1.3fr);
+}
+
+.video-grid.layout-side .video-tile:first-child {
+  min-height: 260px;
+}
+
+.video-grid.layout-side .video-tile:first-child .video-element,
+.video-grid.layout-side .video-tile:first-child .video-placeholder {
+  min-height: 260px;
 }
 
 .video-tile {
@@ -1418,6 +1478,30 @@ pre {
   padding: 24px;
   color: #94a3b8;
   text-align: center;
+}
+
+.tile-state-text {
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  background: rgba(148, 163, 184, .12);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 1000;
+  text-transform: capitalize;
+}
+
+.tile-state-text.failed,
+.tile-state-text.disconnected {
+  border-color: rgba(239, 68, 68, .34);
+  background: rgba(239, 68, 68, .14);
+  color: #fecaca;
+}
+
+.tile-state-text.connected {
+  border-color: rgba(52, 211, 153, .34);
+  background: rgba(52, 211, 153, .14);
+  color: #bbf7d0;
 }
 
 .media-avatar-panel {
@@ -2945,6 +3029,15 @@ pre {
   .usage-dashboard-grid,
   .video-grid {
     grid-template-columns: 1fr;
+  }
+
+  .video-grid.layout-focus,
+  .video-grid.layout-side {
+    grid-template-columns: 1fr;
+  }
+
+  .video-grid.layout-focus .video-tile:first-child {
+    grid-row: auto;
   }
 
   .usage-check-grid {

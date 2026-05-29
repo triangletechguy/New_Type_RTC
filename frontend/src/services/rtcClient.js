@@ -44,6 +44,7 @@ export class NativeRtcClient {
     this.onPeerState = onPeerState
     this.peerConnections = {}
     this.pendingCandidates = {}
+    this.remoteMediaStreams = {}
   }
 
   emitPeerState(remoteSocketId, peerConnection) {
@@ -80,7 +81,14 @@ export class NativeRtcClient {
     }
 
     peerConnection.ontrack = (event) => {
-      const [stream] = event.streams
+      const [eventStream] = event.streams
+      const stream = eventStream || this.remoteMediaStreams[remoteSocketId] || new MediaStream()
+
+      if (!eventStream) {
+        stream.addTrack(event.track)
+        this.remoteMediaStreams[remoteSocketId] = stream
+      }
+
       if (stream && this.onRemoteStream) {
         this.onRemoteStream(remoteSocketId, stream)
       }
@@ -101,6 +109,9 @@ export class NativeRtcClient {
 
   async createOffer(remoteSocketId) {
     const peerConnection = this.createPeerConnection(remoteSocketId)
+
+    if (peerConnection.signalingState !== 'stable') return false
+
     const offer = await peerConnection.createOffer()
     await peerConnection.setLocalDescription(offer)
 
@@ -108,10 +119,17 @@ export class NativeRtcClient {
       targetSocketId: remoteSocketId,
       offer,
     })
+
+    return true
   }
 
   async handleOffer(fromSocketId, offer) {
     const peerConnection = this.createPeerConnection(fromSocketId)
+
+    if (peerConnection.signalingState !== 'stable') {
+      await peerConnection.setLocalDescription({ type: 'rollback' }).catch(() => {})
+    }
+
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
     await this.flushPendingCandidates(fromSocketId)
 
@@ -127,6 +145,7 @@ export class NativeRtcClient {
   async handleAnswer(fromSocketId, answer) {
     const peerConnection = this.peerConnections[fromSocketId]
     if (!peerConnection) return
+    if (peerConnection.signalingState !== 'have-local-offer') return
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
     await this.flushPendingCandidates(fromSocketId)
@@ -174,11 +193,15 @@ export class NativeRtcClient {
       if (this.onPeerState) this.onPeerState(remoteSocketId, 'closed')
       delete this.peerConnections[remoteSocketId]
     }
+
+    delete this.pendingCandidates[remoteSocketId]
+    delete this.remoteMediaStreams[remoteSocketId]
   }
 
   closeAll() {
     Object.values(this.peerConnections).forEach((peerConnection) => peerConnection.close())
     this.peerConnections = {}
     this.pendingCandidates = {}
+    this.remoteMediaStreams = {}
   }
 }

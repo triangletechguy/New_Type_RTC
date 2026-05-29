@@ -81,6 +81,13 @@ const rtcConnectSteps = [
   { value: 'connected', label: 'Live' },
 ]
 
+const stageLayoutOptions = [
+  { value: 'grid', label: 'Grid' },
+  { value: 'focus', label: 'Focus' },
+  { value: 'cinema', label: 'Cinema' },
+  { value: 'side', label: 'Side' },
+]
+
 const defaultRoomForm = {
   name: 'talk-each-other Live Room',
   description: 'A hosted room for live video, music, chat, and creator collaboration.',
@@ -1105,16 +1112,40 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const [cameraOn, setCameraOn] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom) === 'video')
   const [roomPasswordInput, setRoomPasswordInput] = useState(roomPassword)
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false)
+  const [stageLayout, setStageLayout] = useState('grid')
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
   const streamRef = useRef(null)
   const activeRoomIdRef = useRef(null)
   const signalingRoomRef = useRef(null)
+  const localSocketIdRef = useRef(null)
   const joinedRef = useRef(false)
   const negotiatedPeersRef = useRef(new Set())
 
-  const remoteList = useMemo(() => Object.entries(remoteStreams), [remoteStreams])
+  const remoteTiles = useMemo(() => {
+    const socketIds = new Set([
+      ...Object.keys(peerMediaStates),
+      ...Object.keys(peerStates),
+      ...Object.keys(remoteStreams),
+    ])
+
+    return Array.from(socketIds).map((socketId) => {
+      const mediaState = peerMediaStates[socketId] || {}
+      const peerState = peerStates[socketId] || (remoteStreams[socketId] ? 'connected' : 'waiting')
+
+      return {
+        socketId,
+        stream: remoteStreams[socketId],
+        mediaState,
+        peerState,
+        label: `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerState}`,
+      }
+    })
+  }, [peerMediaStates, peerStates, remoteStreams])
+  const remoteStreamCount = Object.keys(remoteStreams).length
+  const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
+  const stageSeatCount = Math.min(16, Math.max(1, Number(room?.max_mic_count || 8)))
   const liveRoomSupportsVideo = !room || roomSupportsVideo(room.room_type)
 
   function setAndStoreMediaMode(value) {
@@ -1143,6 +1174,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
     stopMediaStream(streamRef.current)
     streamRef.current = null
     signalingRoomRef.current = null
+    localSocketIdRef.current = null
     negotiatedPeersRef.current.clear()
     if (clearState) {
       setLocalStream(null)
@@ -1194,26 +1226,46 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
+  function shouldInitiatePeer(remoteSocketId) {
+    const localSocketId = localSocketIdRef.current || socketRef.current?.id || ''
+    if (!remoteSocketId || !localSocketId) return true
+    return localSocketId < remoteSocketId
+  }
+
+  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
+    if (!remoteSocketId || negotiatedPeersRef.current.has(remoteSocketId)) return
+
+    if (!shouldInitiatePeer(remoteSocketId)) {
+      setPeerStates((previous) => previous[remoteSocketId] ? previous : { ...previous, [remoteSocketId]: 'waiting' })
+      return
+    }
+
+    negotiatedPeersRef.current.add(remoteSocketId)
+    setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'negotiating' }))
+
+    try {
+      const offerSent = await rtcClient.createOffer(remoteSocketId)
+      if (offerSent === false) {
+        negotiatedPeersRef.current.delete(remoteSocketId)
+        setPeerStates((previous) => ({ ...previous, [remoteSocketId]: 'waiting' }))
+      }
+    } catch (error) {
+      negotiatedPeersRef.current.delete(remoteSocketId)
+      setConnectionIssue(`${label} negotiation failed: ${error.message}`)
+      setStatus(`${label} negotiation failed: ${error.message}`)
+    }
+  }
+
   async function negotiateExistingUsers(existingUsers, rtcClient) {
     const peers = Array.isArray(existingUsers) ? existingUsers : []
     setSignalingPeerCount(peers.length)
     setPeerMediaStates(peerMediaMapFromUsers(peers))
     if (!peers.length) return
 
-    setStatus(`Negotiating ${peers.length} peer connection(s)...`)
+    setStatus(`Found ${peers.length} peer connection${peers.length === 1 ? '' : 's'}...`)
 
     for (const remoteUser of peers) {
-      if (!remoteUser?.socketId || negotiatedPeersRef.current.has(remoteUser.socketId)) continue
-
-      negotiatedPeersRef.current.add(remoteUser.socketId)
-
-      try {
-        await rtcClient.createOffer(remoteUser.socketId)
-      } catch (error) {
-        negotiatedPeersRef.current.delete(remoteUser.socketId)
-        setConnectionIssue(`Peer negotiation failed: ${error.message}`)
-        setStatus(`Peer negotiation failed: ${error.message}`)
-      }
+      await beginPeerNegotiation(remoteUser?.socketId, rtcClient, 'Peer')
     }
   }
 
@@ -1276,13 +1328,14 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         onRemoteStream: (remoteSocketId, remoteStream) => setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream })),
         onPeerState: (remoteSocketId, state) => {
           setPeerStates((previous) => ({ ...previous, [remoteSocketId]: state }))
-          if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed.`)
+          if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
         },
       })
       rtcRef.current = rtcClient
 
       socket.on('connect', () => {
         if (socketRef.current === socket) {
+          localSocketIdRef.current = socket.id
           setSignalingState('connected')
           setConnectionIssue('')
         }
@@ -1314,18 +1367,21 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         }
       })
 
-      socket.on('existing-users', async ({ users }) => {
+      socket.on('existing-users', async ({ socketId, users }) => {
+        if (socketId) localSocketIdRef.current = socketId
         await negotiateExistingUsers(users, rtcClient)
       })
 
-      socket.on('user-joined', (payload) => {
+      socket.on('user-joined', async (payload) => {
         const { socketId } = payload
         setSignalingPeerCount((count) => count + 1)
         setPeerMediaStates((previous) => ({ ...previous, [socketId]: peerMediaFromSignal(payload) }))
         setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
+        await beginPeerNegotiation(socketId, rtcClient, 'Peer')
       })
       socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
         try {
+          negotiatedPeersRef.current.add(fromSocketId)
           await rtcClient.handleOffer(fromSocketId, offer)
         } catch (error) {
           setConnectionIssue(`Offer failed: ${error.message}`)
@@ -1430,6 +1486,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         cameraEnabled: joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled),
       })
 
+      localSocketIdRef.current = signalingJoin.socketId || socket.id
       const peerCount = Array.isArray(signalingJoin.users) ? signalingJoin.users.length : 0
       if (peerCount) await negotiateExistingUsers(signalingJoin.users, rtcClient)
       else {
@@ -1609,10 +1666,24 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       <main className="live-layout">
         <section className="stage glass-card">
           <div className="stage-toolbar">
-            <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>
-            <span>{remoteList.length} remote peer(s)</span>
+            <div>
+              <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>
+              <small>{remoteStreamCount} stream(s) · {remotePeerCount} remote peer(s)</small>
+            </div>
+            <div className="stage-layout-controls" role="group" aria-label="Stage layout">
+              {stageLayoutOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={stageLayout === option.value ? 'stage-layout-button active' : 'stage-layout-button'}
+                  onClick={() => setStageLayout(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="video-grid">
+          <div className={`video-grid layout-${stageLayout}`}>
             <VideoTile
               stream={localStream}
               muted
@@ -1623,20 +1694,18 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
               rtcMode={rtcMode}
               showMediaState
             />
-            {remoteList.length === 0 ? (
+            {remoteTiles.length === 0 ? (
               <VideoTile label="Waiting for remote users" />
-            ) : remoteList.map(([socketId, stream]) => {
-              const mediaState = peerMediaStates[socketId] || {}
-              const remoteLabel = `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerStates[socketId] || 'connecting'}`
-
+            ) : remoteTiles.map(({ socketId, stream, mediaState, peerState, label }) => {
               return (
                 <VideoTile
                   key={socketId}
                   stream={stream}
-                  label={remoteLabel}
+                  label={label}
                   micOn={mediaState.micOn !== false}
                   cameraOn={mediaState.cameraOn !== false}
                   rtcMode={mediaState.rtcMode || 'video'}
+                  connectionState={peerState}
                   showMediaState
                 />
               )
@@ -1644,7 +1713,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
           </div>
 
           <div className="mic-seat-row">
-            {Array.from({ length: 8 }).map((_, index) => (
+            {Array.from({ length: stageSeatCount }).map((_, index) => (
               <div className="mic-seat" key={index}>
                 <div>{index + 1}</div><span>Seat {index + 1}</span>
               </div>

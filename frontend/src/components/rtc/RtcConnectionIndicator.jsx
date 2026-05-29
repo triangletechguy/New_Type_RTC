@@ -8,7 +8,7 @@ function countByState(peerStates = {}) {
 
 function subsystemClass(state) {
   if (['ready', 'connected', 'live'].includes(state)) return 'ready'
-  if (['starting', 'connecting', 'negotiating', 'reconnecting'].includes(state)) return 'working'
+  if (['starting', 'connecting', 'negotiating', 'waiting', 'reconnecting'].includes(state)) return 'working'
   if (['warning', 'degraded', 'disconnected', 'failed', 'error'].includes(state)) return 'attention'
   return 'idle'
 }
@@ -17,7 +17,7 @@ function buildPeerSummary(peerStates, remoteStreams, signalingPeerCount) {
   const counts = countByState(peerStates)
   const connected = counts.connected || 0
   const failed = (counts.failed || 0) + (counts.disconnected || 0)
-  const connecting = (counts.connecting || 0) + (counts.new || 0)
+  const connecting = (counts.connecting || 0) + (counts.new || 0) + (counts.negotiating || 0) + (counts.waiting || 0)
   const remoteStreamCount = Object.keys(remoteStreams || {}).length
 
   if (failed > 0) {

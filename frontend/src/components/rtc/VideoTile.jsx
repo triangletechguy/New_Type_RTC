@@ -1,7 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { getInitials } from '../../utils/formatters'
 
-export function VideoTile({ stream, label, muted = false, badge, micOn = true, cameraOn = true, rtcMode = 'video', showMediaState = false }) {
+export function VideoTile({
+  stream,
+  label,
+  muted = false,
+  badge,
+  micOn = true,
+  cameraOn = true,
+  rtcMode = 'video',
+  showMediaState = false,
+  connectionState = '',
+}) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
@@ -54,6 +64,13 @@ export function VideoTile({ stream, label, muted = false, badge, micOn = true, c
         <div className="video-placeholder">
           <div className="avatar-stage">
             <div className="avatar-ring idle"><div className="avatar-core">{initials}</div></div>
+            {showMediaState && (
+              <div className="media-state-strip">
+                <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
+                <span className={cameraOn && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+              </div>
+            )}
+            {connectionState && <span className={`tile-state-text ${connectionState}`}>{connectionState}</span>}
           </div>
           <span>{label}</span>
         </div>
