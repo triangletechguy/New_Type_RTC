@@ -35,9 +35,10 @@ function buildIceServers() {
 }
 
 export class NativeRtcClient {
-  constructor({ socket, localStream, iceServers, iceTransportPolicy = 'all', onRemoteStream, onPeerState }) {
+  constructor({ socket, localStream, rtcMode = 'video', iceServers, iceTransportPolicy = 'all', onRemoteStream, onPeerState }) {
     this.socket = socket
     this.localStream = localStream
+    this.rtcMode = rtcMode === 'audio' ? 'audio' : 'video'
     this.iceServers = Array.isArray(iceServers) && iceServers.length ? iceServers : buildIceServers()
     this.iceTransportPolicy = iceTransportPolicy === 'relay' ? 'relay' : 'all'
     this.onRemoteStream = onRemoteStream
@@ -68,10 +69,22 @@ export class NativeRtcClient {
       iceCandidatePoolSize: 4,
     })
 
+    const localTracks = this.localStream?.getTracks?.() || []
+    const hasLocalAudio = localTracks.some((track) => track.kind === 'audio')
+    const hasLocalVideo = localTracks.some((track) => track.kind === 'video')
+
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
+      localTracks.forEach((track) => {
         peerConnection.addTrack(track, this.localStream)
       })
+    }
+
+    if (!hasLocalAudio) {
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' })
+    }
+
+    if (this.rtcMode === 'video' && !hasLocalVideo) {
+      peerConnection.addTransceiver('video', { direction: 'recvonly' })
     }
 
     peerConnection.onicecandidate = (event) => {

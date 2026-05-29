@@ -124,6 +124,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
+  function hasLiveTrack(stream, kind) {
+    return stream?.getTracks?.().some((track) => track.kind === kind && track.readyState === 'live')
+  }
+
+  function hasLiveLocalTrack(kind) {
+    return hasLiveTrack(streamRef.current, kind)
+  }
+
   function applyLocalMediaState(nextMicOn, nextCameraOn) {
     rtcRef.current?.setAudioEnabled(nextMicOn)
     rtcRef.current?.setVideoEnabled(nextCameraOn)
@@ -312,8 +320,26 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       streamRef.current = media.stream
       setLocalStream(media.stream)
       setMediaState(media.warning ? 'warning' : 'ready')
-      media.stream.getAudioTracks().forEach((track) => { track.enabled = Boolean(joinData.rtc.mic_enabled) })
-      media.stream.getVideoTracks().forEach((track) => { track.enabled = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled) })
+
+      const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
+      const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
+      const actualMicOn = requestedMicOn && hasLiveTrack(media.stream, 'audio')
+      const actualCameraOn = requestedCameraOn && hasLiveTrack(media.stream, 'video')
+
+      setMicOn(actualMicOn)
+      setCameraOn(actualCameraOn)
+      media.stream.getAudioTracks().forEach((track) => { track.enabled = actualMicOn })
+      media.stream.getVideoTracks().forEach((track) => { track.enabled = actualCameraOn })
+
+      if (actualMicOn !== requestedMicOn || actualCameraOn !== requestedCameraOn) {
+        await apiRequest(`/rooms/${roomId}/media-state`, {
+          method: 'POST',
+          body: JSON.stringify({
+            mic_enabled: actualMicOn,
+            camera_enabled: actualCameraOn,
+          }),
+        }).catch((error) => setStatus(`Local media limited; state sync warning: ${error.message}`))
+      }
 
       setStatus('Loading TURN/ICE configuration...')
       const rtcConfig = await getRtcConfig().catch((error) => {
@@ -335,6 +361,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const rtcClient = new NativeRtcClient({
         socket,
         localStream: media.stream,
+        rtcMode: joinedRtcMode,
         iceServers: rtcConfig.iceServers,
         iceTransportPolicy: rtcConfig.iceTransportPolicy,
         onRemoteStream: handleRemoteStream,
@@ -497,8 +524,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         userId: user?.id,
         userName: user?.name || 'User',
         rtcMode: joinedRtcMode,
-        micEnabled: Boolean(joinData.rtc.mic_enabled),
-        cameraEnabled: joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled),
+        micEnabled: actualMicOn,
+        cameraEnabled: actualCameraOn,
       })
 
       localSocketIdRef.current = signalingJoin.socketId || socket.id
@@ -556,6 +583,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !micOn
     const previous = micOn
 
+    if (joined && next && !hasLiveLocalTrack('audio')) {
+      setStatus('Microphone is unavailable. Close the other app/browser tab using it, then leave and rejoin.')
+      return
+    }
+
     setMicOn(next)
     applyLocalMediaState(next, cameraOn)
 
@@ -578,6 +610,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (rtcMode === 'audio' || mediaUpdating.camera) return
     const next = !cameraOn
     const previous = cameraOn
+
+    if (joined && next && !hasLiveLocalTrack('video')) {
+      setStatus('Camera is unavailable. Close the other app/browser tab using it, then leave and rejoin.')
+      return
+    }
 
     setCameraOn(next)
     applyLocalMediaState(micOn, next)
@@ -618,6 +655,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     autoConnectAttemptedRef.current = true
     joinRoom()
   }, [])
+
+  const localAudioAvailable = hasLiveTrack(localStream, 'audio')
+  const localVideoAvailable = hasLiveTrack(localStream, 'video')
+  const micUnavailable = joined && !micOn && !localAudioAvailable
+  const cameraUnavailable = joined && rtcMode === 'video' && !cameraOn && !localVideoAvailable
+  const micButtonDisabled = joining || mediaUpdating.mic || micUnavailable
+  const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio' || cameraUnavailable
+  const micButtonTitle = micUnavailable
+    ? 'Microphone unavailable. Close the other app or tab using it, then reconnect.'
+    : mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'
+  const cameraButtonTitle = cameraUnavailable
+    ? 'Camera unavailable. Close the other app or tab using it, then reconnect.'
+    : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
 
   return (
     <div className="live-page">
@@ -774,20 +824,20 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <button
               className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
               onClick={toggleMic}
-              disabled={joining || mediaUpdating.mic}
-              aria-label={mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'}
+              disabled={micButtonDisabled}
+              aria-label={micButtonTitle}
               aria-pressed={micOn}
-              title={mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'}
+              title={micButtonTitle}
             >
               <span className="control-glyph mic"></span>
             </button>
             <button
               className={cameraOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
               onClick={toggleCamera}
-              disabled={joining || mediaUpdating.camera || rtcMode === 'audio'}
-              aria-label={mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'}
+              disabled={cameraButtonDisabled}
+              aria-label={cameraButtonTitle}
               aria-pressed={cameraOn}
-              title={mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'}
+              title={cameraButtonTitle}
             >
               <span className="control-glyph camera"></span>
             </button>

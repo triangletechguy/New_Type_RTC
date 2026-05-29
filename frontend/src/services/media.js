@@ -11,15 +11,18 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
   }
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    if (requestedMediaMode === 'real') {
-      throw new Error(getMediaApiUnavailableMessage())
-    }
-
-    return {
-      stream: createMockMediaStream(requestedRtcMode),
-      mode: 'mock',
-      warning: `${getMediaApiUnavailableMessage()} Mock media started instead.`,
-    }
+    const warning = `${getMediaApiUnavailableMessage()} Joined receive-only; remote audio/video can still work.`
+    return requestedMediaMode === 'auto'
+      ? {
+          stream: createMockMediaStream(requestedRtcMode),
+          mode: 'mock',
+          warning: `${getMediaApiUnavailableMessage()} Mock media started instead.`,
+        }
+      : {
+          stream: createEmptyMediaStream(),
+          mode: 'receive-only',
+          warning,
+        }
   }
 
   try {
@@ -34,8 +37,10 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
       warning: null,
     }
   } catch (error) {
-    if (requestedMediaMode === 'real') {
-      throw new Error(formatMediaError(error, requestedRtcMode))
+    const recovered = await captureAvailableMedia(requestedRtcMode, error)
+
+    if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
+      return recovered
     }
 
     return {
@@ -43,6 +48,31 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
       mode: 'mock',
       warning: `${formatMediaError(error, requestedRtcMode)} Mock media started instead.`,
     }
+  }
+}
+
+async function captureAvailableMedia(rtcMode, combinedError) {
+  const stream = createEmptyMediaStream()
+  const failures = {}
+
+  async function capture(kind, constraints) {
+    try {
+      const capturedStream = await navigator.mediaDevices.getUserMedia(constraints)
+      capturedStream.getTracks().forEach((track) => stream.addTrack(track))
+    } catch (error) {
+      failures[kind] = error
+    }
+  }
+
+  await capture('audio', { audio: true, video: false })
+  if (rtcMode === 'video') {
+    await capture('video', { audio: false, video: true })
+  }
+
+  return {
+    stream,
+    mode: stream.getTracks().length ? 'real' : 'receive-only',
+    warning: buildMediaWarning(stream, failures, combinedError, rtcMode),
   }
 }
 
@@ -74,6 +104,59 @@ function formatMediaError(error, rtcMode) {
   }
 
   return `${error?.name || 'MediaError'}: ${error?.message || `Unable to start ${mediaLabel}.`}`
+}
+
+function formatSingleMediaError(error, kind) {
+  const mediaLabel = kind === 'audio' ? 'microphone' : 'camera'
+
+  if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+    return `Permission denied for ${mediaLabel}.`
+  }
+
+  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+    return `No ${mediaLabel} device was found.`
+  }
+
+  if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
+    return `The ${mediaLabel} is already in use by another app or browser tab.`
+  }
+
+  return `${error?.name || 'MediaError'}: ${error?.message || `Unable to start ${mediaLabel}.`}`
+}
+
+function buildMediaWarning(stream, failures, combinedError, rtcMode) {
+  const hasAudio = stream.getAudioTracks().some((track) => track.readyState !== 'ended')
+  const hasVideo = stream.getVideoTracks().some((track) => track.readyState !== 'ended')
+  const messages = []
+
+  if (!hasAudio) messages.push(formatSingleMediaError(failures.audio || combinedError, 'audio'))
+  if (rtcMode === 'video' && !hasVideo) messages.push(formatSingleMediaError(failures.video || combinedError, 'video'))
+
+  const uniqueMessages = Array.from(new Set(messages))
+  const joinedAs = describeCapturedMedia(stream, rtcMode)
+
+  if (!uniqueMessages.length) return null
+  if (joinedAs === 'receive-only') {
+    return `${uniqueMessages.join(' ')} Joined receive-only; remote audio/video can still work.`
+  }
+
+  return `${uniqueMessages.join(' ')} Joined with ${joinedAs}; remote audio/video can still work.`
+}
+
+function describeCapturedMedia(stream, rtcMode) {
+  const hasAudio = stream.getAudioTracks().some((track) => track.readyState !== 'ended')
+  const hasVideo = stream.getVideoTracks().some((track) => track.readyState !== 'ended')
+
+  if (hasAudio && hasVideo && rtcMode === 'video') return 'camera and microphone'
+  if (hasVideo) return 'camera only'
+  if (hasAudio) return 'microphone only'
+  return 'receive-only'
+}
+
+function createEmptyMediaStream() {
+  const stream = new MediaStream()
+  stream.__cleanup = () => {}
+  return stream
 }
 
 function createMockMediaStream(rtcMode = 'video') {
