@@ -306,6 +306,12 @@ map \$http_upgrade \$connection_upgrade {
 server {
     listen 80;
     server_name $PUBLIC_HOST;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root $WEB_ROOT;
+        try_files \$uri =404;
+    }
+
     return 301 https://\$host\$request_uri;
 }
 
@@ -319,6 +325,11 @@ server {
     root $WEB_ROOT;
     index index.html;
     client_max_body_size 10m;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root $WEB_ROOT;
+        try_files \$uri =404;
+    }
 
     location /api/ {
         proxy_pass http://127.0.0.1:8000/api/;
@@ -368,6 +379,11 @@ server {
     root $WEB_ROOT;
     index index.html;
     client_max_body_size 10m;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root $WEB_ROOT;
+        try_files \$uri =404;
+    }
 
     location /api/ {
         proxy_pass http://127.0.0.1:8000/api/;
