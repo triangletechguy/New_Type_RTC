@@ -51,19 +51,22 @@
   right: 0;
   height: 70px;
   display: grid;
-  grid-template-columns: 260px minmax(260px, 650px) minmax(420px, 1fr);
+  grid-template-columns: 260px minmax(320px, 650px) minmax(360px, 1fr);
   align-items: center;
-  gap: 40px;
+  gap: 44px;
   padding: 0 28px;
   background: #22222e;
   border-top: 1px solid rgba(255, 255, 255, .7);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .03);
 }
 
 .buzzcast-logo {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 178px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .buzzcast-logo-mark {
@@ -88,10 +91,14 @@
 .buzzcast-logo span {
   display: block;
   line-height: 1;
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .buzzcast-logo strong {
-  font-size: 18px;
+  font-size: 14px;
   font-style: italic;
   font-weight: 1000;
 }
@@ -109,6 +116,8 @@
   grid-template-columns: minmax(0, 1fr) 78px;
   height: 40px;
   align-items: stretch;
+  width: 100%;
+  max-width: 650px;
 }
 
 .buzzcast-search-wrap input {
@@ -129,12 +138,42 @@
 
 .buzzcast-search-wrap button {
   height: 40px;
+  display: grid;
+  place-items: center;
   border-radius: 0 7px 7px 0;
   border: 1px solid #4a495d;
   background: #4b4a5f;
   color: #c5c3d1;
-  font-size: 20px;
-  font-weight: 900;
+}
+
+.buzzcast-search-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.buzzcast-search-icon::before,
+.buzzcast-search-icon::after {
+  content: "";
+  position: absolute;
+  display: block;
+}
+
+.buzzcast-search-icon::before {
+  inset: 1px 5px 5px 1px;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+}
+
+.buzzcast-search-icon::after {
+  right: 0;
+  bottom: 1px;
+  width: 9px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
 }
 
 .buzzcast-search-panel {
@@ -218,7 +257,7 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -238,10 +277,107 @@
   font-weight: 1000;
 }
 
+.buzzcast-icon-inner {
+  display: grid;
+  place-items: center;
+}
+
 .buzzcast-icon-button.accent {
   background: #7d55ff;
   color: #fff;
   font-size: 26px;
+}
+
+.buzzcast-glyph {
+  position: relative;
+  width: 19px;
+  height: 19px;
+  display: block;
+  color: currentColor;
+}
+
+.glyph-admin::before,
+.glyph-admin::after,
+.glyph-trophy::before,
+.glyph-trophy::after,
+.glyph-message::before,
+.glyph-message::after,
+.glyph-gem::before,
+.glyph-gem::after {
+  content: "";
+  position: absolute;
+  display: block;
+}
+
+.glyph-admin::before {
+  inset: 2px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+}
+
+.glyph-admin::after {
+  right: 0;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 1px;
+}
+
+.glyph-trophy::before {
+  left: 4px;
+  top: 2px;
+  width: 11px;
+  height: 9px;
+  border: 2px solid currentColor;
+  border-radius: 3px 3px 7px 7px;
+}
+
+.glyph-trophy::after {
+  left: 7px;
+  bottom: 2px;
+  width: 5px;
+  height: 7px;
+  border-bottom: 2px solid currentColor;
+  background: currentColor;
+  box-shadow: -4px 5px 0 -2px currentColor, 4px 5px 0 -2px currentColor;
+}
+
+.glyph-message::before {
+  inset: 3px 2px 5px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.glyph-message::after {
+  left: 6px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: skew(-18deg);
+}
+
+.glyph-gem::before {
+  left: 3px;
+  top: 2px;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #ffad55;
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+.glyph-gem::after {
+  left: 8px;
+  top: 5px;
+  width: 3px;
+  height: 10px;
+  background: #ffd596;
+  transform: rotate(45deg);
+  opacity: .8;
 }
 
 .buzzcast-icon-button em {
@@ -263,22 +399,17 @@
   height: 42px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: 9px;
+  padding: 0 12px;
   border: 0;
   border-radius: 999px;
   background: #343143;
 }
 
-.buzzcast-balance span {
-  color: #ffb15e;
-  font-size: 12px;
-  font-weight: 900;
-}
-
 .buzzcast-balance strong {
   min-width: 16px;
   text-align: center;
+  color: #fff;
 }
 
 .buzzcast-avatar-button {
@@ -298,7 +429,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 10px 20px;
+  padding: 0 10px 20px 12px;
   background: #22222e;
 }
 
@@ -306,7 +437,9 @@
   min-height: 40px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
+  padding: 0 10px;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -317,14 +450,109 @@
 }
 
 .buzzcast-left-rail button.active {
-  background: #48475b;
+  background: #47465a;
   color: #fff;
 }
 
-.buzzcast-left-rail span {
+.buzzcast-left-rail b {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.12;
+  font: inherit;
+}
+
+.buzzcast-rail-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: block;
   color: #bcb8ce;
-  font-size: 13px;
-  text-align: center;
+}
+
+.buzzcast-left-rail button.active .buzzcast-rail-icon {
+  color: #8d65ff;
+}
+
+.buzzcast-rail-icon::before,
+.buzzcast-rail-icon::after {
+  content: "";
+  position: absolute;
+  display: block;
+}
+
+.rail-live::before {
+  inset: 3px 2px;
+  border: 2px solid currentColor;
+  border-radius: 7px;
+}
+
+.rail-live::after {
+  left: 8px;
+  top: 0;
+  width: 6px;
+  height: 5px;
+  border-left: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+}
+
+.rail-me::before {
+  left: 5px;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.rail-me::after {
+  left: 9px;
+  top: 9px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.rail-app::before {
+  left: 4px;
+  top: 4px;
+  width: 5px;
+  height: 5px;
+  border: 2px solid currentColor;
+  box-shadow: 8px 0 0 -1px currentColor, 0 8px 0 -1px currentColor, 8px 8px 0 -1px currentColor;
+}
+
+.rail-settings::before {
+  inset: 4px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.rail-settings::after {
+  left: 9px;
+  top: 0;
+  width: 4px;
+  height: 22px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
+  opacity: .55;
+}
+
+.rail-help::before {
+  inset: 3px 2px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.rail-help::after {
+  left: 8px;
+  bottom: 1px;
+  width: 6px;
+  height: 6px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: skew(-16deg);
 }
 
 .buzzcast-rail-spacer {

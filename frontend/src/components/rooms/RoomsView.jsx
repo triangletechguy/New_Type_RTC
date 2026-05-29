@@ -175,7 +175,7 @@ function roomToFeedCard(room, index) {
 function IconButton({ label, children, badge, className = '', onClick }) {
   return (
     <button type="button" className={`buzzcast-icon-button ${className}`} onClick={onClick} aria-label={label} title={label}>
-      <span>{children}</span>
+      <span className="buzzcast-icon-inner">{children}</span>
       {badge ? <em>{badge}</em> : null}
     </button>
   )
@@ -187,7 +187,7 @@ function BuzzLogo() {
       <div className="buzzcast-logo-mark">TE</div>
       <div>
         <strong>talkeachother</strong>
-        <span>Live video and music rooms</span>
+        <span>Video and music rooms</span>
       </div>
     </div>
   )
@@ -838,7 +838,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
             placeholder="Search"
           />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => loadRooms({ page: 1 })}>Q</button>
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => loadRooms({ page: 1 })} aria-label="Search rooms">
+            <span className="buzzcast-search-icon" aria-hidden="true"></span>
+          </button>
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
               <span>Recommendations for you</span>
@@ -853,10 +855,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           ) : null}
         </div>
         <div className="buzzcast-actions">
-          <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>[]</IconButton>
-          <IconButton label="Rankings">T</IconButton>
-          <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}>M</IconButton>
-          <button type="button" className="buzzcast-balance" onClick={() => setShowRecharge(true)}><span>Gems</span><strong>0</strong></button>
+          <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
+          <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
+          <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
+          <button type="button" className="buzzcast-balance" onClick={() => setShowRecharge(true)} aria-label="Open wallet">
+            <i className="buzzcast-glyph glyph-gem" aria-hidden="true"></i>
+            <strong>0</strong>
+          </button>
           <IconButton label="Create live room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={() => setActiveSection('me')}>
             <span>{profileInitials}</span>
@@ -866,18 +871,25 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
       <aside className="buzzcast-left-rail">
         <button type="button" className={activeSection === 'live' || activeSection === 'room' ? 'active' : ''} onClick={openLiveSection}>
-          <span>[]</span> Live
+          <span className="buzzcast-rail-icon rail-live" aria-hidden="true"></span>
+          <b>Live</b>
         </button>
         <button type="button" className={activeSection === 'me' ? 'active' : ''} onClick={() => setActiveSection('me')}>
-          <span>O</span> Me
+          <span className="buzzcast-rail-icon rail-me" aria-hidden="true"></span>
+          <b>Me</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
-        <button type="button" onClick={() => setShowInstall(true)}><span>A</span> Get the App</button>
+        <button type="button" onClick={() => setShowInstall(true)}>
+          <span className="buzzcast-rail-icon rail-app" aria-hidden="true"></span>
+          <b>Get the App</b>
+        </button>
         <button type="button" className={activeSection === 'settings' ? 'active' : ''} onClick={() => setActiveSection('settings')}>
-          <span>S</span> Settings
+          <span className="buzzcast-rail-icon rail-settings" aria-hidden="true"></span>
+          <b>Settings</b>
         </button>
         <button type="button" className={activeSection === 'help' ? 'active' : ''} onClick={() => setActiveSection('help')}>
-          <span>?</span> Feedback and Help
+          <span className="buzzcast-rail-icon rail-help" aria-hidden="true"></span>
+          <b>Feedback and Help</b>
         </button>
       </aside>
 
