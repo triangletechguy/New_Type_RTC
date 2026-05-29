@@ -20,75 +20,124 @@ import {
 } from '../../utils/roomConfig'
 
 const feedTabs = [
-  { value: 'all', label: 'All Rooms', filter: 'all', privacy: 'all', sort: 'active' },
-  { value: 'video', label: 'Video', filter: 'video', privacy: 'all' },
-  { value: 'music', label: 'Music', filter: 'music', privacy: 'all' },
-  { value: 'pk', label: 'PK', filter: 'pk', privacy: 'all' },
-  { value: 'public', label: 'Public', filter: 'all', privacy: 'public' },
-  { value: 'private', label: 'Private', filter: 'all', privacy: 'private' },
-  { value: 'latest', label: 'Latest', filter: 'all', privacy: 'all', sort: 'newest' },
+  { value: 'following', label: 'Following', filter: 'all' },
+  { value: 'for_you', label: 'For You', filter: 'all' },
+  { value: 'explore', label: 'Explore', filter: 'all' },
+  { value: 'party', label: 'Party', filter: 'pk' },
+  { value: 'nearby', label: 'Nearby', filter: 'all' },
+  { value: 'latest', label: 'Latest', filter: 'all', sort: 'newest' },
+  { value: 'global', label: 'Global', filter: 'all' },
 ]
 
-const typePills = [
+const exploreFilters = [
   { value: 'all', label: 'All', filter: 'all' },
-  { value: 'live', label: 'Live', filter: 'live' },
-  { value: 'video', label: 'Video', filter: 'video' },
-  { value: 'music', label: 'Music', filter: 'music' },
+  { value: 'new_host', label: 'New Host', filter: 'live' },
+  { value: 'games', label: 'Games', filter: 'video' },
   { value: 'pk', label: 'PK', filter: 'pk' },
 ]
 
+const demoCards = [
+  { id: 'demo-1', title: 'I am new here', host: 'PAYA', viewers: 5631, tone: 'aurora', country: 'United States', size: 'feature' },
+  { id: 'demo-2', title: 'naughty myfly', host: 'mandyiluvfrogs', viewers: 6018, tone: 'warm', category: 'Beauty' },
+  { id: 'demo-3', title: '20Tokens4ANYRequests', host: 'Mary Marie31688746', viewers: 1794, tone: 'rose' },
+  { id: 'demo-4', title: 'chill vibes only', host: 'BBreeBunnie', viewers: 6186, tone: 'sunset' },
+  { id: 'demo-5', title: 'I am new here', host: 'love31312268', viewers: 1090, tone: 'slate' },
+  { id: 'demo-6', title: 'relax..', host: 'MattM', viewers: 589, tone: 'amber' },
+  { id: 'demo-7', title: 'hi', host: '6.5k Nat_5', viewers: 5689, tone: 'night' },
+  { id: 'demo-8', title: 'Modo meta hasta amanecer', host: 'Lyss', viewers: 1418, tone: 'plum' },
+  { id: 'demo-9', title: 'Support small gifts', host: 'BG_Unnniieee', viewers: 2032, tone: 'copper', badge: 'Make friends' },
+  { id: 'demo-10', title: 'Holi', host: 'Sweetey', viewers: 7489, tone: 'cloud' },
+  { id: 'demo-11', title: 'PV AGORA', host: 'Gabyzinha', viewers: 21853, tone: 'wine' },
+  { id: 'demo-12', title: 'Hello', host: 'Maximum', viewers: 29888, tone: 'silver' },
+  { id: 'demo-13', title: 'On max dada', host: 'Wifeykins', viewers: 8, tone: 'olive', tab: 'latest' },
+  { id: 'demo-14', title: 'I am new here', host: 'Seyifunmi Debby', viewers: 8, tone: 'taupe', tab: 'latest' },
+  { id: 'demo-15', title: '15 link por 5 reais no pv', host: 'anjo66631877403', viewers: 7, tone: 'mono', tab: 'latest' },
+  { id: 'demo-16', title: 'Certified loner', host: 'vee sasha', viewers: 36, tone: 'rose', tab: 'latest' },
+  { id: 'demo-17', title: 'COWMAN LOOKING FOR COWLADY', host: 'John F. Ke31824857', viewers: 527, tone: 'earth', tab: 'nearby' },
+  { id: 'demo-18', title: 'I still feeling emotional cause got my prosthetic', host: 'Art232323', viewers: 181, tone: 'mid', tab: 'nearby' },
+  { id: 'demo-19', title: 'need a day 1 bouncer', host: 'OG_Ocean', viewers: 57, tone: 'violet', tab: 'nearby' },
+  { id: 'demo-20', title: 'I am new here', host: 'ChiChi80588', viewers: 1238, tone: 'pink', tab: 'nearby' },
+  { id: 'demo-21', title: 'Certified game room', host: 'PANIAX GAMING', viewers: 99, tone: 'game', tab: 'explore', explore: 'games' },
+  { id: 'demo-22', title: '1x equals 5', host: 'Cleo', viewers: 1230, tone: 'sand', tab: 'explore', explore: 'games' },
+  { id: 'demo-23', title: 'Film room', host: 'PRIME', viewers: 68279, tone: 'ocean', tab: 'explore', explore: 'games' },
+  { id: 'demo-24', title: 'Positive Boosting Time 24 7 365', host: 'United States', viewers: 865, tone: 'sky', tab: 'party', party: true },
+  { id: 'demo-25', title: 'women and ladies join in', host: 'United States', viewers: 5133, tone: 'storm', tab: 'party', party: true },
+  { id: 'demo-26', title: 'SUPPORT The Cozy Streamer', host: 'United States', viewers: 244, tone: 'ember', tab: 'party', party: true },
+  { id: 'demo-27', title: 'This room may contain sensitive content', host: 'mandyiluvfrogs', viewers: 6345, tone: 'sensitive', sensitive: true },
+]
+
+const searchRecommendations = [
+  { id: 'rec-1', name: 'Donna Walks', detail: 'Donde una potra pisa...', unread: 1 },
+  { id: 'rec-2', name: 'Jennifer Ortiz', detail: 'Sociable, no amigabl...', unread: 1 },
+  { id: 'rec-3', name: 'Friend Room', detail: '@Jessica An3215971...', unread: 4 },
+  { id: 'rec-4', name: 'talkeachother Team', detail: 'Welcome to talkeachother...', unread: 1 },
+]
+
+const dmThreads = [
+  { id: 'donna', name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: '[Stickers]', unread: 1 },
+  { id: 'jennifer', name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: '[Stickers]', unread: 1 },
+  { id: 'friend', name: 'Friend...', time: 'Wednesday 01:27', preview: '@Jessica An3215971...', unread: 4 },
+  { id: 'buzz', name: 'talkeachother', time: 'Wednesday 01:27', preview: 'Welcome to talkeachother...', unread: 1 },
+]
+
+const initialDmMessages = {
+  donna: [],
+  jennifer: [],
+  friend: [],
+  buzz: [{ id: 'welcome', author: 'talkeachother', body: 'Welcome to the talkeachother lobby.', mine: false }],
+}
+
 const settingsNav = [
   { value: 'account', label: 'Account Security', icon: 'U' },
-  { value: 'rooms', label: 'Room Defaults', icon: 'R' },
-  { value: 'media', label: 'Media and RTC', icon: 'M' },
   { value: 'privacy', label: 'Privacy Settings', icon: 'S' },
+  { value: 'content', label: 'Content Preferences', icon: 'F' },
+  { value: 'language', label: 'Multi-Language', icon: 'A' },
   { value: 'region', label: 'Region', icon: 'P' },
   { value: 'terms', label: 'Terms and Policies', icon: 'D' },
 ]
 
-const regions = ['United States', 'Canada', 'United Kingdom', 'Germany', 'France', 'Brazil', 'Australia', 'Japan', 'South Korea']
+const languages = ['English', 'Japanese', 'Korean', 'French', 'Italian', 'Russian', 'Spanish', 'German', 'Portuguese', 'Hindi']
+const regions = ['Afghanistan', 'Aland Islands', 'Albania', 'Algeria', 'American Samoa', 'Andorra', 'Angola', 'Anguilla', 'Antigua and Barbuda', 'Argentina', 'Australia', 'Brazil', 'Canada', 'United States']
+const giftItems = [
+  { label: 'Rose', cost: 9 },
+  { label: 'Lipstick', cost: 99 },
+  { label: 'Love Overflow', cost: 399 },
+  { label: 'Sweet Melody', cost: 399 },
+  { label: 'Expression', cost: 1 },
+  { label: 'Candy World', cost: 1000 },
+  { label: 'Sweet Date', cost: 5999 },
+  { label: 'Paw Ice Cream', cost: 1 },
+  { label: 'Star', cost: 5 },
+  { label: 'Sparklers', cost: 9 },
+  { label: 'Cola', cost: 99 },
+]
+
+const paymentMethods = ['Google Pay', 'PayPal', 'Apple Pay', 'Visa/ MasterCard/ JCB/ AMEX/ DINERS', 'Dpay(USDT & Bitcoin)', 'Razer Gold Wallet']
 
 const popularHelp = [
-  {
-    id: 'create-room',
-    title: 'How to create a live room',
-    body: 'Use Create Room, choose the room type, privacy, stage seats, and media options, then open the created room to start the RTC session.',
-  },
-  {
-    id: 'join-room',
-    title: 'How to join a room',
-    body: 'Select a room card or enter the room ID in Quick Join. Password rooms require the room password before the RTC console opens.',
-  },
-  {
-    id: 'camera-mic',
-    title: 'Camera or microphone does not start',
-    body: 'Close other apps using the camera or microphone, allow browser permissions, then enter the room again. talkeachother can still join receive-only while the browser waits for local devices.',
-  },
-  {
-    id: 'room-types',
-    title: 'Room type differences',
-    body: 'Video rooms use camera and microphone. Music rooms use microphone-first RTC. PK rooms use the same video pipeline with a battle-style room type.',
-  },
-  {
-    id: 'turn-relay',
-    title: 'Remote video is slow or blank',
-    body: 'Check the RTC relay configuration, Caddy HTTPS endpoint, and TURN UDP ports on the VPS. The room console reads the relay settings from /api/rtc/config.',
-  },
+  { id: 'recharge', title: 'How to recharge', body: 'Please go to your profile page, click the Wallet button, click the recharge button or the Gift button in the live room, then choose a payment method to recharge diamonds.' },
+  { id: 'vip', title: 'How to become VIP/SVIP', body: 'Buy VIP through the personal center or use diamonds to buy VIP. VIP rewards and privileges are visible from the personal center.' },
+  { id: 'bind', title: 'How do I bind my phone number and email address?', body: 'For account security, bind your mobile phone number and email address in Settings, Account Security.' },
+  { id: 'mvp', title: 'How to become an MVP and its benefits', body: 'MVP status unlocks monthly rewards, profile progress, and room benefits after qualifying top-up milestones.' },
+  { id: 'missing', title: "I made a payment, but I did not receive the diamonds", body: 'Check the payment record first. If the recharge is still missing, submit feedback with your payment time and receipt screenshot.' },
 ]
 
 const faqTopics = [
-  'Create a public room',
-  'Create a password room',
-  'Switch room type',
-  'Join by room ID',
-  'Allow camera permissions',
-  'Allow microphone permissions',
-  'Use audio-only mode',
-  'Open admin dashboard',
-  'Open SDK flow',
-  'Deploy current code to VPS',
-  'Check API health',
-  'Check RTC relay config',
+  'Modify personal information',
+  'Unfollow accounts that are frozen or deactivated',
+  'How to create a voice chat room',
+  'How do I bind my phone number and email address?',
+  'How to upgrade the talkeachother app',
+  "Delete the other people's comments on your post or private message with others",
+  'The live streaming page cannot be opened or is not smooth',
+  'How to do a live/private live broadcast',
+  'Block others',
+  'What can crystals be used for',
+  'How to upgrade my account level',
+  "Join other people's private broadcast",
+  'Hide profile',
+  'Turn off my location',
+  'Delete video',
 ]
 
 function initialsFromName(name) {
@@ -107,42 +156,35 @@ function compactNumber(value) {
   return String(number)
 }
 
-function roomTone(roomType, index) {
-  if (['audio', 'group_audio'].includes(roomType)) return 'ocean'
-  if (roomType === 'pk_live') return 'violet'
-  if (['solo_live', 'group_video', 'video'].includes(roomType)) return ['aurora', 'warm', 'rose', 'sunset'][index % 4]
-  return ['slate', 'amber', 'night', 'plum'][index % 4]
-}
-
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
-  const privacyLabel = room.privacy_type === 'password' ? 'Password' : room.privacy_type === 'private' ? 'Private' : 'Public'
-
   return {
     id: `room-${room.id}`,
     room,
-    title: room.name || `Room ${room.id}`,
-    host: room.owner_name || 'talkeachother host',
-    viewers: Number(room.active_participants || 0),
-    tone: roomTone(room.room_type, index),
-    badge: `${meta.short} - ${privacyLabel}`,
-    detail: `${getSeatLabel(room.room_type, room.max_mic_count)} - ${room.status || 'ready'}`,
+    title: room.name || `Live room ${room.id}`,
+    host: room.owner_name || 'Room host',
+    viewers: Number(room.active_participants || 0) || 100 + index * 37,
+    tone: ['aurora', 'warm', 'rose', 'sunset', 'slate', 'amber', 'night', 'plum'][index % 8],
+    badge: room.privacy_type === 'password' ? 'Locked' : meta.short,
+    category: meta.label,
+    country: 'United States',
+    size: index === 0 ? 'feature' : '',
   }
 }
 
 function IconButton({ label, children, badge, className = '', onClick }) {
   return (
-    <button type="button" className={`talk-icon-button ${className}`} onClick={onClick} aria-label={label} title={label}>
+    <button type="button" className={`buzzcast-icon-button ${className}`} onClick={onClick} aria-label={label} title={label}>
       <span>{children}</span>
       {badge ? <em>{badge}</em> : null}
     </button>
   )
 }
 
-function TalkLogo() {
+function BuzzLogo() {
   return (
-    <div className="talk-logo">
-      <div className="talk-logo-mark">TE</div>
+    <div className="buzzcast-logo">
+      <div className="buzzcast-logo-mark">TE</div>
       <div>
         <strong>talkeachother</strong>
         <span>Live video and music rooms</span>
@@ -153,17 +195,17 @@ function TalkLogo() {
 
 function FeedCard({ card, featured, onOpen }) {
   return (
-    <article className={`talk-room-card ${featured ? 'featured' : ''}`}>
-      <button type="button" className="talk-card-button" onClick={() => onOpen(card)}>
-        <div className={`talk-media media-${card.tone || 'aurora'}`}>
-          <span className="talk-card-badge">{card.badge}</span>
-          <span className="talk-viewers">{compactNumber(card.viewers)} active</span>
-          <span className="talk-seat-dots"><i></i><i></i><i></i></span>
+    <article className={`buzzcast-room-card ${featured ? 'featured' : ''}`}>
+      <button type="button" className="buzzcast-card-button" onClick={() => onOpen(card)}>
+        <div className={`buzzcast-media media-${card.tone || 'aurora'}`}>
+          {card.badge ? <span className="buzzcast-card-badge">{card.badge}</span> : null}
+          {card.sensitive ? <span className="buzzcast-sensitive-dot"></span> : null}
+          <span className="buzzcast-viewers">{compactNumber(card.viewers)}</span>
+          <span className="buzzcast-seat-dots"><i></i><i></i><i></i></span>
         </div>
-        <div className="talk-card-copy">
+        <div className="buzzcast-card-copy">
           <strong>{card.title}</strong>
           <span>{card.host}</span>
-          <small>{card.detail}</small>
         </div>
       </button>
     </article>
@@ -184,39 +226,59 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [privacyFilter, setPrivacyFilter] = useState('all')
-  const [sort, setSort] = useState('active')
+  const [sort, setSort] = useState('newest')
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [creating, setCreating] = useState(false)
   const [openingRoom, setOpeningRoom] = useState(false)
   const [activeSection, setActiveSection] = useState('live')
-  const [activeFeed, setActiveFeed] = useState('all')
-  const [activeTypePill, setActiveTypePill] = useState('all')
+  const [activeFeed, setActiveFeed] = useState('for_you')
+  const [activeExplore, setActiveExplore] = useState('all')
   const [showSearchPanel, setShowSearchPanel] = useState(false)
-  const [showActivity, setShowActivity] = useState(false)
+  const [showMessages, setShowMessages] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
-  const [showStatusPanel, setShowStatusPanel] = useState(false)
+  const [showRecharge, setShowRecharge] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [activeSettings, setActiveSettings] = useState('account')
   const [helpMode, setHelpMode] = useState('popular')
-  const [activeHelp, setActiveHelp] = useState('create-room')
+  const [activeHelp, setActiveHelp] = useState('recharge')
+  const [activeThread, setActiveThread] = useState(dmThreads[0].id)
+  const [dmMessages, setDmMessages] = useState(initialDmMessages)
+  const [dmInput, setDmInput] = useState('')
+  const [previewCard, setPreviewCard] = useState(null)
+  const [acceptedWarnings, setAcceptedWarnings] = useState({})
 
-  const displayName = user?.name || user?.email?.split('@')[0] || 'talkeachother User'
-  const displayId = user?.id || user?.email || 'session'
+  const displayName = user?.name || user?.email?.split('@')[0] || 'Michael Sa32160161'
+  const displayId = user?.id || 32160161
   const profileInitials = initialsFromName(displayName)
-  const activeParticipants = rooms.reduce((total, room) => total + Number(room.active_participants || 0), 0)
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
+
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
-  const searchRecommendations = useMemo(() => rooms.slice(0, 6).map((room) => ({
-    id: room.id,
-    name: room.name,
-    detail: `${getRoomMeta(room.room_type).label} - ${room.privacy_type}`,
-    room,
-  })), [rooms])
+  const visibleCards = useMemo(() => {
+    let cards = [...roomCards, ...demoCards]
+
+    if (activeFeed === 'latest') cards = cards.filter((card) => card.tab === 'latest' || card.room).slice(0, 16)
+    if (activeFeed === 'nearby') cards = cards.filter((card) => card.tab === 'nearby' || card.room).slice(0, 16)
+    if (activeFeed === 'party') cards = cards.filter((card) => card.party || card.tab === 'party' || card.room?.room_type === 'pk_live')
+    if (activeFeed === 'explore') {
+      cards = cards.filter((card) => {
+        if (activeExplore === 'all') return card.tab !== 'party'
+        if (activeExplore === 'pk') return card.room?.room_type === 'pk_live' || card.explore === 'pk'
+        if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(card.room?.room_type)
+        return card.room || card.explore === activeExplore
+      })
+    }
+    if (activeFeed === 'following') cards = cards.filter((card, index) => card.room || index < 6)
+    if (activeFeed === 'global') cards = cards.filter((card) => card.tab === 'latest' || card.room).concat(demoCards.slice(0, 4))
+
+    return cards.slice(0, activeFeed === 'party' ? 10 : 24)
+  }, [activeExplore, activeFeed, roomCards])
+
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
+  const activeThreadData = dmThreads.find((thread) => thread.id === activeThread) || dmThreads[0]
 
   function updateRoomForm(field, value) {
     setRoomForm((previous) => ({ ...previous, [field]: value }))
@@ -234,6 +296,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     setJoinPassword('')
     setJoinRtcMode(defaultRtcModeForRoom(room))
     setStatus(room.privacy_type === 'password' ? `Room #${room.id} needs a password before joining.` : `Room #${room.id} selected.`)
+    if (room.privacy_type === 'password') setShowHostPanel(true)
   }
 
   function clearSelectedRoomIfManual(value) {
@@ -250,22 +313,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function openLiveSection() {
     setActiveSection('live')
+    setPreviewCard(null)
   }
 
   function switchFeed(nextFeed) {
     const tab = feedTabs.find((item) => item.value === nextFeed)
     setActiveSection('live')
+    setPreviewCard(null)
     setActiveFeed(nextFeed)
-    setActiveTypePill(tab?.filter || 'all')
-    setFilter(tab?.filter || 'all')
-    setPrivacyFilter(tab?.privacy || 'all')
-    setSort(tab?.sort || 'active')
+    if (tab?.filter) setFilter(tab.filter)
+    if (tab?.sort) setSort(tab.sort)
   }
 
-  function switchTypePill(nextValue) {
-    const next = typePills.find((item) => item.value === nextValue)
-    setActiveTypePill(nextValue)
-    setFilter(next?.filter || 'all')
+  function switchExplore(nextExplore) {
+    const next = exploreFilters.find((item) => item.value === nextExplore)
+    setActiveExplore(nextExplore)
+    if (activeFeed === 'explore') setFilter(next?.filter || 'all')
   }
 
   async function loadRooms({
@@ -377,15 +440,38 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     }
   }
 
-  function openRoomCard(card) {
-    const room = card.room
-    selectRoom(room)
+  function joinRoomFromCard(room) {
     if (room.privacy_type === 'password') {
-      setShowHostPanel(true)
+      selectRoom(room)
       return
     }
 
     onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: true })
+  }
+
+  function openCard(card) {
+    if (card.room) {
+      joinRoomFromCard(card.room)
+      return
+    }
+
+    setPreviewCard(card)
+    setActiveSection('room')
+  }
+
+  function sendDmMessage(event) {
+    event.preventDefault()
+    const body = dmInput.trim()
+    if (!body) return
+
+    setDmMessages((previous) => ({
+      ...previous,
+      [activeThread]: [
+        ...(previous[activeThread] || []),
+        { id: `${activeThread}-${Date.now()}`, author: displayName, body, mine: true },
+      ],
+    }))
+    setDmInput('')
   }
 
   async function handleInstallApp() {
@@ -397,14 +483,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
       return
     }
 
-    setStatus('Use the browser install control when it appears for this app.')
+    setStatus('Use the browser install button when it appears for this app.')
     setShowInstall(false)
   }
 
   function renderLiveFeed() {
+    const isExplore = activeFeed === 'explore'
+    const isParty = activeFeed === 'party'
+
     return (
       <>
-        <nav className="talk-feed-nav" aria-label="Room filters">
+        <nav className="buzzcast-feed-nav" aria-label="Live feed">
           {feedTabs.map((tab) => (
             <button
               key={tab.value}
@@ -417,25 +506,29 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           ))}
         </nav>
 
-        <div className="talk-filter-pills">
-          {typePills.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              className={activeTypePill === item.value ? 'active' : ''}
-              onClick={() => switchTypePill(item.value)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {isExplore ? (
+          <div className="buzzcast-filter-pills">
+            {exploreFilters.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={activeExplore === item.value ? 'active' : ''}
+                onClick={() => switchExplore(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-        <div className="talk-match-banner">
-          <strong>{roomMeta.total} rooms</strong>
-          <span>{activeParticipants} active participant(s)</span>
-        </div>
+        {isParty ? (
+          <div className="buzzcast-match-banner">
+            <strong>Match</strong>
+            <span>16847868 people matched</span>
+          </div>
+        ) : null}
 
-        <div className="talk-feed-controls">
+        <div className="buzzcast-feed-controls">
           <div>
             <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Privacy filter">
               {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -447,27 +540,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           <span>{loadingRooms ? 'Refreshing rooms...' : status}</span>
         </div>
 
-        {roomCards.length ? (
-          <section className="talk-card-grid">
-            {roomCards.map((card, index) => (
-              <FeedCard
-                key={card.id}
-                card={card}
-                featured={activeFeed === 'all' && index === 0}
-                onOpen={openRoomCard}
-              />
-            ))}
-          </section>
-        ) : (
-          <section className="talk-empty-feed">
-            <strong>No rooms match this view.</strong>
-            <span>Create a room or change the filters.</span>
-            <button type="button" onClick={() => setShowHostPanel(true)}>Create Room</button>
-          </section>
-        )}
+        <section className={`buzzcast-card-grid ${isParty ? 'party-grid' : ''}`}>
+          {visibleCards.map((card, index) => (
+            <FeedCard
+              key={card.id}
+              card={card}
+              featured={activeFeed === 'for_you' && index === 0}
+              onOpen={openCard}
+            />
+          ))}
+        </section>
 
         {roomMeta.total_pages > 1 ? (
-          <div className="talk-pagination">
+          <div className="buzzcast-pagination">
             <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
             <span>{roomMeta.page} / {roomMeta.total_pages}</span>
             <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
@@ -479,33 +564,33 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function renderProfile() {
     return (
-      <section className="talk-profile-panel">
-        <div className="talk-profile-hero">
-          <div className="talk-profile-avatar">{profileInitials}</div>
+      <section className="buzzcast-profile-panel">
+        <div className="buzzcast-profile-hero">
+          <div className="buzzcast-profile-avatar">{profileInitials}</div>
           <div>
             <h1>{displayName}</h1>
-            <span>ID: {displayId}</span>
-            <div className="talk-profile-badges">
-              <strong>{roomMeta.total}</strong>
-              <strong>{activeParticipants}</strong>
+            <span>ID:{displayId}</span>
+            <div className="buzzcast-profile-badges">
+              <strong>29</strong>
+              <strong>1</strong>
             </div>
-            <p>Rooms <b>{roomMeta.total}</b> Active participants <b>{activeParticipants}</b> RTC mode <b>{joinRtcMode}</b></p>
-            <small>{user?.email || 'Signed in session'}</small>
+            <p>Following <b>0</b> Followers <b>3</b> Received <b>0</b> Sent <b>0</b></p>
+            <small>United States</small>
           </div>
         </div>
-        <div className="talk-profile-grid">
+        <div className="buzzcast-profile-grid">
           <h2>Profile</h2>
           <dl>
             <dt>Name</dt><dd>{displayName}</dd>
-            <dt>Email</dt><dd>{user?.email || 'Not provided'}</dd>
-            <dt>Default RTC</dt><dd>{joinRtcMode}</dd>
-            <dt>Current View</dt><dd>{activeFeed}</dd>
+            <dt>Gender</dt><dd>Male</dd>
+            <dt>Birthday</dt><dd>12/10/1996</dd>
+            <dt>Current Residence</dt><dd>United States</dd>
           </dl>
         </div>
-        <div className="talk-profile-links">
-          <button type="button" onClick={() => setShowHostPanel(true)}>Create Room</button>
-          <button type="button" onClick={() => setShowActivity(true)}>Room Activity</button>
-          <button type="button" onClick={() => setShowStatusPanel(true)}>System Status</button>
+        <div className="buzzcast-profile-links">
+          <button type="button" onClick={() => setShowRecharge(true)}>Wallet</button>
+          <button type="button">Backpack</button>
+          <button type="button">Supporters</button>
           <button type="button" onClick={onLogout}>Sign out</button>
         </div>
       </section>
@@ -513,55 +598,56 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   }
 
   function renderSettingsContent() {
-    if (activeSettings === 'rooms') {
-      return (
-        <div className="talk-settings-list">
-          <button type="button"><span>Default room name</span><em>{defaultRoomForm.name}</em></button>
-          <button type="button"><span>Default room type</span><em>{roomTypeLabels[defaultRoomForm.room_type]}</em></button>
-          <button type="button"><span>Default privacy</span><em>{defaultRoomForm.privacy_type}</em></button>
-          <button type="button"><span>Default stage seats</span><em>{defaultRoomForm.max_mic_count}</em></button>
-        </div>
-      )
-    }
-
-    if (activeSettings === 'media') {
-      return (
-        <div className="talk-settings-list">
-          {rtcModeOptions.map((option) => (
-            <label key={option.value} className="talk-radio-row">
-              <span><strong>{option.label}</strong><small>{option.detail}</small></span>
-              <input type="radio" name="rtc-mode" checked={joinRtcMode === option.value} onChange={() => updateJoinRtcMode(option.value)} />
-            </label>
-          ))}
-          <button type="button"><span>TURN relay policy</span><em>From /api/rtc/config</em></button>
-          <button type="button"><span>Media capture mode</span><em>Real devices</em></button>
-        </div>
-      )
-    }
-
     if (activeSettings === 'privacy') {
       return (
-        <div className="talk-settings-list">
-          <button type="button"><span>Public rooms</span><em>Anyone signed in can open</em></button>
-          <button type="button"><span>Password rooms</span><em>Password required before RTC</em></button>
-          <button type="button"><span>Private rooms</span><em>Visible as private in room list</em></button>
-          <label className="talk-switch-row">
-            <span><strong>AI security option</strong><small>Available when creating rooms from Host Tools.</small></span>
-            <input type="checkbox" checked={Boolean(roomForm.ai_security_enabled)} onChange={(event) => updateRoomForm('ai_security_enabled', event.target.checked)} />
+        <div className="buzzcast-settings-list">
+          <button type="button"><span>Who can send me a message</span><b>&gt;</b></button>
+          <button type="button"><span>Private live invitation</span><b>&gt;</b></button>
+          <label className="buzzcast-switch-row">
+            <span><strong>Automatic deduction for entering the private live broadcast room</strong><small>After opening, private rooms can automatically deduct diamonds.</small></span>
+            <input type="checkbox" />
           </label>
+          <button type="button"><span>Blacklist</span><b>&gt;</b></button>
+          <button type="button"><span>Live broadcast you are not interested in</span><b>&gt;</b></button>
+        </div>
+      )
+    }
+
+    if (activeSettings === 'content') {
+      return (
+        <div className="buzzcast-settings-list">
+          {['Restricted Mode', 'Warning Mode', 'All Modes'].map((item, index) => (
+            <label key={item} className="buzzcast-radio-row">
+              <span><strong>{item}</strong><small>{index === 1 ? 'The content is hidden by default behind filters that require user actions.' : index === 0 ? 'Hide potentially sensitive content.' : 'You will see all the content.'}</small></span>
+              <input type="radio" name="content-mode" defaultChecked={index === 1} />
+            </label>
+          ))}
+        </div>
+      )
+    }
+
+    if (activeSettings === 'language') {
+      return (
+        <div className="buzzcast-settings-list compact">
+          {languages.map((item, index) => (
+            <label key={item} className="buzzcast-radio-row">
+              <span><strong>{item}</strong></span>
+              <input type="radio" name="language" defaultChecked={index === 0} />
+            </label>
+          ))}
         </div>
       )
     }
 
     if (activeSettings === 'region') {
       return (
-        <div className="talk-region-panel">
-          <input placeholder="Search region" />
-          <div className="talk-settings-list compact">
+        <div className="buzzcast-region-panel">
+          <input placeholder="Search" />
+          <div className="buzzcast-settings-list compact">
             {regions.map((item, index) => (
-              <label key={item} className="talk-radio-row">
+              <label key={item} className="buzzcast-radio-row">
                 <span><strong>{item}</strong></span>
-                <input type="radio" name="region" defaultChecked={index === 0} />
+                <input type="radio" name="region" defaultChecked={index === regions.length - 1} />
               </label>
             ))}
           </div>
@@ -571,7 +657,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
     if (activeSettings === 'terms') {
       return (
-        <div className="talk-settings-list">
+        <div className="buzzcast-settings-list">
           {['Terms of Service', 'Privacy Policy', 'Child Safety Policy', 'Anti-Bullying Policy', 'Copyright'].map((item) => (
             <button type="button" key={item}><span>{item}</span><b>&gt;</b></button>
           ))}
@@ -580,16 +666,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     }
 
     return (
-      <div className="talk-security-panel">
-        <div className="talk-safety-card">
-          <strong>talkeachother account session</strong>
+      <div className="buzzcast-security-panel">
+        <div className="buzzcast-safety-card">
+          <strong>Very low level of safety</strong>
           <span>OK</span>
         </div>
-        <div className="talk-settings-list">
-          <button type="button"><span>Signed in as</span><em>{displayName}</em></button>
-          <button type="button"><span>Email</span><em>{user?.email || 'Not provided'}</em></button>
-          <button type="button"><span>Backend session</span><em>Authenticated</em></button>
-          <button type="button" onClick={onLogout}><span>Sign out</span><em>End session</em></button>
+        <div className="buzzcast-settings-list">
+          {['Binding cell phone', 'Binding email', 'Binding Wallet', 'Set login password', 'Set payment password', 'Devices Logged In'].map((item) => (
+            <button type="button" key={item}><span>{item}</span><em>{item.includes('Binding') ? item : item === 'Devices Logged In' ? 'Device' : item}</em></button>
+          ))}
         </div>
       </div>
     )
@@ -597,8 +682,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function renderSettings() {
     return (
-      <section className="talk-settings-shell">
-        <aside className="talk-settings-nav">
+      <section className="buzzcast-settings-shell">
+        <aside className="buzzcast-settings-nav">
           {settingsNav.map((item) => (
             <button
               key={item.value}
@@ -612,7 +697,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             </button>
           ))}
         </aside>
-        <div className="talk-settings-content">
+        <div className="buzzcast-settings-content">
           {renderSettingsContent()}
         </div>
       </section>
@@ -621,13 +706,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function renderHelp() {
     return (
-      <section className="talk-help-shell">
+      <section className="buzzcast-help-shell">
         <header>
           <h1>Feedback and Help</h1>
-          <button type="button" onClick={() => setShowFeedback(true)}>Send Feedback</button>
+          <button type="button" onClick={() => setShowFeedback(true)}>Feedback record</button>
         </header>
-        <div className="talk-help-layout">
-          <aside className="talk-help-menu">
+        <div className="buzzcast-help-layout">
+          <aside className="buzzcast-help-menu">
             <button type="button" className={helpMode === 'popular' ? 'active' : ''} onClick={() => setHelpMode('popular')}>Popular Questions</button>
             {popularHelp.map((item) => (
               <button
@@ -644,9 +729,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             ))}
             <button type="button" className={helpMode === 'faq' ? 'active' : ''} onClick={() => setHelpMode('faq')}>Frequently Asked Question</button>
           </aside>
-          <main className="talk-help-content">
+          <main className="buzzcast-help-content">
             {helpMode === 'faq' ? (
-              <div className="talk-faq-list">
+              <div className="buzzcast-faq-list">
                 {faqTopics.map((item) => <button type="button" key={item}>{item}<span>v</span></button>)}
               </div>
             ) : (
@@ -654,6 +739,62 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             )}
           </main>
         </div>
+      </section>
+    )
+  }
+
+  function renderRoomPreview() {
+    const card = previewCard || demoCards[0]
+    const isWarning = card.sensitive && !acceptedWarnings[card.id]
+
+    return (
+      <section className="buzzcast-room-preview">
+        <div className={`buzzcast-stage media-${card.tone || 'sensitive'}`}>
+          {isWarning ? (
+            <div className="buzzcast-warning-panel">
+              <strong>This live broadcast may contain sensitive content</strong>
+              <button type="button" onClick={() => setAcceptedWarnings((previous) => ({ ...previous, [card.id]: true }))}>View</button>
+              <button type="button" onClick={() => {
+                setActiveSettings('content')
+                setActiveSection('settings')
+              }}>Content Preferences</button>
+            </div>
+          ) : (
+            <>
+              <div className="buzzcast-host-pill">
+                <span>{initialsFromName(card.host)}</span>
+                <strong>{card.host}</strong>
+                <small>{compactNumber(card.viewers)}</small>
+              </div>
+              <div className="buzzcast-room-metadata">
+                <span>ID:29803275</span>
+                <strong>{card.title}</strong>
+                <small>{card.country || 'Australia'}</small>
+              </div>
+              <div className="buzzcast-join-ribbon">21 joined</div>
+              <div className="buzzcast-gift-bar">
+                {giftItems.map((gift) => (
+                  <button key={gift.label} type="button">
+                    <span>{gift.label}</span>
+                    <small>{gift.cost}</small>
+                  </button>
+                ))}
+                <button type="button" onClick={() => setShowRecharge(true)}>More</button>
+                <button type="button" onClick={() => setShowRecharge(true)}>0</button>
+              </div>
+            </>
+          )}
+        </div>
+        <aside className="buzzcast-live-chat">
+          <p>Be polite and respectful. Any vulgar, violent, or private transaction behavior is strictly prohibited in talkeachother. Please speak in a civilized manner.</p>
+          <div className="buzzcast-chat-log">
+            <span><b>18</b> joined</span>
+            <span><b>2</b> joined</span>
+          </div>
+          <form onSubmit={sendDmMessage}>
+            <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Send a chat" />
+          </form>
+        </aside>
       </section>
     )
   }
@@ -684,127 +825,114 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   }, [])
 
   return (
-    <div className="talk-shell">
-      <header className="talk-topbar">
-        <TalkLogo />
-        <div className="talk-search-wrap">
-          <label className="sr-only" htmlFor="talk-search">Search</label>
+    <div className="buzzcast-shell">
+      <header className="buzzcast-topbar">
+        <BuzzLogo />
+        <div className="buzzcast-search-wrap">
+          <label className="sr-only" htmlFor="buzzcast-search">Search</label>
           <input
-            id="talk-search"
+            id="buzzcast-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onFocus={() => setShowSearchPanel(true)}
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
-            placeholder="Search rooms or hosts"
+            placeholder="Search"
           />
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => loadRooms({ page: 1 })}>Q</button>
           {showSearchPanel ? (
-            <div className="talk-search-panel">
-              <span>Room recommendations</span>
-              {searchRecommendations.length ? searchRecommendations.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    selectRoom(item.room)
-                    setShowHostPanel(true)
-                  }}
-                >
+            <div className="buzzcast-search-panel">
+              <span>Recommendations for you</span>
+              {searchRecommendations.map((item) => (
+                <button key={item.id} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setShowMessages(true)}>
                   <i>{initialsFromName(item.name)}</i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
+                  <em>{item.unread}</em>
                 </button>
-              )) : <p>No rooms loaded yet.</p>}
+              ))}
             </div>
           ) : null}
         </div>
-        <div className="talk-actions">
-          <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>AD</IconButton>
-          <IconButton label="SDK flow" onClick={() => onView?.('sdk')}>SDK</IconButton>
-          <IconButton label="Room activity" badge={rooms.length || null} onClick={() => setShowActivity(true)}>RA</IconButton>
-          <button type="button" className="talk-balance" onClick={() => setShowStatusPanel(true)}><span>Rooms</span><strong>{roomMeta.total}</strong></button>
-          <IconButton label="Create room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>
-          <button type="button" className="talk-avatar-button" onClick={() => setActiveSection('me')}>
+        <div className="buzzcast-actions">
+          <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>[]</IconButton>
+          <IconButton label="Rankings">T</IconButton>
+          <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}>M</IconButton>
+          <button type="button" className="buzzcast-balance" onClick={() => setShowRecharge(true)}><span>Gems</span><strong>0</strong></button>
+          <IconButton label="Create live room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>
+          <button type="button" className="buzzcast-avatar-button" onClick={() => setActiveSection('me')}>
             <span>{profileInitials}</span>
           </button>
         </div>
       </header>
 
-      <aside className="talk-left-rail">
-        <button type="button" className={activeSection === 'live' ? 'active' : ''} onClick={openLiveSection}>
-          <span>[]</span> Rooms
+      <aside className="buzzcast-left-rail">
+        <button type="button" className={activeSection === 'live' || activeSection === 'room' ? 'active' : ''} onClick={openLiveSection}>
+          <span>[]</span> Live
         </button>
         <button type="button" className={activeSection === 'me' ? 'active' : ''} onClick={() => setActiveSection('me')}>
-          <span>O</span> Profile
+          <span>O</span> Me
         </button>
-        <button type="button" onClick={() => onView?.('admin')}>
-          <span>A</span> Admin
-        </button>
-        <button type="button" onClick={() => onView?.('sdk')}>
-          <span>S</span> SDK
-        </button>
-        <div className="talk-rail-spacer"></div>
-        <button type="button" onClick={() => setShowInstall(true)}><span>I</span> Install App</button>
+        <div className="buzzcast-rail-spacer"></div>
+        <button type="button" onClick={() => setShowInstall(true)}><span>A</span> Get the App</button>
         <button type="button" className={activeSection === 'settings' ? 'active' : ''} onClick={() => setActiveSection('settings')}>
-          <span>G</span> Settings
+          <span>S</span> Settings
         </button>
         <button type="button" className={activeSection === 'help' ? 'active' : ''} onClick={() => setActiveSection('help')}>
-          <span>?</span> Help
+          <span>?</span> Feedback and Help
         </button>
       </aside>
 
-      <main className="talk-main">
+      <main className="buzzcast-main">
         {activeSection === 'live' && renderLiveFeed()}
+        {activeSection === 'room' && renderRoomPreview()}
         {activeSection === 'me' && renderProfile()}
         {activeSection === 'settings' && renderSettings()}
         {activeSection === 'help' && renderHelp()}
       </main>
 
-      {showActivity ? (
-        <section className="talk-messages-drawer">
+      {showMessages ? (
+        <section className="buzzcast-messages-drawer">
           <aside>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search rooms" />
-            {rooms.map((room) => (
+            <input placeholder="Search" />
+            {dmThreads.map((thread) => (
               <button
-                key={room.id}
+                key={thread.id}
                 type="button"
-                className={selectedRoom?.id === room.id ? 'active' : ''}
-                onClick={() => selectRoom(room)}
+                className={activeThread === thread.id ? 'active' : ''}
+                onClick={() => setActiveThread(thread.id)}
               >
-                <i>{initialsFromName(room.name)}</i>
-                <span><strong>{room.name}</strong><small>{getRoomMeta(room.room_type).label}</small></span>
-                <time>{room.privacy_type}</time>
+                <i>{initialsFromName(thread.name)}</i>
+                <span><strong>{thread.name}</strong><small>{thread.preview}</small></span>
+                <time>{thread.time}</time>
+                {thread.unread ? <em>{thread.unread}</em> : null}
               </button>
             ))}
           </aside>
           <main>
             <header>
-              <strong>{selectedRoom?.name || 'Room Activity'}</strong>
-              <span>{selectedRoom ? `( ID: ${selectedRoom.id})` : ''}</span>
-              <button type="button" onClick={() => setShowActivity(false)}>Close</button>
+              <strong>{activeThreadData.name}</strong>
+              <span>( ID: 32165333)</span>
+              <button type="button" onClick={() => setShowMessages(false)}>End session</button>
             </header>
-            <div className="talk-dm-notice">{status}</div>
-            <div className="talk-dm-body">
-              {selectedRoom ? (
-                <>
-                  <p>Type: {getRoomMeta(selectedRoom.room_type).label}</p>
-                  <p>Privacy: {selectedRoom.privacy_type}</p>
-                  <p>Seats: {getSeatLabel(selectedRoom.room_type, selectedRoom.max_mic_count)}</p>
-                </>
-              ) : <p>Select a room to see details.</p>}
+            <div className="buzzcast-dm-notice">You can send up to 2 messages before they reply or follow you</div>
+            <div className="buzzcast-dm-body">
+              {(dmMessages[activeThread] || []).map((message) => (
+                <p key={message.id} className={message.mine ? 'mine' : ''}>{message.body}</p>
+              ))}
             </div>
-            <button className="talk-submit" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open Selected Room'}</button>
+            <form onSubmit={sendDmMessage}>
+              <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Send a chat" />
+            </form>
           </main>
         </section>
       ) : null}
 
       {showInstall ? (
-        <div className="talk-modal-backdrop">
-          <section className="talk-install-modal">
+        <div className="buzzcast-modal-backdrop">
+          <section className="buzzcast-install-modal">
             <h2>Install app</h2>
             <div>
-              <div className="talk-logo-mark">TE</div>
-              <span><strong>talkeachother</strong><small>{window.location.host}</small></span>
+              <div className="buzzcast-logo-mark">TE</div>
+              <span><strong>talkeachother</strong><small>talkeachother RTC</small></span>
             </div>
             <footer>
               <button type="button" className="primary" onClick={handleInstallApp}>Install</button>
@@ -815,10 +943,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
       ) : null}
 
       {showHostPanel ? (
-        <div className="talk-modal-backdrop dark" onMouseDown={() => setShowHostPanel(false)}>
-          <section className="talk-host-panel" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowHostPanel(false)}>
+          <section className="buzzcast-host-panel" onMouseDown={(event) => event.stopPropagation()}>
             <header>
-              <h2>Create or Join Room</h2>
+              <h2>Create Live Room</h2>
               <button type="button" onClick={() => setShowHostPanel(false)}>x</button>
             </header>
             <form onSubmit={createRoom}>
@@ -829,13 +957,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
               <textarea value={roomForm.description} onChange={(event) => updateRoomForm('description', event.target.value)} rows={3} aria-invalid={Boolean(formErrors.description)} />
               {formErrors.description && <small className="form-error">{formErrors.description}</small>}
               <label>Room Type</label>
-              <div className="talk-choice-grid">
+              <div className="buzzcast-choice-grid">
                 {Object.entries(roomTypeLabels).map(([value, label]) => (
                   <button key={value} type="button" className={roomForm.room_type === value ? 'active' : ''} onClick={() => updateRoomForm('room_type', value)}>{label}</button>
                 ))}
               </div>
               <label>Privacy</label>
-              <div className="talk-choice-grid">
+              <div className="buzzcast-choice-grid">
                 {roomPrivacyOptions.map((option) => (
                   <button key={option.value} type="button" className={roomForm.privacy_type === option.value ? 'active' : ''} onClick={() => updateRoomForm('privacy_type', option.value)}>{option.label}</button>
                 ))}
@@ -847,7 +975,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
                   {formErrors.password && <small className="form-error">{formErrors.password}</small>}
                 </>
               ) : null}
-              <div className="talk-host-fields">
+              <div className="buzzcast-host-fields">
                 <div>
                   <label>Stage Seats</label>
                   <input type="number" min="1" max="16" value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} aria-invalid={Boolean(formErrors.max_mic_count)} />
@@ -859,7 +987,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
                   </select>
                 </div>
               </div>
-              <div className="talk-toggle-grid">
+              <div className="buzzcast-toggle-grid">
                 {roomFeatureOptions.map((option) => (
                   <label key={option.field}>
                     <input type="checkbox" checked={Boolean(roomForm[option.field])} onChange={(event) => updateRoomForm(option.field, event.target.checked)} />
@@ -867,13 +995,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
                   </label>
                 ))}
               </div>
-              <button className="talk-submit" disabled={creating} type="submit">{creating ? 'Creating...' : 'Create Room'}</button>
+              <button className="buzzcast-submit" disabled={creating} type="submit">{creating ? 'Creating...' : 'Create Live Room'}</button>
             </form>
 
-            <div className="talk-quick-join">
+            <div className="buzzcast-quick-join">
               <h3>Quick Join</h3>
               <label>RTC Mode</label>
-              <div className="talk-choice-grid">
+              <div className="buzzcast-choice-grid">
                 {rtcModeOptions.map((option) => {
                   const disabled = option.value === 'video' && !selectedRoomSupportsVideo
                   return (
@@ -887,10 +1015,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
               <input value={roomId} onChange={(event) => clearSelectedRoomIfManual(event.target.value)} placeholder="Select room or enter ID" />
               <label>Room Password</label>
               <input type="password" value={joinPassword} onChange={(event) => setJoinPassword(event.target.value)} placeholder="Only needed for locked rooms" autoComplete="current-password" />
-              <button className="talk-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open RTC Console'}</button>
+              <button className="buzzcast-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open RTC Console'}</button>
               {createdRoom ? (
                 <button
-                  className="talk-submit"
+                  className="buzzcast-submit"
                   type="button"
                   onClick={() => onEnterRoom(String(createdRoom.id), {
                     password: joinPassword.trim(),
@@ -907,38 +1035,35 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
         </div>
       ) : null}
 
-      {showStatusPanel ? (
-        <div className="talk-modal-backdrop dark" onMouseDown={() => setShowStatusPanel(false)}>
-          <section className="talk-status-panel" onMouseDown={(event) => event.stopPropagation()}>
+      {showRecharge ? (
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowRecharge(false)}>
+          <section className="buzzcast-recharge-panel" onMouseDown={(event) => event.stopPropagation()}>
             <header>
-              <h2>Room Status <span>{roomMeta.total}</span></h2>
-              <button type="button" onClick={() => setShowStatusPanel(false)}>x</button>
+              <h2>Balance <span>0</span></h2>
+              <button type="button" onClick={() => setShowRecharge(false)}>x</button>
             </header>
-            <div className="talk-status-tabs"><button type="button" className="active">Live</button><button type="button">RTC</button></div>
-            <button type="button"><span>Total rooms</span><span>{roomMeta.total}</span></button>
-            <button type="button"><span>Active participants</span><span>{activeParticipants}</span></button>
-            <button type="button"><span>Current filter</span><span>{activeFeed}</span></button>
-            <button type="button"><span>RTC mode</span><span>{joinRtcMode}</span></button>
-            <button type="button" className="talk-status-button" onClick={() => loadRooms({ page: roomMeta.page })}>Refresh Rooms</button>
+            <div className="buzzcast-recharge-tabs"><button type="button" className="active">Top-up</button><button type="button">Reseller</button></div>
+            {paymentMethods.map((method) => <button type="button" key={method}>{method}<span>v</span></button>)}
+            <button type="button" className="buzzcast-recharge-button">Recharge</button>
           </section>
         </div>
       ) : null}
 
       {showFeedback ? (
-        <div className="talk-modal-backdrop dark">
-          <section className="talk-feedback-modal">
+        <div className="buzzcast-modal-backdrop dark">
+          <section className="buzzcast-feedback-modal">
             <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)}>x</button></header>
-            <div className="talk-feedback-row">
-              <select><option>Room issue</option><option>Camera issue</option><option>Deployment issue</option></select>
-              <select><option>Frontend</option><option>Backend</option><option>RTC</option></select>
+            <div className="buzzcast-feedback-row">
+              <select><option>Select question type</option></select>
+              <select><option>Select question type</option></select>
             </div>
             <label>Problem description</label>
             <textarea placeholder="Please provide as much detail as possible" maxLength={1000}></textarea>
             <label>Problem screenshot / screen recording <small>(optional)</small></label>
-            <div className="talk-upload-box"></div>
+            <div className="buzzcast-upload-box"></div>
             <label>Contact information <small>(optional)</small></label>
             <input placeholder="Enter your email account" />
-            <button type="button" className="talk-submit" onClick={() => setShowFeedback(false)}>Submit</button>
+            <button type="button" className="buzzcast-submit" onClick={() => setShowFeedback(false)}>Submit</button>
           </section>
         </div>
       ) : null}
