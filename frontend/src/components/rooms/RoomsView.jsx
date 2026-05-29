@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../../services/api'
+import { canUseAdminDashboard } from '../../utils/roles'
 import {
   buildRoomsPath,
   defaultRoomForm,
   defaultRtcModeForRoom,
+  formatRoomDate,
+  getRoomFlowLabel,
   getRoomMeta,
+  getRoomTags,
   getSeatLabel,
   normalizeRtcMode,
   privacyFilterOptions,
@@ -64,13 +68,6 @@ const demoCards = [
   { id: 'demo-25', title: 'women and ladies join in', host: 'United States', viewers: 5133, tone: 'storm', tab: 'party', party: true },
   { id: 'demo-26', title: 'SUPPORT The Cozy Streamer', host: 'United States', viewers: 244, tone: 'ember', tab: 'party', party: true },
   { id: 'demo-27', title: 'This room may contain sensitive content', host: 'mandyiluvfrogs', viewers: 6345, tone: 'sensitive', sensitive: true },
-]
-
-const searchRecommendations = [
-  { id: 'rec-1', name: 'Donna Walks', detail: 'Donde una potra pisa...', unread: 1 },
-  { id: 'rec-2', name: 'Jennifer Ortiz', detail: 'Sociable, no amigabl...', unread: 1 },
-  { id: 'rec-3', name: 'Friend Room', detail: '@Jessica An3215971...', unread: 4 },
-  { id: 'rec-4', name: 'TalkEachOther Team', detail: 'Welcome to TalkEachOther...', unread: 1 },
 ]
 
 const dmThreads = [
@@ -212,6 +209,66 @@ function FeedCard({ card, featured, onOpen }) {
   )
 }
 
+function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
+  const meta = getRoomMeta(room.room_type)
+  const tags = getRoomTags(room)
+  const initial = room.owner_name?.slice(0, 1)?.toUpperCase() || room.name?.slice(0, 1)?.toUpperCase() || 'R'
+  const needsPassword = room.privacy_type === 'password'
+  const isPrivate = room.privacy_type === 'private'
+  const coverLabel = needsPassword ? 'Locked' : isPrivate ? 'Private' : meta.short
+  const flowLabel = getRoomFlowLabel(room.room_type)
+  const seatLabel = getSeatLabel(room.room_type, room.max_mic_count)
+  const roomStatus = room.status || 'active'
+  const description = room.description || 'A hosted room for live video, music, chat, and creator collaboration.'
+
+  return (
+    <article className={`talk-dashboard-card ${meta.tone}${isSelected ? ' selected' : ''}`}>
+      <div className="talk-dashboard-cover">
+        <div className="talk-live-chip"><span></span> LIVE</div>
+        <div className="talk-cover-chip">{coverLabel}</div>
+        <div className="talk-cover-asset" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div className="talk-cover-host">
+          <div className="talk-room-avatar large">{initial}</div>
+          <div>
+            <span>{room.owner_name || 'Room host'}</span>
+            <strong>{meta.label}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="talk-dashboard-card-body">
+        <div className="talk-room-title-row">
+          <div>
+            <h2>#{room.id} - {room.name || meta.label}</h2>
+            <p>{flowLabel} - {seatLabel} - {roomStatus}</p>
+          </div>
+          <div className="talk-room-avatar">{initial}</div>
+        </div>
+        <p className="talk-room-description">{description}</p>
+        <div className="talk-room-stat-row">
+          <span>{room.active_participants || 0} active</span>
+          <time>{formatRoomDate(room.created_at)}</time>
+        </div>
+        <div className="talk-room-tags">
+          {tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
+        <div className="talk-room-actions">
+          <button type="button" className={isSelected ? 'selected' : ''} onClick={() => onSelect(room)}>
+            {isSelected ? 'Selected' : 'Select'}
+          </button>
+          <button type="button" className="primary" onClick={() => onJoin(room)}>
+            {needsPassword ? 'Unlock' : 'Open'}
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
@@ -252,11 +309,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   const displayName = user?.name || user?.email?.split('@')[0] || 'Michael Sa32160161'
   const displayId = user?.id || 32160161
   const profileInitials = initialsFromName(displayName)
+  const showAdminDashboard = canUseAdminDashboard(user)
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
+  const roomSearchResults = useMemo(() => rooms.slice(0, 6).map((room) => ({
+    id: room.id,
+    name: room.name || `Room ${room.id}`,
+    detail: `${getRoomMeta(room.room_type).label} - ${room.privacy_type}`,
+    room,
+  })), [rooms])
   const visibleCards = useMemo(() => {
     let cards = [...roomCards, ...demoCards]
 
@@ -296,7 +360,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     setJoinPassword('')
     setJoinRtcMode(defaultRtcModeForRoom(room))
     setStatus(room.privacy_type === 'password' ? `Room #${room.id} needs a password before joining.` : `Room #${room.id} selected.`)
-    if (room.privacy_type === 'password') setShowHostPanel(true)
   }
 
   function clearSelectedRoomIfManual(value) {
@@ -443,6 +506,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   function joinRoomFromCard(room) {
     if (room.privacy_type === 'password') {
       selectRoom(room)
+      setShowHostPanel(true)
       return
     }
 
@@ -488,77 +552,39 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   }
 
   function renderLiveFeed() {
-    const isExplore = activeFeed === 'explore'
-    const isParty = activeFeed === 'party'
-
     return (
-      <>
-        <nav className="buzzcast-feed-nav" aria-label="Live feed">
-          {feedTabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              className={activeFeed === tab.value ? 'active' : ''}
-              onClick={() => switchFeed(tab.value)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      <section className="talk-dashboard">
+        <header className="talk-dashboard-header">
+          <h1>Live now</h1>
+          <span>{loadingRooms ? 'Refreshing rooms...' : `Page ${roomMeta.page} of ${roomMeta.total_pages || 1}`}</span>
+        </header>
 
-        {isExplore ? (
-          <div className="buzzcast-filter-pills">
-            {exploreFilters.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className={activeExplore === item.value ? 'active' : ''}
-                onClick={() => switchExplore(item.value)}
-              >
-                {item.label}
-              </button>
+        {loadingRooms && rooms.length === 0 ? (
+          <div className="talk-dashboard-empty">Loading rooms...</div>
+        ) : (
+          <div className="talk-dashboard-grid">
+            {rooms.length === 0 ? (
+              <div className="talk-dashboard-empty">No matching rooms yet. Create one or change the filters.</div>
+            ) : rooms.map((room) => (
+              <DashboardRoomCard
+                key={room.id}
+                room={room}
+                isSelected={roomId === String(room.id)}
+                onSelect={selectRoom}
+                onJoin={joinRoomFromCard}
+              />
             ))}
           </div>
-        ) : null}
-
-        {isParty ? (
-          <div className="buzzcast-match-banner">
-            <strong>Match</strong>
-            <span>16847868 people matched</span>
-          </div>
-        ) : null}
-
-        <div className="buzzcast-feed-controls">
-          <div>
-            <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Privacy filter">
-              {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort rooms">
-              {roomSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </div>
-          <span>{loadingRooms ? 'Refreshing rooms...' : status}</span>
-        </div>
-
-        <section className={`buzzcast-card-grid ${isParty ? 'party-grid' : ''}`}>
-          {visibleCards.map((card, index) => (
-            <FeedCard
-              key={card.id}
-              card={card}
-              featured={activeFeed === 'for_you' && index === 0}
-              onOpen={openCard}
-            />
-          ))}
-        </section>
+        )}
 
         {roomMeta.total_pages > 1 ? (
-          <div className="buzzcast-pagination">
+          <div className="talk-dashboard-pagination">
             <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
-            <span>{roomMeta.page} / {roomMeta.total_pages}</span>
+            <span>{roomMeta.total} total rooms</span>
             <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
           </div>
         ) : null}
-      </>
+      </section>
     )
   }
 
@@ -843,19 +869,25 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           </button>
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
-              <span>Recommendations for you</span>
-              {searchRecommendations.map((item) => (
-                <button key={item.id} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setShowMessages(true)}>
+              <span>{roomSearchResults.length ? 'Rooms' : 'No room matches yet'}</span>
+              {roomSearchResults.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectRoom(item.room)}
+                >
                   <i>{initialsFromName(item.name)}</i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
-                  <em>{item.unread}</em>
                 </button>
               ))}
             </div>
           ) : null}
         </div>
         <div className="buzzcast-actions">
-          <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
+          {showAdminDashboard ? (
+            <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
+          ) : null}
           <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
           <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
           <IconButton label="Create live room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>

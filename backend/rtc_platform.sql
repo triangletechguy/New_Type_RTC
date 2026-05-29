@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 );
 
 INSERT IGNORE INTO tenants (id, name, status, billing_rate_per_minute)
-VALUES (1, 'Default Client', 'active', 0.0000);
+VALUES (1, 'Accenture', 'active', 0.0000);
 
 INSERT IGNORE INTO roles (id, name, label) VALUES
 (1, 'end_user', 'End User'),
@@ -229,10 +229,10 @@ INSERT INTO users (
 )
 VALUES (
     1,
-    'RTC Admin',
-    'admin@rtc.com',
+    'TalkEachOther Super Admin',
+    'superadmin@talkeachother.com',
     NULL,
-    '$2b$10$2WruYUUM8NlLLC5Z3DQxa.4CpLZ8BQO5wJYse1EcMs/AU7fcmC5Ka',
+    '$2b$10$vF8cp4MARLxJf8Y/t6Fz8.N4eMnjKHX5LNM393qVr7PJtiM9nakOG',
     'active',
     NOW(),
     NOW()
@@ -243,23 +243,96 @@ ON DUPLICATE KEY UPDATE
     status = VALUES(status),
     updated_at = NOW();
 
-SET @admin_user_id := (
+INSERT INTO users (
+    tenant_id,
+    name,
+    email,
+    phone,
+    password_hash,
+    status,
+    created_at,
+    updated_at
+)
+VALUES (
+    1,
+    'Accenture Admin',
+    'admin@accenture.com',
+    NULL,
+    '$2b$10$vF8cp4MARLxJf8Y/t6Fz8.N4eMnjKHX5LNM393qVr7PJtiM9nakOG',
+    'active',
+    NOW(),
+    NOW()
+)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    password_hash = VALUES(password_hash),
+    status = VALUES(status),
+    updated_at = NOW();
+
+UPDATE users
+SET status = 'inactive',
+    updated_at = NOW()
+WHERE email IN (
+    'admin@rtc.com',
+    'demo-host@rtc.com',
+    'demo-moderator@rtc.com',
+    'demo-speaker@rtc.com',
+    'demo-viewer@rtc.com',
+    'demo-banned@rtc.com'
+);
+
+DELETE user_roles
+FROM user_roles
+INNER JOIN users ON users.id = user_roles.user_id
+INNER JOIN roles ON roles.id = user_roles.role_id
+WHERE roles.name IN ('client_admin', 'super_admin')
+AND users.email NOT IN ('superadmin@talkeachother.com', 'admin@accenture.com');
+
+DELETE user_roles
+FROM user_roles
+INNER JOIN users ON users.id = user_roles.user_id
+INNER JOIN roles ON roles.id = user_roles.role_id
+WHERE roles.name IN ('end_user', 'client_admin', 'super_admin')
+AND users.email IN ('superadmin@talkeachother.com', 'admin@accenture.com');
+
+SET @super_admin_user_id := (
     SELECT id
     FROM users
     WHERE tenant_id = 1
-    AND email = 'admin@rtc.com'
+    AND email = 'superadmin@talkeachother.com'
     LIMIT 1
 );
 
 INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
-SELECT @admin_user_id, roles.id, 1, NOW()
+SELECT @super_admin_user_id, roles.id, 1, NOW()
 FROM roles
 WHERE roles.name IN ('end_user', 'client_admin', 'super_admin')
-AND @admin_user_id IS NOT NULL
+AND @super_admin_user_id IS NOT NULL
 AND NOT EXISTS (
     SELECT 1
     FROM user_roles
-    WHERE user_roles.user_id = @admin_user_id
+    WHERE user_roles.user_id = @super_admin_user_id
+    AND user_roles.role_id = roles.id
+    AND user_roles.tenant_id = 1
+);
+
+SET @accenture_admin_user_id := (
+    SELECT id
+    FROM users
+    WHERE tenant_id = 1
+    AND email = 'admin@accenture.com'
+    LIMIT 1
+);
+
+INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
+SELECT @accenture_admin_user_id, roles.id, 1, NOW()
+FROM roles
+WHERE roles.name IN ('end_user', 'client_admin')
+AND @accenture_admin_user_id IS NOT NULL
+AND NOT EXISTS (
+    SELECT 1
+    FROM user_roles
+    WHERE user_roles.user_id = @accenture_admin_user_id
     AND user_roles.role_id = roles.id
     AND user_roles.tenant_id = 1
 );

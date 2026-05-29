@@ -414,8 +414,8 @@ verify_deploy() {
   printf '\n'
   curl -fk "$DOMAIN/api/auth/login" \
     -H 'Content-Type: application/json' \
-    --data '{"email":"admin@rtc.com","password":"Admin@123456"}' >/dev/null
-  printf 'Login check passed for admin@rtc.com\n'
+    --data '{"email":"superadmin@talkeachother.com","password":"123!@#"}' >/dev/null
+  printf 'Login check passed for superadmin@talkeachother.com\n'
 }
 
 main() {

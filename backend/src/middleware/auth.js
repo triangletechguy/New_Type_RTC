@@ -50,6 +50,24 @@ async function authMiddleware(req, res, next) {
   }
 }
 
+function hasAnyRole(user, allowedRoles) {
+  const roles = Array.isArray(user?.roles) ? user.roles : []
+  const allowed = new Set(allowedRoles)
+  return roles.some((role) => allowed.has(typeof role === 'string' ? role : role?.name))
+}
+
+function requireAnyRole(allowedRoles) {
+  return (req, res, next) => {
+    if (!hasAnyRole(req.user, allowedRoles)) {
+      return res.status(403).json({ message: 'You do not have permission to open the admin dashboard.' })
+    }
+
+    return next()
+  }
+}
+
 module.exports = {
   authMiddleware,
+  hasAnyRole,
+  requireAnyRole,
 }

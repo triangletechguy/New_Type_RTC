@@ -525,6 +525,397 @@
   padding: 82px 20px 28px 176px;
 }
 
+.talk-dashboard {
+  min-height: calc(100vh - 110px);
+}
+
+.talk-dashboard-tabs {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.talk-dashboard-tabs button {
+  position: relative;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #aaa6bc;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.talk-dashboard-tabs button.active {
+  color: #fff;
+}
+
+.talk-dashboard-tabs button.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: #9658ff;
+  transform: translateX(-50%);
+}
+
+.talk-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.talk-dashboard-header h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 1000;
+  letter-spacing: 0;
+}
+
+.talk-dashboard-header span {
+  color: #b7c2dc;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.talk-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.talk-dashboard-card {
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 150px minmax(0, 1fr);
+  border: 1px solid rgba(103, 121, 166, .38);
+  border-radius: 6px;
+  background: #151a29;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .24);
+}
+
+.talk-dashboard-card.selected {
+  border-color: rgba(99, 177, 255, .92);
+  box-shadow: 0 0 0 1px rgba(99, 177, 255, .34), 0 18px 42px rgba(54, 116, 255, .18);
+}
+
+.talk-dashboard-cover {
+  position: relative;
+  overflow: hidden;
+  min-height: 150px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(9, 13, 28, .04), rgba(9, 13, 28, .86)),
+    linear-gradient(135deg, #4e8bd6, #36206e 78%);
+}
+
+.talk-dashboard-card.tone-music .talk-dashboard-cover {
+  background:
+    linear-gradient(180deg, rgba(9, 13, 28, .04), rgba(9, 13, 28, .86)),
+    linear-gradient(135deg, #55c9b8, #12374f 78%);
+}
+
+.talk-dashboard-card.tone-live .talk-dashboard-cover {
+  background:
+    linear-gradient(180deg, rgba(9, 13, 28, .04), rgba(9, 13, 28, .86)),
+    linear-gradient(135deg, #f04579, #a45b2f 58%, #1a1d32);
+}
+
+.talk-dashboard-card.tone-pk .talk-dashboard-cover {
+  background:
+    linear-gradient(180deg, rgba(9, 13, 28, .04), rgba(9, 13, 28, .86)),
+    linear-gradient(135deg, #f43f7d, #6d3ce1 50%, #1a314f);
+}
+
+.talk-live-chip,
+.talk-cover-chip {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  min-height: 21px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 1000;
+}
+
+.talk-live-chip {
+  left: 12px;
+  gap: 6px;
+  padding: 0 10px;
+  background: rgba(20, 24, 42, .76);
+}
+
+.talk-live-chip span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5d65;
+}
+
+.talk-cover-chip {
+  right: 12px;
+  max-width: calc(100% - 106px);
+  padding: 0 9px;
+  overflow: hidden;
+  background: rgba(18, 21, 38, .78);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-cover-asset {
+  position: absolute;
+  right: 10px;
+  top: 50px;
+  z-index: 1;
+  display: flex;
+  align-items: end;
+  gap: 7px;
+  opacity: .72;
+}
+
+.talk-cover-asset span {
+  width: 16px;
+  border-radius: 999px;
+  background: rgba(227, 232, 255, .72);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .2);
+}
+
+.talk-cover-asset span:nth-child(1) { height: 34px; }
+.talk-cover-asset span:nth-child(2) { height: 62px; }
+.talk-cover-asset span:nth-child(3) { height: 28px; }
+
+.talk-dashboard-card.tone-video .talk-cover-asset span,
+.talk-dashboard-card.tone-live .talk-cover-asset span,
+.talk-dashboard-card.tone-pk .talk-cover-asset span {
+  border-radius: 50%;
+}
+
+.talk-cover-host {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.talk-cover-host > div:last-child {
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+.talk-cover-host span,
+.talk-cover-host strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-cover-host span {
+  color: #b8c4df;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.talk-cover-host strong {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 1000;
+}
+
+.talk-room-avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: linear-gradient(135deg, #5fa8f4, #f24993);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 1000;
+}
+
+.talk-room-avatar.large {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: rgba(18, 24, 42, .86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .24);
+  font-size: 20px;
+}
+
+.talk-dashboard-card-body {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(30px, auto) auto;
+  gap: 10px;
+  padding: 13px 12px 12px;
+}
+
+.talk-room-title-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 10px;
+  align-items: start;
+}
+
+.talk-room-title-row h2 {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 0 0 4px;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.15;
+  font-weight: 1000;
+}
+
+.talk-room-title-row p,
+.talk-room-description {
+  margin: 0;
+  overflow: hidden;
+  color: #c2cbe0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.talk-room-title-row p {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-room-description {
+  display: -webkit-box;
+  min-height: 48px;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.talk-room-stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #aeb9d2;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.talk-room-stat-row time {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-room-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: start;
+}
+
+.talk-room-tags span {
+  min-height: 21px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  background: #2a3144;
+  color: #dce7ff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.talk-room-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 2px;
+}
+
+.talk-room-actions button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: #242a3c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.talk-room-actions button.primary {
+  background: linear-gradient(135deg, #f8477c, #ff7147);
+}
+
+.talk-room-actions button.selected {
+  background: #313d59;
+  color: #beddff;
+}
+
+.talk-dashboard-empty {
+  grid-column: 1 / -1;
+  min-height: 96px;
+  display: grid;
+  place-items: center start;
+  padding: 22px;
+  border: 1px solid rgba(103, 121, 166, .28);
+  border-radius: 6px;
+  background: #151a29;
+  color: #c8d1e6;
+}
+
+.talk-dashboard-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0 0;
+}
+
+.talk-dashboard-pagination button {
+  min-height: 36px;
+  border: 1px solid #49475a;
+  border-radius: 6px;
+  background: #302f3e;
+  color: #fff;
+}
+
+.talk-dashboard-pagination span {
+  color: #aaa6bb;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .buzzcast-feed-nav {
   height: 42px;
   display: flex;
@@ -2059,6 +2450,11 @@ pre {
   background: linear-gradient(135deg, var(--hot), var(--hot-2));
   border-color: rgba(255, 255, 255, .14);
   box-shadow: 0 12px 30px rgba(255, 63, 127, .2);
+}
+
+.secondary-button {
+  background: rgba(255, 255, 255, .075);
+  border-color: rgba(255, 255, 255, .16);
 }
 
 .danger-button,
@@ -5336,6 +5732,232 @@ pre {
   line-height: 1.4;
 }
 
+.admin-dashboard-view {
+  gap: 14px;
+}
+
+.admin-header-actions,
+.admin-panel-header,
+.admin-scope-summary,
+.admin-account-card,
+.admin-scope-pills {
+  display: flex;
+  align-items: center;
+}
+
+.admin-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.admin-scope-summary {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+}
+
+.admin-scope-summary h2,
+.admin-panel-header h2 {
+  margin: 4px 0 0;
+}
+
+.admin-scope-summary p {
+  margin: 4px 0 0;
+}
+
+.admin-scope-pills {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-scope-pills span {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .07);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-list-panel,
+.admin-data-card {
+  padding: 16px;
+}
+
+.admin-panel-header {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-panel-header > span,
+.admin-panel-header button {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.admin-panel-header button.active {
+  color: #fff;
+  background: rgba(139, 92, 246, .8);
+  border-color: rgba(255, 255, 255, .18);
+}
+
+.admin-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.admin-account-card {
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 76px;
+  padding: 12px;
+  text-align: left;
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .055);
+}
+
+.admin-account-card.active {
+  border-color: rgba(139, 92, 246, .75);
+  background: rgba(139, 92, 246, .2);
+}
+
+.admin-account-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #6ee7f9, #8b5cf6 55%, #fb7185);
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.admin-account-card span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-account-card strong,
+.admin-account-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-account-card small,
+.admin-account-stats {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-account-stats {
+  margin-left: auto;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.admin-account-stats b {
+  color: #fff;
+}
+
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr);
+  gap: 14px;
+}
+
+.admin-table-scroll {
+  overflow: auto;
+  max-height: 540px;
+}
+
+.admin-table-scroll.compact {
+  max-height: 360px;
+}
+
+.admin-data-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+}
+
+.admin-data-table th,
+.admin-data-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--muted);
+  background: rgba(23, 27, 42, .96);
+  font-size: 11px;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.admin-data-table td {
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-data-table td strong,
+.admin-data-table td span {
+  display: block;
+}
+
+.admin-data-table td strong {
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.admin-data-table td span {
+  color: var(--muted);
+  max-width: 360px;
+}
+
+.admin-state {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .07);
+  color: var(--soft);
+}
+
+.admin-state.active {
+  color: #bbf7d0;
+  background: rgba(52, 211, 153, .12);
+  border-color: rgba(52, 211, 153, .3);
+}
+
+.admin-state.ended,
+.admin-state.inactive {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .1);
+}
+
 .usage-dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
@@ -5492,6 +6114,7 @@ pre {
   .metrics-grid,
   .split-grid,
   .buzz-hero-grid,
+  .admin-detail-grid,
   .usage-dashboard-grid,
   .video-grid {
     grid-template-columns: 1fr;

@@ -1,6 +1,6 @@
 # talk-each-other RTC Enterprise
 
-BuzzCast-style video and music room platform using native WebRTC:
+TalkEachOther video and music room platform using native WebRTC:
 
 - React + Vite frontend
 - Node.js + Express backend
@@ -48,19 +48,18 @@ http://localhost:5173
 ## Default account
 
 ```txt
-Email: admin@rtc.com
-Password: Admin@123456
+Superadmin: superadmin@talkeachother.com / 123!@#
+Accenture admin: admin@accenture.com / 123!@#
 ```
 
 ## Demo seed data
 
 ```txt
-Demo user password: Demo@123456
 Password room password: Room@1234
 ```
 
-Run `npm run db:seed` to create or refresh demo users, demo rooms, active RTC
-sessions, chat messages, moderation examples, and verified usage logs.
+Run `npm run db:seed` to create or refresh the two admin accounts, demo rooms,
+active RTC sessions, chat messages, moderation examples, and verified usage logs.
 
 ## Notes
 

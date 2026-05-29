@@ -1,4 +1,8 @@
+import { canUseAdminDashboard } from '../../utils/roles'
+
 export function Sidebar({ user, currentView, onView, onLogout }) {
+  const showAdminDashboard = canUseAdminDashboard(user)
+
   return (
     <aside className="sidebar glass-card">
       <div className="logo-row">
@@ -10,7 +14,9 @@ export function Sidebar({ user, currentView, onView, onLogout }) {
       </div>
 
       <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>Rooms</button>
-      <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>Admin Dashboard</button>
+      {showAdminDashboard ? (
+        <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>Admin Dashboard</button>
+      ) : null}
       <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>SDK Flow</button>
 
       <div className="sidebar-user">

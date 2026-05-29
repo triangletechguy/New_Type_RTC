@@ -5,8 +5,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const mysql = require('mysql2/promise')
 
 const API_BASE_URL = process.env.E2E_API_BASE_URL || `http://127.0.0.1:${process.env.PORT || 8000}/api`
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@rtc.com'
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@123456'
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'superadmin@talkeachother.com'
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || '123!@#'
 
 const connectionConfig = {
   host: process.env.DB_HOST || '127.0.0.1',

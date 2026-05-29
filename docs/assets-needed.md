@@ -1,6 +1,6 @@
 # Assets Needed For Final UI Polish
 
-Use this checklist for the high-quality BuzzCast-style visual pass. Put final files in a shared folder or send links with usage rights.
+Use this checklist for the high-quality TalkEachOther visual pass. Put final files in a shared folder or send links with usage rights.
 
 ## Brand
 

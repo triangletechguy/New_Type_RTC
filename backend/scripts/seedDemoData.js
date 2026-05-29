@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs')
 const mysql = require('mysql2/promise')
 
 const tenantId = 1
-const demoPassword = 'Demo@123456'
+const adminPassword = '123!@#'
 const passwordRoomPassword = 'Room@1234'
 
 const connectionConfig = {
@@ -56,6 +56,8 @@ async function upsertUser(connection, user, passwordHash, roleIds) {
     [tenantId, user.email]
   )
 
+  let userId
+
   if (existing) {
     await connection.execute(
       `
@@ -68,18 +70,29 @@ async function upsertUser(connection, user, passwordHash, roleIds) {
       `,
       [user.name, passwordHash, user.status || 'active', existing.id]
     )
-    return existing.id
+    userId = existing.id
+  } else {
+    const [result] = await connection.execute(
+      `
+      INSERT INTO users (
+        tenant_id, name, email, password_hash, status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+      `,
+      [tenantId, user.name, user.email, passwordHash, user.status || 'active']
+    )
+    userId = result.insertId
   }
 
-  const [result] = await connection.execute(
-    `
-    INSERT INTO users (
-      tenant_id, name, email, password_hash, status, created_at, updated_at
+  if (user.replaceRoles) {
+    await connection.execute(
+      `
+      DELETE FROM user_roles
+      WHERE user_id = ?
+      `,
+      [userId]
     )
-    VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-    `,
-    [tenantId, user.name, user.email, passwordHash, user.status || 'active']
-  )
+  }
 
   for (const role of user.roles || ['end_user']) {
     if (!roleIds[role]) continue
@@ -95,11 +108,42 @@ async function upsertUser(connection, user, passwordHash, roleIds) {
         AND tenant_id = ?
       )
       `,
-      [result.insertId, roleIds[role], tenantId, result.insertId, roleIds[role], tenantId]
+      [userId, roleIds[role], tenantId, userId, roleIds[role], tenantId]
     )
   }
 
-  return result.insertId
+  return userId
+}
+
+async function deactivateKnownDemoUsers(connection) {
+  await connection.execute(
+    `
+    UPDATE users
+    SET status = 'inactive',
+        updated_at = NOW()
+    WHERE email IN (
+      'admin@rtc.com',
+      'demo-host@rtc.com',
+      'demo-moderator@rtc.com',
+      'demo-speaker@rtc.com',
+      'demo-viewer@rtc.com',
+      'demo-banned@rtc.com'
+    )
+    `,
+    []
+  )
+
+  await connection.execute(
+    `
+    DELETE user_roles
+    FROM user_roles
+    INNER JOIN users ON users.id = user_roles.user_id
+    INNER JOIN roles ON roles.id = user_roles.role_id
+    WHERE roles.name IN ('client_admin', 'super_admin')
+    AND users.email NOT IN ('superadmin@talkeachother.com', 'admin@accenture.com')
+    `,
+    []
+  )
 }
 
 async function ensureRoom(connection, room, ownerId, passwordHash = null) {
@@ -549,7 +593,8 @@ async function ensureBan(connection, ban) {
 
 async function main() {
   const connection = await mysql.createConnection(connectionConfig)
-  const passwordHash = await bcrypt.hash(demoPassword, 10)
+  const passwordHash = await bcrypt.hash(adminPassword, 10)
+  const inactivePasswordHash = await bcrypt.hash(`disabled-demo-${Date.now()}`, 10)
   const roomPasswordHash = await bcrypt.hash(passwordRoomPassword, 10)
 
   try {
@@ -558,7 +603,7 @@ async function main() {
     await connection.execute(
       `
       INSERT INTO tenants (id, name, status, billing_rate_per_minute, created_at, updated_at)
-      VALUES (?, 'Default Client', 'active', 0.0000, NOW(), NOW())
+      VALUES (?, 'Accenture', 'active', 0.0000, NOW(), NOW())
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         status = VALUES(status),
@@ -573,18 +618,43 @@ async function main() {
       return map
     }, {})
 
+    const superadmin = await upsertUser(
+      connection,
+      {
+        name: 'TalkEachOther Super Admin',
+        email: 'superadmin@talkeachother.com',
+        roles: ['end_user', 'client_admin', 'super_admin'],
+        replaceRoles: true,
+      },
+      passwordHash,
+      roleIds
+    )
+    const accentureAdmin = await upsertUser(
+      connection,
+      {
+        name: 'Accenture Admin',
+        email: 'admin@accenture.com',
+        roles: ['end_user', 'client_admin'],
+        replaceRoles: true,
+      },
+      passwordHash,
+      roleIds
+    )
+    await deactivateKnownDemoUsers(connection)
+
     const users = {
-      host: await upsertUser(connection, { name: 'Demo Host Maya', email: 'demo-host@rtc.com', roles: ['end_user', 'room_owner'] }, passwordHash, roleIds),
-      moderator: await upsertUser(connection, { name: 'Demo Moderator Leo', email: 'demo-moderator@rtc.com', roles: ['end_user', 'moderator'] }, passwordHash, roleIds),
-      speaker: await upsertUser(connection, { name: 'Demo Speaker Asha', email: 'demo-speaker@rtc.com', roles: ['end_user'] }, passwordHash, roleIds),
-      viewer: await upsertUser(connection, { name: 'Demo Viewer Noor', email: 'demo-viewer@rtc.com', roles: ['end_user'] }, passwordHash, roleIds),
-      banned: await upsertUser(connection, { name: 'Demo Banned Viewer', email: 'demo-banned@rtc.com', roles: ['end_user'] }, passwordHash, roleIds),
+      superadmin,
+      host: accentureAdmin,
+      moderator: superadmin,
+      speaker: await upsertUser(connection, { name: 'Inactive Demo Speaker', email: 'demo-speaker@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
+      viewer: await upsertUser(connection, { name: 'Inactive Demo Viewer', email: 'demo-viewer@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
+      banned: await upsertUser(connection, { name: 'Inactive Demo Blocked Viewer', email: 'demo-banned@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
     }
 
     const roomConfigs = [
       {
         key: 'stage',
-        name: 'Demo BuzzCast Stage',
+        name: 'TalkEachOther Demo Stage',
         description: 'A public group video room with active demo speakers, chat, moderation, and RTC state.',
         room_type: 'group_video',
         privacy_type: 'public',
@@ -848,9 +918,10 @@ async function main() {
 
     await connection.commit()
 
-    console.log('Demo data seeded successfully.')
-    console.log(`Demo users: ${Object.keys(users).length} users, password ${demoPassword}`)
-    console.log(`Demo rooms: ${Object.keys(rooms).length} rooms, password room password ${passwordRoomPassword}`)
+    console.log('TalkEachOther data seeded successfully.')
+    console.log(`Superadmin: superadmin@talkeachother.com / ${adminPassword}`)
+    console.log(`Accenture admin: admin@accenture.com / ${adminPassword}`)
+    console.log(`Rooms: ${Object.keys(rooms).length} rooms, room password ${passwordRoomPassword}`)
     console.log(`Active sessions: stage #${stageSessionId}, music #${musicSessionId}`)
     console.log(`Ended replay session: #${replaySessionId}, participant minutes ${Number(participantMinutesTotal.toFixed(2))}`)
   } catch (error) {

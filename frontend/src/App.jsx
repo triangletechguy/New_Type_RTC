@@ -5,6 +5,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { RoomsView } from './components/rooms/RoomsView'
 import { LiveRoomView } from './components/rtc/LiveRoomView'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
+import { canUseAdminDashboard } from './utils/roles'
 
 const AdminView = lazy(() => import('./components/admin/AdminView'))
 const SdkView = lazy(() => import('./components/sdk/SdkView'))
@@ -43,6 +44,11 @@ export default function App() {
     setUser(null)
   }
 
+  function changeView(nextView) {
+    if (nextView === 'admin' && !canUseAdminDashboard(user)) return
+    setView(nextView)
+  }
+
   function openRoom(roomId, options = {}) {
     setActiveRoom({
       id: roomId,
@@ -69,20 +75,22 @@ export default function App() {
     )
   }
 
-  if (view === 'rooms') {
-    return <RoomsView onEnterRoom={openRoom} user={user} onLogout={logout} onView={setView} />
+  const safeView = view === 'admin' && !canUseAdminDashboard(user) ? 'rooms' : view
+
+  if (safeView === 'rooms') {
+    return <RoomsView onEnterRoom={openRoom} user={user} onLogout={logout} onView={changeView} />
   }
 
   return (
     <main className="app-shell">
-      <Sidebar user={user} currentView={view} onView={setView} onLogout={logout} />
+      <Sidebar user={user} currentView={safeView} onView={changeView} onLogout={logout} />
       <section className="content-shell">
-        {view === 'admin' && (
+        {safeView === 'admin' && (
           <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
             <AdminView />
           </Suspense>
         )}
-        {view === 'sdk' && (
+        {safeView === 'sdk' && (
           <Suspense fallback={<ViewFallback label="SDK samples" />}>
             <SdkView />
           </Suspense>
