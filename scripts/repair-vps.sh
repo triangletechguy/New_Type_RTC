@@ -105,7 +105,7 @@ write_backend_env() {
 
   set_env NODE_ENV production
   set_env PORT 8000
-  set_env FRONTEND_ORIGINS "$DOMAIN,https://$PUBLIC_IP,http://$PUBLIC_IP"
+  set_env FRONTEND_ORIGINS "$DOMAIN,http://$PUBLIC_HOST,https://$PUBLIC_IP,http://$PUBLIC_IP"
   set_env DB_HOST 127.0.0.1
   set_env DB_PORT 3306
   set_env DB_DATABASE rtc_platform
