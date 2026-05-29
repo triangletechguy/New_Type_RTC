@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-$HOME/rtc-enterprise}"
 REPO_URL="${REPO_URL:-https://github.com/triangletechguy/New_Type_RTC.git}"
 DOMAIN_HOST="${DOMAIN_HOST:-152-228-135-87.sslip.io}"
 DOMAIN="https://$DOMAIN_HOST"
+PUBLIC_IP="${PUBLIC_IP:-152.228.135.87}"
 WEB_ROOT="${WEB_ROOT:-/var/www/rtc-enterprise}"
 PM2_APP="${PM2_APP:-rtc-backend}"
 
@@ -53,7 +54,7 @@ set_env() {
 ensure_packages() {
   log "Installing required packages"
   sudo apt-get update
-  sudo apt-get install -y git curl rsync mysql-server caddy
+  sudo apt-get install -y git curl rsync mysql-server caddy coturn
 }
 
 ensure_repo() {
@@ -99,7 +100,7 @@ write_env_files() {
   set_env TURN_URLS "turn:$DOMAIN_HOST:3478?transport=udp,turn:$DOMAIN_HOST:3478?transport=tcp"
   set_env TURN_USERNAME rtcuser
   set_env TURN_CREDENTIAL "$turn_credential"
-  set_env RTC_ICE_TRANSPORT_POLICY relay
+  set_env RTC_ICE_TRANSPORT_POLICY all
 
   cat > frontend/.env <<EOF
 VITE_API_BASE_URL=$DOMAIN/api
@@ -128,6 +129,51 @@ GRANT ALL PRIVILEGES ON \`${DB_DATABASE}\`.* TO '${DB_USER}'@'localhost';
 GRANT ALL PRIVILEGES ON \`${DB_DATABASE}\`.* TO '${DB_USER}'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
+}
+
+configure_turn() {
+  log "Configuring TURN relay"
+
+  set -a
+  . backend/.env
+  set +a
+
+  if [ -f /etc/turnserver.conf ]; then
+    sudo cp /etc/turnserver.conf "/etc/turnserver.conf.bak.$(date +%Y%m%d%H%M%S)"
+  fi
+
+  sudo tee /etc/turnserver.conf >/dev/null <<EOF
+listening-port=3478
+fingerprint
+lt-cred-mech
+user=${TURN_USERNAME}:${TURN_CREDENTIAL}
+realm=${DOMAIN_HOST}
+server-name=${DOMAIN_HOST}
+external-ip=${PUBLIC_IP}
+min-port=49152
+max-port=65535
+no-multicast-peers
+no-cli
+EOF
+
+  if [ -f /etc/default/coturn ]; then
+    if grep -q '^#\?TURNSERVER_ENABLED=' /etc/default/coturn; then
+      sudo sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
+    else
+      echo 'TURNSERVER_ENABLED=1' | sudo tee -a /etc/default/coturn >/dev/null
+    fi
+  fi
+
+  sudo systemctl enable --now coturn >/dev/null 2>&1 || true
+  sudo systemctl restart coturn
+
+  if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q 'Status: active'; then
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+    sudo ufw allow 3478/tcp
+    sudo ufw allow 3478/udp
+    sudo ufw allow 49152:65535/udp
+  fi
 }
 
 build_and_publish() {
@@ -216,6 +262,7 @@ main() {
   ensure_repo
   write_env_files
   configure_mysql
+  configure_turn
   build_and_publish
   restart_backend
   configure_caddy

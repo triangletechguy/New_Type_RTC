@@ -59,7 +59,7 @@ function buildRtcConfig() {
     const turnConfigured = configuredIceServers.some(iceServerHasTurn)
     const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
       ? process.env.RTC_ICE_TRANSPORT_POLICY
-      : turnConfigured ? 'relay' : 'all'
+      : 'all'
 
     return {
       iceServers: configuredIceServers,
@@ -71,7 +71,7 @@ function buildRtcConfig() {
   const turnConfigured = turnUrls.length > 0 && Boolean(turnUsername && turnCredential)
   const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
     ? process.env.RTC_ICE_TRANSPORT_POLICY
-    : turnConfigured ? 'relay' : 'all'
+    : 'all'
   const iceServers = []
   if (stunUrls.length) iceServers.push({ urls: stunUrls })
   if (turnUrls.length) {

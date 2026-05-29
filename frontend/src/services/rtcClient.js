@@ -45,6 +45,8 @@ export class NativeRtcClient {
     this.peerConnections = {}
     this.pendingCandidates = {}
     this.remoteMediaStreams = {}
+    this.makingOffers = {}
+    this.ignoredOffers = {}
   }
 
   emitPeerState(remoteSocketId, peerConnection) {
@@ -87,9 +89,9 @@ export class NativeRtcClient {
 
       if (!eventStream) {
         stream.addTrack(event.track)
-        this.remoteMediaStreams[remoteSocketId] = stream
       }
 
+      this.remoteMediaStreams[remoteSocketId] = stream
       if (stream && this.onRemoteStream) {
         this.onRemoteStream(remoteSocketId, stream)
       }
@@ -113,21 +115,32 @@ export class NativeRtcClient {
 
     if (peerConnection.signalingState !== 'stable') return false
 
-    const offer = await peerConnection.createOffer()
-    await peerConnection.setLocalDescription(offer)
+    this.makingOffers[remoteSocketId] = true
 
-    this.socket.emit('webrtc-offer', {
-      targetSocketId: remoteSocketId,
-      offer,
-    })
+    try {
+      const offer = await peerConnection.createOffer()
+      await peerConnection.setLocalDescription(offer)
 
-    return true
+      this.socket.emit('webrtc-offer', {
+        targetSocketId: remoteSocketId,
+        offer: peerConnection.localDescription,
+      })
+
+      return true
+    } finally {
+      this.makingOffers[remoteSocketId] = false
+    }
   }
 
-  async handleOffer(fromSocketId, offer) {
+  async handleOffer(fromSocketId, offer, { polite = true } = {}) {
     const peerConnection = this.createPeerConnection(fromSocketId)
+    const offerCollision = peerConnection.signalingState !== 'stable' || this.makingOffers[fromSocketId]
+    const ignoreOffer = !polite && offerCollision
 
-    if (peerConnection.signalingState !== 'stable') {
+    this.ignoredOffers[fromSocketId] = ignoreOffer
+    if (ignoreOffer) return false
+
+    if (offerCollision && peerConnection.signalingState !== 'stable') {
       await peerConnection.setLocalDescription({ type: 'rollback' }).catch(() => {})
     }
 
@@ -139,8 +152,10 @@ export class NativeRtcClient {
 
     this.socket.emit('webrtc-answer', {
       targetSocketId: fromSocketId,
-      answer,
+      answer: peerConnection.localDescription,
     })
+
+    return true
   }
 
   async handleAnswer(fromSocketId, answer) {
@@ -161,7 +176,11 @@ export class NativeRtcClient {
       return
     }
 
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+    } catch (error) {
+      if (!this.ignoredOffers[fromSocketId]) throw error
+    }
   }
 
   async flushPendingCandidates(remoteSocketId) {
@@ -197,6 +216,8 @@ export class NativeRtcClient {
 
     delete this.pendingCandidates[remoteSocketId]
     delete this.remoteMediaStreams[remoteSocketId]
+    delete this.makingOffers[remoteSocketId]
+    delete this.ignoredOffers[remoteSocketId]
   }
 
   closeAll() {
@@ -204,5 +225,7 @@ export class NativeRtcClient {
     this.peerConnections = {}
     this.pendingCandidates = {}
     this.remoteMediaStreams = {}
+    this.makingOffers = {}
+    this.ignoredOffers = {}
   }
 }

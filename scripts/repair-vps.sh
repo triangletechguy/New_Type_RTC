@@ -129,7 +129,7 @@ write_backend_env() {
     set_env TURN_URLS "turn:$PUBLIC_HOST:3478?transport=udp,turn:$PUBLIC_HOST:3478?transport=tcp"
     set_env TURN_USERNAME "$turn_username"
     set_env TURN_CREDENTIAL "$turn_credential"
-    set_env RTC_ICE_TRANSPORT_POLICY relay
+    set_env RTC_ICE_TRANSPORT_POLICY all
   else
     set_env RTC_ICE_TRANSPORT_POLICY all
   fi

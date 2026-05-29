@@ -162,7 +162,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
-    if (!remoteSocketId || negotiatedPeersRef.current.has(remoteSocketId)) return
+    if (!remoteSocketId || !rtcClient) return
+
+    rtcClient.createPeerConnection(remoteSocketId)
+
+    if (!shouldInitiateOffer(remoteSocketId)) {
+      setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'waiting' }))
+      return
+    }
+
+    if (negotiatedPeersRef.current.has(remoteSocketId)) return
 
     negotiatedPeersRef.current.add(remoteSocketId)
     setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'negotiating' }))
@@ -216,8 +225,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     joinEffectTimerRef.current = window.setTimeout(() => setJoinEffect(null), 1800)
   }
 
+  function shouldInitiateOffer(remoteSocketId) {
+    const localSocketId = localSocketIdRef.current
+    if (!localSocketId || !remoteSocketId) return false
+    return String(localSocketId) < String(remoteSocketId)
+  }
+
+  function isPolitePeer(remoteSocketId) {
+    const localSocketId = localSocketIdRef.current
+    if (!localSocketId || !remoteSocketId) return true
+    return String(localSocketId) > String(remoteSocketId)
+  }
+
   function handleRemoteStream(remoteSocketId, remoteStream) {
     setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream }))
+    setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }))
 
     const hasVideoTrack = remoteStream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
     if (hasVideoTrack) {
@@ -235,7 +257,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function negotiateExistingUsers(existingUsers, rtcClient) {
     const peers = Array.isArray(existingUsers) ? existingUsers : []
     setSignalingPeerCount(peers.length)
-    setPeerMediaStates(peerMediaMapFromUsers(peers))
+    setPeerMediaStates((previous) => ({ ...previous, ...peerMediaMapFromUsers(peers) }))
     if (!peers.length) return
 
     setStatus(`Found ${peers.length} peer connection${peers.length === 1 ? '' : 's'}...`)
@@ -369,11 +391,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setPeerStates((previous) => ({ ...previous, [socketId]: previous[socketId] || 'waiting' }))
         setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
         triggerJoinEffect(payload.userName)
+        await beginPeerNegotiation(socketId, rtcClient, 'Peer')
       })
       socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
         try {
           negotiatedPeersRef.current.add(fromSocketId)
-          await rtcClient.handleOffer(fromSocketId, offer)
+          const accepted = await rtcClient.handleOffer(fromSocketId, offer, { polite: isPolitePeer(fromSocketId) })
+          if (accepted === false) setPeerStates((previous) => ({ ...previous, [fromSocketId]: 'glare' }))
         } catch (error) {
           setConnectionIssue(`Offer failed: ${error.message}`)
           setStatus(`Offer failed: ${error.message}`)
