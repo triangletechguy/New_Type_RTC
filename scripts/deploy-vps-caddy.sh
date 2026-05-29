@@ -156,12 +156,22 @@ $DOMAIN_HOST {
     encode gzip
     root * $WEB_ROOT
 
-    reverse_proxy /api/* 127.0.0.1:8000
-    reverse_proxy /socket.io/* 127.0.0.1:8000
-    reverse_proxy /health 127.0.0.1:8000
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8000
+    }
 
-    try_files {path} /index.html
-    file_server
+    handle /socket.io/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle /health {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
 }
 EOF
 
@@ -186,10 +196,19 @@ verify() {
   log "Verifying deployment"
 
   sleep 3
-  curl -f "$DOMAIN/api/health"
-  printf '\n'
-  curl -f "$DOMAIN/api/rtc/config"
-  printf '\n'
+  health="$(curl -fsS "$DOMAIN/api/health")"
+  printf '%s\n' "$health"
+  case "$health" in
+    *'"status":"ok"'*) ;;
+    *) echo "API health did not return JSON from the backend."; exit 1 ;;
+  esac
+
+  rtc_config="$(curl -fsS "$DOMAIN/api/rtc/config")"
+  printf '%s\n' "$rtc_config"
+  case "$rtc_config" in
+    *'"iceServers"'*) ;;
+    *) echo "RTC config did not return JSON from the backend."; exit 1 ;;
+  esac
 }
 
 main() {
