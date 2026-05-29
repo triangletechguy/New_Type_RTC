@@ -69,11 +69,14 @@ export default function App() {
     )
   }
 
+  if (view === 'rooms') {
+    return <RoomsView onEnterRoom={openRoom} user={user} onLogout={logout} onView={setView} />
+  }
+
   return (
     <main className="app-shell">
       <Sidebar user={user} currentView={view} onView={setView} onLogout={logout} />
       <section className="content-shell">
-        {view === 'rooms' && <RoomsView onEnterRoom={openRoom} />}
         {view === 'admin' && (
           <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
             <AdminView />
