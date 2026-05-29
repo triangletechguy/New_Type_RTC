@@ -356,7 +356,7 @@ EOF
   sudo ln -sf "$nginx_site" /etc/nginx/sites-enabled/rtc-enterprise
   sudo rm -f /etc/nginx/sites-enabled/default
   sudo nginx -t
-  sudo systemctl reload nginx
+  sudo systemctl reload nginx || sudo systemctl restart nginx
 }
 
 restart_backend() {
