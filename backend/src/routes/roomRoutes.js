@@ -179,7 +179,7 @@ function getRoomListOptions(req) {
 
 function buildRoomListWhere(options, tenantId, userId) {
   const conditions = ['r.tenant_id = :tenantId']
-  const params = { tenantId, viewerUserId: userId }
+  const params = { tenantId }
 
   if (options.status !== 'all') {
     conditions.push('r.status = :status')
@@ -199,6 +199,7 @@ function buildRoomListWhere(options, tenantId, userId) {
   if (options.canSeePrivateRooms) {
     // Tenant admins can audit every published room in the tenant.
   } else if (options.privacy === 'private') {
+    params.viewerUserId = userId
     conditions.push(`
       (
         r.owner_id = :viewerUserId
@@ -211,6 +212,7 @@ function buildRoomListWhere(options, tenantId, userId) {
       )
     `)
   } else {
+    params.viewerUserId = userId
     conditions.push(`
       (
         r.privacy_type <> 'private'
@@ -549,16 +551,18 @@ router.get('/', authMiddleware, async (req, res, next) => {
       canSeePrivateRooms: canSeeAllTenantRooms(req.user),
     }, req.user.tenant_id, req.user.id)
     const offset = (options.page - 1) * options.perPage
+    const limitSql = Number(options.perPage)
+    const offsetSql = Number(offset)
 
     const rooms = await query(
       `
       ${roomSelectSql()}
       WHERE ${whereSql}
       ORDER BY ${sortOptions[options.sort]}
-      LIMIT :limit
-      OFFSET :offset
+      LIMIT ${limitSql}
+      OFFSET ${offsetSql}
       `,
-      { ...params, limit: options.perPage, offset }
+      params
     )
 
     const countRows = await query(
