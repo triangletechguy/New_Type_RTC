@@ -359,6 +359,39 @@ EOF
   sudo systemctl reload nginx || sudo systemctl restart nginx
 }
 
+ensure_https_certificate() {
+  case "$DOMAIN" in
+    https://*) ;;
+    *) return ;;
+  esac
+
+  ssl_cert="/etc/letsencrypt/live/$PUBLIC_HOST/fullchain.pem"
+  ssl_key="/etc/letsencrypt/live/$PUBLIC_HOST/privkey.pem"
+
+  if [ -f "$ssl_cert" ] && [ -f "$ssl_key" ]; then
+    return
+  fi
+
+  log "Requesting HTTPS certificate for $PUBLIC_HOST"
+
+  if ! command -v certbot >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y certbot
+  fi
+
+  sudo systemctl restart nginx
+  sudo certbot certonly \
+    --webroot \
+    --webroot-path "$WEB_ROOT" \
+    --domain "$PUBLIC_HOST" \
+    --non-interactive \
+    --agree-tos \
+    --register-unsafely-without-email \
+    --keep-until-expiring
+
+  write_nginx_config
+}
+
 restart_backend() {
   log "Restarting backend with PM2"
 
@@ -393,6 +426,7 @@ main() {
   write_frontend_env
   install_and_build
   write_nginx_config
+  ensure_https_certificate
   restart_backend
   verify_deploy
 
