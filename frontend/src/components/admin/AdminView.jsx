@@ -27,6 +27,24 @@ function getUsageStatus(verification) {
   }
 }
 
+function formatCurrency(value) {
+  const amount = Number(value || 0)
+  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
+}
+
+function formatPercent(value) {
+  return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+}
+
+function groupedFeatures(features) {
+  return (features || []).reduce((groups, feature) => {
+    const group = feature.group || 'Features'
+    if (!groups[group]) groups[group] = []
+    groups[group].push(feature)
+    return groups
+  }, {})
+}
+
 function ScopeSummary({ payload, scope }) {
   const dashboard = payload?.dashboard
   const admin = payload?.admin
@@ -43,6 +61,249 @@ function ScopeSummary({ payload, scope }) {
         <span><b>{formatNumber(dashboard?.metrics?.rooms?.total)}</b> rooms</span>
         <span><b>{formatNumber(dashboard?.active_sessions)}</b> live sessions</span>
         <span><b>{formatMinutes(dashboard?.minutes_used_this_month)}</b> this month</span>
+      </div>
+    </section>
+  )
+}
+
+function EnterpriseServicePanel({ enterprise, mode }) {
+  if (!enterprise) return null
+  const billing = enterprise.billing || {}
+  const totals = enterprise.platform_totals || {}
+  const plan = enterprise.current_plan
+  const isPlatform = mode === 'super_admin'
+
+  return (
+    <section className="enterprise-service-panel glass-card">
+      <div className="enterprise-service-copy">
+        <span className="eyebrow">{isPlatform ? 'Service Business' : 'Company RTC Service'}</span>
+        <h2>{enterprise.service_model?.provider_name || 'TalkEachOther'} RTC Control Center</h2>
+        <p>{enterprise.service_model?.purpose}</p>
+        <div className="enterprise-service-tags">
+          <span>{enterprise.service_model?.selling_unit}</span>
+          <span>{enterprise.sdk_status?.token_strategy}</span>
+        </div>
+      </div>
+      <div className="enterprise-kpi-grid">
+        <div>
+          <span>{isPlatform ? 'Active clients' : 'Current package'}</span>
+          <strong>{isPlatform ? formatNumber(totals.active_clients) : plan?.name || 'No plan'}</strong>
+        </div>
+        <div>
+          <span>{isPlatform ? 'Active SDK apps' : 'SDK apps'}</span>
+          <strong>{formatNumber(isPlatform ? totals.active_apps : enterprise.apps?.length)}</strong>
+        </div>
+        <div>
+          <span>Month usage</span>
+          <strong>{formatMinutes(billing.minutes_month || totals.minutes_month)}</strong>
+        </div>
+        <div>
+          <span>{isPlatform ? 'Estimated revenue' : 'Estimated invoice'}</span>
+          <strong>{formatCurrency(billing.estimated_invoice || totals.estimated_invoice)}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ServiceFlowPanel({ flow }) {
+  if (!flow?.length) return null
+
+  return (
+    <section className="enterprise-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Business Flow</span>
+          <h2>How TalkEachOther Sells RTC Service</h2>
+        </div>
+      </div>
+      <div className="enterprise-flow-grid">
+        {flow.map((item, index) => (
+          <div className="enterprise-flow-step" key={item.title}>
+            <span>{index + 1}</span>
+            <strong>{item.title}</strong>
+            <small>{item.owner}</small>
+            <p>{item.output}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ServicePlansPanel({ plans, currentPlan, mode }) {
+  if (!plans?.length) return null
+
+  return (
+    <section className="enterprise-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Packages</span>
+          <h2>{mode === 'super_admin' ? 'Sellable Service Plans' : 'Available Package Limits'}</h2>
+        </div>
+        {currentPlan ? <span>Current: {currentPlan.name}</span> : null}
+      </div>
+      <div className="service-plan-grid">
+        {plans.map((plan) => {
+          const active = currentPlan?.code === plan.code
+          return (
+            <article className={active ? 'service-plan-card active' : 'service-plan-card'} key={plan.code}>
+              <div>
+                <span className="eyebrow">{plan.code}</span>
+                <h3>{plan.name}</h3>
+                <p>{plan.description}</p>
+              </div>
+              <div className="service-plan-price">
+                <strong>{formatCurrency(plan.monthly_base_price)}</strong>
+                <span>{formatNumber(plan.monthly_minute_allowance)} min/month</span>
+              </div>
+              <div className="service-plan-limits">
+                <span>{formatNumber(plan.max_room_admins)} room admins</span>
+                <span>{formatNumber(plan.max_rooms)} rooms</span>
+                <span>{formatNumber(plan.max_apps)} apps</span>
+                <span>{formatNumber(plan.feature_count)} tools</span>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function ClientAppsPanel({ apps, mode }) {
+  if (!apps?.length) return null
+
+  return (
+    <section className="enterprise-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">SDK Access</span>
+          <h2>{mode === 'super_admin' ? 'Client Apps And Generated Keys' : 'Your App Key, API Key, And SDK Token'}</h2>
+        </div>
+        <span>{formatNumber(apps.length)} apps</span>
+      </div>
+      <div className="client-app-grid">
+        {apps.map((app) => (
+          <article className="client-app-card" key={app.id}>
+            <div className="client-app-head">
+              <span className={`admin-state ${app.status}`}>{app.status}</span>
+              <strong>{app.name}</strong>
+              <small>{app.tenant_name} · {app.platform}</small>
+            </div>
+            <dl>
+              <dt>App key</dt>
+              <dd>{app.app_key}</dd>
+              <dt>API key</dt>
+              <dd>{app.api_key_masked}</dd>
+              <dt>SDK token</dt>
+              <dd>{app.sdk_token_masked}</dd>
+              <dt>Allowed origins</dt>
+              <dd>{app.allowed_origins?.join(', ') || 'Any configured origin'}</dd>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ClientsBillingPanel({ clients, billing, mode }) {
+  if (!clients?.length && !billing) return null
+
+  if (mode !== 'super_admin') {
+    return (
+      <section className="enterprise-panel glass-card">
+        <div className="admin-panel-header">
+          <div>
+            <span className="eyebrow">Billing</span>
+            <h2>Company Usage Amount</h2>
+          </div>
+          <span>{formatPercent(billing?.usage_percent)} used</span>
+        </div>
+        <div className="billing-summary-grid">
+          <div><span>Included allowance</span><strong>{formatMinutes(billing?.monthly_allowance)}</strong></div>
+          <div><span>Used this month</span><strong>{formatMinutes(billing?.minutes_month)}</strong></div>
+          <div><span>Overage</span><strong>{formatMinutes(billing?.overage_minutes)}</strong></div>
+          <div><span>Invoice estimate</span><strong>{formatCurrency(billing?.estimated_invoice)}</strong></div>
+        </div>
+        <p className="enterprise-note">{billing?.note}</p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="enterprise-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Clients</span>
+          <h2>Company Plans, Usage, And Billing</h2>
+        </div>
+        <span>{formatNumber(clients.length)} companies</span>
+      </div>
+      <div className="admin-table-scroll compact">
+        <table className="admin-data-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Plan</th>
+              <th>Apps</th>
+              <th>Rooms</th>
+              <th>Month Usage</th>
+              <th>Invoice</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clients.map((client) => (
+              <tr key={client.id}>
+                <td>
+                  <strong>{client.name}</strong>
+                  <span>{client.status}</span>
+                </td>
+                <td>
+                  <strong>{client.plan?.name || 'No plan'}</strong>
+                  <span>{formatNumber(client.plan?.max_room_admins)} room admins max</span>
+                </td>
+                <td>{formatNumber(client.active_app_count)} / {formatNumber(client.app_count)}</td>
+                <td>{formatNumber(client.active_room_count)} live · {formatNumber(client.room_count)} total</td>
+                <td>{formatMinutes(client.minutes_month)} · {formatPercent(client.usage_percent)}</td>
+                <td>{formatCurrency(client.estimated_invoice)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function FeatureControlsPanel({ features }) {
+  if (!features?.length) return null
+  const groups = groupedFeatures(features)
+
+  return (
+    <section className="enterprise-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Feature Controls</span>
+          <h2>RTC Tools Enabled By Package</h2>
+        </div>
+        <span>{formatNumber(features.filter((feature) => feature.enabled).length)} enabled</span>
+      </div>
+      <div className="feature-control-groups">
+        {Object.entries(groups).map(([group, items]) => (
+          <div className="feature-control-group" key={group}>
+            <h3>{group}</h3>
+            <div>
+              {items.map((feature) => (
+                <span className={feature.enabled ? 'feature-pill enabled' : 'feature-pill disabled'} key={`${feature.app_id || 'plan'}-${feature.key}`}>
+                  {feature.label}
+                  {feature.limit_value ? <b>{feature.limit_value}</b> : null}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   )
@@ -232,6 +493,8 @@ export default function AdminView() {
   const recentUsageLogs = dashboard?.recent_usage_logs || []
   const usageStatus = getUsageStatus(usageVerification)
   const isSuperAdmin = overview?.scope === 'super_admin'
+  const enterprise = activePayload?.enterprise
+  const enterpriseMode = isSuperAdmin && !selectedDetail ? 'super_admin' : 'client_admin'
   const rooms = activePayload?.rooms || []
   const dailyUsage = activePayload?.daily_usage || []
   const participantRecords = activePayload?.participant_records || []
@@ -313,6 +576,19 @@ export default function AdminView() {
       ) : null}
 
       <ScopeSummary payload={activePayload} scope={overview?.scope} />
+
+      <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
+
+      <div className="enterprise-dashboard-grid">
+        <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+        <ClientAppsPanel apps={enterprise?.apps || []} mode={enterpriseMode} />
+      </div>
+
+      <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={enterprise?.current_plan} mode={enterpriseMode} />
+
+      <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+
+      {enterpriseMode === 'super_admin' ? <ServiceFlowPanel flow={enterprise?.service_flow || []} /> : null}
 
       <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
 

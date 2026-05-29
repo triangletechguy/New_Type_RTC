@@ -5958,6 +5958,298 @@ pre {
   background: rgba(148, 163, 184, .1);
 }
 
+.enterprise-service-panel,
+.enterprise-service-tags,
+.enterprise-dashboard-grid,
+.enterprise-kpi-grid,
+.service-plan-grid,
+.client-app-grid,
+.billing-summary-grid,
+.enterprise-flow-grid {
+  display: grid;
+}
+
+.enterprise-service-panel {
+  grid-template-columns: minmax(0, 1.2fr) minmax(420px, .8fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 18px;
+}
+
+.enterprise-service-copy {
+  min-width: 0;
+}
+
+.enterprise-service-copy h2 {
+  margin: 4px 0 6px;
+}
+
+.enterprise-service-copy p,
+.enterprise-note {
+  margin: 0;
+}
+
+.enterprise-service-tags {
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.enterprise-service-tags span {
+  min-width: 0;
+  max-width: 420px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .06);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.enterprise-kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.enterprise-kpi-grid div,
+.billing-summary-grid div {
+  min-width: 0;
+  min-height: 82px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .055);
+}
+
+.enterprise-kpi-grid span,
+.billing-summary-grid span,
+.client-app-card dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.enterprise-kpi-grid strong,
+.billing-summary-grid strong {
+  color: #fff;
+  font-size: 22px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.enterprise-dashboard-grid {
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+  gap: 14px;
+}
+
+.enterprise-panel {
+  min-width: 0;
+  padding: 16px;
+}
+
+.service-plan-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.service-plan-card,
+.client-app-card,
+.enterprise-flow-step,
+.feature-control-group {
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .05);
+}
+
+.service-plan-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.service-plan-card.active {
+  border-color: rgba(139, 92, 246, .75);
+  background: linear-gradient(135deg, rgba(139, 92, 246, .2), rgba(20, 184, 166, .1));
+}
+
+.service-plan-card h3 {
+  margin: 4px 0 6px;
+}
+
+.service-plan-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.service-plan-price strong,
+.client-app-head strong {
+  display: block;
+  color: #fff;
+}
+
+.service-plan-price span,
+.client-app-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.service-plan-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.service-plan-limits span {
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .07);
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.client-app-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.client-app-card {
+  padding: 13px;
+}
+
+.client-app-head {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.client-app-head .admin-state {
+  display: inline-flex;
+}
+
+.client-app-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px 10px;
+}
+
+.client-app-card dd {
+  margin: 0;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.billing-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.enterprise-note {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.feature-control-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.feature-control-group {
+  padding: 13px;
+}
+
+.feature-control-group h3 {
+  margin: 0 0 10px;
+}
+
+.feature-control-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.feature-pill {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  color: var(--muted);
+  background: rgba(148, 163, 184, .08);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.feature-pill.enabled {
+  color: #d1fae5;
+  border-color: rgba(45, 212, 191, .32);
+  background: rgba(45, 212, 191, .1);
+}
+
+.feature-pill.disabled {
+  opacity: .58;
+}
+
+.feature-pill b {
+  color: #fff;
+}
+
+.enterprise-flow-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.enterprise-flow-step {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 13px;
+}
+
+.enterprise-flow-step span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #14b8a6);
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.enterprise-flow-step strong {
+  color: #fff;
+}
+
+.enterprise-flow-step small,
+.enterprise-flow-step p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.enterprise-flow-step p {
+  margin: 0;
+  line-height: 1.45;
+}
+
 .usage-dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
@@ -6114,6 +6406,10 @@ pre {
   .metrics-grid,
   .split-grid,
   .buzz-hero-grid,
+  .enterprise-service-panel,
+  .enterprise-dashboard-grid,
+  .service-plan-grid,
+  .enterprise-flow-grid,
   .admin-detail-grid,
   .usage-dashboard-grid,
   .video-grid {
@@ -6208,6 +6504,16 @@ pre {
     flex-direction: column;
   }
 
+  .enterprise-service-tags,
+  .enterprise-kpi-grid,
+  .billing-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .enterprise-service-panel {
+    min-width: 0;
+  }
+
   .buzz-go-live,
   .buzz-feature-actions button {
     width: 100%;
@@ -6288,6 +6594,7 @@ pre {
   .monitor-participants-list,
   .usage-check-grid,
   .usage-period-row,
+  .client-app-card dl,
   .usage-log-row {
     grid-template-columns: 1fr;
   }

@@ -54,9 +54,9 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       AND cm.room_id = :roomId
       AND cm.is_deleted = 0
       ORDER BY cm.id DESC
-      LIMIT :limit
+      LIMIT ${limit}
       `,
-      { tenantId: req.user.tenant_id, roomId, limit }
+      { tenantId: req.user.tenant_id, roomId }
     )
 
     return res.json({

@@ -53,6 +53,89 @@ function normalizeAdmin(row, stats = {}) {
   }
 }
 
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_error) {
+    return []
+  }
+}
+
+function maskSecret(value) {
+  const text = String(value || '')
+  if (!text) return ''
+  if (text.length <= 8) return `${text.slice(0, 2)}...${text.slice(-2)}`
+  return `${text.slice(0, 6)}...${text.slice(-4)}`
+}
+
+const FEATURE_CATALOG = [
+  { key: 'normal_audio_room', group: 'Audio SDK', label: 'Normal audio room SDK' },
+  { key: 'youtube_audio_room', group: 'Audio SDK', label: 'YouTube audio room SDK' },
+  { key: 'noise_cancellation', group: 'Audio SDK', label: 'Noise cancellation control' },
+  { key: 'voice_changer', group: 'Audio SDK', label: 'Voice changer' },
+  { key: 'one_to_one_voice_calling', group: 'Audio SDK', label: 'One-to-one voice calling' },
+  { key: 'ai_security_audio', group: 'Audio SDK', label: 'AI audio security' },
+  { key: 'group_voice_chat', group: 'Audio SDK', label: 'Group voice chat' },
+  { key: 'normal_video_group_chat', group: 'Video SDK', label: 'Normal video group chat' },
+  { key: 'live_video_pk', group: 'Video SDK', label: 'Live video PK' },
+  { key: 'ai_security_video', group: 'Video SDK', label: 'AI video security' },
+  { key: 'one_to_one_video_calling', group: 'Video SDK', label: 'One-to-one video calling with beauty' },
+  { key: 'solo_video_live', group: 'Video SDK', label: 'Solo video live' },
+  { key: 'screen_share', group: 'Video SDK', label: 'Screen share' },
+  { key: 'video_filter_beauty', group: 'Video SDK', label: 'Filters, stickers, face detect, beauty' },
+  { key: 'message_chat', group: 'Common', label: 'Messages, replies, media, gifts' },
+  { key: 'room_roles', group: 'Common', label: 'Room owner, admin, moderator limits' },
+  { key: 'private_room_password', group: 'Common', label: 'Private and password rooms' },
+  { key: 'room_theme', group: 'Common', label: 'Room theme and profile settings' },
+  { key: 'room_share', group: 'Common', label: 'Room share and room like' },
+  { key: 'comment_reply', group: 'Common', label: 'Comment replies and cleanup' },
+  { key: 'company_billing', group: 'Admin Panel', label: 'Company-wise billing by used minutes' },
+  { key: 'rtc_connection_indicator', group: 'Admin Panel', label: 'RTC connection indicator' },
+  { key: 'admin_panel_analytics', group: 'Admin Panel', label: 'Live monitoring and analytics' },
+]
+
+const SERVICE_FLOW = [
+  {
+    title: 'Create client company',
+    owner: 'Superadmin',
+    output: 'Tenant, plan, billing scope, and company admin account.',
+  },
+  {
+    title: 'Generate SDK access',
+    owner: 'Superadmin',
+    output: 'App key, API key, SDK token, and allowed domains for the client app.',
+  },
+  {
+    title: 'Configure package controls',
+    owner: 'Superadmin or Client Admin',
+    output: 'Feature flags, room-admin limits, app count, room count, and RTC tools.',
+  },
+  {
+    title: 'Client integrates SDK',
+    owner: 'Developer client app',
+    output: 'Create/join room, authenticate token, start audio/video/chat, and receive RTC events.',
+  },
+  {
+    title: 'Track usage and billing',
+    owner: 'Platform',
+    output: 'Participant minutes, room records, join/exit dates, reports, and monthly invoice estimate.',
+  },
+]
+
+function catalogFeature(featureKey, overrides = {}) {
+  const base = FEATURE_CATALOG.find((feature) => feature.key === featureKey) || {
+    key: featureKey,
+    group: 'Custom',
+    label: featureKey.replace(/_/g, ' '),
+  }
+
+  return { ...base, ...overrides }
+}
+
 async function getAdminUser(adminId) {
   const rows = await query(
     `
@@ -105,6 +188,251 @@ async function getClientAdmins() {
   )
 }
 
+async function getServicePlans() {
+  const rows = await query(
+    `
+    SELECT
+      id, code, name, description, monthly_base_price, minute_rate,
+      monthly_minute_allowance, max_room_admins, max_rooms, max_apps,
+      included_features, status, created_at, updated_at
+    FROM service_plans
+    ORDER BY monthly_base_price ASC, id ASC
+    `
+  )
+
+  return rows.map((plan) => ({
+    id: plan.id,
+    code: plan.code,
+    name: plan.name,
+    description: plan.description,
+    monthly_base_price: Number(plan.monthly_base_price || 0),
+    minute_rate: Number(plan.minute_rate || 0),
+    monthly_minute_allowance: Number(plan.monthly_minute_allowance || 0),
+    max_room_admins: Number(plan.max_room_admins || 0),
+    max_rooms: Number(plan.max_rooms || 0),
+    max_apps: Number(plan.max_apps || 0),
+    included_features: parseJsonArray(plan.included_features),
+    status: plan.status,
+    created_at: plan.created_at,
+    updated_at: plan.updated_at,
+  }))
+}
+
+async function getTenantPlan(tenantId) {
+  if (!tenantId) return null
+
+  const rows = await query(
+    `
+    SELECT
+      tpa.id AS assignment_id,
+      tpa.starts_at,
+      tpa.ends_at,
+      sp.id, sp.code, sp.name, sp.description, sp.monthly_base_price, sp.minute_rate,
+      sp.monthly_minute_allowance, sp.max_room_admins, sp.max_rooms, sp.max_apps,
+      sp.included_features, sp.status
+    FROM tenant_plan_assignments tpa
+    INNER JOIN service_plans sp ON sp.id = tpa.plan_id
+    WHERE tpa.tenant_id = :tenantId
+    AND tpa.status = 'active'
+    ORDER BY tpa.id DESC
+    LIMIT 1
+    `,
+    { tenantId }
+  )
+  const plan = rows[0]
+  if (!plan) return null
+
+  return {
+    assignment_id: plan.assignment_id,
+    starts_at: plan.starts_at,
+    ends_at: plan.ends_at,
+    id: plan.id,
+    code: plan.code,
+    name: plan.name,
+    description: plan.description,
+    monthly_base_price: Number(plan.monthly_base_price || 0),
+    minute_rate: Number(plan.minute_rate || 0),
+    monthly_minute_allowance: Number(plan.monthly_minute_allowance || 0),
+    max_room_admins: Number(plan.max_room_admins || 0),
+    max_rooms: Number(plan.max_rooms || 0),
+    max_apps: Number(plan.max_apps || 0),
+    included_features: parseJsonArray(plan.included_features),
+    status: plan.status,
+  }
+}
+
+async function getClientRows(tenantId = null) {
+  const tenantClause = tenantId ? 'WHERE t.id = :tenantId' : ''
+  const rows = await query(
+    `
+    SELECT
+      t.id, t.name, t.status, t.billing_rate_per_minute, t.created_at, t.updated_at,
+      sp.id AS plan_id,
+      sp.code AS plan_code,
+      sp.name AS plan_name,
+      sp.monthly_base_price,
+      sp.minute_rate,
+      sp.monthly_minute_allowance,
+      sp.max_room_admins,
+      sp.max_rooms,
+      sp.max_apps,
+      COALESCE(apps.app_count, 0) AS app_count,
+      COALESCE(apps.active_app_count, 0) AS active_app_count,
+      COALESCE(room_counts.room_count, 0) AS room_count,
+      COALESCE(room_counts.active_room_count, 0) AS active_room_count,
+      COALESCE(usage_month.minutes, 0) AS minutes_month,
+      COALESCE(usage_month.logs, 0) AS usage_logs_month
+    FROM tenants t
+    LEFT JOIN (
+      SELECT latest.tenant_id, latest.plan_id
+      FROM tenant_plan_assignments latest
+      INNER JOIN (
+        SELECT tenant_id, MAX(id) AS latest_id
+        FROM tenant_plan_assignments
+        WHERE status = 'active'
+        GROUP BY tenant_id
+      ) chosen ON chosen.latest_id = latest.id
+    ) active_plan ON active_plan.tenant_id = t.id
+    LEFT JOIN service_plans sp ON sp.id = active_plan.plan_id
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        COUNT(*) AS app_count,
+        COALESCE(SUM(status = 'active'), 0) AS active_app_count
+      FROM client_apps
+      GROUP BY tenant_id
+    ) apps ON apps.tenant_id = t.id
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        COUNT(*) AS room_count,
+        COALESCE(SUM(status = 'active'), 0) AS active_room_count
+      FROM rooms
+      GROUP BY tenant_id
+    ) room_counts ON room_counts.tenant_id = t.id
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        COUNT(*) AS logs,
+        COALESCE(SUM(billable_minutes), 0) AS minutes
+      FROM usage_logs
+      WHERE created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+      GROUP BY tenant_id
+    ) usage_month ON usage_month.tenant_id = t.id
+    ${tenantClause}
+    ORDER BY t.created_at ASC, t.id ASC
+    `,
+    tenantId ? { tenantId } : {}
+  )
+
+  return rows.map((client) => {
+    const allowance = Number(client.monthly_minute_allowance || 0)
+    const minutes = Number(client.minutes_month || 0)
+    const minuteRate = Number(client.minute_rate || client.billing_rate_per_minute || 0)
+    const overageMinutes = Math.max(0, minutes - allowance)
+    const estimatedOverageCost = Number((overageMinutes * minuteRate).toFixed(2))
+    const basePrice = Number(client.monthly_base_price || 0)
+
+    return {
+      id: client.id,
+      name: client.name,
+      status: client.status,
+      billing_rate_per_minute: Number(client.billing_rate_per_minute || 0),
+      plan: client.plan_id ? {
+        id: client.plan_id,
+        code: client.plan_code,
+        name: client.plan_name,
+        monthly_base_price: basePrice,
+        minute_rate: minuteRate,
+        monthly_minute_allowance: allowance,
+        max_room_admins: Number(client.max_room_admins || 0),
+        max_rooms: Number(client.max_rooms || 0),
+        max_apps: Number(client.max_apps || 0),
+      } : null,
+      app_count: Number(client.app_count || 0),
+      active_app_count: Number(client.active_app_count || 0),
+      room_count: Number(client.room_count || 0),
+      active_room_count: Number(client.active_room_count || 0),
+      minutes_month: minutes,
+      usage_logs_month: Number(client.usage_logs_month || 0),
+      usage_percent: allowance ? Math.min(100, Number(((minutes / allowance) * 100).toFixed(1))) : 0,
+      overage_minutes: Number(overageMinutes.toFixed(2)),
+      estimated_overage_cost: estimatedOverageCost,
+      estimated_invoice: Number((basePrice + estimatedOverageCost).toFixed(2)),
+      created_at: client.created_at,
+      updated_at: client.updated_at,
+    }
+  })
+}
+
+async function getClientApps(tenantId = null) {
+  const tenantClause = tenantId ? 'WHERE ca.tenant_id = :tenantId' : ''
+  const rows = await query(
+    `
+    SELECT
+      ca.id, ca.tenant_id, ca.plan_id, ca.name, ca.platform, ca.app_key,
+      ca.api_key, ca.sdk_token, ca.allowed_origins, ca.status, ca.created_at, ca.updated_at,
+      t.name AS tenant_name,
+      sp.name AS plan_name,
+      sp.code AS plan_code
+    FROM client_apps ca
+    INNER JOIN tenants t ON t.id = ca.tenant_id
+    LEFT JOIN service_plans sp ON sp.id = ca.plan_id
+    ${tenantClause}
+    ORDER BY ca.status = 'active' DESC, ca.updated_at DESC, ca.id DESC
+    `,
+    tenantId ? { tenantId } : {}
+  )
+
+  return rows.map((app) => ({
+    id: app.id,
+    tenant_id: app.tenant_id,
+    tenant_name: app.tenant_name,
+    plan_id: app.plan_id,
+    plan_name: app.plan_name,
+    plan_code: app.plan_code,
+    name: app.name,
+    platform: app.platform,
+    app_key: app.app_key,
+    api_key_masked: maskSecret(app.api_key),
+    sdk_token_masked: maskSecret(app.sdk_token),
+    allowed_origins: parseJsonArray(app.allowed_origins),
+    status: app.status,
+    created_at: app.created_at,
+    updated_at: app.updated_at,
+  }))
+}
+
+async function getFeatureRows(tenantId = null) {
+  const tenantClause = tenantId ? 'WHERE cff.tenant_id = :tenantId' : ''
+  const rows = await query(
+    `
+    SELECT
+      cff.id, cff.tenant_id, cff.app_id, cff.feature_key, cff.enabled,
+      cff.limit_value, cff.updated_at,
+      t.name AS tenant_name,
+      ca.name AS app_name
+    FROM client_feature_flags cff
+    INNER JOIN tenants t ON t.id = cff.tenant_id
+    LEFT JOIN client_apps ca ON ca.id = cff.app_id
+    ${tenantClause}
+    ORDER BY t.name ASC, ca.name ASC, cff.feature_key ASC
+    `,
+    tenantId ? { tenantId } : {}
+  )
+
+  return rows.map((row) => catalogFeature(row.feature_key, {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    tenant_name: row.tenant_name,
+    app_id: row.app_id,
+    app_name: row.app_name || 'Company default',
+    enabled: boolValue(row.enabled),
+    limit_value: row.limit_value,
+    updated_at: row.updated_at,
+  }))
+}
+
 async function getScopedRoomIds(adminId, tenantId = null) {
   const params = { adminId }
   const tenantClause = tenantId ? 'AND r.tenant_id = :tenantId' : ''
@@ -112,7 +440,7 @@ async function getScopedRoomIds(adminId, tenantId = null) {
 
   const rows = await query(
     `
-    SELECT DISTINCT r.id
+    SELECT DISTINCT r.id, r.updated_at
     FROM rooms r
     LEFT JOIN room_roles rr
       ON rr.room_id = r.id
@@ -831,17 +1159,136 @@ async function getParticipantRecords(roomIds) {
   }))
 }
 
-async function buildScopePayload({ adminRow = null, roomIds }) {
+function buildBillingSummary({ dashboard, clients, plan }) {
+  const monthMinutes = Number(dashboard?.usage_month?.minutes || dashboard?.minutes_used_this_month || 0)
+  const todayMinutes = Number(dashboard?.usage_today?.minutes || dashboard?.minutes_used_today || 0)
+
+  if (!plan) {
+    return {
+      billing_mode: 'participant_minutes',
+      minutes_today: todayMinutes,
+      minutes_month: monthMinutes,
+      monthly_allowance: 0,
+      usage_percent: 0,
+      estimated_invoice: clients.reduce((total, client) => total + Number(client.estimated_invoice || 0), 0),
+      overage_minutes: clients.reduce((total, client) => total + Number(client.overage_minutes || 0), 0),
+      note: 'Superadmin aggregate across active client plans.',
+    }
+  }
+
+  const allowance = Number(plan.monthly_minute_allowance || 0)
+  const overageMinutes = Math.max(0, monthMinutes - allowance)
+  const overageCost = Number((overageMinutes * Number(plan.minute_rate || 0)).toFixed(2))
+  const basePrice = Number(plan.monthly_base_price || 0)
+
+  return {
+    billing_mode: 'participant_minutes',
+    minutes_today: todayMinutes,
+    minutes_month: monthMinutes,
+    monthly_allowance: allowance,
+    usage_percent: allowance ? Math.min(100, Number(((monthMinutes / allowance) * 100).toFixed(1))) : 0,
+    included_monthly_price: basePrice,
+    minute_rate: Number(plan.minute_rate || 0),
+    overage_minutes: Number(overageMinutes.toFixed(2)),
+    estimated_overage_cost: overageCost,
+    estimated_invoice: Number((basePrice + overageCost).toFixed(2)),
+    note: 'No payment gateway is required; this is the company-wise billing amount for review/export.',
+  }
+}
+
+function buildPlanFeatureRows(plan, featureRows) {
+  const included = new Set(plan?.included_features || [])
+  const explicitFlags = new Map((featureRows || []).map((feature) => [feature.key, feature]))
+
+  return FEATURE_CATALOG.map((feature) => {
+    const explicit = explicitFlags.get(feature.key)
+    return {
+      ...feature,
+      enabled: explicit ? explicit.enabled : included.has(feature.key),
+      limit_value: explicit?.limit_value || (feature.key === 'room_roles' && plan?.max_room_admins ? String(plan.max_room_admins) : null),
+      app_name: explicit?.app_name || 'Plan default',
+      tenant_name: explicit?.tenant_name,
+      updated_at: explicit?.updated_at,
+    }
+  })
+}
+
+async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
+  const [plans, clients, apps, featureRows, tenantPlan] = await Promise.all([
+    getServicePlans(),
+    getClientRows(scope === 'super_admin' ? null : tenantId),
+    getClientApps(scope === 'super_admin' ? null : tenantId),
+    getFeatureRows(scope === 'super_admin' ? null : tenantId),
+    tenantId ? getTenantPlan(tenantId) : Promise.resolve(null),
+  ])
+  const currentPlan = scope === 'super_admin' ? null : tenantPlan || clients[0]?.plan || null
+  const featureControls = scope === 'super_admin'
+    ? featureRows
+    : buildPlanFeatureRows(currentPlan, featureRows)
+  const activeClients = clients.filter((client) => client.status === 'active')
+  const aggregateInvoice = clients.reduce((total, client) => total + Number(client.estimated_invoice || 0), 0)
+  const aggregateMinutes = clients.reduce((total, client) => total + Number(client.minutes_month || 0), 0)
+
+  return {
+    service_model: {
+      provider_name: 'TalkEachOther',
+      product: 'Enterprise RTC SDK and API service',
+      purpose: 'Client companies integrate TalkEachOther audio, video, chat, moderation, gifts, filters, and usage billing into their own apps.',
+      selling_unit: 'Company app package with SDK credentials, feature controls, and participant-minute billing.',
+      rtc_provider: dashboard?.rtc_status || 'online',
+      connection_indicator: dashboard?.rtc_status === 'online' ? 'online' : 'attention',
+    },
+    service_flow: SERVICE_FLOW,
+    plans: plans.map((plan) => ({
+      ...plan,
+      feature_count: plan.included_features.length,
+      preview_features: plan.included_features.slice(0, 6).map((key) => catalogFeature(key).label),
+    })),
+    clients,
+    apps,
+    current_plan: currentPlan,
+    feature_controls: featureControls,
+    limits: currentPlan ? {
+      max_room_admins: currentPlan.max_room_admins,
+      max_rooms: currentPlan.max_rooms,
+      max_apps: currentPlan.max_apps,
+      monthly_minute_allowance: currentPlan.monthly_minute_allowance,
+    } : null,
+    billing: buildBillingSummary({ dashboard, clients, plan: currentPlan }),
+    platform_totals: {
+      active_clients: activeClients.length,
+      total_clients: clients.length,
+      active_apps: apps.filter((app) => app.status === 'active').length,
+      total_apps: apps.length,
+      minutes_month: Number(aggregateMinutes.toFixed(2)),
+      estimated_invoice: Number(aggregateInvoice.toFixed(2)),
+    },
+    sdk_status: {
+      generated_apps: apps.length,
+      active_apps: apps.filter((app) => app.status === 'active').length,
+      token_strategy: 'App key + API key + SDK token per client app',
+      auth_flow: 'Client app requests a room token, then initializes the WebRTC SDK with that token.',
+    },
+  }
+}
+
+async function buildScopePayload({ adminRow = null, roomIds, enterpriseScope = 'client_admin', tenantId = null }) {
   const [dashboard, rooms, dailyUsage, records] = await Promise.all([
     getDashboard(roomIds),
     getRoomRows(roomIds),
     getDailyUsage(roomIds),
     getParticipantRecords(roomIds),
   ])
+  const enterprise = await buildEnterprisePayload({
+    scope: enterpriseScope,
+    tenantId: tenantId || adminRow?.tenant_id || null,
+    dashboard,
+  })
 
   return {
     admin: adminRow ? normalizeAdmin(adminRow, await getAdminStats(roomIds)) : null,
     dashboard,
+    enterprise,
     rooms,
     daily_usage: dailyUsage,
     participant_records: records,
@@ -872,7 +1319,7 @@ router.get('/overview', async (req, res, next) => {
         const roomIds = await getScopedRoomIds(admin.id, admin.tenant_id)
         return normalizeAdmin(admin, await getAdminStats(roomIds))
       }))
-      const platform = await buildScopePayload({ roomIds: null })
+      const platform = await buildScopePayload({ roomIds: null, enterpriseScope: 'super_admin' })
 
       return res.json({
         scope: 'super_admin',
@@ -884,7 +1331,12 @@ router.get('/overview', async (req, res, next) => {
 
     const adminRow = await getAdminUser(req.user.id)
     const roomIds = await getScopedRoomIds(req.user.id, req.user.tenant_id)
-    const payload = await buildScopePayload({ adminRow, roomIds })
+    const payload = await buildScopePayload({
+      adminRow,
+      roomIds,
+      enterpriseScope: 'client_admin',
+      tenantId: req.user.tenant_id,
+    })
 
     return res.json({
       scope: 'client_admin',
@@ -914,7 +1366,12 @@ router.get('/admins/:adminId', async (req, res, next) => {
     }
 
     const roomIds = await getScopedRoomIds(adminId, adminRow.tenant_id)
-    const payload = await buildScopePayload({ adminRow, roomIds })
+    const payload = await buildScopePayload({
+      adminRow,
+      roomIds,
+      enterpriseScope: 'client_admin',
+      tenantId: adminRow.tenant_id,
+    })
 
     return res.json({
       scope: 'admin_detail',

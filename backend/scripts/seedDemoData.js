@@ -38,6 +38,125 @@ function usageType(roomType) {
   return ['audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
 }
 
+const planConfigs = [
+  {
+    code: 'starter',
+    name: 'Starter RTC',
+    description: 'Low package for one app with core audio, video, chat, moderation, and limited room admins.',
+    monthly_base_price: 299,
+    minute_rate: 0.01,
+    monthly_minute_allowance: 25000,
+    max_room_admins: 15,
+    max_rooms: 25,
+    max_apps: 1,
+    included_features: [
+      'normal_audio_room',
+      'normal_video_group_chat',
+      'group_voice_chat',
+      'one_to_one_voice_calling',
+      'one_to_one_video_calling',
+      'message_chat',
+      'room_roles',
+      'private_room_password',
+      'rtc_connection_indicator',
+    ],
+  },
+  {
+    code: 'growth',
+    name: 'Growth RTC',
+    description: 'High package for production apps with advanced live video, screen share, gifts, filters, and more room admins.',
+    monthly_base_price: 799,
+    minute_rate: 0.008,
+    monthly_minute_allowance: 100000,
+    max_room_admins: 20,
+    max_rooms: 120,
+    max_apps: 3,
+    included_features: [
+      'normal_audio_room',
+      'youtube_audio_room',
+      'noise_cancellation',
+      'voice_changer',
+      'one_to_one_voice_calling',
+      'group_voice_chat',
+      'normal_video_group_chat',
+      'live_video_pk',
+      'one_to_one_video_calling',
+      'solo_video_live',
+      'screen_share',
+      'video_filter_beauty',
+      'message_chat',
+      'room_roles',
+      'private_room_password',
+      'room_theme',
+      'room_share',
+      'admin_panel_analytics',
+      'rtc_connection_indicator',
+    ],
+  },
+  {
+    code: 'enterprise',
+    name: 'Enterprise RTC',
+    description: 'Full multi-app RTC service with AI security, SDK controls, billing analytics, moderation history, and global monitoring.',
+    monthly_base_price: 1999,
+    minute_rate: 0.006,
+    monthly_minute_allowance: 500000,
+    max_room_admins: 50,
+    max_rooms: 500,
+    max_apps: 10,
+    included_features: [
+      'normal_audio_room',
+      'youtube_audio_room',
+      'noise_cancellation',
+      'voice_changer',
+      'one_to_one_voice_calling',
+      'ai_security_audio',
+      'group_voice_chat',
+      'normal_video_group_chat',
+      'live_video_pk',
+      'ai_security_video',
+      'one_to_one_video_calling',
+      'solo_video_live',
+      'screen_share',
+      'video_filter_beauty',
+      'message_chat',
+      'room_roles',
+      'private_room_password',
+      'room_theme',
+      'room_share',
+      'comment_reply',
+      'company_billing',
+      'admin_panel_analytics',
+      'rtc_connection_indicator',
+    ],
+  },
+]
+
+const featureCatalog = [
+  'normal_audio_room',
+  'youtube_audio_room',
+  'noise_cancellation',
+  'voice_changer',
+  'one_to_one_voice_calling',
+  'ai_security_audio',
+  'group_voice_chat',
+  'normal_video_group_chat',
+  'live_video_pk',
+  'ai_security_video',
+  'one_to_one_video_calling',
+  'solo_video_live',
+  'screen_share',
+  'video_filter_beauty',
+  'message_chat',
+  'room_roles',
+  'private_room_password',
+  'room_theme',
+  'room_share',
+  'comment_reply',
+  'company_billing',
+  'admin_panel_analytics',
+  'rtc_connection_indicator',
+]
+
 async function fetchOne(connection, sql, params = []) {
   const [rows] = await connection.execute(sql, params)
   return rows[0] || null
@@ -144,6 +263,240 @@ async function deactivateKnownDemoUsers(connection) {
     `,
     []
   )
+}
+
+async function ensureServicePlans(connection) {
+  const planIds = {}
+
+  for (const plan of planConfigs) {
+    const existing = await fetchOne(
+      connection,
+      `
+      SELECT id
+      FROM service_plans
+      WHERE code = ?
+      LIMIT 1
+      `,
+      [plan.code]
+    )
+
+    if (existing) {
+      await connection.execute(
+        `
+        UPDATE service_plans
+        SET name = ?,
+            description = ?,
+            monthly_base_price = ?,
+            minute_rate = ?,
+            monthly_minute_allowance = ?,
+            max_room_admins = ?,
+            max_rooms = ?,
+            max_apps = ?,
+            included_features = ?,
+            status = 'active',
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [
+          plan.name,
+          plan.description,
+          plan.monthly_base_price,
+          plan.minute_rate,
+          plan.monthly_minute_allowance,
+          plan.max_room_admins,
+          plan.max_rooms,
+          plan.max_apps,
+          JSON.stringify(plan.included_features),
+          existing.id,
+        ]
+      )
+      planIds[plan.code] = existing.id
+      continue
+    }
+
+    const [result] = await connection.execute(
+      `
+      INSERT INTO service_plans (
+        code, name, description, monthly_base_price, minute_rate,
+        monthly_minute_allowance, max_room_admins, max_rooms, max_apps,
+        included_features, status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+      `,
+      [
+        plan.code,
+        plan.name,
+        plan.description,
+        plan.monthly_base_price,
+        plan.minute_rate,
+        plan.monthly_minute_allowance,
+        plan.max_room_admins,
+        plan.max_rooms,
+        plan.max_apps,
+        JSON.stringify(plan.included_features),
+      ]
+    )
+    planIds[plan.code] = result.insertId
+  }
+
+  return planIds
+}
+
+async function ensureTenantPlanAssignment(connection, planId) {
+  const existing = await fetchOne(
+    connection,
+    `
+    SELECT id
+    FROM tenant_plan_assignments
+    WHERE tenant_id = ?
+    AND status = 'active'
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+    [tenantId]
+  )
+
+  if (existing) {
+    await connection.execute(
+      `
+      UPDATE tenant_plan_assignments
+      SET plan_id = ?,
+          starts_at = COALESCE(starts_at, NOW()),
+          ends_at = NULL,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [planId, existing.id]
+    )
+    return existing.id
+  }
+
+  const [result] = await connection.execute(
+    `
+    INSERT INTO tenant_plan_assignments (tenant_id, plan_id, status, starts_at, created_at, updated_at)
+    VALUES (?, ?, 'active', NOW(), NOW(), NOW())
+    `,
+    [tenantId, planId]
+  )
+
+  return result.insertId
+}
+
+async function ensureClientApp(connection, planId) {
+  const app = {
+    name: 'Accenture Production App',
+    platform: 'web_mobile',
+    app_key: 'teo_live_accenture',
+    api_key: 'teo_api_accenture_demo',
+    sdk_token: 'teo_token_accenture_demo',
+    allowed_origins: ['https://152-228-135-87.sslip.io', 'https://funint.site'],
+  }
+  const existing = await fetchOne(
+    connection,
+    `
+    SELECT id
+    FROM client_apps
+    WHERE app_key = ?
+    LIMIT 1
+    `,
+    [app.app_key]
+  )
+
+  if (existing) {
+    await connection.execute(
+      `
+      UPDATE client_apps
+      SET tenant_id = ?,
+          plan_id = ?,
+          name = ?,
+          platform = ?,
+          api_key = ?,
+          sdk_token = ?,
+          allowed_origins = ?,
+          status = 'active',
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        tenantId,
+        planId,
+        app.name,
+        app.platform,
+        app.api_key,
+        app.sdk_token,
+        JSON.stringify(app.allowed_origins),
+        existing.id,
+      ]
+    )
+    return existing.id
+  }
+
+  const [result] = await connection.execute(
+    `
+    INSERT INTO client_apps (
+      tenant_id, plan_id, name, platform, app_key, api_key, sdk_token,
+      allowed_origins, status, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+    `,
+    [
+      tenantId,
+      planId,
+      app.name,
+      app.platform,
+      app.app_key,
+      app.api_key,
+      app.sdk_token,
+      JSON.stringify(app.allowed_origins),
+    ]
+  )
+
+  return result.insertId
+}
+
+async function ensureFeatureFlags(connection, appId, plan) {
+  const included = new Set(plan.included_features)
+
+  for (const featureKey of featureCatalog) {
+    const existing = await fetchOne(
+      connection,
+      `
+      SELECT id
+      FROM client_feature_flags
+      WHERE tenant_id = ?
+      AND app_id = ?
+      AND feature_key = ?
+      LIMIT 1
+      `,
+      [tenantId, appId, featureKey]
+    )
+    const enabled = included.has(featureKey) ? 1 : 0
+    const limitValue = featureKey === 'room_roles' ? String(plan.max_room_admins) : null
+
+    if (existing) {
+      await connection.execute(
+        `
+        UPDATE client_feature_flags
+        SET enabled = ?,
+            limit_value = ?,
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [enabled, limitValue, existing.id]
+      )
+      continue
+    }
+
+    await connection.execute(
+      `
+      INSERT INTO client_feature_flags (
+        tenant_id, app_id, feature_key, enabled, limit_value, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+      `,
+      [tenantId, appId, featureKey, enabled, limitValue]
+    )
+  }
 }
 
 async function ensureRoom(connection, room, ownerId, passwordHash = null) {
@@ -603,14 +956,20 @@ async function main() {
     await connection.execute(
       `
       INSERT INTO tenants (id, name, status, billing_rate_per_minute, created_at, updated_at)
-      VALUES (?, 'Accenture', 'active', 0.0000, NOW(), NOW())
+      VALUES (?, 'Accenture', 'active', 0.0080, NOW(), NOW())
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         status = VALUES(status),
+        billing_rate_per_minute = VALUES(billing_rate_per_minute),
         updated_at = NOW()
       `,
       [tenantId]
     )
+
+    const planIds = await ensureServicePlans(connection)
+    await ensureTenantPlanAssignment(connection, planIds.growth)
+    const clientAppId = await ensureClientApp(connection, planIds.growth)
+    await ensureFeatureFlags(connection, clientAppId, planConfigs.find((plan) => plan.code === 'growth'))
 
     const [roles] = await connection.execute(`SELECT id, name FROM roles`)
     const roleIds = roles.reduce((map, role) => {

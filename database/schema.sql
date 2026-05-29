@@ -13,6 +13,74 @@ CREATE TABLE IF NOT EXISTS tenants (
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS service_plans (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(80) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    description TEXT NULL,
+    monthly_base_price DECIMAL(12,2) DEFAULT 0.00,
+    minute_rate DECIMAL(10,4) DEFAULT 0.0000,
+    monthly_minute_allowance INT DEFAULT 0,
+    max_room_admins INT DEFAULT 0,
+    max_rooms INT DEFAULT 0,
+    max_apps INT DEFAULT 1,
+    included_features JSON NULL,
+    status ENUM('active', 'inactive') DEFAULT 'active',
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_service_plan_code (code)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_plan_assignments (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NOT NULL,
+    status ENUM('active', 'inactive', 'expired') DEFAULT 'active',
+    starts_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    ends_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tenant_plan_tenant_id (tenant_id),
+    INDEX idx_tenant_plan_status (status),
+    CONSTRAINT fk_tenant_plan_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tenant_plan_plan FOREIGN KEY (plan_id) REFERENCES service_plans(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS client_apps (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NULL,
+    name VARCHAR(150) NOT NULL,
+    platform ENUM('web', 'ios', 'android', 'web_mobile', 'server') DEFAULT 'web_mobile',
+    app_key VARCHAR(150) NOT NULL,
+    api_key VARCHAR(180) NOT NULL,
+    sdk_token VARCHAR(180) NOT NULL,
+    allowed_origins JSON NULL,
+    status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_client_app_key (app_key),
+    UNIQUE KEY unique_client_api_key (api_key),
+    INDEX idx_client_apps_tenant_id (tenant_id),
+    CONSTRAINT fk_client_apps_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_client_apps_plan FOREIGN KEY (plan_id) REFERENCES service_plans(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS client_feature_flags (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NULL,
+    feature_key VARCHAR(120) NOT NULL,
+    enabled BOOLEAN DEFAULT TRUE,
+    limit_value VARCHAR(120) NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_client_feature_tenant_id (tenant_id),
+    INDEX idx_client_feature_app_id (app_id),
+    CONSTRAINT fk_client_feature_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_client_feature_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NULL,
@@ -206,8 +274,133 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     CONSTRAINT fk_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-INSERT IGNORE INTO tenants (id, name, status, billing_rate_per_minute)
-VALUES (1, 'Accenture', 'active', 0.0000);
+INSERT INTO tenants (id, name, status, billing_rate_per_minute)
+VALUES (1, 'Accenture', 'active', 0.0080)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    status = VALUES(status),
+    billing_rate_per_minute = VALUES(billing_rate_per_minute),
+    updated_at = NOW();
+
+INSERT INTO service_plans (
+    code,
+    name,
+    description,
+    monthly_base_price,
+    minute_rate,
+    monthly_minute_allowance,
+    max_room_admins,
+    max_rooms,
+    max_apps,
+    included_features,
+    status
+)
+VALUES
+(
+    'starter',
+    'Starter RTC',
+    'Low package for one app with core audio, video, chat, moderation, and limited room admins.',
+    299.00,
+    0.0100,
+    25000,
+    15,
+    25,
+    1,
+    JSON_ARRAY('normal_audio_room', 'normal_video_group_chat', 'group_voice_chat', 'one_to_one_voice_calling', 'one_to_one_video_calling', 'message_chat', 'room_roles', 'private_room_password', 'rtc_connection_indicator'),
+    'active'
+),
+(
+    'growth',
+    'Growth RTC',
+    'High package for production apps with advanced live video, screen share, gifts, filters, and more room admins.',
+    799.00,
+    0.0080,
+    100000,
+    20,
+    120,
+    3,
+    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'admin_panel_analytics', 'rtc_connection_indicator'),
+    'active'
+),
+(
+    'enterprise',
+    'Enterprise RTC',
+    'Full multi-app RTC service with AI security, SDK controls, billing analytics, moderation history, and global monitoring.',
+    1999.00,
+    0.0060,
+    500000,
+    50,
+    500,
+    10,
+    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'ai_security_audio', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'ai_security_video', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'comment_reply', 'company_billing', 'admin_panel_analytics', 'rtc_connection_indicator'),
+    'active'
+)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    description = VALUES(description),
+    monthly_base_price = VALUES(monthly_base_price),
+    minute_rate = VALUES(minute_rate),
+    monthly_minute_allowance = VALUES(monthly_minute_allowance),
+    max_room_admins = VALUES(max_room_admins),
+    max_rooms = VALUES(max_rooms),
+    max_apps = VALUES(max_apps),
+    included_features = VALUES(included_features),
+    status = VALUES(status),
+    updated_at = NOW();
+
+SET @growth_plan_id := (
+    SELECT id
+    FROM service_plans
+    WHERE code = 'growth'
+    LIMIT 1
+);
+
+INSERT INTO tenant_plan_assignments (tenant_id, plan_id, status, starts_at, created_at, updated_at)
+SELECT 1, @growth_plan_id, 'active', NOW(), NOW(), NOW()
+WHERE @growth_plan_id IS NOT NULL
+AND NOT EXISTS (
+    SELECT 1
+    FROM tenant_plan_assignments
+    WHERE tenant_id = 1
+    AND status = 'active'
+);
+
+INSERT INTO client_apps (
+    tenant_id,
+    plan_id,
+    name,
+    platform,
+    app_key,
+    api_key,
+    sdk_token,
+    allowed_origins,
+    status,
+    created_at,
+    updated_at
+)
+VALUES (
+    1,
+    @growth_plan_id,
+    'Accenture Production App',
+    'web_mobile',
+    'teo_live_accenture',
+    'teo_api_accenture_demo',
+    'teo_token_accenture_demo',
+    JSON_ARRAY('https://152-228-135-87.sslip.io', 'https://funint.site'),
+    'active',
+    NOW(),
+    NOW()
+)
+ON DUPLICATE KEY UPDATE
+    tenant_id = VALUES(tenant_id),
+    plan_id = VALUES(plan_id),
+    name = VALUES(name),
+    platform = VALUES(platform),
+    api_key = VALUES(api_key),
+    sdk_token = VALUES(sdk_token),
+    allowed_origins = VALUES(allowed_origins),
+    status = VALUES(status),
+    updated_at = NOW();
 
 INSERT IGNORE INTO roles (id, name, label) VALUES
 (1, 'end_user', 'End User'),

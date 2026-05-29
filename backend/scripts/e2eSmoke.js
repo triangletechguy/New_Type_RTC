@@ -98,7 +98,7 @@ async function main() {
   const runId = Date.now()
   const ownerEmail = `e2e-owner-${runId}@example.com`
   const guestEmail = `e2e-guest-${runId}@example.com`
-  const password = 'E2E@123456'
+  const password = 'E2e@123456'
   const roomPassword = 'E2ERoom@1234'
   const roomName = `E2E Polish Room ${runId}`
 
@@ -181,7 +181,9 @@ async function main() {
     token: guest.access_token,
     method: 'DELETE',
   })
-  assert(Boolean(Number(unsent.chat_message?.is_unsent)) === true, 'message was not unsent')
+  assert(Number(unsent.message_id) === Number(sentMessage.chat_message.id), 'message delete did not return the deleted message id')
+  const messageListAfterDelete = await request(`/rooms/${state.roomId}/messages`, { token: owner.access_token })
+  assert(!messageListAfterDelete.messages.some((message) => message.id === sentMessage.chat_message.id), 'deleted message was still visible in chat list')
 
   const controls = await request(`/rooms/${state.roomId}/controls`, { token: owner.access_token })
   assert(controls.controls.can_manage === true, 'owner controls did not report can_manage')
