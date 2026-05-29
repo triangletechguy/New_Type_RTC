@@ -1119,6 +1119,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false)
   const [stageLayout, setStageLayout] = useState('grid')
   const [rtcConfigState, setRtcConfigState] = useState(null)
+  const [joinEffect, setJoinEffect] = useState(null)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -1128,6 +1129,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const localSocketIdRef = useRef(null)
   const joinedRef = useRef(false)
   const negotiatedPeersRef = useRef(new Set())
+  const joinEffectTimerRef = useRef(null)
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -1232,19 +1234,8 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
-  function shouldInitiatePeer(remoteSocketId) {
-    const localSocketId = localSocketIdRef.current || socketRef.current?.id || ''
-    if (!remoteSocketId || !localSocketId) return true
-    return localSocketId < remoteSocketId
-  }
-
   async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
     if (!remoteSocketId || negotiatedPeersRef.current.has(remoteSocketId)) return
-
-    if (!shouldInitiatePeer(remoteSocketId)) {
-      setPeerStates((previous) => previous[remoteSocketId] ? previous : { ...previous, [remoteSocketId]: 'waiting' })
-      return
-    }
 
     negotiatedPeersRef.current.add(remoteSocketId)
     setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'negotiating' }))
@@ -1259,6 +1250,58 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       negotiatedPeersRef.current.delete(remoteSocketId)
       setConnectionIssue(`${label} negotiation failed: ${error.message}`)
       setStatus(`${label} negotiation failed: ${error.message}`)
+    }
+  }
+
+  function playJoinSound() {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      if (!AudioContextClass) return
+
+      const audioContext = new AudioContextClass()
+      const gain = audioContext.createGain()
+      const oscillator = audioContext.createOscillator()
+      const startSound = () => {
+        const startTime = audioContext.currentTime + 0.01
+
+        oscillator.type = 'sine'
+        oscillator.frequency.setValueAtTime(660, startTime)
+        oscillator.frequency.exponentialRampToValueAtTime(990, startTime + 0.12)
+        gain.gain.setValueAtTime(0.0001, startTime)
+        gain.gain.exponentialRampToValueAtTime(0.12, startTime + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.22)
+        oscillator.connect(gain)
+        gain.connect(audioContext.destination)
+        oscillator.start(startTime)
+        oscillator.stop(startTime + 0.24)
+        window.setTimeout(() => audioContext.close().catch(() => {}), 360)
+      }
+
+      const resumePromise = audioContext.state === 'suspended' ? audioContext.resume() : Promise.resolve()
+      resumePromise.then(startSound).catch(() => audioContext.close().catch(() => {}))
+    } catch {}
+  }
+
+  function triggerJoinEffect(name) {
+    playJoinSound()
+    window.clearTimeout(joinEffectTimerRef.current)
+    setJoinEffect({ name: name || 'Guest', key: Date.now() })
+    joinEffectTimerRef.current = window.setTimeout(() => setJoinEffect(null), 1800)
+  }
+
+  function handleRemoteStream(remoteSocketId, remoteStream) {
+    setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream }))
+
+    const hasVideoTrack = remoteStream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
+    if (hasVideoTrack) {
+      setPeerMediaStates((previous) => ({
+        ...previous,
+        [remoteSocketId]: {
+          ...(previous[remoteSocketId] || {}),
+          cameraOn: true,
+          rtcMode: 'video',
+        },
+      }))
     }
   }
 
@@ -1345,7 +1388,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         localStream: media.stream,
         iceServers: rtcConfig.iceServers,
         iceTransportPolicy: rtcConfig.iceTransportPolicy,
-        onRemoteStream: (remoteSocketId, remoteStream) => setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream })),
+        onRemoteStream: handleRemoteStream,
         onPeerState: (remoteSocketId, state) => {
           setPeerStates((previous) => ({ ...previous, [remoteSocketId]: state }))
           if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
@@ -1396,8 +1439,9 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         const { socketId } = payload
         setSignalingPeerCount((count) => count + 1)
         setPeerMediaStates((previous) => ({ ...previous, [socketId]: peerMediaFromSignal(payload) }))
+        setPeerStates((previous) => ({ ...previous, [socketId]: previous[socketId] || 'waiting' }))
         setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
-        await beginPeerNegotiation(socketId, rtcClient, 'Peer')
+        triggerJoinEffect(payload.userName)
       })
       socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
         try {
@@ -1614,6 +1658,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   }, [joined])
 
   useEffect(() => () => {
+    window.clearTimeout(joinEffectTimerRef.current)
     resetRtcState({ clearState: false })
   }, [])
 
@@ -1692,6 +1737,12 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
 
       <main className="live-layout">
         <section className="stage glass-card">
+          {joinEffect && (
+            <div className="join-effect" key={joinEffect.key}>
+              <span></span>
+              <strong>{joinEffect.name} joined</strong>
+            </div>
+          )}
           <div className="stage-toolbar">
             <div>
               <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>

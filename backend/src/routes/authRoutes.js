@@ -13,12 +13,8 @@ function normalizeEmail(value) {
 
 function validateEmail(value) {
   const email = normalizeEmail(value)
-  const emailPattern = /^[^\s@]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i
-  if (!emailPattern.test(email)) return false
-
-  const domain = email.split('@')[1]
-  const tld = domain.split('.').pop()
-  return tld.length >= 2
+  const emailPattern = /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
+  return emailPattern.test(email)
 }
 
 function validateStrongPassword(value) {

@@ -4,7 +4,7 @@ export function normalizeEmail(value) {
 
 export function getEmailError(value) {
   const email = normalizeEmail(value)
-  const emailPattern = /^[^\s@]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i
+  const emailPattern = /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
 
   if (!email) return 'Email is required.'
   if (!emailPattern.test(email)) return 'Use a valid email like name@gmail.com or name@company.com.'

@@ -15,7 +15,7 @@ export function VideoTile({
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
-  const showVideo = Boolean(stream && hasVideo && cameraOn && rtcMode === 'video')
+  const showVideo = Boolean(stream && hasVideo && cameraOn !== false && rtcMode === 'video')
   const initials = getInitials(label)
 
   useEffect(() => {
