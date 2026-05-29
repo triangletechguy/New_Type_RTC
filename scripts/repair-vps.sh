@@ -383,7 +383,7 @@ ensure_https_certificate() {
   sudo certbot certonly \
     --webroot \
     --webroot-path "$WEB_ROOT" \
-    --domain "$PUBLIC_HOST" \
+    -d "$PUBLIC_HOST" \
     --non-interactive \
     --agree-tos \
     --register-unsafely-without-email \
