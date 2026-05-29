@@ -1656,6 +1656,7 @@ pre {
 }
 
 .media-control-button {
+  position: relative;
   min-width: 142px;
   display: inline-flex;
   justify-content: center;
@@ -1665,9 +1666,39 @@ pre {
   background: rgba(52, 211, 153, .12);
 }
 
+.media-control-button.icon-only {
+  width: 46px;
+  height: 42px;
+  min-width: 46px;
+  padding: 0;
+}
+
+.media-control-button.active {
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, .1), inset 0 0 18px rgba(52, 211, 153, .08);
+}
+
 .media-control-button.muted {
   border-color: rgba(239, 68, 68, .38);
   background: rgba(239, 68, 68, .13);
+  color: #fecaca;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, .08), inset 0 0 18px rgba(239, 68, 68, .08);
+}
+
+.media-control-button.muted::after {
+  content: "";
+  position: absolute;
+  width: 31px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-38deg);
+  opacity: .95;
+}
+
+.media-control-button.utility {
+  border-color: rgba(148, 163, 184, .24);
+  background: rgba(148, 163, 184, .1);
+  color: var(--soft);
 }
 
 .control-glyph {
@@ -1723,6 +1754,75 @@ pre {
   border-top: 2px solid currentColor;
   border-right: 2px solid currentColor;
   transform: rotate(45deg);
+}
+
+.control-glyph.screen::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 18px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.control-glyph.screen::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 17px;
+  width: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 3px 0 currentColor;
+}
+
+.control-glyph.effects::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.control-glyph.effects::after {
+  content: "";
+  position: absolute;
+  right: 1px;
+  top: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: -18px 15px 0 currentColor, -3px 18px 0 currentColor;
+}
+
+.control-glyph.gift::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  width: 16px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  box-shadow: inset 6px 0 0 -4px currentColor, inset -6px 0 0 -4px currentColor;
+}
+
+.control-glyph.gift::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 5px;
+  width: 20px;
+  height: 4px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
 }
 
 .join-recovery {

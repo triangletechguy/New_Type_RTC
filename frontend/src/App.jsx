@@ -1769,17 +1769,35 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
                 {joining ? 'Connecting RTC...' : connectAttempted ? 'Retry RTC' : 'Connect RTC'}
               </button>
             ) : <button className="danger-button" onClick={leaveRoom}>Leave Room</button>}
-            <button className={micOn ? 'media-control-button active' : 'media-control-button muted'} onClick={toggleMic} disabled={joining || mediaUpdating.mic}>
+            <button
+              className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+              onClick={toggleMic}
+              disabled={joining || mediaUpdating.mic}
+              aria-label={mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'}
+              aria-pressed={micOn}
+              title={mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'}
+            >
               <span className="control-glyph mic"></span>
-              <span>{mediaUpdating.mic ? 'Saving...' : micOn ? 'Mute Mic' : 'Unmute Mic'}</span>
             </button>
-            <button className={cameraOn ? 'media-control-button active' : 'media-control-button muted'} onClick={toggleCamera} disabled={joining || mediaUpdating.camera || rtcMode === 'audio'}>
+            <button
+              className={cameraOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+              onClick={toggleCamera}
+              disabled={joining || mediaUpdating.camera || rtcMode === 'audio'}
+              aria-label={mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'}
+              aria-pressed={cameraOn}
+              title={mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'}
+            >
               <span className="control-glyph camera"></span>
-              <span>{mediaUpdating.camera ? 'Saving...' : cameraOn ? 'Camera Off' : 'Camera On'}</span>
             </button>
-            <button disabled>Screen Share</button>
-            <button disabled>Effects</button>
-            <button disabled>Gifts</button>
+            <button className="media-control-button icon-only utility" disabled aria-label="Screen share" title="Screen share">
+              <span className="control-glyph screen"></span>
+            </button>
+            <button className="media-control-button icon-only utility" disabled aria-label="Effects" title="Effects">
+              <span className="control-glyph effects"></span>
+            </button>
+            <button className="media-control-button icon-only utility" disabled aria-label="Gifts" title="Gifts">
+              <span className="control-glyph gift"></span>
+            </button>
           </div>
         </section>
 
