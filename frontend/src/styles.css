@@ -20,30 +20,30 @@
   --shadow: 0 18px 60px rgba(0, 0, 0, .34);
 }
 
-.buzzcast-shell {
+.talk-shell {
   min-height: 100vh;
   background: #22222e;
   color: #fff;
   font-size: 16px;
 }
 
-.buzzcast-shell button,
-.buzzcast-shell input,
-.buzzcast-shell select,
-.buzzcast-shell textarea {
+.talk-shell button,
+.talk-shell input,
+.talk-shell select,
+.talk-shell textarea {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.buzzcast-shell button {
+.talk-shell button {
   transform: none;
   box-shadow: none;
 }
 
-.buzzcast-shell button:hover:not(:disabled) {
+.talk-shell button:hover:not(:disabled) {
   transform: none;
 }
 
-.buzzcast-topbar {
+.talk-topbar {
   position: fixed;
   z-index: 50;
   top: 0;
@@ -59,14 +59,14 @@
   border-top: 1px solid rgba(255, 255, 255, .7);
 }
 
-.buzzcast-logo {
+.talk-logo {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.buzzcast-logo-mark {
+.talk-logo-mark {
   width: 38px;
   height: 38px;
   display: grid;
@@ -84,26 +84,26 @@
   box-shadow: 0 8px 26px rgba(126, 73, 255, .35);
 }
 
-.buzzcast-logo strong,
-.buzzcast-logo span {
+.talk-logo strong,
+.talk-logo span {
   display: block;
   line-height: 1;
 }
 
-.buzzcast-logo strong {
+.talk-logo strong {
   font-size: 18px;
   font-style: italic;
   font-weight: 1000;
 }
 
-.buzzcast-logo span {
+.talk-logo span {
   margin-top: 3px;
   font-size: 8px;
   font-weight: 900;
   color: rgba(255, 255, 255, .8);
 }
 
-.buzzcast-search-wrap {
+.talk-search-wrap {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 78px;
@@ -111,7 +111,7 @@
   align-items: stretch;
 }
 
-.buzzcast-search-wrap input {
+.talk-search-wrap input {
   height: 40px;
   border-radius: 7px 0 0 7px;
   border: 1px solid #4a495d;
@@ -122,12 +122,12 @@
   box-shadow: none;
 }
 
-.buzzcast-search-wrap input:focus {
+.talk-search-wrap input:focus {
   border-color: #69677f;
   box-shadow: none;
 }
 
-.buzzcast-search-wrap button {
+.talk-search-wrap button {
   height: 40px;
   border-radius: 0 7px 7px 0;
   border: 1px solid #4a495d;
@@ -137,7 +137,7 @@
   font-weight: 900;
 }
 
-.buzzcast-search-panel {
+.talk-search-panel {
   position: absolute;
   z-index: 90;
   top: 46px;
@@ -152,14 +152,14 @@
   box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
 }
 
-.buzzcast-search-panel > span {
+.talk-search-panel > span {
   display: block;
   margin-bottom: 16px;
   color: #b8b6c6;
   font-size: 14px;
 }
 
-.buzzcast-search-panel button {
+.talk-search-panel button {
   width: 100%;
   min-height: 64px;
   display: grid;
@@ -173,8 +173,8 @@
   text-align: left;
 }
 
-.buzzcast-search-panel i,
-.buzzcast-messages-drawer aside i {
+.talk-search-panel i,
+.talk-messages-drawer aside i {
   width: 42px;
   height: 42px;
   display: grid;
@@ -187,21 +187,21 @@
   font-weight: 1000;
 }
 
-.buzzcast-search-panel strong,
-.buzzcast-search-panel small {
+.talk-search-panel strong,
+.talk-search-panel small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.buzzcast-search-panel small {
+.talk-search-panel small {
   margin-top: 4px;
   color: #aaa7bb;
 }
 
-.buzzcast-search-panel em,
-.buzzcast-messages-drawer aside em {
+.talk-search-panel em,
+.talk-messages-drawer aside em {
   min-width: 18px;
   height: 18px;
   display: grid;
@@ -214,7 +214,7 @@
   font-weight: 1000;
 }
 
-.buzzcast-actions {
+.talk-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -222,8 +222,8 @@
   min-width: 0;
 }
 
-.buzzcast-icon-button,
-.buzzcast-avatar-button {
+.talk-icon-button,
+.talk-avatar-button {
   position: relative;
   width: 42px;
   height: 42px;
@@ -238,13 +238,13 @@
   font-weight: 1000;
 }
 
-.buzzcast-icon-button.accent {
+.talk-icon-button.accent {
   background: #7d55ff;
   color: #fff;
   font-size: 26px;
 }
 
-.buzzcast-icon-button em {
+.talk-icon-button em {
   position: absolute;
   top: -6px;
   right: -3px;
@@ -259,7 +259,7 @@
   font-style: normal;
 }
 
-.buzzcast-balance {
+.talk-balance {
   height: 42px;
   display: flex;
   align-items: center;
@@ -270,25 +270,25 @@
   background: #343143;
 }
 
-.buzzcast-balance span {
+.talk-balance span {
   color: #ffb15e;
   font-size: 12px;
   font-weight: 900;
 }
 
-.buzzcast-balance strong {
+.talk-balance strong {
   min-width: 16px;
   text-align: center;
 }
 
-.buzzcast-avatar-button {
+.talk-avatar-button {
   width: 46px;
   height: 46px;
   background: #eff2fa;
   color: #747a91;
 }
 
-.buzzcast-left-rail {
+.talk-left-rail {
   position: fixed;
   z-index: 45;
   top: 70px;
@@ -302,7 +302,7 @@
   background: #22222e;
 }
 
-.buzzcast-left-rail button {
+.talk-left-rail button {
   min-height: 40px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -316,27 +316,27 @@
   font-weight: 500;
 }
 
-.buzzcast-left-rail button.active {
+.talk-left-rail button.active {
   background: #48475b;
   color: #fff;
 }
 
-.buzzcast-left-rail span {
+.talk-left-rail span {
   color: #bcb8ce;
   font-size: 13px;
   text-align: center;
 }
 
-.buzzcast-rail-spacer {
+.talk-rail-spacer {
   flex: 1;
 }
 
-.buzzcast-main {
+.talk-main {
   min-height: 100vh;
   padding: 82px 20px 28px 176px;
 }
 
-.buzzcast-feed-nav {
+.talk-feed-nav {
   height: 42px;
   display: flex;
   align-items: center;
@@ -344,7 +344,7 @@
   margin-bottom: 18px;
 }
 
-.buzzcast-feed-nav button {
+.talk-feed-nav button {
   position: relative;
   height: 38px;
   padding: 0;
@@ -356,11 +356,11 @@
   font-weight: 500;
 }
 
-.buzzcast-feed-nav button.active {
+.talk-feed-nav button.active {
   color: #fff;
 }
 
-.buzzcast-feed-nav button.active::after {
+.talk-feed-nav button.active::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -372,13 +372,13 @@
   transform: translateX(-50%);
 }
 
-.buzzcast-filter-pills {
+.talk-filter-pills {
   display: flex;
   gap: 14px;
   margin: 2px 0 24px;
 }
 
-.buzzcast-filter-pills button {
+.talk-filter-pills button {
   height: 26px;
   padding: 0 16px;
   border: 0;
@@ -389,12 +389,12 @@
   font-weight: 700;
 }
 
-.buzzcast-filter-pills button.active {
+.talk-filter-pills button.active {
   background: #565366;
   color: #fff;
 }
 
-.buzzcast-match-banner {
+.talk-match-banner {
   min-height: 50px;
   display: flex;
   align-items: center;
@@ -406,7 +406,7 @@
   background: linear-gradient(90deg, #a957ff, #e957cb 45%, #ffb24d);
 }
 
-.buzzcast-feed-controls {
+.talk-feed-controls {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -414,12 +414,12 @@
   margin-bottom: 14px;
 }
 
-.buzzcast-feed-controls > div {
+.talk-feed-controls > div {
   display: flex;
   gap: 8px;
 }
 
-.buzzcast-feed-controls select {
+.talk-feed-controls select {
   width: auto;
   min-width: 120px;
   height: 34px;
@@ -429,7 +429,7 @@
   color: #eeeaf7;
 }
 
-.buzzcast-feed-controls span {
+.talk-feed-controls span {
   overflow: hidden;
   color: #aaa6ba;
   font-size: 13px;
@@ -437,28 +437,28 @@
   white-space: nowrap;
 }
 
-.buzzcast-card-grid {
+.talk-card-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(190px, 1fr));
   gap: 28px 20px;
   align-items: start;
 }
 
-.buzzcast-card-grid.party-grid {
+.talk-card-grid.party-grid {
   grid-template-columns: repeat(2, minmax(260px, 1fr));
   gap: 28px 20px;
 }
 
-.buzzcast-room-card {
+.talk-room-card {
   min-width: 0;
 }
 
-.buzzcast-room-card.featured {
+.talk-room-card.featured {
   grid-column: span 2;
   grid-row: span 2;
 }
 
-.buzzcast-card-button {
+.talk-card-button {
   width: 100%;
   padding: 0;
   border: 0;
@@ -467,11 +467,11 @@
   text-align: left;
 }
 
-.buzzcast-card-button:hover .buzzcast-media::before {
+.talk-card-button:hover .talk-media::before {
   transform: scale(1.08);
 }
 
-.buzzcast-media {
+.talk-media {
   --media-bg: linear-gradient(135deg, #42566d, #271d22);
   position: relative;
   overflow: hidden;
@@ -481,11 +481,11 @@
   background: #14131d;
 }
 
-.buzzcast-card-grid.party-grid .buzzcast-media {
+.talk-card-grid.party-grid .talk-media {
   aspect-ratio: 3 / 1;
 }
 
-.buzzcast-media::before {
+.talk-media::before {
   content: "";
   position: absolute;
   inset: -28px;
@@ -495,7 +495,7 @@
   transition: transform .18s ease;
 }
 
-.buzzcast-media::after {
+.talk-media::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -529,15 +529,15 @@
 .media-ember { --media-bg: radial-gradient(circle at 45% 35%, #d37b55, transparent 38%), radial-gradient(circle at 18% 40%, #9d1b12, transparent 24%), #1d0e0a; }
 .media-sensitive { --media-bg: radial-gradient(circle at 76% 28%, #627080, transparent 32%), radial-gradient(circle at 22% 28%, #5c3a2f, transparent 34%), #31333b; }
 
-.buzzcast-card-badge,
-.buzzcast-viewers,
-.buzzcast-seat-dots,
-.buzzcast-sensitive-dot {
+.talk-card-badge,
+.talk-viewers,
+.talk-seat-dots,
+.talk-sensitive-dot {
   position: absolute;
   z-index: 2;
 }
 
-.buzzcast-card-badge {
+.talk-card-badge {
   top: 10px;
   left: 10px;
   max-width: calc(100% - 20px);
@@ -552,7 +552,7 @@
   white-space: nowrap;
 }
 
-.buzzcast-viewers {
+.talk-viewers {
   left: 28px;
   bottom: 16px;
   color: #fff;
@@ -561,13 +561,13 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
 }
 
-.buzzcast-seat-dots {
+.talk-seat-dots {
   right: 9px;
   bottom: 9px;
   display: flex;
 }
 
-.buzzcast-seat-dots i {
+.talk-seat-dots i {
   width: 28px;
   height: 28px;
   margin-left: -6px;
@@ -576,7 +576,7 @@
   background: rgba(255, 255, 255, .06);
 }
 
-.buzzcast-sensitive-dot {
+.talk-sensitive-dot {
   top: 12px;
   right: 12px;
   width: 18px;
@@ -585,33 +585,63 @@
   border-radius: 50%;
 }
 
-.buzzcast-card-copy {
+.talk-card-copy {
   min-height: 74px;
   padding: 14px 0 0;
 }
 
-.buzzcast-card-copy strong,
-.buzzcast-card-copy span {
+.talk-card-copy strong,
+.talk-card-copy span,
+.talk-card-copy small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.buzzcast-card-copy strong {
+.talk-card-copy strong {
   color: #fff;
   font-size: 16px;
   font-weight: 700;
 }
 
-.buzzcast-card-copy span {
+.talk-card-copy span {
   margin-top: 12px;
   color: #aaa6bb;
   font-size: 14px;
   text-align: center;
 }
 
-.buzzcast-pagination {
+.talk-card-copy small {
+  margin-top: 6px;
+  color: #858196;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.talk-empty-feed {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  border-radius: 8px;
+  background: #2a2938;
+  color: #c8c4dc;
+}
+
+.talk-empty-feed strong {
+  color: #fff;
+  font-size: 18px;
+}
+
+.talk-empty-feed button {
+  min-width: 128px;
+  border: 0;
+  background: #7658ff;
+}
+
+.talk-pagination {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -619,36 +649,36 @@
   padding: 24px 0 0;
 }
 
-.buzzcast-pagination button {
+.talk-pagination button {
   border: 1px solid #49475a;
   background: #302f3e;
 }
 
-.buzzcast-pagination span {
+.talk-pagination span {
   color: #aaa6bb;
   font-weight: 900;
 }
 
-.buzzcast-profile-panel,
-.buzzcast-settings-shell,
-.buzzcast-help-shell,
-.buzzcast-room-preview {
+.talk-profile-panel,
+.talk-settings-shell,
+.talk-help-shell,
+.talk-room-preview {
   min-height: calc(100vh - 110px);
 }
 
-.buzzcast-profile-panel {
+.talk-profile-panel {
   max-width: 1050px;
   margin: 45px auto 0;
 }
 
-.buzzcast-profile-hero {
+.talk-profile-hero {
   display: flex;
   align-items: center;
   gap: 20px;
   min-height: 130px;
 }
 
-.buzzcast-profile-avatar {
+.talk-profile-avatar {
   position: relative;
   width: 100px;
   height: 100px;
@@ -661,32 +691,32 @@
   font-weight: 1000;
 }
 
-.buzzcast-profile-hero h1 {
+.talk-profile-hero h1 {
   margin: 0 0 8px;
   font-size: 18px;
 }
 
-.buzzcast-profile-hero span,
-.buzzcast-profile-hero p,
-.buzzcast-profile-hero small {
+.talk-profile-hero span,
+.talk-profile-hero p,
+.talk-profile-hero small {
   color: #aaa6bb;
 }
 
-.buzzcast-profile-hero p {
+.talk-profile-hero p {
   margin: 8px 0 6px;
   font-size: 13px;
 }
 
-.buzzcast-profile-hero b {
+.talk-profile-hero b {
   color: #fff;
 }
 
-.buzzcast-profile-badges {
+.talk-profile-badges {
   display: flex;
   gap: 6px;
 }
 
-.buzzcast-profile-badges strong {
+.talk-profile-badges strong {
   min-width: 42px;
   height: 18px;
   display: grid;
@@ -696,38 +726,38 @@
   font-size: 12px;
 }
 
-.buzzcast-profile-grid {
+.talk-profile-grid {
   margin-top: 34px;
 }
 
-.buzzcast-profile-grid h2 {
+.talk-profile-grid h2 {
   margin-bottom: 46px;
   font-size: 16px;
   font-weight: 500;
 }
 
-.buzzcast-profile-grid dl {
+.talk-profile-grid dl {
   display: grid;
   grid-template-columns: 140px 260px 140px 260px;
   gap: 28px 0;
 }
 
-.buzzcast-profile-grid dt {
+.talk-profile-grid dt {
   color: #aaa6bb;
 }
 
-.buzzcast-profile-grid dd {
+.talk-profile-grid dd {
   margin: 0;
 }
 
-.buzzcast-profile-links {
+.talk-profile-links {
   max-width: 330px;
   margin-top: 50px;
   display: grid;
   gap: 28px;
 }
 
-.buzzcast-profile-links button {
+.talk-profile-links button {
   border: 0;
   background: transparent;
   color: #aaa6bb;
@@ -736,7 +766,7 @@
   font-weight: 500;
 }
 
-.buzzcast-settings-shell {
+.talk-settings-shell {
   max-width: 1290px;
   margin: 0 auto;
   display: grid;
@@ -744,20 +774,20 @@
   gap: 10px;
 }
 
-.buzzcast-settings-nav,
-.buzzcast-settings-content,
-.buzzcast-help-menu,
-.buzzcast-help-content {
+.talk-settings-nav,
+.talk-settings-content,
+.talk-help-menu,
+.talk-help-content {
   border-radius: 8px;
   background: #302f3d;
 }
 
-.buzzcast-settings-nav {
+.talk-settings-nav {
   overflow: hidden;
   align-self: start;
 }
 
-.buzzcast-settings-nav button {
+.talk-settings-nav button {
   width: 100%;
   min-height: 64px;
   display: grid;
@@ -772,12 +802,12 @@
   font-weight: 500;
 }
 
-.buzzcast-settings-nav button.active {
+.talk-settings-nav button.active {
   background: #4a495d;
   color: #fff;
 }
 
-.buzzcast-settings-nav i {
+.talk-settings-nav i {
   width: 20px;
   height: 20px;
   display: grid;
@@ -788,19 +818,19 @@
   font-style: normal;
 }
 
-.buzzcast-settings-content {
+.talk-settings-content {
   min-height: 830px;
   padding: 26px 42px;
 }
 
-.buzzcast-settings-list {
+.talk-settings-list {
   display: grid;
 }
 
-.buzzcast-settings-list > button,
-.buzzcast-settings-list label,
-.buzzcast-radio-row,
-.buzzcast-switch-row {
+.talk-settings-list > button,
+.talk-settings-list label,
+.talk-radio-row,
+.talk-switch-row {
   min-height: 76px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -815,42 +845,42 @@
   font-weight: 500;
 }
 
-.buzzcast-settings-list.compact > label {
+.talk-settings-list.compact > label {
   min-height: 80px;
 }
 
-.buzzcast-settings-list > button:hover,
-.buzzcast-settings-list label:hover {
+.talk-settings-list > button:hover,
+.talk-settings-list label:hover {
   background: #464559;
 }
 
-.buzzcast-settings-list em,
-.buzzcast-settings-list b {
+.talk-settings-list em,
+.talk-settings-list b {
   color: #6e5fff;
   font-style: normal;
   font-weight: 500;
 }
 
-.buzzcast-settings-list small {
+.talk-settings-list small {
   display: block;
   margin-top: 6px;
   color: #aaa6bb;
   font-size: 12px;
 }
 
-.buzzcast-switch-row input {
+.talk-switch-row input {
   width: 44px;
   height: 24px;
   accent-color: #7658ff;
 }
 
-.buzzcast-radio-row input {
+.talk-radio-row input {
   width: 18px;
   height: 18px;
   accent-color: #7658ff;
 }
 
-.buzzcast-safety-card {
+.talk-safety-card {
   min-height: 132px;
   display: flex;
   justify-content: space-between;
@@ -861,12 +891,12 @@
   background: linear-gradient(110deg, #ef6d93, #ff7049);
 }
 
-.buzzcast-safety-card strong {
+.talk-safety-card strong {
   font-size: 20px;
   font-weight: 600;
 }
 
-.buzzcast-safety-card span {
+.talk-safety-card span {
   width: 86px;
   height: 86px;
   display: grid;
@@ -877,48 +907,48 @@
   font-weight: 1000;
 }
 
-.buzzcast-region-panel > input {
+.talk-region-panel > input {
   height: 40px;
   margin-bottom: 22px;
   border-color: #504e64;
   background: #292839;
 }
 
-.buzzcast-help-shell {
+.talk-help-shell {
   max-width: 980px;
   margin: 14px auto 0;
 }
 
-.buzzcast-help-shell > header {
+.talk-help-shell > header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
 
-.buzzcast-help-shell h1 {
+.talk-help-shell h1 {
   margin: 0;
   font-size: 16px;
 }
 
-.buzzcast-help-shell > header button {
+.talk-help-shell > header button {
   border: 0;
   background: transparent;
   color: #c8c4dc;
   font-weight: 500;
 }
 
-.buzzcast-help-layout {
+.talk-help-layout {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
   gap: 10px;
 }
 
-.buzzcast-help-menu {
+.talk-help-menu {
   overflow: hidden;
 }
 
-.buzzcast-help-menu button {
+.talk-help-menu button {
   width: 100%;
   min-height: 44px;
   border: 0;
@@ -930,25 +960,25 @@
   font-weight: 500;
 }
 
-.buzzcast-help-menu button.active,
-.buzzcast-help-menu button.soft {
+.talk-help-menu button.active,
+.talk-help-menu button.soft {
   background: #4a495d;
   color: #fff;
 }
 
-.buzzcast-help-content {
+.talk-help-content {
   min-height: 820px;
   padding: 32px;
   color: #cbc7df;
   line-height: 1.55;
 }
 
-.buzzcast-faq-list {
+.talk-faq-list {
   display: grid;
   gap: 14px;
 }
 
-.buzzcast-faq-list button {
+.talk-faq-list button {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -959,13 +989,13 @@
   font-weight: 500;
 }
 
-.buzzcast-room-preview {
+.talk-room-preview {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 404px;
   gap: 12px;
 }
 
-.buzzcast-stage {
+.talk-stage {
   position: relative;
   min-height: calc(100vh - 92px);
   overflow: hidden;
@@ -973,7 +1003,7 @@
   background: #15151d;
 }
 
-.buzzcast-stage::before {
+.talk-stage::before {
   content: "";
   position: absolute;
   inset: -32px;
@@ -981,14 +1011,14 @@
   filter: blur(18px);
 }
 
-.buzzcast-stage::after {
+.talk-stage::after {
   content: "";
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, .18);
 }
 
-.buzzcast-warning-panel {
+.talk-warning-panel {
   position: absolute;
   z-index: 3;
   top: 50%;
@@ -1001,13 +1031,13 @@
   text-align: center;
 }
 
-.buzzcast-warning-panel strong {
+.talk-warning-panel strong {
   max-width: 300px;
   font-size: 20px;
   line-height: 1.1;
 }
 
-.buzzcast-warning-panel button {
+.talk-warning-panel button {
   min-width: 128px;
   border: 1px solid rgba(255, 255, 255, .88);
   border-radius: 999px;
@@ -1015,20 +1045,20 @@
   color: #fff;
 }
 
-.buzzcast-warning-panel button:last-child {
+.talk-warning-panel button:last-child {
   border: 0;
   border-radius: 0;
 }
 
-.buzzcast-host-pill,
-.buzzcast-room-metadata,
-.buzzcast-join-ribbon,
-.buzzcast-gift-bar {
+.talk-host-pill,
+.talk-room-metadata,
+.talk-join-ribbon,
+.talk-gift-bar {
   position: absolute;
   z-index: 3;
 }
 
-.buzzcast-host-pill {
+.talk-host-pill {
   top: 12px;
   left: 58px;
   min-width: 184px;
@@ -1042,7 +1072,7 @@
   background: rgba(0, 0, 0, .58);
 }
 
-.buzzcast-host-pill span {
+.talk-host-pill span {
   width: 22px;
   height: 22px;
   display: grid;
@@ -1052,40 +1082,40 @@
   font-size: 9px;
 }
 
-.buzzcast-host-pill strong,
-.buzzcast-host-pill small {
+.talk-host-pill strong,
+.talk-host-pill small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.buzzcast-host-pill strong {
+.talk-host-pill strong {
   font-size: 12px;
 }
 
-.buzzcast-room-metadata {
+.talk-room-metadata {
   top: 62px;
   left: 58px;
   display: grid;
   gap: 14px;
 }
 
-.buzzcast-room-metadata span {
+.talk-room-metadata span {
   color: rgba(255, 255, 255, .55);
 }
 
-.buzzcast-room-metadata strong {
+.talk-room-metadata strong {
   max-width: 220px;
   padding: 10px;
   border-radius: 4px;
   background: rgba(0, 0, 0, .48);
 }
 
-.buzzcast-room-metadata small {
+.talk-room-metadata small {
   color: #fff;
 }
 
-.buzzcast-join-ribbon {
+.talk-join-ribbon {
   top: 135px;
   left: 32%;
   min-width: 210px;
@@ -1099,7 +1129,7 @@
   font-weight: 900;
 }
 
-.buzzcast-gift-bar {
+.talk-gift-bar {
   left: 10px;
   right: 10px;
   bottom: 10px;
@@ -1110,7 +1140,7 @@
   border-radius: 8px;
 }
 
-.buzzcast-gift-bar button {
+.talk-gift-bar button {
   min-width: 0;
   display: grid;
   place-items: center;
@@ -1123,11 +1153,11 @@
   font-weight: 500;
 }
 
-.buzzcast-gift-bar small {
+.talk-gift-bar small {
   color: #d5d1df;
 }
 
-.buzzcast-live-chat {
+.talk-live-chat {
   min-height: calc(100vh - 92px);
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -1139,7 +1169,7 @@
     #302f3d;
 }
 
-.buzzcast-live-chat p {
+.talk-live-chat p {
   margin: 0;
   color: #67efff;
   font-family: Georgia, "Times New Roman", serif;
@@ -1147,7 +1177,7 @@
   line-height: 1.55;
 }
 
-.buzzcast-chat-log {
+.talk-chat-log {
   display: flex;
   flex-direction: column;
   justify-content: end;
@@ -1157,7 +1187,7 @@
   font-size: 12px;
 }
 
-.buzzcast-chat-log b {
+.talk-chat-log b {
   display: inline-grid;
   min-width: 38px;
   height: 16px;
@@ -1168,15 +1198,15 @@
   color: #fff;
 }
 
-.buzzcast-live-chat input,
-.buzzcast-messages-drawer input {
+.talk-live-chat input,
+.talk-messages-drawer input {
   height: 46px;
   border: 0;
   background: #444257;
   color: #fff;
 }
 
-.buzzcast-messages-drawer {
+.talk-messages-drawer {
   position: fixed;
   z-index: 80;
   top: 70px;
@@ -1191,7 +1221,7 @@
   box-shadow: 0 18px 45px rgba(0, 0, 0, .45);
 }
 
-.buzzcast-messages-drawer aside {
+.talk-messages-drawer aside {
   display: grid;
   grid-auto-rows: max-content;
   gap: 0;
@@ -1199,13 +1229,13 @@
   background: #303042;
 }
 
-.buzzcast-messages-drawer aside input {
+.talk-messages-drawer aside input {
   height: 28px;
   margin-bottom: 10px;
   background: #292838;
 }
 
-.buzzcast-messages-drawer aside button {
+.talk-messages-drawer aside button {
   position: relative;
   min-height: 72px;
   display: grid;
@@ -1219,26 +1249,26 @@
   text-align: left;
 }
 
-.buzzcast-messages-drawer aside button.active {
+.talk-messages-drawer aside button.active {
   background: #454358;
 }
 
-.buzzcast-messages-drawer aside strong,
-.buzzcast-messages-drawer aside small,
-.buzzcast-messages-drawer aside time {
+.talk-messages-drawer aside strong,
+.talk-messages-drawer aside small,
+.talk-messages-drawer aside time {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.buzzcast-messages-drawer aside small,
-.buzzcast-messages-drawer aside time {
+.talk-messages-drawer aside small,
+.talk-messages-drawer aside time {
   color: #aaa6bb;
   font-size: 12px;
 }
 
-.buzzcast-messages-drawer main {
+.talk-messages-drawer main {
   min-width: 0;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
@@ -1246,14 +1276,14 @@
   background: #292838;
 }
 
-.buzzcast-messages-drawer main header {
+.talk-messages-drawer main header {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 42px;
 }
 
-.buzzcast-messages-drawer main header button {
+.talk-messages-drawer main header button {
   margin-left: auto;
   border: 0;
   background: transparent;
@@ -1261,7 +1291,7 @@
   font-weight: 500;
 }
 
-.buzzcast-dm-notice {
+.talk-dm-notice {
   min-height: 40px;
   display: grid;
   place-items: center;
@@ -1272,13 +1302,13 @@
   font-weight: 700;
 }
 
-.buzzcast-dm-body {
+.talk-dm-body {
   min-height: 0;
   overflow: auto;
   padding: 16px 0;
 }
 
-.buzzcast-dm-body p {
+.talk-dm-body p {
   max-width: 72%;
   margin: 8px 0;
   padding: 9px 11px;
@@ -1287,12 +1317,12 @@
   color: #fff;
 }
 
-.buzzcast-dm-body p.mine {
+.talk-dm-body p.mine {
   margin-left: auto;
   background: #7658ff;
 }
 
-.buzzcast-modal-backdrop {
+.talk-modal-backdrop {
   position: fixed;
   z-index: 100;
   inset: 0;
@@ -1302,13 +1332,13 @@
   background: rgba(0, 0, 0, .42);
 }
 
-.buzzcast-modal-backdrop.dark {
+.talk-modal-backdrop.dark {
   place-items: center;
   padding: 20px;
   background: rgba(0, 0, 0, .72);
 }
 
-.buzzcast-install-modal {
+.talk-install-modal {
   width: min(450px, calc(100vw - 24px));
   display: grid;
   gap: 20px;
@@ -1319,48 +1349,48 @@
   box-shadow: 0 20px 70px rgba(0, 0, 0, .35);
 }
 
-.buzzcast-install-modal h2 {
+.talk-install-modal h2 {
   margin: 0;
   font-size: 16px;
 }
 
-.buzzcast-install-modal > div {
+.talk-install-modal > div {
   display: flex;
   gap: 14px;
   align-items: center;
 }
 
-.buzzcast-install-modal strong,
-.buzzcast-install-modal small {
+.talk-install-modal strong,
+.talk-install-modal small {
   display: block;
 }
 
-.buzzcast-install-modal small {
+.talk-install-modal small {
   margin-top: 3px;
   color: #313145;
 }
 
-.buzzcast-install-modal footer {
+.talk-install-modal footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.buzzcast-install-modal button {
+.talk-install-modal button {
   min-width: 76px;
   border-radius: 999px;
   border-color: #526079;
   color: #1b2434;
 }
 
-.buzzcast-install-modal button.primary {
+.talk-install-modal button.primary {
   border: 0;
   background: #d8e5ff;
 }
 
-.buzzcast-host-panel,
-.buzzcast-recharge-panel,
-.buzzcast-feedback-modal {
+.talk-host-panel,
+.talk-status-panel,
+.talk-feedback-modal {
   max-height: calc(100vh - 40px);
   overflow: auto;
   border-radius: 8px;
@@ -1369,7 +1399,7 @@
   box-shadow: 0 26px 70px rgba(0, 0, 0, .48);
 }
 
-.buzzcast-host-panel {
+.talk-host-panel {
   width: min(980px, calc(100vw - 28px));
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
@@ -1377,23 +1407,23 @@
   padding: 22px;
 }
 
-.buzzcast-host-panel > header {
+.talk-host-panel > header {
   grid-column: 1 / -1;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.buzzcast-host-panel h2,
-.buzzcast-host-panel h3,
-.buzzcast-recharge-panel h2,
-.buzzcast-feedback-modal h2 {
+.talk-host-panel h2,
+.talk-host-panel h3,
+.talk-status-panel h2,
+.talk-feedback-modal h2 {
   margin: 0;
 }
 
-.buzzcast-host-panel > header button,
-.buzzcast-recharge-panel header button,
-.buzzcast-feedback-modal header button {
+.talk-host-panel > header button,
+.talk-status-panel header button,
+.talk-feedback-modal header button {
   width: 36px;
   height: 36px;
   padding: 0;
@@ -1403,54 +1433,54 @@
   font-size: 22px;
 }
 
-.buzzcast-host-panel label,
-.buzzcast-feedback-modal label {
+.talk-host-panel label,
+.talk-feedback-modal label {
   color: #dad6ea;
   font-weight: 600;
 }
 
-.buzzcast-host-panel input,
-.buzzcast-host-panel textarea,
-.buzzcast-host-panel select,
-.buzzcast-feedback-modal input,
-.buzzcast-feedback-modal textarea,
-.buzzcast-feedback-modal select {
+.talk-host-panel input,
+.talk-host-panel textarea,
+.talk-host-panel select,
+.talk-feedback-modal input,
+.talk-feedback-modal textarea,
+.talk-feedback-modal select {
   border-color: #4d4b60;
   background: #272637;
 }
 
-.buzzcast-choice-grid {
+.talk-choice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
 
-.buzzcast-choice-grid button {
+.talk-choice-grid button {
   min-height: 38px;
   border: 1px solid #4d4b60;
   background: #38364a;
 }
 
-.buzzcast-choice-grid button.active {
+.talk-choice-grid button.active {
   border-color: #8f62ff;
   background: #7254ec;
 }
 
-.buzzcast-host-fields,
-.buzzcast-feedback-row {
+.talk-host-fields,
+.talk-feedback-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
 
-.buzzcast-toggle-grid {
+.talk-toggle-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 14px;
 }
 
-.buzzcast-toggle-grid label {
+.talk-toggle-grid label {
   min-height: 58px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1462,22 +1492,22 @@
   background: #38364a;
 }
 
-.buzzcast-toggle-grid input {
+.talk-toggle-grid input {
   width: 18px;
   accent-color: #7658ff;
 }
 
-.buzzcast-toggle-grid strong,
-.buzzcast-toggle-grid small {
+.talk-toggle-grid strong,
+.talk-toggle-grid small {
   display: block;
 }
 
-.buzzcast-toggle-grid small {
+.talk-toggle-grid small {
   color: #aaa6bb;
   font-size: 12px;
 }
 
-.buzzcast-submit {
+.talk-submit {
   width: 100%;
   min-height: 42px;
   margin-top: 16px;
@@ -1486,41 +1516,41 @@
   color: #fff;
 }
 
-.buzzcast-submit.secondary {
+.talk-submit.secondary {
   background: #464458;
 }
 
-.buzzcast-quick-join {
+.talk-quick-join {
   padding: 16px;
   border-radius: 8px;
   background: #292838;
 }
 
-.buzzcast-recharge-panel {
+.talk-status-panel {
   width: min(424px, calc(100vw - 24px));
   padding: 26px 16px 22px;
 }
 
-.buzzcast-recharge-panel header,
-.buzzcast-feedback-modal header {
+.talk-status-panel header,
+.talk-feedback-modal header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.buzzcast-recharge-panel h2 span {
+.talk-status-panel h2 span {
   margin-left: 28px;
   color: #aaa6bb;
   font-size: 14px;
 }
 
-.buzzcast-recharge-tabs {
+.talk-status-tabs {
   display: flex;
   gap: 26px;
   margin: 26px 0 12px;
 }
 
-.buzzcast-recharge-tabs button {
+.talk-status-tabs button {
   position: relative;
   padding: 0 0 9px;
   border: 0;
@@ -1529,11 +1559,11 @@
   color: #aaa6bb;
 }
 
-.buzzcast-recharge-tabs button.active {
+.talk-status-tabs button.active {
   color: #fff;
 }
 
-.buzzcast-recharge-tabs button.active::after {
+.talk-status-tabs button.active::after {
   content: "";
   position: absolute;
   left: 0;
@@ -1544,7 +1574,7 @@
   background: #7658ff;
 }
 
-.buzzcast-recharge-panel > button:not(.buzzcast-recharge-button) {
+.talk-status-panel > button:not(.talk-status-button) {
   width: 100%;
   min-height: 64px;
   display: flex;
@@ -1556,7 +1586,7 @@
   font-weight: 500;
 }
 
-.buzzcast-recharge-button {
+.talk-status-button {
   width: calc(100% - 78px);
   min-height: 50px;
   margin: 114px 39px 0;
@@ -1565,60 +1595,60 @@
   background: linear-gradient(90deg, #ffba4d, #ff784b);
 }
 
-.buzzcast-feedback-modal {
+.talk-feedback-modal {
   width: min(580px, calc(100vw - 24px));
   padding: 18px 30px 38px;
 }
 
-.buzzcast-feedback-modal h2 {
+.talk-feedback-modal h2 {
   flex: 1;
   text-align: center;
 }
 
-.buzzcast-feedback-modal textarea {
+.talk-feedback-modal textarea {
   min-height: 120px;
 }
 
-.buzzcast-feedback-modal small {
+.talk-feedback-modal small {
   color: #aaa6bb;
 }
 
-.buzzcast-upload-box {
+.talk-upload-box {
   min-height: 120px;
   border-radius: 8px;
   background: rgba(255, 255, 255, .035);
 }
 
 @media (max-width: 1180px) {
-  .buzzcast-topbar {
+  .talk-topbar {
     grid-template-columns: 190px minmax(220px, 1fr) auto;
     gap: 18px;
   }
 
-  .buzzcast-card-grid {
+  .talk-card-grid {
     grid-template-columns: repeat(3, minmax(190px, 1fr));
   }
 
-  .buzzcast-room-card.featured {
+  .talk-room-card.featured {
     grid-column: span 2;
   }
 
-  .buzzcast-settings-shell,
-  .buzzcast-help-shell {
+  .talk-settings-shell,
+  .talk-help-shell {
     max-width: none;
   }
 
-  .buzzcast-room-preview {
+  .talk-room-preview {
     grid-template-columns: 1fr;
   }
 
-  .buzzcast-live-chat {
+  .talk-live-chat {
     min-height: 360px;
   }
 }
 
 @media (max-width: 860px) {
-  .buzzcast-topbar {
+  .talk-topbar {
     height: auto;
     min-height: 70px;
     grid-template-columns: 1fr;
@@ -1627,12 +1657,12 @@
     position: relative;
   }
 
-  .buzzcast-actions {
+  .talk-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
 
-  .buzzcast-left-rail {
+  .talk-left-rail {
     position: relative;
     top: auto;
     width: auto;
@@ -1642,47 +1672,47 @@
     padding: 10px 12px;
   }
 
-  .buzzcast-left-rail button {
+  .talk-left-rail button {
     min-width: 128px;
   }
 
-  .buzzcast-rail-spacer {
+  .talk-rail-spacer {
     display: none;
   }
 
-  .buzzcast-main {
+  .talk-main {
     padding: 14px 12px 24px;
   }
 
-  .buzzcast-feed-nav {
+  .talk-feed-nav {
     overflow-x: auto;
   }
 
-  .buzzcast-card-grid,
-  .buzzcast-card-grid.party-grid {
+  .talk-card-grid,
+  .talk-card-grid.party-grid {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
-  .buzzcast-room-card.featured {
+  .talk-room-card.featured {
     grid-column: span 2;
   }
 
-  .buzzcast-settings-shell,
-  .buzzcast-help-layout,
-  .buzzcast-host-panel {
+  .talk-settings-shell,
+  .talk-help-layout,
+  .talk-host-panel {
     grid-template-columns: 1fr;
   }
 
-  .buzzcast-settings-content,
-  .buzzcast-help-content {
+  .talk-settings-content,
+  .talk-help-content {
     min-height: 520px;
   }
 
-  .buzzcast-profile-grid dl {
+  .talk-profile-grid dl {
     grid-template-columns: 130px minmax(0, 1fr);
   }
 
-  .buzzcast-messages-drawer {
+  .talk-messages-drawer {
     top: 12px;
     left: 12px;
     grid-template-columns: 1fr;
@@ -1690,50 +1720,50 @@
     overflow: auto;
   }
 
-  .buzzcast-messages-drawer aside {
+  .talk-messages-drawer aside {
     max-height: 260px;
     overflow: auto;
   }
 }
 
 @media (max-width: 560px) {
-  .buzzcast-card-grid,
-  .buzzcast-card-grid.party-grid {
+  .talk-card-grid,
+  .talk-card-grid.party-grid {
     grid-template-columns: 1fr;
   }
 
-  .buzzcast-room-card.featured {
+  .talk-room-card.featured {
     grid-column: auto;
   }
 
-  .buzzcast-feed-controls,
-  .buzzcast-match-banner,
-  .buzzcast-profile-hero {
+  .talk-feed-controls,
+  .talk-match-banner,
+  .talk-profile-hero {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .buzzcast-feed-controls > div,
-  .buzzcast-host-fields,
-  .buzzcast-toggle-grid,
-  .buzzcast-feedback-row {
+  .talk-feed-controls > div,
+  .talk-host-fields,
+  .talk-toggle-grid,
+  .talk-feedback-row {
     grid-template-columns: 1fr;
     display: grid;
   }
 
-  .buzzcast-feed-controls select {
+  .talk-feed-controls select {
     width: 100%;
   }
 
-  .buzzcast-gift-bar {
+  .talk-gift-bar {
     grid-template-columns: repeat(3, minmax(72px, 1fr));
     height: auto;
     max-height: 220px;
     overflow: auto;
   }
 
-  .buzzcast-stage,
-  .buzzcast-live-chat {
+  .talk-stage,
+  .talk-live-chat {
     min-height: 560px;
   }
 }
