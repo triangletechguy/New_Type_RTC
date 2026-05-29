@@ -56,6 +56,10 @@ get_env() {
   }' "$file" 2>/dev/null || true
 }
 
+has_file() {
+  sudo test -f "$1"
+}
+
 install_missing_packages() {
   packages=""
 
@@ -292,7 +296,7 @@ write_nginx_config() {
   ssl_key="/etc/letsencrypt/live/$PUBLIC_HOST/privkey.pem"
   nginx_site="/etc/nginx/sites-available/rtc-enterprise"
 
-  if [ -f "$ssl_cert" ] && [ -f "$ssl_key" ]; then
+  if has_file "$ssl_cert" && has_file "$ssl_key"; then
     sudo tee "$nginx_site" >/dev/null <<EOF
 map \$http_upgrade \$connection_upgrade {
     default upgrade;
@@ -415,7 +419,7 @@ ensure_https_certificate() {
   ssl_cert="/etc/letsencrypt/live/$PUBLIC_HOST/fullchain.pem"
   ssl_key="/etc/letsencrypt/live/$PUBLIC_HOST/privkey.pem"
 
-  if [ -f "$ssl_cert" ] && [ -f "$ssl_key" ]; then
+  if has_file "$ssl_cert" && has_file "$ssl_key"; then
     return
   fi
 
@@ -436,7 +440,7 @@ ensure_https_certificate() {
     --register-unsafely-without-email \
     --keep-until-expiring
 
-  if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
+  if ! has_file "$ssl_cert" || ! has_file "$ssl_key"; then
     log "Certificate metadata exists but nginx certificate files are missing; forcing certificate repair"
 
     sudo certbot certonly \
@@ -449,7 +453,7 @@ ensure_https_certificate() {
       --force-renewal
   fi
 
-  if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
+  if ! has_file "$ssl_cert" || ! has_file "$ssl_key"; then
     sudo certbot certificates || true
     printf 'HTTPS certificate files were not created at %s and %s.\n' "$ssl_cert" "$ssl_key" >&2
     exit 1
