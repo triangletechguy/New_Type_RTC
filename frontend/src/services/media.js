@@ -1,4 +1,16 @@
-export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'video') {
+const audioConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+}
+
+const videoConstraints = {
+  width: { ideal: 640, max: 1280 },
+  height: { ideal: 360, max: 720 },
+  frameRate: { ideal: 24, max: 30 },
+}
+
+export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'video', options = {}) {
   const requestedMediaMode = normalizeMediaMode(mediaMode || import.meta.env.VITE_MEDIA_MODE || 'real')
   const requestedRtcMode = rtcMode === 'audio' ? 'audio' : 'video'
 
@@ -25,29 +37,16 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
         }
   }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: requestedRtcMode === 'video',
-    })
+  const recovered = await captureAvailableMedia(requestedRtcMode, options)
 
-    return {
-      stream,
-      mode: 'real',
-      warning: null,
-    }
-  } catch (error) {
-    const recovered = await captureAvailableMedia(requestedRtcMode, error)
+  if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
+    return recovered
+  }
 
-    if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
-      return recovered
-    }
-
-    return {
-      stream: createMockMediaStream(requestedRtcMode),
-      mode: 'mock',
-      warning: `${formatMediaError(error, requestedRtcMode)} Mock media started instead.`,
-    }
+  return {
+    stream: createMockMediaStream(requestedRtcMode),
+    mode: 'mock',
+    warning: `${formatMediaError(recovered.primaryError, requestedRtcMode)} Mock media started instead.`,
   }
 }
 
@@ -61,8 +60,8 @@ export async function requestLocalMediaTrack(kind) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia(
       mediaKind === 'audio'
-        ? { audio: true, video: false }
-        : { audio: false, video: true }
+        ? { audio: audioConstraints, video: false }
+        : { audio: false, video: videoConstraints }
     )
     const [track] = mediaKind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
 
@@ -77,28 +76,95 @@ export async function requestLocalMediaTrack(kind) {
   }
 }
 
-async function captureAvailableMedia(rtcMode, combinedError) {
+async function captureAvailableMedia(rtcMode, options = {}) {
   const stream = createEmptyMediaStream()
   const failures = {}
+  const pendingKinds = []
+  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
+  const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
+  const captures = [
+    startMediaCapture('audio', { audio: audioConstraints, video: false }),
+  ]
 
-  async function capture(kind, constraints) {
-    try {
-      const capturedStream = await navigator.mediaDevices.getUserMedia(constraints)
-      capturedStream.getTracks().forEach((track) => stream.addTrack(track))
-    } catch (error) {
-      failures[kind] = error
-    }
-  }
-
-  await capture('audio', { audio: true, video: false })
   if (rtcMode === 'video') {
-    await capture('video', { audio: false, video: true })
+    captures.push(startMediaCapture('video', { audio: false, video: videoConstraints }))
   }
+
+  const results = await Promise.all(captures.map((capture) => (
+    timeoutMs > 0 ? waitForCapture(capture, timeoutMs) : capture.promise
+  )))
+
+  results.forEach((result, index) => {
+    const capture = captures[index]
+
+    if (result?.timedOut) {
+      pendingKinds.push(capture.kind)
+      capture.promise.then((lateResult) => {
+        if (lateResult.track && onLateTrack) {
+          onLateTrack(lateResult)
+        } else if (lateResult.stream) {
+          stopMediaStream(lateResult.stream)
+        }
+      }).catch(() => {})
+      return
+    }
+
+    if (result?.track) {
+      stream.addTrack(result.track)
+      return
+    }
+
+    if (result?.error) failures[result.kind || capture.kind] = result.error
+  })
+
+  const primaryError = failures.video || failures.audio || null
 
   return {
     stream,
     mode: stream.getTracks().length ? 'real' : 'receive-only',
-    warning: buildMediaWarning(stream, failures, combinedError, rtcMode),
+    warning: buildMediaWarning(stream, failures, primaryError, rtcMode, pendingKinds),
+    primaryError,
+  }
+}
+
+function startMediaCapture(kind, constraints) {
+  const promise = navigator.mediaDevices.getUserMedia(constraints)
+    .then((stream) => {
+      const [track] = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
+
+      if (!track) {
+        stopMediaStream(stream)
+        return {
+          kind,
+          error: new Error(`No ${kind === 'audio' ? 'microphone' : 'camera'} track was returned by the browser.`),
+        }
+      }
+
+      return { kind, stream, track }
+    })
+    .catch((error) => ({ kind, error }))
+
+  return { kind, promise }
+}
+
+function waitForCapture(capture, timeoutMs) {
+  return Promise.race([
+    capture.promise,
+    new Promise((resolve) => {
+      window.setTimeout(() => resolve({ kind: capture.kind, timedOut: true }), timeoutMs)
+    }),
+  ])
+}
+
+function stopCapturedStream(stream) {
+  if (!stream) return
+  stream.getTracks().forEach((track) => track.stop())
+}
+
+function stopMediaStream(stream) {
+  stopCapturedStream(stream)
+  if (typeof stream?.__cleanup === 'function') {
+    stream.__cleanup()
   }
 }
 
@@ -150,23 +216,28 @@ function formatSingleMediaError(error, kind) {
   return `${error?.name || 'MediaError'}: ${error?.message || `Unable to start ${mediaLabel}.`}`
 }
 
-function buildMediaWarning(stream, failures, combinedError, rtcMode) {
+function buildMediaWarning(stream, failures, combinedError, rtcMode, pendingKinds = []) {
   const hasAudio = stream.getAudioTracks().some((track) => track.readyState !== 'ended')
   const hasVideo = stream.getVideoTracks().some((track) => track.readyState !== 'ended')
   const messages = []
 
-  if (!hasAudio) messages.push(formatSingleMediaError(failures.audio || combinedError, 'audio'))
-  if (rtcMode === 'video' && !hasVideo) messages.push(formatSingleMediaError(failures.video || combinedError, 'video'))
+  const audioPending = pendingKinds.includes('audio')
+  const videoPending = pendingKinds.includes('video')
+
+  if (audioPending && !hasAudio) messages.push('Microphone permission is still pending.')
+  if (videoPending && !hasVideo) messages.push('Camera permission is still pending.')
+  if (!hasAudio && !audioPending) messages.push(formatSingleMediaError(failures.audio || combinedError, 'audio'))
+  if (rtcMode === 'video' && !hasVideo && !videoPending) messages.push(formatSingleMediaError(failures.video || combinedError, 'video'))
 
   const uniqueMessages = Array.from(new Set(messages))
   const joinedAs = describeCapturedMedia(stream, rtcMode)
 
   if (!uniqueMessages.length) return null
   if (joinedAs === 'receive-only') {
-    return `${uniqueMessages.join(' ')} Joined receive-only; remote audio/video can still work.`
+    return `${uniqueMessages.join(' ')} Joined fast in receive-only mode; remote audio/video can still work.`
   }
 
-  return `${uniqueMessages.join(' ')} Joined with ${joinedAs}; remote audio/video can still work.`
+  return `${uniqueMessages.join(' ')} Joined fast with ${joinedAs}; remote audio/video can still work.`
 }
 
 function describeCapturedMedia(stream, rtcMode) {
@@ -289,10 +360,4 @@ function createMockAudioTrack() {
   }
 }
 
-export function stopMediaStream(stream) {
-  if (!stream) return
-  stream.getTracks().forEach((track) => track.stop())
-  if (typeof stream.__cleanup === 'function') {
-    stream.__cleanup()
-  }
-}
+export { stopMediaStream }

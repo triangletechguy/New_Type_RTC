@@ -21,6 +21,8 @@ import { OwnerControlsPanel } from './OwnerControlsPanel'
 import { RtcConnectionIndicator } from './RtcConnectionIndicator'
 import { VideoTile } from './VideoTile'
 
+const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
+
 export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
@@ -55,7 +57,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const signalingRoomRef = useRef(null)
   const localSocketIdRef = useRef(null)
   const joinedRef = useRef(false)
+  const micOnRef = useRef(micOn)
+  const cameraOnRef = useRef(cameraOn)
+  const rtcModeRef = useRef(rtcMode)
   const negotiatedPeersRef = useRef(new Set())
+  const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
 
   const remoteTiles = useMemo(() => {
@@ -107,6 +113,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcRef.current = null
     }
     stopMediaStream(streamRef.current)
+    pendingLocalTracksRef.current.forEach(({ track }) => {
+      try { track.stop() } catch {}
+    })
+    pendingLocalTracksRef.current = []
     streamRef.current = null
     signalingRoomRef.current = null
     localSocketIdRef.current = null
@@ -139,24 +149,68 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     streamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextCameraOn })
   }
 
-  async function attachNewLocalTrack(kind) {
-    const { track } = await requestLocalMediaTrack(kind)
-    const stream = streamRef.current || new MediaStream()
+  async function attachCapturedLocalTrack(kind, track, { publish = true } = {}) {
+    if (!track || track.readyState === 'ended') return null
+
+    if (!rtcRef.current) {
+      pendingLocalTracksRef.current.push({ kind, track })
+      return track
+    }
+
+    const previousStream = streamRef.current
+    const previousTracks = previousStream?.getTracks?.() || []
+    const keptTracks = previousTracks.filter((item) => item !== track && item.kind !== kind && item.readyState !== 'ended')
+
+    previousTracks
+      .filter((item) => item !== track && item.kind === kind)
+      .forEach((item) => {
+        try { item.stop() } catch {}
+      })
 
     track.enabled = true
-    if (!stream.getTracks().includes(track)) stream.addTrack(track)
 
-    streamRef.current = stream
-    setLocalStream(stream)
-    await rtcRef.current?.addLocalTrack(track, stream)
+    const nextStream = new MediaStream([...keptTracks, track])
+    if (typeof previousStream?.__cleanup === 'function') {
+      nextStream.__cleanup = previousStream.__cleanup
+    }
+
+    streamRef.current = nextStream
+    setLocalStream(nextStream)
+    await rtcRef.current.addLocalTrack(track, nextStream)
+
+    const nextMicOn = kind === 'audio' ? true : micOnRef.current
+    const nextCameraOn = kind === 'video' ? true : cameraOnRef.current
+    setMicOn(nextMicOn)
+    setCameraOn(nextCameraOn)
+    applyLocalMediaState(nextMicOn, nextCameraOn)
+
+    if (publish && joinedRef.current) {
+      await publishMediaState(nextMicOn, nextCameraOn)
+      setStatus(kind === 'video' ? 'Camera is live' : 'Microphone is live')
+    }
 
     return track
+  }
+
+  async function flushPendingLocalTracks(options = {}) {
+    const pendingTracks = pendingLocalTracksRef.current
+    pendingLocalTracksRef.current = []
+
+    for (const pendingTrack of pendingTracks) {
+      await attachCapturedLocalTrack(pendingTrack.kind, pendingTrack.track, options)
+    }
+  }
+
+  async function attachNewLocalTrack(kind, options = {}) {
+    const { track } = await requestLocalMediaTrack(kind)
+    return attachCapturedLocalTrack(kind, track, options)
   }
 
   async function publishMediaState(nextMicOn, nextCameraOn) {
     if (!joined || !activeRoomIdRef.current) return { micOn: nextMicOn, cameraOn: nextCameraOn }
 
-    const allowedCameraOn = rtcMode === 'video' && nextCameraOn
+    const currentRtcMode = rtcModeRef.current
+    const allowedCameraOn = currentRtcMode === 'video' && nextCameraOn
     const data = await apiRequest(`/rooms/${activeRoomIdRef.current}/media-state`, {
       method: 'POST',
       body: JSON.stringify({
@@ -166,7 +220,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     })
 
     const serverMicOn = Boolean(data.rtc?.mic_enabled)
-    const serverCameraOn = rtcMode === 'video' && Boolean(data.rtc?.camera_enabled)
+    const serverCameraOn = currentRtcMode === 'video' && Boolean(data.rtc?.camera_enabled)
     applyLocalMediaState(serverMicOn, serverCameraOn)
     setMicOn(serverMicOn)
     setCameraOn(serverCameraOn)
@@ -174,7 +228,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (socketRef.current && signalingRoomRef.current) {
       await emitMediaState(socketRef.current, {
         roomId: signalingRoomRef.current,
-        rtcMode,
+        rtcMode: currentRtcMode,
         micEnabled: serverMicOn,
         cameraEnabled: serverCameraOn,
       }).catch((error) => setStatus(`Media state saved, signaling sync failed: ${error.message}`))
@@ -329,37 +383,59 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       setConnectStep('media')
       setMediaState('starting')
-      setStatus('Starting local media...')
-      const media = await createLocalMediaStream(mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto', joinedRtcMode)
+      setStatus('Starting fast media path...')
+      const rtcConfigPromise = getRtcConfig().catch((error) => {
+        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
+        return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
+      })
+      const media = await createLocalMediaStream(
+        mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto',
+        joinedRtcMode,
+        {
+          timeoutMs: LOCAL_MEDIA_FAST_TIMEOUT_MS,
+          onLateTrack: ({ kind, track }) => {
+            if (!activeRoomIdRef.current) {
+              try { track.stop() } catch {}
+              return
+            }
+
+            attachCapturedLocalTrack(kind, track).catch((error) => {
+              try { track.stop() } catch {}
+              setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} started late but could not attach: ${error.message}`)
+            })
+          },
+        }
+      )
       streamRef.current = media.stream
       setLocalStream(media.stream)
       setMediaState(media.warning ? 'warning' : 'ready')
 
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
-      const actualMicOn = requestedMicOn && hasLiveTrack(media.stream, 'audio')
-      const actualCameraOn = requestedCameraOn && hasLiveTrack(media.stream, 'video')
+      let actualMicOn = requestedMicOn && hasLiveTrack(media.stream, 'audio')
+      let actualCameraOn = requestedCameraOn && hasLiveTrack(media.stream, 'video')
 
       setMicOn(actualMicOn)
       setCameraOn(actualCameraOn)
       media.stream.getAudioTracks().forEach((track) => { track.enabled = actualMicOn })
       media.stream.getVideoTracks().forEach((track) => { track.enabled = actualCameraOn })
 
-      if (actualMicOn !== requestedMicOn || actualCameraOn !== requestedCameraOn) {
+      async function syncBackendMediaState(nextMicOn, nextCameraOn) {
         await apiRequest(`/rooms/${roomId}/media-state`, {
           method: 'POST',
           body: JSON.stringify({
-            mic_enabled: actualMicOn,
-            camera_enabled: actualCameraOn,
+            mic_enabled: nextMicOn,
+            camera_enabled: nextCameraOn,
           }),
         }).catch((error) => setStatus(`Local media limited; state sync warning: ${error.message}`))
       }
 
+      if (actualMicOn !== requestedMicOn || actualCameraOn !== requestedCameraOn) {
+        await syncBackendMediaState(actualMicOn, actualCameraOn)
+      }
+
       setStatus('Loading TURN/ICE configuration...')
-      const rtcConfig = await getRtcConfig().catch((error) => {
-        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
-        return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
-      })
+      const rtcConfig = await rtcConfigPromise
       setRtcConfigState(rtcConfig)
 
       if (joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured) {
@@ -385,6 +461,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         },
       })
       rtcRef.current = rtcClient
+      await flushPendingLocalTracks({ publish: false })
+
+      const latestMicOn = requestedMicOn && hasLiveLocalTrack('audio')
+      const latestCameraOn = requestedCameraOn && hasLiveLocalTrack('video')
+
+      if (latestMicOn !== actualMicOn || latestCameraOn !== actualCameraOn) {
+        actualMicOn = latestMicOn
+        actualCameraOn = latestCameraOn
+        setMicOn(actualMicOn)
+        setCameraOn(actualCameraOn)
+        applyLocalMediaState(actualMicOn, actualCameraOn)
+        await syncBackendMediaState(actualMicOn, actualCameraOn)
+      }
 
       socket.on('connect', () => {
         if (socketRef.current === socket) {
@@ -533,6 +622,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
 
       await waitForSocketConnection(socket)
+      const signalingMicOn = requestedMicOn && hasLiveLocalTrack('audio')
+      const signalingCameraOn = requestedCameraOn && hasLiveLocalTrack('video')
+
+      if (signalingMicOn !== actualMicOn || signalingCameraOn !== actualCameraOn) {
+        actualMicOn = signalingMicOn
+        actualCameraOn = signalingCameraOn
+        setMicOn(actualMicOn)
+        setCameraOn(actualCameraOn)
+        applyLocalMediaState(actualMicOn, actualCameraOn)
+        await syncBackendMediaState(actualMicOn, actualCameraOn)
+      }
+
       const signalingJoin = await joinSignalingRoom(socket, {
         roomId: joinData.rtc.signaling_room,
         userId: user?.id,
@@ -601,7 +702,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       if (joined && next && !hasLiveLocalTrack('audio')) {
         setStatus('Requesting microphone permission...')
-        await attachNewLocalTrack('audio')
+        await attachNewLocalTrack('audio', { publish: false })
       }
 
       setMicOn(next)
@@ -629,7 +730,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       if (joined && next && !hasLiveLocalTrack('video')) {
         setStatus('Requesting camera permission...')
-        await attachNewLocalTrack('video')
+        await attachNewLocalTrack('video', { publish: false })
       }
 
       setCameraOn(next)
@@ -658,6 +759,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     joinedRef.current = joined
   }, [joined])
+
+  useEffect(() => {
+    micOnRef.current = micOn
+  }, [micOn])
+
+  useEffect(() => {
+    cameraOnRef.current = cameraOn
+  }, [cameraOn])
+
+  useEffect(() => {
+    rtcModeRef.current = rtcMode
+  }, [rtcMode])
 
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)

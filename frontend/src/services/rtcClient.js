@@ -48,6 +48,7 @@ export class NativeRtcClient {
     this.remoteMediaStreams = {}
     this.makingOffers = {}
     this.ignoredOffers = {}
+    this.pendingOffers = {}
   }
 
   emitPeerState(remoteSocketId, peerConnection) {
@@ -126,9 +127,13 @@ export class NativeRtcClient {
   async createOffer(remoteSocketId) {
     const peerConnection = this.createPeerConnection(remoteSocketId)
 
-    if (peerConnection.signalingState !== 'stable') return false
+    if (peerConnection.signalingState !== 'stable') {
+      this.pendingOffers[remoteSocketId] = true
+      return false
+    }
 
     this.makingOffers[remoteSocketId] = true
+    this.pendingOffers[remoteSocketId] = false
 
     try {
       const offer = await peerConnection.createOffer()
@@ -143,6 +148,12 @@ export class NativeRtcClient {
     } finally {
       this.makingOffers[remoteSocketId] = false
     }
+  }
+
+  async flushPendingOffer(remoteSocketId) {
+    const peerConnection = this.peerConnections[remoteSocketId]
+    if (!this.pendingOffers[remoteSocketId] || !peerConnection || peerConnection.signalingState !== 'stable') return false
+    return this.createOffer(remoteSocketId)
   }
 
   async handleOffer(fromSocketId, offer, { polite = true } = {}) {
@@ -168,6 +179,8 @@ export class NativeRtcClient {
       answer: peerConnection.localDescription,
     })
 
+    await this.flushPendingOffer(fromSocketId)
+
     return true
   }
 
@@ -178,6 +191,7 @@ export class NativeRtcClient {
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
     await this.flushPendingCandidates(fromSocketId)
+    await this.flushPendingOffer(fromSocketId)
   }
 
   async handleIceCandidate(fromSocketId, candidate) {
@@ -222,16 +236,16 @@ export class NativeRtcClient {
 
     for (const remoteSocketId of remoteSocketIds) {
       const peerConnection = this.peerConnections[remoteSocketId]
-      const transceiver = peerConnection.getTransceivers()
-        .find((item) => item.receiver?.track?.kind === track.kind && !item.sender?.track)
       const sender = peerConnection.getSenders()
         .find((item) => item.track?.kind === track.kind)
+      const transceiver = peerConnection.getTransceivers()
+        .find((item) => item.sender && !item.sender.track && item.receiver?.track?.kind === track.kind)
 
       if (sender) {
         await sender.replaceTrack(track)
       } else if (transceiver) {
+        transceiver.direction = transceiver.direction.includes('recv') ? 'sendrecv' : 'sendonly'
         await transceiver.sender.replaceTrack(track)
-        transceiver.direction = transceiver.direction === 'recvonly' ? 'sendrecv' : transceiver.direction
       } else {
         peerConnection.addTrack(track, mediaStream)
       }
@@ -270,6 +284,7 @@ export class NativeRtcClient {
     delete this.remoteMediaStreams[remoteSocketId]
     delete this.makingOffers[remoteSocketId]
     delete this.ignoredOffers[remoteSocketId]
+    delete this.pendingOffers[remoteSocketId]
   }
 
   closeAll() {
@@ -279,5 +294,6 @@ export class NativeRtcClient {
     this.remoteMediaStreams = {}
     this.makingOffers = {}
     this.ignoredOffers = {}
+    this.pendingOffers = {}
   }
 }
