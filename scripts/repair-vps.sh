@@ -210,6 +210,28 @@ EOF
   fi
 }
 
+release_web_ports() {
+  log "Preparing HTTP/HTTPS ports for nginx"
+
+  for service in apache2 httpd caddy; do
+    if systemctl list-unit-files "$service.service" --no-legend 2>/dev/null | grep -q "$service.service"; then
+      sudo systemctl stop "$service" >/dev/null 2>&1 || true
+      sudo systemctl disable "$service" >/dev/null 2>&1 || true
+    fi
+  done
+
+  if command -v ss >/dev/null 2>&1; then
+    blockers="$(sudo ss -ltnp 2>/dev/null | awk 'NR > 1 && ($4 ~ /:80$/ || $4 ~ /:443$/) && $0 !~ /nginx/ { print }')"
+    if [ -n "$blockers" ]; then
+      printf '\nPort 80/443 is still used by another process:\n%s\n' "$blockers" >&2
+      printf 'Stop that process, then run this repair script again.\n' >&2
+      exit 1
+    fi
+  fi
+
+  sudo systemctl enable nginx >/dev/null 2>&1 || true
+}
+
 write_frontend_env() {
   log "Writing frontend production environment"
 
@@ -356,7 +378,14 @@ EOF
   sudo ln -sf "$nginx_site" /etc/nginx/sites-enabled/rtc-enterprise
   sudo rm -f /etc/nginx/sites-enabled/default
   sudo nginx -t
-  sudo systemctl reload nginx || sudo systemctl restart nginx
+  if ! sudo systemctl reload nginx; then
+    if ! sudo systemctl restart nginx; then
+      sudo systemctl status nginx --no-pager -l || true
+      sudo journalctl -xeu nginx.service --no-pager -n 80 || true
+      sudo ss -ltnp 2>/dev/null | awk 'NR == 1 || $4 ~ /:80$/ || $4 ~ /:443$/ { print }' || true
+      exit 1
+    fi
+  fi
 }
 
 ensure_https_certificate() {
@@ -426,6 +455,7 @@ main() {
   configure_turn
   write_frontend_env
   install_and_build
+  release_web_ports
   write_nginx_config
   ensure_https_certificate
   restart_backend
