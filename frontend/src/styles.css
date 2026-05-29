@@ -301,9 +301,7 @@
 .glyph-trophy::before,
 .glyph-trophy::after,
 .glyph-message::before,
-.glyph-message::after,
-.glyph-gem::before,
-.glyph-gem::after {
+.glyph-message::after {
   content: "";
   position: absolute;
   display: block;
@@ -360,26 +358,6 @@
   transform: skew(-18deg);
 }
 
-.glyph-gem::before {
-  left: 3px;
-  top: 2px;
-  width: 13px;
-  height: 13px;
-  border: 2px solid #ffad55;
-  border-radius: 3px;
-  transform: rotate(45deg);
-}
-
-.glyph-gem::after {
-  left: 8px;
-  top: 5px;
-  width: 3px;
-  height: 10px;
-  background: #ffd596;
-  transform: rotate(45deg);
-  opacity: .8;
-}
-
 .buzzcast-icon-button em {
   position: absolute;
   top: -6px;
@@ -393,23 +371,6 @@
   color: #fff;
   font-size: 11px;
   font-style: normal;
-}
-
-.buzzcast-balance {
-  height: 42px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: #343143;
-}
-
-.buzzcast-balance strong {
-  min-width: 16px;
-  text-align: center;
-  color: #fff;
 }
 
 .buzzcast-avatar-button {

@@ -70,10 +70,10 @@ export function LoginScreen({ onLogin }) {
     <main className="login-page">
       <section className="login-showcase" aria-label="Live room preview">
         <div className="showcase-topbar">
-          <div className="app-mark">BC</div>
+          <div className="app-mark">TE</div>
           <div>
-            <strong>talk-each-other</strong>
-            <span>BuzzCast-style live lobby</span>
+            <strong>TalkEachOther</strong>
+            <span>Live video and music rooms</span>
           </div>
           <div className="online-pill"><span></span> Online</div>
         </div>

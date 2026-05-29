@@ -70,21 +70,21 @@ const searchRecommendations = [
   { id: 'rec-1', name: 'Donna Walks', detail: 'Donde una potra pisa...', unread: 1 },
   { id: 'rec-2', name: 'Jennifer Ortiz', detail: 'Sociable, no amigabl...', unread: 1 },
   { id: 'rec-3', name: 'Friend Room', detail: '@Jessica An3215971...', unread: 4 },
-  { id: 'rec-4', name: 'talkeachother Team', detail: 'Welcome to talkeachother...', unread: 1 },
+  { id: 'rec-4', name: 'TalkEachOther Team', detail: 'Welcome to TalkEachOther...', unread: 1 },
 ]
 
 const dmThreads = [
   { id: 'donna', name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: '[Stickers]', unread: 1 },
   { id: 'jennifer', name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: '[Stickers]', unread: 1 },
   { id: 'friend', name: 'Friend...', time: 'Wednesday 01:27', preview: '@Jessica An3215971...', unread: 4 },
-  { id: 'buzz', name: 'talkeachother', time: 'Wednesday 01:27', preview: 'Welcome to talkeachother...', unread: 1 },
+  { id: 'buzz', name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to TalkEachOther...', unread: 1 },
 ]
 
 const initialDmMessages = {
   donna: [],
   jennifer: [],
   friend: [],
-  buzz: [{ id: 'welcome', author: 'talkeachother', body: 'Welcome to the talkeachother lobby.', mine: false }],
+  buzz: [{ id: 'welcome', author: 'TalkEachOther', body: 'Welcome to the TalkEachOther lobby.', mine: false }],
 }
 
 const settingsNav = [
@@ -127,7 +127,7 @@ const faqTopics = [
   'Unfollow accounts that are frozen or deactivated',
   'How to create a voice chat room',
   'How do I bind my phone number and email address?',
-  'How to upgrade the talkeachother app',
+  'How to upgrade the TalkEachOther app',
   "Delete the other people's comments on your post or private message with others",
   'The live streaming page cannot be opened or is not smooth',
   'How to do a live/private live broadcast',
@@ -186,7 +186,7 @@ function BuzzLogo() {
     <div className="buzzcast-logo">
       <div className="buzzcast-logo-mark">TE</div>
       <div>
-        <strong>talkeachother</strong>
+        <strong>TalkEachOther</strong>
         <span>Video and music rooms</span>
       </div>
     </div>
@@ -786,7 +786,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           )}
         </div>
         <aside className="buzzcast-live-chat">
-          <p>Be polite and respectful. Any vulgar, violent, or private transaction behavior is strictly prohibited in talkeachother. Please speak in a civilized manner.</p>
+          <p>Be polite and respectful. Any vulgar, violent, or private transaction behavior is strictly prohibited in TalkEachOther. Please speak in a civilized manner.</p>
           <div className="buzzcast-chat-log">
             <span><b>18</b> joined</span>
             <span><b>2</b> joined</span>
@@ -858,10 +858,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
           <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
-          <button type="button" className="buzzcast-balance" onClick={() => setShowRecharge(true)} aria-label="Open wallet">
-            <i className="buzzcast-glyph glyph-gem" aria-hidden="true"></i>
-            <strong>0</strong>
-          </button>
           <IconButton label="Create live room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={() => setActiveSection('me')}>
             <span>{profileInitials}</span>
@@ -944,7 +940,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             <h2>Install app</h2>
             <div>
               <div className="buzzcast-logo-mark">TE</div>
-              <span><strong>talkeachother</strong><small>talkeachother RTC</small></span>
+              <span><strong>TalkEachOther</strong><small>TalkEachOther RTC</small></span>
             </div>
             <footer>
               <button type="button" className="primary" onClick={handleInstallApp}>Install</button>
