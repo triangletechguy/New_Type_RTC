@@ -3,8 +3,12 @@ import { apiRequest } from '../../services/api'
 import { formatChatTime, getInitials } from '../../utils/formatters'
 
 function chatSenderName(message, currentUser) {
-  if (message.sender_id === currentUser?.id) return 'You'
+  if (isOwnMessage(message, currentUser)) return 'You'
   return message.sender_name || `User #${message.sender_id || 'system'}`
+}
+
+function isOwnMessage(message, currentUser) {
+  return Number(message?.sender_id) === Number(currentUser?.id)
 }
 
 export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
@@ -14,6 +18,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [deletingMessageIds, setDeletingMessageIds] = useState({})
+  const [editingMessageId, setEditingMessageId] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [savingEditId, setSavingEditId] = useState(null)
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
@@ -27,6 +34,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
   const canSend = chatEnabled && Boolean(text.trim()) && !sending
+  const visibleMessages = messages.filter((message) => !Boolean(Number(message.is_deleted || message.is_unsent)))
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
     : realtimeConnected ? 'No one is typing' : 'Typing status starts after RTC connects'
@@ -34,24 +42,28 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   function appendMessage(message) {
     if (!message?.id) return
     setMessages((previous) => {
-      if (previous.some((item) => item.id === message.id)) return previous
+      if (previous.some((item) => item.id === message.id)) {
+        return previous.map((item) => (item.id === message.id ? { ...item, ...message } : item))
+      }
       return [...previous, message]
     })
   }
 
-  function markMessageUnsent(messageId, replacement = {}) {
-    setMessages((previous) => previous.map((message) => {
-      if (message.id !== messageId) return message
+  function replaceMessage(updatedMessage) {
+    if (!updatedMessage?.id) return
+    setMessages((previous) => previous.map((message) => (
+      message.id === updatedMessage.id ? { ...message, ...updatedMessage } : message
+    )))
+  }
 
-      return {
-        ...message,
-        ...replacement,
-        id: message.id,
-        is_deleted: 1,
-        is_unsent: 1,
-        message_body: '',
-      }
-    }))
+  function removeMessage(messageId) {
+    setMessages((previous) => previous.filter((message) => message.id !== messageId))
+    if (editingMessageId === messageId) cancelEdit()
+  }
+
+  function wasEdited(message) {
+    if (!message?.created_at || !message?.updated_at) return false
+    return String(message.created_at) !== String(message.updated_at)
   }
 
   async function loadMessages() {
@@ -130,34 +142,105 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     }
   }
 
-  async function unsendMessage(message) {
-    if (!message?.id || message.sender_id !== user?.id || message.is_deleted) return
+  function startEdit(message) {
+    if (!message?.id || !isOwnMessage(message, user) || message.is_deleted) return
+    setEditingMessageId(message.id)
+    setEditText(message.message_body || '')
+    setStatus('')
+  }
+
+  function cancelEdit() {
+    setEditingMessageId(null)
+    setEditText('')
+    setSavingEditId(null)
+  }
+
+  async function saveEdit(message, event) {
+    event?.preventDefault()
+    const value = editText.trim()
+
+    if (!message?.id || !isOwnMessage(message, user) || savingEditId) return
+    if (!value) {
+      setStatus('Edited message cannot be empty.')
+      return
+    }
+
+    if (value === String(message.message_body || '').trim()) {
+      cancelEdit()
+      return
+    }
 
     const previousMessage = message
-    setDeletingMessageIds((previous) => ({ ...previous, [message.id]: true }))
+    setSavingEditId(message.id)
     setStatus('')
-    markMessageUnsent(message.id)
+    replaceMessage({ ...message, message_body: value, updated_at: new Date().toISOString() })
 
     try {
-      const data = await apiRequest(`/messages/${message.id}`, { method: 'DELETE' })
-      markMessageUnsent(message.id, data.chat_message || {})
+      const data = await apiRequest(`/messages/${message.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ message_body: value }),
+      })
+      replaceMessage(data.chat_message)
+      cancelEdit()
 
       if (socket && signalingRoom) {
         socket.timeout(3000).emit(
-          'chat-message-unsent',
+          'chat-message-edited',
           {
             roomId: signalingRoom,
-            messageId: message.id,
             message: data.chat_message,
           },
           (error, response) => {
-            if (error || !response?.ok) setStatus('Message unsent. Realtime update will resume when signaling reconnects.')
+            if (error || !response?.ok) setStatus('Message edited. Realtime update will resume when signaling reconnects.')
           }
         )
       }
     } catch (error) {
-      setMessages((previous) => previous.map((item) => (item.id === previousMessage.id ? previousMessage : item)))
-      setStatus(`Unsend failed: ${error.message}`)
+      replaceMessage(previousMessage)
+      setStatus(`Edit failed: ${error.message}`)
+    } finally {
+      setSavingEditId(null)
+    }
+  }
+
+  function handleEditKeyDown(message, event) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelEdit()
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      saveEdit(message, event)
+    }
+  }
+
+  async function deleteMessage(message) {
+    if (!message?.id || !isOwnMessage(message, user) || message.is_deleted) return
+
+    const previousMessages = messages
+    setDeletingMessageIds((previous) => ({ ...previous, [message.id]: true }))
+    setStatus('')
+    removeMessage(message.id)
+
+    try {
+      await apiRequest(`/messages/${message.id}`, { method: 'DELETE' })
+
+      if (socket && signalingRoom) {
+        socket.timeout(3000).emit(
+          'chat-message-deleted',
+          {
+            roomId: signalingRoom,
+            messageId: message.id,
+          },
+          (error, response) => {
+            if (error || !response?.ok) setStatus('Message deleted. Realtime update will resume when signaling reconnects.')
+          }
+        )
+      }
+    } catch (error) {
+      setMessages(previousMessages)
+      setStatus(`Delete failed: ${error.message}`)
     } finally {
       setDeletingMessageIds((previous) => {
         const next = { ...previous }
@@ -189,7 +272,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length])
+  }, [visibleMessages.length])
 
   useEffect(() => {
     if (!sending && refocusComposerRef.current) {
@@ -201,9 +284,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   useEffect(() => {
     if (!socket) return undefined
     const handleMessage = ({ message }) => appendMessage(message)
+    const handleMessageEdited = ({ message }) => replaceMessage(message)
+    const handleMessageDeleted = ({ messageId }) => {
+      if (!messageId) return
+      removeMessage(messageId)
+    }
     const handleMessageUnsent = ({ messageId, message }) => {
       if (!messageId) return
-      markMessageUnsent(messageId, message || {})
+      if (message?.is_deleted || message?.is_unsent || !message) removeMessage(messageId)
     }
     const handleTypingStart = ({ user: typingUser, socketId }) => {
       if (!typingUser || typingUser.id === user?.id) return
@@ -218,12 +306,16 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     }
 
     socket.on('chat-message', handleMessage)
+    socket.on('chat-message-edited', handleMessageEdited)
+    socket.on('chat-message-deleted', handleMessageDeleted)
     socket.on('chat-message-unsent', handleMessageUnsent)
     socket.on('typing-start', handleTypingStart)
     socket.on('typing-stop', handleTypingStop)
 
     return () => {
       socket.off('chat-message', handleMessage)
+      socket.off('chat-message-edited', handleMessageEdited)
+      socket.off('chat-message-deleted', handleMessageDeleted)
       socket.off('chat-message-unsent', handleMessageUnsent)
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
@@ -250,32 +342,57 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
       <div className="messages">
         {loading ? (
           <div className="empty-chat">Loading chat...</div>
-        ) : messages.length === 0 ? (
+        ) : visibleMessages.length === 0 ? (
           <div className="empty-chat">
             <div className="empty-chat-mark">#</div>
             <strong>No messages yet</strong>
             <span>The conversation will appear here.</span>
           </div>
-        ) : messages.map((message) => {
-          const mine = message.sender_id === user?.id
+        ) : visibleMessages.map((message) => {
+          const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
-          const isUnsent = Boolean(Number(message.is_deleted || message.is_unsent))
-          const canUnsend = mine && !isUnsent
+          const canModify = mine && message.message_type === 'text'
           const deleting = Boolean(deletingMessageIds[message.id])
+          const editing = editingMessageId === message.id
+          const savingEdit = savingEditId === message.id
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
               <div className="chat-avatar">{getInitials(senderName)}</div>
-              <div className={isUnsent ? 'chat-bubble unsent' : 'chat-bubble'}>
+              <div className="chat-bubble">
                 <div className="chat-meta">
                   <strong>{senderName}</strong>
-                  <time>{formatChatTime(message.created_at)}</time>
+                  <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
                 </div>
-                <p>{isUnsent ? (mine ? 'You unsent this message.' : 'This message was unsent.') : message.message_body}</p>
-                {canUnsend && (
+                {editing ? (
+                  <form className="chat-edit-form" onSubmit={(event) => saveEdit(message, event)}>
+                    <textarea
+                      value={editText}
+                      onChange={(event) => setEditText(event.target.value)}
+                      onKeyDown={(event) => handleEditKeyDown(message, event)}
+                      maxLength={1200}
+                      rows={2}
+                      autoFocus
+                    />
+                    <div className="chat-edit-actions">
+                      <button type="submit" disabled={savingEdit || !editText.trim()}>
+                        {savingEdit ? 'Saving' : 'Save'}
+                      </button>
+                      <button type="button" className="secondary" onClick={cancelEdit} disabled={savingEdit}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <p>{message.message_body}</p>
+                )}
+                {canModify && !editing && (
                   <div className="chat-actions">
-                    <button type="button" onClick={() => unsendMessage(message)} disabled={deleting}>
-                      {deleting ? 'Unsending' : 'Unsend'}
+                    <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
+                      Edit
+                    </button>
+                    <button type="button" className="danger" onClick={() => deleteMessage(message)} disabled={deleting}>
+                      {deleting ? 'Deleting' : 'Delete'}
                     </button>
                   </div>
                 )}

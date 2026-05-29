@@ -1,3 +1,5 @@
+const { query } = require('../config/db')
+
 function registerSignaling(io) {
   const rooms = new Map()
 
@@ -28,6 +30,44 @@ function registerSignaling(io) {
       micEnabled: user.micEnabled,
       cameraEnabled: user.cameraEnabled,
     }
+  }
+
+  async function fetchOwnedChatMessage(messageId, userId) {
+    const messages = await query(
+      `
+      SELECT
+        cm.*,
+        u.name AS sender_name,
+        u.avatar_url AS sender_avatar_url
+      FROM chat_messages cm
+      LEFT JOIN users u ON u.id = cm.sender_id
+      WHERE cm.id = :messageId
+      AND cm.sender_id = :userId
+      LIMIT 1
+      `,
+      { messageId, userId }
+    )
+
+    return messages[0] || null
+  }
+
+  async function fetchOwnedDeletedChatMessage(messageId, userId) {
+    const messages = await query(
+      `
+      SELECT id, sender_id, is_deleted, is_unsent
+      FROM chat_messages
+      WHERE id = :messageId
+      AND sender_id = :userId
+      LIMIT 1
+      `,
+      { messageId, userId }
+    )
+
+    return messages[0] || null
+  }
+
+  function getSocketRoomUser(roomId, socketId) {
+    return rooms.get(String(roomId))?.get(socketId) || null
   }
 
   function removeSocketFromRooms(socket) {
@@ -180,22 +220,40 @@ function registerSignaling(io) {
       }
     })
 
-    socket.on('chat-message', ({ roomId, message } = {}, acknowledge) => {
-      if (!roomId || !message) {
+    socket.on('chat-message', async ({ roomId, message } = {}, acknowledge) => {
+      if (!roomId || !message?.id) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing chat room or message.' })
         }
         return
       }
 
-      socket.to(String(roomId)).emit('chat-message', { message, socketId: socket.id })
+      try {
+        const currentUser = getSocketRoomUser(roomId, socket.id)
+        const savedMessage = currentUser?.userId
+          ? await fetchOwnedChatMessage(message.id, currentUser.userId)
+          : null
 
-      if (typeof acknowledge === 'function') {
-        acknowledge({ ok: true })
+        if (!savedMessage || Number(savedMessage.is_deleted) || Number(savedMessage.is_unsent)) {
+          if (typeof acknowledge === 'function') {
+            acknowledge({ ok: false, message: 'Message broadcast is not authorized.' })
+          }
+          return
+        }
+
+        socket.to(String(roomId)).emit('chat-message', { message: savedMessage, socketId: socket.id })
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: true })
+        }
+      } catch (error) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: error.message || 'Message broadcast failed.' })
+        }
       }
     })
 
-    socket.on('chat-message-unsent', ({ roomId, messageId, message } = {}, acknowledge) => {
+    socket.on('chat-message-unsent', async ({ roomId, messageId } = {}, acknowledge) => {
       if (!roomId || !messageId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing chat room or message ID.' })
@@ -203,14 +261,103 @@ function registerSignaling(io) {
         return
       }
 
-      socket.to(String(roomId)).emit('chat-message-unsent', {
-        messageId,
-        message,
-        socketId: socket.id,
-      })
+      try {
+        const currentUser = getSocketRoomUser(roomId, socket.id)
+        const deletedMessage = currentUser?.userId
+          ? await fetchOwnedDeletedChatMessage(messageId, currentUser.userId)
+          : null
 
-      if (typeof acknowledge === 'function') {
-        acknowledge({ ok: true })
+        if (!deletedMessage || (!Number(deletedMessage.is_deleted) && !Number(deletedMessage.is_unsent))) {
+          if (typeof acknowledge === 'function') {
+            acknowledge({ ok: false, message: 'Message delete is not authorized.' })
+          }
+          return
+        }
+
+        socket.to(String(roomId)).emit('chat-message-unsent', {
+          messageId,
+          socketId: socket.id,
+        })
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: true })
+        }
+      } catch (error) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: error.message || 'Message delete broadcast failed.' })
+        }
+      }
+    })
+
+    socket.on('chat-message-deleted', async ({ roomId, messageId } = {}, acknowledge) => {
+      if (!roomId || !messageId) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: 'Missing chat room or message ID.' })
+        }
+        return
+      }
+
+      try {
+        const currentUser = getSocketRoomUser(roomId, socket.id)
+        const deletedMessage = currentUser?.userId
+          ? await fetchOwnedDeletedChatMessage(messageId, currentUser.userId)
+          : null
+
+        if (!deletedMessage || (!Number(deletedMessage.is_deleted) && !Number(deletedMessage.is_unsent))) {
+          if (typeof acknowledge === 'function') {
+            acknowledge({ ok: false, message: 'Message delete is not authorized.' })
+          }
+          return
+        }
+
+        socket.to(String(roomId)).emit('chat-message-deleted', {
+          messageId,
+          socketId: socket.id,
+        })
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: true })
+        }
+      } catch (error) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: error.message || 'Message delete broadcast failed.' })
+        }
+      }
+    })
+
+    socket.on('chat-message-edited', async ({ roomId, message } = {}, acknowledge) => {
+      if (!roomId || !message?.id) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: 'Missing chat room or message.' })
+        }
+        return
+      }
+
+      try {
+        const currentUser = getSocketRoomUser(roomId, socket.id)
+        const updatedMessage = currentUser?.userId
+          ? await fetchOwnedChatMessage(message.id, currentUser.userId)
+          : null
+
+        if (!updatedMessage || Number(updatedMessage.is_deleted) || Number(updatedMessage.is_unsent)) {
+          if (typeof acknowledge === 'function') {
+            acknowledge({ ok: false, message: 'Message edit is not authorized.' })
+          }
+          return
+        }
+
+        socket.to(String(roomId)).emit('chat-message-edited', {
+          message: updatedMessage,
+          socketId: socket.id,
+        })
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: true })
+        }
+      } catch (error) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: error.message || 'Message edit broadcast failed.' })
+        }
       }
     })
 

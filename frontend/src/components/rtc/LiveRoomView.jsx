@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest, getRtcConfig } from '../../services/api'
-import { createLocalMediaStream, stopMediaStream } from '../../services/media'
+import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
 import {
@@ -137,6 +137,20 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     rtcRef.current?.setVideoEnabled(nextCameraOn)
     streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = nextMicOn })
     streamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextCameraOn })
+  }
+
+  async function attachNewLocalTrack(kind) {
+    const { track } = await requestLocalMediaTrack(kind)
+    const stream = streamRef.current || new MediaStream()
+
+    track.enabled = true
+    if (!stream.getTracks().includes(track)) stream.addTrack(track)
+
+    streamRef.current = stream
+    setLocalStream(stream)
+    await rtcRef.current?.addLocalTrack(track, stream)
+
+    return track
   }
 
   async function publishMediaState(nextMicOn, nextCameraOn) {
@@ -583,18 +597,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !micOn
     const previous = micOn
 
-    if (joined && next && !hasLiveLocalTrack('audio')) {
-      setStatus('Microphone is unavailable. Close the other app/browser tab using it, then leave and rejoin.')
-      return
-    }
-
-    setMicOn(next)
-    applyLocalMediaState(next, cameraOn)
-
-    if (!joined) return
-
     setMediaUpdating((state) => ({ ...state, mic: true }))
     try {
+      if (joined && next && !hasLiveLocalTrack('audio')) {
+        setStatus('Requesting microphone permission...')
+        await attachNewLocalTrack('audio')
+      }
+
+      setMicOn(next)
+      applyLocalMediaState(next, cameraOn)
+
+      if (!joined) return
+
       const synced = await publishMediaState(next, cameraOn)
       setStatus(synced.micOn ? 'Microphone is live' : 'Microphone muted')
     } catch (error) {
@@ -611,18 +625,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !cameraOn
     const previous = cameraOn
 
-    if (joined && next && !hasLiveLocalTrack('video')) {
-      setStatus('Camera is unavailable. Close the other app/browser tab using it, then leave and rejoin.')
-      return
-    }
-
-    setCameraOn(next)
-    applyLocalMediaState(micOn, next)
-
-    if (!joined) return
-
     setMediaUpdating((state) => ({ ...state, camera: true }))
     try {
+      if (joined && next && !hasLiveLocalTrack('video')) {
+        setStatus('Requesting camera permission...')
+        await attachNewLocalTrack('video')
+      }
+
+      setCameraOn(next)
+      applyLocalMediaState(micOn, next)
+
+      if (!joined) return
+
       const synced = await publishMediaState(micOn, next)
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
@@ -658,15 +672,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   const localAudioAvailable = hasLiveTrack(localStream, 'audio')
   const localVideoAvailable = hasLiveTrack(localStream, 'video')
-  const micUnavailable = joined && !micOn && !localAudioAvailable
-  const cameraUnavailable = joined && rtcMode === 'video' && !cameraOn && !localVideoAvailable
-  const micButtonDisabled = joining || mediaUpdating.mic || micUnavailable
-  const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio' || cameraUnavailable
-  const micButtonTitle = micUnavailable
-    ? 'Microphone unavailable. Close the other app or tab using it, then reconnect.'
+  const micCanRetry = joined && !micOn && !localAudioAvailable
+  const cameraCanRetry = joined && rtcMode === 'video' && !cameraOn && !localVideoAvailable
+  const micButtonDisabled = joining || mediaUpdating.mic
+  const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio'
+  const micButtonTitle = micCanRetry
+    ? 'Start microphone'
     : mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'
-  const cameraButtonTitle = cameraUnavailable
-    ? 'Camera unavailable. Close the other app or tab using it, then reconnect.'
+  const cameraButtonTitle = cameraCanRetry
+    ? 'Start camera'
     : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
 
   return (

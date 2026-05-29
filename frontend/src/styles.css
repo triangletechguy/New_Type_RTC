@@ -2441,6 +2441,7 @@ pre {
 .chat-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   margin-top: 8px;
   opacity: 0;
   transform: translateY(2px);
@@ -2454,6 +2455,47 @@ pre {
   background: rgba(239, 68, 68, .11);
   color: #fecaca;
   font-size: 12px;
+}
+
+.chat-actions button.neutral {
+  border-color: rgba(148, 163, 184, .34);
+  background: rgba(148, 163, 184, .12);
+  color: #dbeafe;
+}
+
+.chat-actions button.danger {
+  border-color: rgba(239, 68, 68, .32);
+  background: rgba(239, 68, 68, .11);
+  color: #fecaca;
+}
+
+.chat-edit-form {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-edit-form textarea {
+  min-height: 62px;
+  max-height: 130px;
+  resize: vertical;
+}
+
+.chat-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-edit-actions button {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.chat-edit-actions button.secondary {
+  border-color: rgba(148, 163, 184, .28);
+  background: rgba(148, 163, 184, .1);
+  color: #cbd5e1;
 }
 
 .typing-line {

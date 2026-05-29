@@ -209,6 +209,45 @@ export class NativeRtcClient {
     this.pendingCandidates[remoteSocketId] = []
   }
 
+  async addLocalTrack(track, stream = this.localStream) {
+    if (!track) return
+    const mediaStream = stream || this.localStream || new MediaStream()
+    this.localStream = mediaStream
+
+    if (!mediaStream.getTracks().includes(track)) {
+      mediaStream.addTrack(track)
+    }
+
+    const remoteSocketIds = Object.keys(this.peerConnections)
+
+    for (const remoteSocketId of remoteSocketIds) {
+      const peerConnection = this.peerConnections[remoteSocketId]
+      const transceiver = peerConnection.getTransceivers()
+        .find((item) => item.receiver?.track?.kind === track.kind && !item.sender?.track)
+      const sender = peerConnection.getSenders()
+        .find((item) => item.track?.kind === track.kind)
+
+      if (sender) {
+        await sender.replaceTrack(track)
+      } else if (transceiver) {
+        await transceiver.sender.replaceTrack(track)
+        transceiver.direction = transceiver.direction === 'recvonly' ? 'sendrecv' : transceiver.direction
+      } else {
+        peerConnection.addTrack(track, mediaStream)
+      }
+    }
+
+    await this.renegotiateAll()
+  }
+
+  async renegotiateAll() {
+    const remoteSocketIds = Object.keys(this.peerConnections)
+
+    for (const remoteSocketId of remoteSocketIds) {
+      await this.createOffer(remoteSocketId)
+    }
+  }
+
   setAudioEnabled(enabled) {
     if (!this.localStream) return
     this.localStream.getAudioTracks().forEach((track) => { track.enabled = enabled })

@@ -139,6 +139,65 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   }
 })
 
+router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const messageId = parsePositiveInteger(req.params.id)
+    const body = cleanMessageBody(req.body?.message_body).trim()
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    if (!body) return res.status(422).json({ message: 'Message body is required.' })
+    if (body.length > 1200) return res.status(422).json({ message: 'Message body must be 1200 characters or fewer.' })
+
+    const messages = await query(
+      `
+      SELECT *
+      FROM chat_messages
+      WHERE id = :messageId
+      AND tenant_id = :tenantId
+      LIMIT 1
+      `,
+      { messageId, tenantId: req.user.tenant_id }
+    )
+
+    if (!messages.length) return res.status(404).json({ message: 'Message not found.' })
+
+    const message = messages[0]
+
+    if (Number(message.sender_id) !== Number(req.user.id)) {
+      return res.status(403).json({ message: 'You can only edit your own message.' })
+    }
+
+    if (Number(message.is_deleted) || Number(message.is_unsent)) {
+      return res.status(422).json({ message: 'Deleted messages cannot be edited.' })
+    }
+
+    if (message.message_type !== 'text') {
+      return res.status(422).json({ message: 'Only text messages can be edited.' })
+    }
+
+    await query(
+      `
+      UPDATE chat_messages
+      SET message_body = :messageBody,
+          updated_at = NOW()
+      WHERE id = :messageId
+      `,
+      { messageBody: body, messageId }
+    )
+
+    const updatedMessages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
+      id: messageId,
+    })
+
+    return res.json({
+      message: 'Message updated successfully.',
+      chat_message: updatedMessages[0],
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
   try {
     const messageId = parsePositiveInteger(req.params.id)
@@ -159,8 +218,8 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
 
     const message = messages[0]
 
-    if (message.sender_id !== req.user.id) {
-      return res.status(403).json({ message: 'You can only delete your own message in this version.' })
+    if (Number(message.sender_id) !== Number(req.user.id)) {
+      return res.status(403).json({ message: 'You can only delete your own message.' })
     }
 
     await query(
@@ -168,6 +227,7 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
       UPDATE chat_messages
       SET is_deleted = 1,
           is_unsent = 1,
+          message_body = NULL,
           deleted_by = :deletedBy,
           deleted_at = NOW(),
           updated_at = NOW()
@@ -176,20 +236,10 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
       { deletedBy: req.user.id, messageId }
     )
 
-    const deletedMessages = await query(
-      `
-      ${messageSelectSql()}
-      WHERE cm.id = :messageId
-      LIMIT 1
-      `,
-      { messageId }
-    )
-
     return res.json({
-      message: 'Message unsent successfully.',
+      message: 'Message deleted successfully.',
       message_id: message.id,
       room_id: message.room_id,
-      chat_message: deletedMessages[0],
     })
   } catch (error) {
     next(error)

@@ -51,6 +51,32 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
   }
 }
 
+export async function requestLocalMediaTrack(kind) {
+  const mediaKind = kind === 'audio' ? 'audio' : 'video'
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error(getMediaApiUnavailableMessage())
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(
+      mediaKind === 'audio'
+        ? { audio: true, video: false }
+        : { audio: false, video: true }
+    )
+    const [track] = mediaKind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
+
+    if (!track) {
+      throw new Error(`No ${mediaKind === 'audio' ? 'microphone' : 'camera'} track was returned by the browser.`)
+    }
+
+    return { stream, track }
+  } catch (error) {
+    if (error?.message?.startsWith('No ')) throw error
+    throw new Error(formatSingleMediaError(error, mediaKind))
+  }
+}
+
 async function captureAvailableMedia(rtcMode, combinedError) {
   const stream = createEmptyMediaStream()
   const failures = {}
