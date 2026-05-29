@@ -99,6 +99,18 @@ export function RoomsView({ onEnterRoom }) {
   const [openingRoom, setOpeningRoom] = useState(false)
 
   const featuredRoom = rooms[0]
+  const featuredMeta = getRoomMeta(featuredRoom?.room_type)
+  const activeParticipants = rooms.reduce((total, room) => total + Number(room.active_participants || 0), 0)
+  const liveRooms = rooms.filter((room) => ['active', 'live'].includes(String(room.status || '').toLowerCase()))
+  const videoRooms = rooms.filter((room) => roomSupportsVideo(room.room_type))
+  const musicRooms = rooms.filter((room) => ['audio', 'group_audio'].includes(room.room_type))
+  const hostRail = rooms.slice(0, 5)
+  const categoryCards = [
+    { value: 'live', label: 'Hot Live', detail: `${liveRooms.length || rooms.length} rooms`, tone: 'hot' },
+    { value: 'video', label: 'Video Party', detail: `${videoRooms.length} stages`, tone: 'sky' },
+    { value: 'music', label: 'Music Lounge', detail: `${musicRooms.length} rooms`, tone: 'mint' },
+    { value: 'pk', label: 'PK Battles', detail: 'Live matchups', tone: 'violet' },
+  ]
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
@@ -131,6 +143,10 @@ export function RoomsView({ onEnterRoom }) {
 
   function updateJoinRtcMode(value) {
     setJoinRtcMode(normalizeRtcMode(value, selectedRoom))
+  }
+
+  function scrollToHostTools() {
+    document.getElementById('host-tools')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   async function loadRooms({
@@ -268,28 +284,28 @@ export function RoomsView({ onEnterRoom }) {
 
   return (
     <div className="view-stack">
-      <header className="lobby-hero">
-        <div className="lobby-title">
-          <span className="eyebrow">Live Discovery</span>
-          <h1>Room Lobby</h1>
-          <p>Browse live rooms, start a broadcast, or jump into a session.</p>
+      <header className="buzz-dashboard">
+        <div className="buzz-topbar">
+          <div className="buzz-brand">
+            <div className="app-mark">BC</div>
+            <div>
+              <strong>BuzzCast Lobby</strong>
+              <span>talk-each-other live rooms</span>
+            </div>
+          </div>
+          <div className="buzz-search">
+            <label className="sr-only" htmlFor="room-search">Search rooms</label>
+            <input id="room-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search live rooms or hosts" />
+          </div>
+          <button type="button" className="primary-button buzz-go-live" onClick={scrollToHostTools}>Go Live</button>
         </div>
-        <div className="lobby-feature">
-          <span>Now featuring</span>
-          <strong>{featuredRoom?.name || 'Create the first live room'}</strong>
-          <button className="primary-button" onClick={() => loadRooms({ page: roomMeta.page })} disabled={loadingRooms}>Refresh</button>
-        </div>
-      </header>
 
-      <div className="lobby-command-bar">
-        <label className="sr-only" htmlFor="room-search">Search rooms</label>
-        <input id="room-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search rooms, types, or IDs" />
-        <div className="filter-tabs" role="tablist" aria-label="Room filters">
+        <div className="buzz-tabs" role="tablist" aria-label="Room filters">
           {roomFilterOptions.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={filter === option.value ? 'filter-tab active' : 'filter-tab'}
+              className={filter === option.value ? 'buzz-tab active' : 'buzz-tab'}
               onClick={() => setFilter(option.value)}
               aria-pressed={filter === option.value}
             >
@@ -297,6 +313,89 @@ export function RoomsView({ onEnterRoom }) {
             </button>
           ))}
         </div>
+      </header>
+
+      <section className="buzz-hero-grid" aria-label="Live discovery dashboard">
+        <article className={`buzz-feature-card ${featuredMeta.tone}`}>
+          <div className="buzz-feature-top">
+            <div className="live-chip"><span></span> LIVE</div>
+            <div className="room-type-chip">{featuredRoom ? featuredMeta.short : 'New'}</div>
+          </div>
+          <div className="buzz-stage-visual" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div className="buzz-feature-content">
+            <span className="eyebrow">Featured room</span>
+            <h1>{featuredRoom?.name || 'Start the first live room'}</h1>
+            <p>{featuredRoom?.description || 'Open a live video, music, chat, and creator room for your audience.'}</p>
+            <div className="buzz-feature-meta">
+              <span>{featuredRoom ? featuredMeta.label : 'Video Room'}</span>
+              <span>{featuredRoom ? getSeatLabel(featuredRoom.room_type, featuredRoom.max_mic_count) : '8 stage seats'}</span>
+              <span>{featuredRoom?.active_participants || 0} watching</span>
+            </div>
+            <div className="buzz-feature-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => featuredRoom ? joinRoomFromCard(featuredRoom) : scrollToHostTools()}
+              >
+                {featuredRoom?.privacy_type === 'password' ? 'Unlock Room' : 'Enter Room'}
+              </button>
+              <button type="button" onClick={() => loadRooms({ page: roomMeta.page })} disabled={loadingRooms}>
+                {loadingRooms ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <aside className="buzz-side-panel">
+          <div className="buzz-panel-header">
+            <span className="eyebrow">Rising hosts</span>
+            <strong>{hostRail.length || 0} live</strong>
+          </div>
+          <div className="buzz-host-rail">
+            {hostRail.length === 0 ? (
+              <div className="buzz-empty-host">No live hosts yet</div>
+            ) : hostRail.map((room) => {
+              const initial = room.owner_name?.slice(0, 1)?.toUpperCase() || room.name?.slice(0, 1)?.toUpperCase() || 'H'
+
+              return (
+                <button key={room.id} type="button" className="buzz-host" onClick={() => selectRoom(room)}>
+                  <span className="buzz-host-avatar">{initial}</span>
+                  <span>
+                    <strong>{room.owner_name || room.name}</strong>
+                    <small>{getRoomMeta(room.room_type).label}</small>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="buzz-mini-stats">
+            <div><span>Audience</span><strong>{activeParticipants}</strong></div>
+            <div><span>Rooms</span><strong>{roomMeta.total}</strong></div>
+            <div><span>Mode</span><strong>{joinRtcMode}</strong></div>
+          </div>
+        </aside>
+      </section>
+
+      <section className="buzz-category-rail" aria-label="Live room categories">
+        {categoryCards.map((category) => (
+          <button
+            key={category.value}
+            type="button"
+            className={`buzz-category-card ${category.tone}${filter === category.value ? ' active' : ''}`}
+            onClick={() => setFilter(category.value)}
+          >
+            <span>{category.label}</span>
+            <strong>{category.detail}</strong>
+          </button>
+        ))}
+      </section>
+
+      <div className="buzz-controls">
         <div className="room-tools">
           <label className="sr-only" htmlFor="privacy-filter">Privacy</label>
           <select id="privacy-filter" value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)}>
@@ -307,18 +406,42 @@ export function RoomsView({ onEnterRoom }) {
             {roomSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
+        <div className="status-bar buzz-status"><strong>Status:</strong> {status}</div>
       </div>
 
-      <div className="status-bar"><strong>Status:</strong> {status}</div>
+      <section className="room-list-section buzz-room-feed">
+        <div className="room-list-header">
+          <div>
+            <span className="eyebrow">For you</span>
+            <h2>Live now</h2>
+          </div>
+          <span className="room-count">Page {roomMeta.page} of {roomMeta.total_pages}</span>
+        </div>
 
-      <section className="metrics-grid">
-        <div className="metric"><span>Total Rooms</span><strong>{roomMeta.total}</strong></div>
-        <div className="metric"><span>This Page</span><strong>{rooms.length}</strong></div>
-        <div className="metric"><span>Selected</span><strong>{roomId || '-'}</strong></div>
-        <div className="metric"><span>Join Mode</span><strong>{joinRtcMode}</strong></div>
+        {loadingRooms && rooms.length === 0 ? (
+          <div className="empty">Loading rooms...</div>
+        ) : (
+          <div className="room-grid">
+            {rooms.length === 0 ? <div className="empty">No matching rooms yet. Create one or change the filters.</div> : rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                isSelected={roomId === String(room.id)}
+                onSelect={selectRoom}
+                onJoin={joinRoomFromCard}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="pagination-row">
+          <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
+          <span>{roomMeta.total} total rooms</span>
+          <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
+        </div>
       </section>
 
-      <section className="split-grid">
+      <section className="split-grid" id="host-tools">
         <form className="form-card create-room-panel" onSubmit={createRoom}>
           <div className="form-title-row">
             <div>
@@ -482,37 +605,6 @@ export function RoomsView({ onEnterRoom }) {
         </div>
       </section>
 
-      <section className="room-list-section">
-        <div className="room-list-header">
-          <div>
-            <span className="eyebrow">Room list</span>
-            <h2>Live rooms</h2>
-          </div>
-          <span className="room-count">Page {roomMeta.page} of {roomMeta.total_pages}</span>
-        </div>
-
-        {loadingRooms && rooms.length === 0 ? (
-          <div className="empty">Loading rooms...</div>
-        ) : (
-          <div className="room-grid">
-            {rooms.length === 0 ? <div className="empty">No matching rooms yet. Create one or change the filters.</div> : rooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                room={room}
-                isSelected={roomId === String(room.id)}
-                onSelect={selectRoom}
-                onJoin={joinRoomFromCard}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="pagination-row">
-          <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
-          <span>{roomMeta.total} total rooms</span>
-          <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
-        </div>
-      </section>
     </div>
   )
 }
