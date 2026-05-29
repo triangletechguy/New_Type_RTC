@@ -12,6 +12,15 @@ function defaultApiBaseUrl() {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl()
+export const AUTH_EXPIRED_EVENT = 'rtc:auth-expired'
+
+function notifyAuthExpired() {
+  clearSession()
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
+}
 
 export function getToken() {
   return localStorage.getItem('rtc_access_token') || ''
@@ -64,6 +73,7 @@ export async function apiRequest(path, options = {}) {
     const requestError = new Error(data.message || `Request failed with status ${response.status}`)
     requestError.status = response.status
     requestError.errors = data.errors || {}
+    if (response.status === 401) notifyAuthExpired()
     throw requestError
   }
 

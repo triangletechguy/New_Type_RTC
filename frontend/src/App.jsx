@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState } from 'react'
-import { clearSession, getToken, getUser } from './services/api'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { AUTH_EXPIRED_EVENT, clearSession, getToken, getUser } from './services/api'
 import { LoginScreen } from './components/auth/LoginScreen'
 import { Sidebar } from './components/layout/Sidebar'
 import { RoomsView } from './components/rooms/RoomsView'
@@ -18,6 +18,18 @@ export default function App() {
   const [user, setUser] = useState(getUser())
   const [view, setView] = useState('rooms')
   const [activeRoom, setActiveRoom] = useState(null)
+
+  useEffect(() => {
+    function handleAuthExpired() {
+      setToken('')
+      setUser(null)
+      setActiveRoom(null)
+      setView('rooms')
+    }
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+  }, [])
 
   function handleLogin(accessToken, currentUser) {
     setToken(accessToken)
