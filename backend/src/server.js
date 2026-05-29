@@ -43,24 +43,35 @@ function parseIceServers(value) {
   }
 }
 
+function iceServerHasTurn(server) {
+  const urls = Array.isArray(server?.urls) ? server.urls : [server?.urls]
+  return urls.some((url) => String(url || '').startsWith('turn:') || String(url || '').startsWith('turns:'))
+}
+
 function buildRtcConfig() {
   const configuredIceServers = parseIceServers(process.env.RTC_ICE_SERVERS || process.env.ICE_SERVERS)
   const stunUrls = splitUrls(process.env.STUN_URLS || 'stun:stun.l.google.com:19302')
   const turnUrls = splitUrls(process.env.TURN_URLS || process.env.TURN_URL)
   const turnUsername = process.env.TURN_USERNAME || ''
   const turnCredential = process.env.TURN_CREDENTIAL || ''
-  const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
-    ? process.env.RTC_ICE_TRANSPORT_POLICY
-    : 'all'
 
   if (configuredIceServers?.length) {
+    const turnConfigured = configuredIceServers.some(iceServerHasTurn)
+    const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
+      ? process.env.RTC_ICE_TRANSPORT_POLICY
+      : turnConfigured ? 'relay' : 'all'
+
     return {
       iceServers: configuredIceServers,
       iceTransportPolicy,
-      turnConfigured: configuredIceServers.some((server) => String(server.urls).includes('turn:') || String(server.urls).includes('turns:')),
+      turnConfigured,
     }
   }
 
+  const turnConfigured = turnUrls.length > 0 && Boolean(turnUsername && turnCredential)
+  const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
+    ? process.env.RTC_ICE_TRANSPORT_POLICY
+    : turnConfigured ? 'relay' : 'all'
   const iceServers = []
   if (stunUrls.length) iceServers.push({ urls: stunUrls })
   if (turnUrls.length) {
@@ -74,7 +85,7 @@ function buildRtcConfig() {
   return {
     iceServers,
     iceTransportPolicy,
-    turnConfigured: turnUrls.length > 0 && Boolean(turnUsername && turnCredential),
+    turnConfigured,
   }
 }
 

@@ -161,6 +161,11 @@ function getInitialMediaMode() {
   return 'real'
 }
 
+function isLocalBrowserHost() {
+  if (typeof window === 'undefined') return true
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
 function formatRoomDate(value) {
   if (!value) return 'New'
 
@@ -487,7 +492,7 @@ function RoomsView({ onEnterRoom }) {
         password: joinPassword.trim(),
         room: targetRoom,
         rtcMode: normalizeRtcMode(joinRtcMode, targetRoom),
-        autoConnect: false,
+        autoConnect: true,
       })
     } catch (error) {
       setStatus(error.message)
@@ -502,7 +507,7 @@ function RoomsView({ onEnterRoom }) {
       return
     }
 
-    onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: false })
+    onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: true })
   }
 
   useEffect(() => {
@@ -674,7 +679,7 @@ function RoomsView({ onEnterRoom }) {
                   password: joinPassword.trim(),
                   room: createdRoom,
                   rtcMode: defaultRtcModeForRoom(createdRoom),
-                  autoConnect: false,
+                  autoConnect: true,
                 })}
               >
                 Open Console
@@ -1113,6 +1118,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
   const [roomPasswordInput, setRoomPasswordInput] = useState(roomPassword)
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false)
   const [stageLayout, setStageLayout] = useState('grid')
+  const [rtcConfigState, setRtcConfigState] = useState(null)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -1278,6 +1284,7 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       setJoined(false)
       setConnectAttempted(true)
       setConnectionIssue('')
+      setRtcConfigState(null)
       setSignalingState('idle')
       setMediaState('idle')
       setShowPasswordRecovery(false)
@@ -1321,6 +1328,11 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
         setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
         return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
       })
+      setRtcConfigState(rtcConfig)
+
+      if (joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured) {
+        throw new Error('TURN is not configured on the backend. Remote camera cannot work reliably on this deployed server until TURN_URLS, TURN_USERNAME, and TURN_CREDENTIAL are set and PM2 is restarted.')
+      }
 
       setConnectStep('signaling')
       setSignalingState('connecting')
@@ -1650,6 +1662,13 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       </header>
 
       <div className="status-bar glass-card"><strong>Status:</strong> {status}</div>
+      <div className={rtcConfigState?.turnConfigured ? 'status-bar glass-card turn-status ready' : 'status-bar glass-card turn-status'}>
+        <strong>TURN:</strong> {rtcConfigState
+          ? rtcConfigState.turnConfigured
+            ? `enabled (${rtcConfigState.iceTransportPolicy || 'all'} mode)`
+            : 'not configured on backend'
+          : 'not loaded yet'}
+      </div>
 
       <RtcConnectionIndicator
         steps={rtcConnectSteps}
@@ -1824,7 +1843,7 @@ export default function App() {
           password: options.password || '',
           room: options.room || null,
           rtcMode: options.rtcMode || defaultRtcModeForRoom(options.room),
-          autoConnect: options.autoConnect === true,
+          autoConnect: options.autoConnect !== false,
         })} />}
         {view === 'admin' && (
           <Suspense fallback={<ViewFallback label="Admin dashboard" />}>

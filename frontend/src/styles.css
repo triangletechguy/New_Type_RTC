@@ -470,6 +470,19 @@ pre {
   color: var(--soft);
 }
 
+.turn-status {
+  margin-top: -2px;
+  border-color: rgba(245, 158, 11, .36);
+  background: rgba(245, 158, 11, .1);
+  color: #fde68a;
+}
+
+.turn-status.ready {
+  border-color: rgba(52, 211, 153, .32);
+  background: rgba(52, 211, 153, .1);
+  color: #bbf7d0;
+}
+
 .connect-flow {
   margin-top: 14px;
   padding: 14px 16px;
