@@ -86,3 +86,7 @@ export async function register(name, email, password) {
     body: JSON.stringify({ name, email, password }),
   })
 }
+
+export async function getRtcConfig() {
+  return apiRequest('/rtc/config')
+}

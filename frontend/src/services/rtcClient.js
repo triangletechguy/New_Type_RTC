@@ -34,12 +34,12 @@ function buildIceServers() {
   return iceServers
 }
 
-const ICE_SERVERS = buildIceServers()
-
 export class NativeRtcClient {
-  constructor({ socket, localStream, onRemoteStream, onPeerState }) {
+  constructor({ socket, localStream, iceServers, iceTransportPolicy = 'all', onRemoteStream, onPeerState }) {
     this.socket = socket
     this.localStream = localStream
+    this.iceServers = Array.isArray(iceServers) && iceServers.length ? iceServers : buildIceServers()
+    this.iceTransportPolicy = iceTransportPolicy === 'relay' ? 'relay' : 'all'
     this.onRemoteStream = onRemoteStream
     this.onPeerState = onPeerState
     this.peerConnections = {}
@@ -61,7 +61,8 @@ export class NativeRtcClient {
     }
 
     const peerConnection = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
+      iceServers: this.iceServers,
+      iceTransportPolicy: this.iceTransportPolicy,
       iceCandidatePoolSize: 4,
     })
 

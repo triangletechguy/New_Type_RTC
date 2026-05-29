@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { apiRequest, clearSession, getToken, getUser } from './services/api'
+import { apiRequest, clearSession, getRtcConfig, getToken, getUser } from './services/api'
 import { createLocalMediaStream, stopMediaStream } from './services/media'
 import { NativeRtcClient } from './services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from './services/signaling'
@@ -1316,15 +1316,23 @@ function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRt
       media.stream.getAudioTracks().forEach((track) => { track.enabled = Boolean(joinData.rtc.mic_enabled) })
       media.stream.getVideoTracks().forEach((track) => { track.enabled = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled) })
 
+      setStatus('Loading TURN/ICE configuration...')
+      const rtcConfig = await getRtcConfig().catch((error) => {
+        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
+        return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
+      })
+
       setConnectStep('signaling')
       setSignalingState('connecting')
-      setStatus('Connecting to signaling...')
+      setStatus(rtcConfig.turnConfigured ? 'Connecting with TURN enabled...' : 'Connecting without TURN. Remote video may fail on strict networks.')
       const socket = createSignalingSocket()
       socketRef.current = socket
 
       const rtcClient = new NativeRtcClient({
         socket,
         localStream: media.stream,
+        iceServers: rtcConfig.iceServers,
+        iceTransportPolicy: rtcConfig.iceTransportPolicy,
         onRemoteStream: (remoteSocketId, remoteStream) => setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream })),
         onPeerState: (remoteSocketId, state) => {
           setPeerStates((previous) => ({ ...previous, [remoteSocketId]: state }))

@@ -69,8 +69,10 @@ sessions, chat messages, moderation examples, and verified usage logs.
 - Frontend uses `VITE_MEDIA_MODE=real` by default for real camera/microphone.
 - Use `VITE_MEDIA_MODE=mock` in `frontend/.env` only when you need a generated test stream.
 - Browsers require HTTPS for real camera/microphone access on deployed servers.
-- Production peer-to-peer video should use a TURN server. Set `VITE_TURN_URLS`,
-  `VITE_TURN_USERNAME`, and `VITE_TURN_CREDENTIAL` in `frontend/.env`, then rebuild.
+- Production peer-to-peer video should use a TURN server. The browser now loads
+  ICE/TURN settings from the backend at `/api/rtc/config`, so set `TURN_URLS`,
+  `TURN_USERNAME`, and `TURN_CREDENTIAL` in `backend/.env` or PM2 env, then
+  restart the backend.
 
 ## WSL Ubuntu run order
 

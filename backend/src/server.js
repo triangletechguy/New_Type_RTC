@@ -25,6 +25,59 @@ function corsOrigin(origin, callback) {
   return callback(new Error(`CORS blocked origin: ${origin}`), false)
 }
 
+function splitUrls(value) {
+  return String(value || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean)
+}
+
+function parseIceServers(value) {
+  if (!value) return null
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((server) => server?.urls) : null
+  } catch {
+    return null
+  }
+}
+
+function buildRtcConfig() {
+  const configuredIceServers = parseIceServers(process.env.RTC_ICE_SERVERS || process.env.ICE_SERVERS)
+  const stunUrls = splitUrls(process.env.STUN_URLS || 'stun:stun.l.google.com:19302')
+  const turnUrls = splitUrls(process.env.TURN_URLS || process.env.TURN_URL)
+  const turnUsername = process.env.TURN_USERNAME || ''
+  const turnCredential = process.env.TURN_CREDENTIAL || ''
+  const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
+    ? process.env.RTC_ICE_TRANSPORT_POLICY
+    : 'all'
+
+  if (configuredIceServers?.length) {
+    return {
+      iceServers: configuredIceServers,
+      iceTransportPolicy,
+      turnConfigured: configuredIceServers.some((server) => String(server.urls).includes('turn:') || String(server.urls).includes('turns:')),
+    }
+  }
+
+  const iceServers = []
+  if (stunUrls.length) iceServers.push({ urls: stunUrls })
+  if (turnUrls.length) {
+    iceServers.push({
+      urls: turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    })
+  }
+
+  return {
+    iceServers,
+    iceTransportPolicy,
+    turnConfigured: turnUrls.length > 0 && Boolean(turnUsername && turnCredential),
+  }
+}
+
 const app = express()
 
 app.use(cors({
@@ -71,6 +124,10 @@ app.get('/api/health', async (req, res, next) => {
   } catch (error) {
     next(error)
   }
+})
+
+app.get('/api/rtc/config', (req, res) => {
+  res.json(buildRtcConfig())
 })
 
 app.use('/api/auth', authRoutes)
