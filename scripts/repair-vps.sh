@@ -399,7 +399,8 @@ restart_backend() {
     sudo npm install -g pm2
   fi
 
-  pm2 startOrReload ecosystem.config.cjs --env production
+  pm2 delete "$PM2_APP" >/dev/null 2>&1 || true
+  pm2 start ecosystem.config.cjs --env production --update-env
   pm2 save
 }
 
