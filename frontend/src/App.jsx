@@ -45,7 +45,7 @@ export default function App() {
   }
 
   function changeView(nextView) {
-    if (nextView === 'admin' && !canUseAdminDashboard(user)) return
+    if (nextView === 'admin' && !canAccessAdminDashboard) return
     setView(nextView)
   }
 
@@ -75,7 +75,8 @@ export default function App() {
     )
   }
 
-  const safeView = view === 'admin' && !canUseAdminDashboard(user) ? 'rooms' : view
+  const canAccessAdminDashboard = canUseAdminDashboard(user)
+  const safeView = view === 'admin' && !canAccessAdminDashboard ? 'rooms' : view
 
   if (safeView === 'rooms') {
     return <RoomsView onEnterRoom={openRoom} user={user} onLogout={logout} onView={changeView} />
@@ -85,7 +86,7 @@ export default function App() {
     <main className="app-shell">
       <Sidebar user={user} currentView={safeView} onView={changeView} onLogout={logout} />
       <section className="content-shell">
-        {safeView === 'admin' && (
+        {safeView === 'admin' && canAccessAdminDashboard && (
           <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
             <AdminView onView={changeView} onOpenRoom={openRoom} />
           </Suspense>

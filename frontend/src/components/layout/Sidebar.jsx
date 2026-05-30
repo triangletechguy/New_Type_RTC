@@ -1,7 +1,7 @@
 import { canUseAdminDashboard } from '../../utils/roles'
 
 export function Sidebar({ user, currentView, onView, onLogout }) {
-  const showAdminDashboard = canUseAdminDashboard(user)
+  const showAdminDashboard = canUseAdminDashboard(user) === true
 
   return (
     <aside className="sidebar glass-card">

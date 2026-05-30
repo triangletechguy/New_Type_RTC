@@ -309,7 +309,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   const displayName = user?.name || user?.email?.split('@')[0] || 'Michael Sa32160161'
   const displayId = user?.id || 32160161
   const profileInitials = initialsFromName(displayName)
-  const showAdminDashboard = canUseAdminDashboard(user)
+  const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
