@@ -69,6 +69,25 @@ const INITIAL_COMPANY_FORM = {
 const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancelled']
 const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
 
+function buildDashboardTabs(mode) {
+  const tabs = [
+    { key: 'overview', label: 'Overview' },
+  ]
+
+  if (mode === 'super_admin') {
+    tabs.push({ key: 'companies', label: 'Companies' })
+  }
+
+  return [
+    ...tabs,
+    { key: 'packages', label: 'Packages' },
+    { key: 'sdk', label: 'SDK' },
+    { key: 'usage', label: 'Usage' },
+    { key: 'rooms', label: 'Rooms' },
+    { key: 'system', label: 'System' },
+  ]
+}
+
 function limitsFromPlan(plan) {
   if (!plan) return {}
 
@@ -100,6 +119,32 @@ function companyToForm(company) {
     primary_contact_name: company?.primary_contact_name || '',
     primary_contact_email: company?.primary_contact_email || '',
   }
+}
+
+function DashboardTabs({ tabs, activeTab, onChange }) {
+  return (
+    <nav className="admin-dashboard-tabs glass-card" aria-label="Admin dashboard sections">
+      {tabs.map((tab) => (
+        <button
+          type="button"
+          className={activeTab === tab.key ? 'active' : ''}
+          key={tab.key}
+          onClick={() => onChange(tab.key)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+function AdminEmptyState({ title, detail }) {
+  return (
+    <section className="admin-empty-state glass-card">
+      <strong>{title}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </section>
+  )
 }
 
 function ScopeSummary({ payload, scope }) {
@@ -1018,6 +1063,7 @@ export default function AdminView() {
   const [companySubmitMessage, setCompanySubmitMessage] = useState('')
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
 
   const activePayload = selectedDetail || overview
   const dashboard = activePayload?.dashboard
@@ -1030,6 +1076,7 @@ export default function AdminView() {
   const rooms = activePayload?.rooms || []
   const dailyUsage = activePayload?.daily_usage || []
   const participantRecords = activePayload?.participant_records || []
+  const dashboardTabs = useMemo(() => buildDashboardTabs(enterpriseMode), [enterpriseMode])
   const pageTitle = useMemo(() => {
     if (isSuperAdmin && selectedDetail?.admin) return `${selectedDetail.admin.name} Dashboard`
     if (isSuperAdmin) return 'Super Admin Dashboard'
@@ -1136,6 +1183,12 @@ export default function AdminView() {
   }, [])
 
   useEffect(() => {
+    if (!dashboardTabs.some((tab) => tab.key === activeTab)) {
+      setActiveTab('overview')
+    }
+  }, [activeTab, dashboardTabs])
+
+  useEffect(() => {
     const firstPlan = overview?.enterprise?.plans?.find((plan) => plan.status === 'active') || overview?.enterprise?.plans?.[0]
     if (firstPlan && !companyForm.plan_id) {
       setCompanyForm((current) => ({ ...current, plan_id: String(firstPlan.id), ...limitsFromPlan(firstPlan) }))
@@ -1148,7 +1201,7 @@ export default function AdminView() {
         <div>
           <span className="eyebrow">{isSuperAdmin ? 'Super Admin' : 'Client Admin'}</span>
           <h1>{pageTitle}</h1>
-          <p>{isSuperAdmin ? 'All admins, room live state, usage amounts, and detailed records.' : 'Your rooms, live state, usage, join dates, and exit dates.'}</p>
+          <p>{isSuperAdmin ? 'Manage client companies, service packages, SDK access, usage, and RTC health.' : 'Manage rooms, usage, SDK access, and your service limits.'}</p>
         </div>
         <div className="admin-header-actions">
           {isSuperAdmin && selectedDetail ? (
@@ -1162,80 +1215,101 @@ export default function AdminView() {
         </div>
       </header>
 
-      <div className="status-bar glass-card">
+      <div className="admin-status-bar status-bar glass-card">
         <strong>Status:</strong> {loadingAdminId ? `${status} (#${loadingAdminId})` : status}
       </div>
 
-      {isSuperAdmin ? (
-        <AdminList
-          admins={overview?.admins || []}
-          selectedAdminId={selectedAdminId}
-          onSelect={loadAdmin}
-          onPlatform={() => {
-            setSelectedDetail(null)
-            setSelectedAdminId(null)
-            setStatus('Showing all admin data')
-          }}
-        />
+      <DashboardTabs tabs={dashboardTabs} activeTab={activeTab} onChange={setActiveTab} />
+
+      {activeTab === 'overview' ? (
+        <div className="dashboard-tab-panel">
+          <ScopeSummary payload={activePayload} scope={overview?.scope} />
+          <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
+          <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
+          {enterpriseMode !== 'super_admin' ? (
+            <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+          ) : null}
+        </div>
       ) : null}
 
-      <ScopeSummary payload={activePayload} scope={overview?.scope} />
-
-      <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
-
-      {enterpriseMode === 'super_admin' ? (
-        <CompanySetupPanel
-          plans={enterprise?.plans || []}
-          form={companyForm}
-          errors={companyFormErrors}
-          creating={companyCreating}
-          generatingTenantId={companyGeneratingTenantId}
-          result={createdCompany}
-          message={companySubmitMessage}
-          onChange={updateCompanyForm}
-          onGenerateTenantId={generateTenantId}
-          onSubmit={createCompany}
-        />
+      {activeTab === 'companies' && enterpriseMode === 'super_admin' ? (
+        <div className="dashboard-tab-panel">
+          <CompanySetupPanel
+            plans={enterprise?.plans || []}
+            form={companyForm}
+            errors={companyFormErrors}
+            creating={companyCreating}
+            generatingTenantId={companyGeneratingTenantId}
+            result={createdCompany}
+            message={companySubmitMessage}
+            onChange={updateCompanyForm}
+            onGenerateTenantId={generateTenantId}
+            onSubmit={createCompany}
+          />
+          <CompanyManagementPanel
+            clients={enterprise?.clients || []}
+            plans={enterprise?.plans || []}
+            onSaved={() => load({ silent: true })}
+          />
+          <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+        </div>
       ) : null}
 
-      {enterpriseMode === 'super_admin' ? (
-        <CompanyManagementPanel
-          clients={enterprise?.clients || []}
-          plans={enterprise?.plans || []}
-          onSaved={() => load({ silent: true })}
-        />
+      {activeTab === 'packages' ? (
+        <div className="dashboard-tab-panel">
+          <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={enterprise?.current_plan} mode={enterpriseMode} />
+          <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+        </div>
       ) : null}
 
-      <div className="enterprise-dashboard-grid">
-        <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
-        <ClientAppsPanel apps={enterprise?.apps || []} mode={enterpriseMode} />
-      </div>
+      {activeTab === 'sdk' ? (
+        <div className="dashboard-tab-panel">
+          <ClientAppsPanel apps={enterprise?.apps || []} mode={enterpriseMode} />
+          {enterprise?.apps?.length ? null : <AdminEmptyState title="No SDK apps found" detail="No app keys are available for this scope yet." />}
+        </div>
+      ) : null}
 
-      <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={enterprise?.current_plan} mode={enterpriseMode} />
+      {activeTab === 'usage' ? (
+        <div className="dashboard-tab-panel">
+          <div className="admin-detail-grid">
+            <DailyUsageTable usage={dailyUsage} />
+            <ParticipantRecordsTable records={participantRecords} />
+          </div>
+          <section className="usage-dashboard-grid">
+            <UsageVerificationCard
+              dashboard={dashboard}
+              verification={usageVerification}
+              status={usageStatus}
+            />
+            <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
+          </section>
+        </div>
+      ) : null}
 
-      <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+      {activeTab === 'rooms' ? (
+        <div className="dashboard-tab-panel">
+          {isSuperAdmin ? (
+            <AdminList
+              admins={overview?.admins || []}
+              selectedAdminId={selectedAdminId}
+              onSelect={loadAdmin}
+              onPlatform={() => {
+                setSelectedDetail(null)
+                setSelectedAdminId(null)
+                setStatus('Showing all admin data')
+              }}
+            />
+          ) : null}
+          <AdminRoomsTable rooms={rooms} />
+        </div>
+      ) : null}
 
-      {enterpriseMode === 'super_admin' ? <ServiceFlowPanel flow={enterprise?.service_flow || []} /> : null}
-
-      <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
-
-      <div className="admin-detail-grid">
-        <AdminRoomsTable rooms={rooms} />
-        <DailyUsageTable usage={dailyUsage} />
-      </div>
-
-      <ParticipantRecordsTable records={participantRecords} />
-
-      <ActiveSessionsMonitor monitor={dashboard?.active_sessions_monitor} />
-
-      <section className="usage-dashboard-grid">
-        <UsageVerificationCard
-          dashboard={dashboard}
-          verification={usageVerification}
-          status={usageStatus}
-        />
-        <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
-      </section>
+      {activeTab === 'system' ? (
+        <div className="dashboard-tab-panel">
+          {enterpriseMode === 'super_admin' ? <ServiceFlowPanel flow={enterprise?.service_flow || []} /> : null}
+          <ActiveSessionsMonitor monitor={dashboard?.active_sessions_monitor} />
+        </div>
+      ) : null}
     </div>
   )
 }

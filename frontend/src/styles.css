@@ -5733,7 +5733,72 @@ pre {
 }
 
 .admin-dashboard-view {
+  gap: 12px;
+}
+
+.admin-dashboard-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 7px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.admin-dashboard-tabs button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.admin-dashboard-tabs button:hover {
+  color: var(--soft);
+  background: rgba(255, 255, 255, .055);
+}
+
+.admin-dashboard-tabs button.active {
+  color: #fff;
+  border-color: rgba(56, 189, 248, .36);
+  background: rgba(56, 189, 248, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .04);
+}
+
+.dashboard-tab-panel {
+  display: grid;
   gap: 14px;
+}
+
+.admin-status-bar {
+  min-height: 0;
+  padding: 10px 13px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-status-bar strong {
+  color: var(--soft);
+}
+
+.admin-empty-state {
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+}
+
+.admin-empty-state strong {
+  color: #fff;
+}
+
+.admin-empty-state span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .admin-header-actions,
