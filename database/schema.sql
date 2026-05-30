@@ -152,6 +152,29 @@ CREATE TABLE IF NOT EXISTS user_roles (
     CONSTRAINT fk_user_roles_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS company_plan_requests (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    current_plan_id BIGINT UNSIGNED NULL,
+    requested_plan_id BIGINT UNSIGNED NOT NULL,
+    requested_by BIGINT UNSIGNED NULL,
+    billing_type ENUM('monthly', 'prepaid', 'custom', 'enterprise') DEFAULT 'monthly',
+    note TEXT NULL,
+    status ENUM('pending', 'approved', 'rejected', 'cancelled') DEFAULT 'pending',
+    reviewed_by BIGINT UNSIGNED NULL,
+    reviewed_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_company_plan_requests_tenant_id (tenant_id),
+    INDEX idx_company_plan_requests_status (status),
+    INDEX idx_company_plan_requests_requested_plan_id (requested_plan_id),
+    CONSTRAINT fk_company_plan_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_company_plan_requests_current_plan FOREIGN KEY (current_plan_id) REFERENCES service_plans(id) ON DELETE SET NULL,
+    CONSTRAINT fk_company_plan_requests_requested_plan FOREIGN KEY (requested_plan_id) REFERENCES service_plans(id) ON DELETE CASCADE,
+    CONSTRAINT fk_company_plan_requests_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_company_plan_requests_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,

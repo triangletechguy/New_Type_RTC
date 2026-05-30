@@ -8,6 +8,9 @@ const router = express.Router()
 const ADMIN_ROLES = ['client_admin', 'super_admin']
 const COMPANY_STATUSES = new Set(['pending', 'active', 'inactive', 'suspended', 'cancelled'])
 const BILLING_TYPES = new Set(['monthly', 'prepaid', 'custom', 'enterprise'])
+const APP_PLATFORMS = new Set(['web', 'ios', 'android', 'web_mobile', 'server'])
+const APP_STATUSES = new Set(['active', 'inactive', 'suspended'])
+const PLAN_REVIEW_STATUSES = new Set(['approved', 'rejected'])
 const DEFAULT_SERVICE_PLANS = [
   {
     code: 'free',
@@ -193,6 +196,23 @@ function normalizeBillingType(value) {
   return BILLING_TYPES.has(billingType) ? billingType : 'monthly'
 }
 
+function normalizeAppPlatform(value) {
+  const platform = cleanString(value, 30).toLowerCase() || 'web_mobile'
+  return APP_PLATFORMS.has(platform) ? platform : 'web_mobile'
+}
+
+function normalizeAppStatus(value) {
+  const status = cleanString(value, 30).toLowerCase() || 'active'
+  return APP_STATUSES.has(status) ? status : 'active'
+}
+
+function normalizePlanReviewStatus(value) {
+  const status = cleanString(value, 30).toLowerCase()
+  if (status === 'approve') return 'approved'
+  if (status === 'reject') return 'rejected'
+  return PLAN_REVIEW_STATUSES.has(status) ? status : ''
+}
+
 function userStatusForCompany(status) {
   return status === 'active' ? 'active' : 'inactive'
 }
@@ -208,6 +228,18 @@ function planDefaultLimits(plan = {}) {
     room_limit: positiveInteger(plan.max_rooms, 0),
     participant_limit: positiveInteger(plan.max_participants_per_room, 0),
   }
+}
+
+function parseAllowedOrigins(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || '')
+      .split(/[\n,]+/g)
+
+  return [...new Set(raw
+    .map((origin) => cleanString(origin, 255))
+    .filter(Boolean))]
+    .slice(0, 20)
 }
 
 async function ensureTenantCompanyColumns() {
@@ -283,6 +315,33 @@ async function ensureTenantCompanyColumns() {
           UNIQUE KEY unique_company_invite_token (token),
           INDEX idx_company_invites_tenant_id (tenant_id),
           CONSTRAINT fk_company_invites_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+        )
+        `
+      )
+
+      await query(
+        `
+        CREATE TABLE IF NOT EXISTS company_plan_requests (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          tenant_id BIGINT UNSIGNED NOT NULL,
+          current_plan_id BIGINT UNSIGNED NULL,
+          requested_plan_id BIGINT UNSIGNED NOT NULL,
+          requested_by BIGINT UNSIGNED NULL,
+          billing_type ENUM('monthly', 'prepaid', 'custom', 'enterprise') DEFAULT 'monthly',
+          note TEXT NULL,
+          status ENUM('pending', 'approved', 'rejected', 'cancelled') DEFAULT 'pending',
+          reviewed_by BIGINT UNSIGNED NULL,
+          reviewed_at TIMESTAMP NULL,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_company_plan_requests_tenant_id (tenant_id),
+          INDEX idx_company_plan_requests_status (status),
+          INDEX idx_company_plan_requests_requested_plan_id (requested_plan_id),
+          CONSTRAINT fk_company_plan_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+          CONSTRAINT fk_company_plan_requests_current_plan FOREIGN KEY (current_plan_id) REFERENCES service_plans(id) ON DELETE SET NULL,
+          CONSTRAINT fk_company_plan_requests_requested_plan FOREIGN KEY (requested_plan_id) REFERENCES service_plans(id) ON DELETE CASCADE,
+          CONSTRAINT fk_company_plan_requests_requested_by FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+          CONSTRAINT fk_company_plan_requests_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
         )
         `
       )
@@ -732,6 +791,242 @@ async function createCompanyAdminInvite(connection, tenantId, contact) {
   }
 }
 
+async function uniqueAppKey(connection, tenant = {}) {
+  const companyPart = slugify(tenant.name || tenant.tenant_uid || 'client-app')
+    .replace(/-/g, '_')
+    .slice(0, 28)
+
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const candidate = `app_${companyPart}_${crypto.randomBytes(4).toString('hex')}`
+    const [rows] = await connection.execute(
+      'SELECT id FROM client_apps WHERE app_key = ? LIMIT 1',
+      [candidate]
+    )
+
+    if (!rows.length) return candidate
+  }
+
+  return `app_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`
+}
+
+function makeCredential(prefix) {
+  return `${prefix}_${crypto.randomBytes(24).toString('hex')}`
+}
+
+async function assignTenantPlan(connection, tenantId, planId, options = {}) {
+  const [plans] = await connection.execute(
+    `
+    SELECT id, name, code, minute_rate, max_apps, max_rooms, max_participants_per_room
+    FROM service_plans
+    WHERE id = ?
+    AND status = 'active'
+    LIMIT 1
+    `,
+    [planId]
+  )
+  const plan = plans[0]
+
+  if (!plan) {
+    const error = new Error('Select an active service plan.')
+    error.status = 422
+    throw error
+  }
+
+  const limits = planDefaultLimits(plan)
+  const billingType = options.billingType ? normalizeBillingType(options.billingType) : null
+
+  await connection.execute(
+    `
+    UPDATE tenants
+    SET billing_rate_per_minute = ?,
+        billing_type = COALESCE(?, billing_type),
+        default_app_limit = ?,
+        default_room_limit = ?,
+        default_participant_limit = ?,
+        updated_at = NOW()
+    WHERE id = ?
+    `,
+    [
+      Number(plan.minute_rate || 0),
+      billingType,
+      limits.app_limit,
+      limits.room_limit,
+      limits.participant_limit,
+      tenantId,
+    ]
+  )
+
+  await connection.execute(
+    `
+    UPDATE tenant_plan_assignments
+    SET status = 'inactive',
+        ends_at = COALESCE(ends_at, NOW()),
+        updated_at = NOW()
+    WHERE tenant_id = ?
+    AND status = 'active'
+    `,
+    [tenantId]
+  )
+
+  await connection.execute(
+    `
+    INSERT INTO tenant_plan_assignments (
+      tenant_id, plan_id, status, starts_at, created_at, updated_at
+    )
+    VALUES (?, ?, 'active', NOW(), NOW(), NOW())
+    `,
+    [tenantId, plan.id]
+  )
+
+  await connection.execute(
+    `
+    UPDATE client_apps
+    SET plan_id = ?,
+        updated_at = NOW()
+    WHERE tenant_id = ?
+    `,
+    [plan.id, tenantId]
+  )
+
+  return plan
+}
+
+async function createClientAppForTenant(user, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+  const tenantId = isSuperAdmin
+    ? Number(readBodyValue(body, 'tenant_id', 'tenantId'))
+    : Number(user.tenant_id)
+  const name = cleanString(readBodyValue(body, 'name', 'appName') || readBodyValue(body, 'app_name', 'appName'), 150)
+  const platform = normalizeAppPlatform(readBodyValue(body, 'platform'))
+  const allowedOrigins = parseAllowedOrigins(readBodyValue(body, 'allowed_origins', 'allowedOrigins'))
+
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    const error = new Error('Choose a client company before generating SDK access.')
+    error.status = 422
+    throw error
+  }
+
+  return transaction(async (connection) => {
+    const [tenants] = await connection.execute(
+      `
+      SELECT
+        t.id, t.tenant_uid, t.name, t.status, t.default_app_limit,
+        sp.id AS plan_id,
+        sp.name AS plan_name,
+        sp.max_apps,
+        sp.included_features
+      FROM tenants t
+      LEFT JOIN (
+        SELECT latest.tenant_id, latest.plan_id
+        FROM tenant_plan_assignments latest
+        INNER JOIN (
+          SELECT tenant_id, MAX(id) AS latest_id
+          FROM tenant_plan_assignments
+          WHERE status = 'active'
+          GROUP BY tenant_id
+        ) chosen ON chosen.latest_id = latest.id
+      ) active_plan ON active_plan.tenant_id = t.id
+      LEFT JOIN service_plans sp ON sp.id = active_plan.plan_id
+      WHERE t.id = ?
+      LIMIT 1
+      `,
+      [tenantId]
+    )
+    const tenant = tenants[0]
+
+    if (!tenant) {
+      const error = new Error('Client company was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!tenant.plan_id) {
+      const error = new Error('Assign a package before generating SDK access.')
+      error.status = 422
+      throw error
+    }
+
+    if (!['active', 'pending'].includes(tenant.status)) {
+      const error = new Error('SDK access cannot be generated for this company status.')
+      error.status = 422
+      throw error
+    }
+
+    const [appCounts] = await connection.execute(
+      `
+      SELECT COUNT(*) AS count
+      FROM client_apps
+      WHERE tenant_id = ?
+      AND status = 'active'
+      `,
+      [tenantId]
+    )
+    const activeAppCount = Number(appCounts[0]?.count || 0)
+    const appLimit = positiveInteger(tenant.default_app_limit, positiveInteger(tenant.max_apps, 1))
+
+    if (appLimit > 0 && activeAppCount >= appLimit) {
+      const error = new Error(`This package allows ${appLimit} active app${appLimit === 1 ? '' : 's'}. Upgrade the package or suspend an app first.`)
+      error.status = 422
+      throw error
+    }
+
+    const appKey = await uniqueAppKey(connection, tenant)
+    const apiKey = makeCredential('rtc_api')
+    const sdkToken = makeCredential('rtc_sdk')
+    const appName = name || `${tenant.name} ${platform.replace(/_/g, ' ')} app`
+    const [result] = await connection.execute(
+      `
+      INSERT INTO client_apps (
+        tenant_id, plan_id, name, platform, app_key, api_key,
+        sdk_token, allowed_origins, status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+      `,
+      [
+        tenantId,
+        tenant.plan_id,
+        appName,
+        platform,
+        appKey,
+        apiKey,
+        sdkToken,
+        allowedOrigins.length ? JSON.stringify(allowedOrigins) : null,
+      ]
+    )
+
+    const appId = result.insertId
+    const planFeatures = parseJsonArray(tenant.included_features)
+    for (const featureKey of planFeatures) {
+      await connection.execute(
+        `
+        INSERT INTO client_feature_flags (
+          tenant_id, app_id, feature_key, enabled, created_at, updated_at
+        )
+        VALUES (?, ?, ?, TRUE, NOW(), NOW())
+        `,
+        [tenantId, appId, featureKey]
+      )
+    }
+
+    return {
+      id: appId,
+      tenant_id: tenantId,
+      tenant_name: tenant.name,
+      plan_id: tenant.plan_id,
+      plan_name: tenant.plan_name,
+      name: appName,
+      platform,
+      app_key: appKey,
+      api_key: apiKey,
+      sdk_token: sdkToken,
+      allowed_origins: allowedOrigins,
+      status: 'active',
+    }
+  })
+}
+
 async function createClientCompany(payload) {
   await ensureTenantCompanyColumns()
 
@@ -1040,6 +1335,280 @@ async function getClientApps(tenantId = null) {
     created_at: app.created_at,
     updated_at: app.updated_at,
   }))
+}
+
+async function getPlanRequests(tenantId = null) {
+  await ensureTenantCompanyColumns()
+
+  const tenantClause = tenantId ? 'WHERE pr.tenant_id = :tenantId' : ''
+  const rows = await query(
+    `
+    SELECT
+      pr.id, pr.tenant_id, pr.current_plan_id, pr.requested_plan_id,
+      pr.requested_by, pr.billing_type, pr.note, pr.status,
+      pr.reviewed_by, pr.reviewed_at, pr.created_at, pr.updated_at,
+      t.name AS tenant_name,
+      t.tenant_uid,
+      current_plan.name AS current_plan_name,
+      current_plan.code AS current_plan_code,
+      requested_plan.name AS requested_plan_name,
+      requested_plan.code AS requested_plan_code,
+      requested_plan.monthly_base_price AS requested_monthly_base_price,
+      requested_plan.monthly_minute_allowance AS requested_monthly_minute_allowance,
+      requester.name AS requested_by_name,
+      requester.email AS requested_by_email,
+      reviewer.name AS reviewed_by_name
+    FROM company_plan_requests pr
+    INNER JOIN tenants t ON t.id = pr.tenant_id
+    LEFT JOIN service_plans current_plan ON current_plan.id = pr.current_plan_id
+    INNER JOIN service_plans requested_plan ON requested_plan.id = pr.requested_plan_id
+    LEFT JOIN users requester ON requester.id = pr.requested_by
+    LEFT JOIN users reviewer ON reviewer.id = pr.reviewed_by
+    ${tenantClause}
+    ORDER BY pr.status = 'pending' DESC, pr.created_at DESC, pr.id DESC
+    LIMIT 100
+    `,
+    tenantId ? { tenantId } : {}
+  )
+
+  return rows.map((request) => ({
+    id: request.id,
+    tenant_id: request.tenant_id,
+    tenant_name: request.tenant_name,
+    tenant_uid: request.tenant_uid,
+    current_plan: request.current_plan_id ? {
+      id: request.current_plan_id,
+      code: request.current_plan_code,
+      name: request.current_plan_name,
+    } : null,
+    requested_plan: {
+      id: request.requested_plan_id,
+      code: request.requested_plan_code,
+      name: request.requested_plan_name,
+      monthly_base_price: Number(request.requested_monthly_base_price || 0),
+      monthly_minute_allowance: Number(request.requested_monthly_minute_allowance || 0),
+    },
+    requested_by: request.requested_by ? {
+      id: request.requested_by,
+      name: request.requested_by_name,
+      email: request.requested_by_email,
+    } : null,
+    billing_type: request.billing_type || 'monthly',
+    note: request.note,
+    status: request.status,
+    reviewed_by: request.reviewed_by ? {
+      id: request.reviewed_by,
+      name: request.reviewed_by_name,
+    } : null,
+    reviewed_at: request.reviewed_at,
+    created_at: request.created_at,
+    updated_at: request.updated_at,
+  }))
+}
+
+async function createPlanRequest(user, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  const tenantId = Number(user.tenant_id)
+  const requestedPlanId = Number(readBodyValue(body, 'plan_id', 'planId'))
+  const billingType = normalizeBillingType(readBodyValue(body, 'billing_type', 'billingType'))
+  const note = emptyToNull(readBodyValue(body, 'note'), 500)
+
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    const error = new Error('Your account is not attached to a client company.')
+    error.status = 403
+    throw error
+  }
+
+  if (!Number.isInteger(requestedPlanId) || requestedPlanId <= 0) {
+    const error = new Error('Choose a package to purchase.')
+    error.status = 422
+    throw error
+  }
+
+  return transaction(async (connection) => {
+    const [plans] = await connection.execute(
+      `
+      SELECT id, name, code
+      FROM service_plans
+      WHERE id = ?
+      AND status = 'active'
+      LIMIT 1
+      `,
+      [requestedPlanId]
+    )
+    const requestedPlan = plans[0]
+
+    if (!requestedPlan) {
+      const error = new Error('Choose an active package.')
+      error.status = 422
+      throw error
+    }
+
+    const [currentPlans] = await connection.execute(
+      `
+      SELECT plan_id
+      FROM tenant_plan_assignments
+      WHERE tenant_id = ?
+      AND status = 'active'
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [tenantId]
+    )
+    const currentPlanId = currentPlans[0]?.plan_id || null
+
+    if (Number(currentPlanId) === Number(requestedPlanId)) {
+      const error = new Error('This package is already active for your company.')
+      error.status = 422
+      throw error
+    }
+
+    const [pendingRequests] = await connection.execute(
+      `
+      SELECT id
+      FROM company_plan_requests
+      WHERE tenant_id = ?
+      AND status = 'pending'
+      LIMIT 1
+      `,
+      [tenantId]
+    )
+
+    if (pendingRequests.length) {
+      const error = new Error('A package purchase request is already waiting for review.')
+      error.status = 409
+      throw error
+    }
+
+    const [result] = await connection.execute(
+      `
+      INSERT INTO company_plan_requests (
+        tenant_id, current_plan_id, requested_plan_id, requested_by,
+        billing_type, note, status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+      `,
+      [tenantId, currentPlanId, requestedPlanId, user.id || null, billingType, note]
+    )
+
+    return result.insertId
+  })
+}
+
+async function reviewPlanRequest(requestId, reviewer, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  const status = normalizePlanReviewStatus(readBodyValue(body, 'status', 'action'))
+  if (!status) {
+    const error = new Error('Review status must be approved or rejected.')
+    error.status = 422
+    throw error
+  }
+
+  return transaction(async (connection) => {
+    const [requests] = await connection.execute(
+      `
+      SELECT id, tenant_id, requested_plan_id, billing_type, status
+      FROM company_plan_requests
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [requestId]
+    )
+    const request = requests[0]
+
+    if (!request) {
+      const error = new Error('Package purchase request was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (request.status !== 'pending') {
+      const error = new Error('This purchase request has already been reviewed.')
+      error.status = 409
+      throw error
+    }
+
+    if (status === 'approved') {
+      await assignTenantPlan(connection, request.tenant_id, request.requested_plan_id, {
+        billingType: request.billing_type,
+      })
+    }
+
+    await connection.execute(
+      `
+      UPDATE company_plan_requests
+      SET status = ?,
+          reviewed_by = ?,
+          reviewed_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [status, reviewer.id || null, requestId]
+    )
+
+    return requestId
+  })
+}
+
+async function updateClientAppForTenant(user, appId, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  const name = cleanString(readBodyValue(body, 'name', 'appName') || readBodyValue(body, 'app_name', 'appName'), 150)
+  const hasPlatform = readBodyValue(body, 'platform') !== undefined
+  const hasStatus = readBodyValue(body, 'status') !== undefined
+  const hasAllowedOrigins = readBodyValue(body, 'allowed_origins', 'allowedOrigins') !== undefined
+  const platform = hasPlatform ? normalizeAppPlatform(readBodyValue(body, 'platform')) : null
+  const status = hasStatus ? normalizeAppStatus(readBodyValue(body, 'status')) : null
+  const allowedOrigins = parseAllowedOrigins(readBodyValue(body, 'allowed_origins', 'allowedOrigins'))
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+
+  return transaction(async (connection) => {
+    const [apps] = await connection.execute(
+      `
+      SELECT id, tenant_id, name, platform, status
+      FROM client_apps
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [appId]
+    )
+    const app = apps[0]
+
+    if (!app) {
+      const error = new Error('Client app was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!isSuperAdmin && Number(app.tenant_id) !== Number(user.tenant_id)) {
+      const error = new Error('You can only manage apps for your company.')
+      error.status = 403
+      throw error
+    }
+
+    await connection.execute(
+      `
+      UPDATE client_apps
+      SET name = ?,
+          platform = ?,
+          status = ?,
+          allowed_origins = COALESCE(?, allowed_origins),
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        name || app.name,
+        platform || app.platform,
+        status || app.status,
+        hasAllowedOrigins ? JSON.stringify(allowedOrigins) : null,
+        appId,
+      ]
+    )
+
+    return app.tenant_id
+  })
 }
 
 async function getFeatureRows(tenantId = null) {
@@ -1853,12 +2422,13 @@ function buildPlanFeatureRows(plan, featureRows) {
 }
 
 async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
-  const [plans, clients, apps, featureRows, tenantPlan] = await Promise.all([
+  const [plans, clients, apps, featureRows, tenantPlan, planRequests] = await Promise.all([
     getServicePlans(),
     getClientRows(scope === 'super_admin' ? null : tenantId),
     getClientApps(scope === 'super_admin' ? null : tenantId),
     getFeatureRows(scope === 'super_admin' ? null : tenantId),
     tenantId ? getTenantPlan(tenantId) : Promise.resolve(null),
+    getPlanRequests(scope === 'super_admin' ? null : tenantId),
   ])
   const currentPlan = scope === 'super_admin' ? null : tenantPlan || clients[0]?.plan || null
   const featureControls = scope === 'super_admin'
@@ -1885,6 +2455,7 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
     })),
     clients,
     apps,
+    plan_requests: planRequests,
     current_plan: currentPlan,
     feature_controls: featureControls,
     limits: currentPlan ? {
@@ -2352,6 +2923,96 @@ router.patch('/companies/:companyId/status', async (req, res, next) => {
     const [company] = await getClientRows(companyId)
 
     return res.json({ message: 'Company status updated.', company })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.get('/plan-requests', async (req, res, next) => {
+  try {
+    const tenantId = hasAnyRole(req.user, ['super_admin']) ? null : req.user.tenant_id
+    return res.json({ plan_requests: await getPlanRequests(tenantId) })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/plan-requests', async (req, res, next) => {
+  try {
+    if (hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Superadmin assigns packages from the client company editor.' })
+    }
+
+    const requestId = await createPlanRequest(req.user, req.body || {})
+    const requests = await getPlanRequests(req.user.tenant_id)
+    const request = requests.find((item) => Number(item.id) === Number(requestId)) || requests[0]
+
+    return res.status(201).json({
+      message: `${request?.requested_plan?.name || 'Package'} purchase request sent for review.`,
+      plan_request: request,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/plan-requests/:requestId', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can review package purchase requests.' })
+    }
+
+    const requestId = Number(req.params.requestId)
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ message: 'Invalid package request id.' })
+    }
+
+    await reviewPlanRequest(requestId, req.user, req.body || {})
+    const requests = await getPlanRequests()
+    const request = requests.find((item) => Number(item.id) === Number(requestId))
+
+    return res.json({
+      message: `Package request ${request?.status || 'reviewed'}.`,
+      plan_request: request,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/client-apps', async (req, res, next) => {
+  try {
+    const app = await createClientAppForTenant(req.user, req.body || {})
+
+    return res.status(201).json({
+      message: `${app.name} SDK access generated.`,
+      app,
+      credentials: {
+        app_key: app.app_key,
+        api_key: app.api_key,
+        sdk_token: app.sdk_token,
+      },
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/client-apps/:appId', async (req, res, next) => {
+  try {
+    const appId = Number(req.params.appId)
+    if (!Number.isInteger(appId) || appId <= 0) {
+      return res.status(400).json({ message: 'Invalid client app id.' })
+    }
+
+    const tenantId = await updateClientAppForTenant(req.user, appId, req.body || {})
+    const apps = await getClientApps(tenantId)
+    const app = apps.find((item) => Number(item.id) === Number(appId))
+
+    return res.json({
+      message: `${app?.name || 'Client app'} updated.`,
+      app,
+    })
   } catch (error) {
     return next(error)
   }

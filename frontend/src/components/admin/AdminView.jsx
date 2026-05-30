@@ -70,21 +70,26 @@ const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancelled']
 const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
 
 function buildDashboardTabs(mode) {
-  const tabs = [
-    { key: 'overview', label: 'Overview' },
-  ]
-
   if (mode === 'super_admin') {
-    tabs.push({ key: 'companies', label: 'Companies' })
+    return [
+      { key: 'command', label: 'Start' },
+      { key: 'clients', label: 'Clients' },
+      { key: 'packages', label: 'Packages' },
+      { key: 'sdk', label: 'SDK Access' },
+      { key: 'usage', label: 'Usage' },
+      { key: 'rooms', label: 'Rooms' },
+      { key: 'health', label: 'Health' },
+    ]
   }
 
   return [
-    ...tabs,
-    { key: 'packages', label: 'Packages' },
-    { key: 'sdk', label: 'SDK' },
-    { key: 'usage', label: 'Usage' },
+    { key: 'command', label: 'Start' },
+    { key: 'purchase', label: 'Purchase' },
+    { key: 'sdk', label: 'SDK Access' },
     { key: 'rooms', label: 'Rooms' },
-    { key: 'system', label: 'System' },
+    { key: 'usage', label: 'Usage' },
+    { key: 'company', label: 'Company' },
+    { key: 'health', label: 'Health' },
   ]
 }
 
@@ -143,6 +148,497 @@ function AdminEmptyState({ title, detail }) {
     <section className="admin-empty-state glass-card">
       <strong>{title}</strong>
       {detail ? <span>{detail}</span> : null}
+    </section>
+  )
+}
+
+function getPrimaryClient(enterprise) {
+  return enterprise?.clients?.[0] || null
+}
+
+function getPendingPlanRequest(enterprise) {
+  return (enterprise?.plan_requests || []).find((request) => request.status === 'pending') || null
+}
+
+function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }) {
+  const isPlatform = mode === 'super_admin'
+  const client = getPrimaryClient(enterprise)
+  const currentPlan = enterprise?.current_plan || client?.plan
+  const billing = enterprise?.billing || {}
+  const totals = enterprise?.platform_totals || {}
+  const apps = enterprise?.apps || []
+  const pendingRequests = (enterprise?.plan_requests || []).filter((request) => request.status === 'pending')
+  const activeRooms = dashboard?.metrics?.rooms?.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0
+  const totalRooms = dashboard?.metrics?.rooms?.total ?? client?.room_count ?? 0
+  const invoice = isPlatform ? totals.estimated_invoice : billing.estimated_invoice
+  const title = isPlatform ? 'Sell and operate RTC service' : 'RTC service console'
+  const subtitle = isPlatform
+    ? 'Create client companies, approve package purchases, issue SDK access, and monitor usage from one focused place.'
+    : 'Purchase a package, generate app credentials, open RTC rooms, and watch monthly usage.'
+  const actionCards = isPlatform ? [
+    {
+      title: 'Create client company',
+      detail: 'Tenant, package, billing scope, admin invite, and default limits.',
+      meta: `${formatNumber(totals.total_clients)} total clients`,
+      action: 'Open clients',
+      onClick: () => onTabChange('clients'),
+    },
+    {
+      title: 'Review purchases',
+      detail: 'Approve or reject client package requests.',
+      meta: `${formatNumber(pendingRequests.length)} pending`,
+      action: 'Open packages',
+      onClick: () => onTabChange('packages'),
+    },
+    {
+      title: 'Generate SDK access',
+      detail: 'Create app key, API key, SDK token, and allowed origins.',
+      meta: `${formatNumber(totals.active_apps)} active apps`,
+      action: 'Open SDK',
+      onClick: () => onTabChange('sdk'),
+    },
+    {
+      title: 'Track billing',
+      detail: 'Participant minutes, usage records, invoice estimate, and verification.',
+      meta: formatCurrency(invoice),
+      action: 'Open usage',
+      onClick: () => onTabChange('usage'),
+    },
+  ] : [
+    {
+      title: 'Package',
+      detail: currentPlan ? `${currentPlan.name} is active for this company.` : 'Choose a package before integration.',
+      meta: getPendingPlanRequest(enterprise) ? 'Purchase pending' : formatCurrency(currentPlan?.monthly_base_price),
+      action: 'Manage package',
+      onClick: () => onTabChange('purchase'),
+    },
+    {
+      title: 'SDK access',
+      detail: apps.length ? 'App credentials are ready for integration.' : 'Generate app credentials before connecting your app.',
+      meta: `${formatNumber(apps.length)} apps`,
+      action: 'Open SDK',
+      onClick: () => onTabChange('sdk'),
+    },
+    {
+      title: 'Rooms',
+      detail: `${formatNumber(activeRooms)} active rooms from ${formatNumber(totalRooms)} total.`,
+      meta: `${formatNumber(activeRooms)} live`,
+      action: 'Open rooms',
+      onClick: () => onView?.('rooms'),
+    },
+    {
+      title: 'Usage and billing',
+      detail: 'Review monthly minutes, overage, records, and invoice estimate.',
+      meta: formatCurrency(invoice),
+      action: 'Open usage',
+      onClick: () => onTabChange('usage'),
+    },
+  ]
+
+  return (
+    <section className="rtc-command-center glass-card">
+      <div className="rtc-command-copy">
+        <span className="eyebrow">{isPlatform ? 'RTC Business Console' : client?.name || 'Client Console'}</span>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+
+      <div className="rtc-command-kpis">
+        <div>
+          <span>{isPlatform ? 'Active clients' : 'Current package'}</span>
+          <strong>{isPlatform ? formatNumber(totals.active_clients) : currentPlan?.name || 'No package'}</strong>
+        </div>
+        <div>
+          <span>{isPlatform ? 'Pending purchases' : 'SDK apps'}</span>
+          <strong>{isPlatform ? formatNumber(pendingRequests.length) : formatNumber(apps.length)}</strong>
+        </div>
+        <div>
+          <span>{isPlatform ? 'Month usage' : 'Active rooms'}</span>
+          <strong>{isPlatform ? formatMinutes(totals.minutes_month) : formatNumber(activeRooms)}</strong>
+        </div>
+        <div>
+          <span>{isPlatform ? 'Revenue estimate' : 'Invoice estimate'}</span>
+          <strong>{formatCurrency(invoice)}</strong>
+        </div>
+      </div>
+
+      <div className="rtc-action-grid">
+        {actionCards.map((card) => (
+          <button type="button" className="rtc-action-card" key={card.title} onClick={card.onClick}>
+            <span>{card.meta}</span>
+            <strong>{card.title}</strong>
+            <small>{card.detail}</small>
+            <b>{card.action}</b>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function PlanRequestsPanel({ requests, mode, onRefresh }) {
+  const [reviewingId, setReviewingId] = useState(null)
+  const [message, setMessage] = useState('')
+  const visibleRequests = requests || []
+
+  async function reviewRequest(requestId, status) {
+    setReviewingId(requestId)
+    setMessage(status === 'approved' ? 'Approving package request...' : 'Rejecting package request...')
+
+    try {
+      const data = await apiRequest(`/admin/plan-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      setMessage(data.message)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
+  return (
+    <section className="enterprise-panel plan-requests-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">{mode === 'super_admin' ? 'Purchases' : 'Purchase Requests'}</span>
+          <h2>{mode === 'super_admin' ? 'Client Package Requests' : 'Your Package Requests'}</h2>
+        </div>
+        <span>{formatNumber(visibleRequests.filter((request) => request.status === 'pending').length)} pending</span>
+      </div>
+
+      {visibleRequests.length === 0 ? (
+        <div className="empty-control">No package purchase requests yet.</div>
+      ) : (
+        <div className="plan-request-list">
+          {visibleRequests.map((request) => (
+            <article className="plan-request-row" key={request.id}>
+              <div>
+                <span className={`admin-state ${request.status}`}>{request.status}</span>
+                <strong>{request.tenant_name}</strong>
+                <small>
+                  {request.current_plan?.name || 'No current package'} to {request.requested_plan.name} · {request.billing_type}
+                </small>
+                {request.note ? <p>{request.note}</p> : null}
+              </div>
+              <div>
+                <span>{formatCurrency(request.requested_plan.monthly_base_price)}</span>
+                <small>{formatMinutes(request.requested_plan.monthly_minute_allowance)} included</small>
+                {mode === 'super_admin' && request.status === 'pending' ? (
+                  <div className="plan-request-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={reviewingId === request.id}
+                      onClick={() => reviewRequest(request.id, 'rejected')}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={reviewingId === request.id}
+                      onClick={() => reviewRequest(request.id, 'approved')}
+                    >
+                      Approve
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {message ? <div className="company-edit-message">{message}</div> : null}
+    </section>
+  )
+}
+
+function PackagePurchasePanel({ enterprise, mode, onRefresh }) {
+  const plans = (enterprise?.plans || []).filter((plan) => plan.status === 'active')
+  const currentPlan = enterprise?.current_plan || getPrimaryClient(enterprise)?.plan
+  const pendingRequest = getPendingPlanRequest(enterprise)
+  const [selectedPlanId, setSelectedPlanId] = useState('')
+  const [billingType, setBillingType] = useState('monthly')
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState('')
+  const selectedPlan = plans.find((plan) => String(plan.id) === String(selectedPlanId))
+
+  useEffect(() => {
+    if (selectedPlanId || !plans.length) return
+    const nextPlan = plans.find((plan) => Number(plan.id) !== Number(currentPlan?.id)) || plans[0]
+    if (nextPlan) setSelectedPlanId(String(nextPlan.id))
+  }, [currentPlan?.id, plans, selectedPlanId])
+
+  async function requestPackage(event) {
+    event.preventDefault()
+    if (!selectedPlan) return
+
+    setSubmitting(true)
+    setMessage(`Sending ${selectedPlan.name} purchase request...`)
+
+    try {
+      const data = await apiRequest('/admin/plan-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          plan_id: selectedPlan.id,
+          billing_type: billingType,
+          note,
+        }),
+      })
+      setMessage(data.message)
+      setNote('')
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (mode === 'super_admin') {
+    return (
+      <div className="dashboard-tab-panel">
+        <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
+        <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={currentPlan} mode={mode} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="dashboard-tab-panel">
+      <section className="enterprise-panel purchase-panel glass-card">
+        <div className="admin-panel-header">
+          <div>
+            <span className="eyebrow">Purchase RTC</span>
+            <h2>Choose Or Upgrade Your Package</h2>
+          </div>
+          {currentPlan ? <span>Current: {currentPlan.name}</span> : null}
+        </div>
+
+        <div className="purchase-status-grid">
+          <div>
+            <span>Active package</span>
+            <strong>{currentPlan?.name || 'No package'}</strong>
+            <small>{currentPlan ? `${formatCurrency(currentPlan.monthly_base_price)} base · ${formatMinutes(currentPlan.monthly_minute_allowance)} included` : 'Select a package to start RTC service.'}</small>
+          </div>
+          <div>
+            <span>Purchase status</span>
+            <strong>{pendingRequest ? 'Pending review' : 'Ready'}</strong>
+            <small>{pendingRequest ? `${pendingRequest.requested_plan.name} request is waiting for approval.` : 'You can request a package change.'}</small>
+          </div>
+        </div>
+
+        <div className="purchase-plan-grid">
+          {plans.map((plan) => {
+            const isCurrent = Number(plan.id) === Number(currentPlan?.id)
+            const isSelected = Number(plan.id) === Number(selectedPlanId)
+            return (
+              <button
+                type="button"
+                className={isCurrent ? 'purchase-plan-card active' : isSelected ? 'purchase-plan-card selected' : 'purchase-plan-card'}
+                key={plan.id}
+                onClick={() => setSelectedPlanId(String(plan.id))}
+              >
+                <span className="eyebrow">{plan.code}</span>
+                <strong>{plan.name}</strong>
+                <small>{plan.description}</small>
+                <b>{formatCurrency(plan.monthly_base_price)}</b>
+                <span>{formatMinutes(plan.monthly_minute_allowance)} · {formatNumber(plan.max_rooms)} rooms · {formatNumber(plan.max_apps)} apps</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <form className="purchase-request-form" onSubmit={requestPackage}>
+          <label>
+            <span>Billing scope</span>
+            <select value={billingType} onChange={(event) => setBillingType(event.target.value)}>
+              {BILLING_TYPE_OPTIONS.map((type) => <option value={type} key={type}>{type}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Purchase note</span>
+            <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Monthly production package" />
+          </label>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={submitting || !selectedPlan || pendingRequest || Number(selectedPlan?.id) === Number(currentPlan?.id)}
+          >
+            {submitting ? 'Sending...' : selectedPlan ? `Request ${selectedPlan.name}` : 'Choose package'}
+          </button>
+        </form>
+
+        {message ? <div className="company-edit-message">{message}</div> : null}
+      </section>
+      <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
+    </div>
+  )
+}
+
+function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
+  const clients = enterprise?.clients || []
+  const apps = enterprise?.apps || []
+  const [tenantId, setTenantId] = useState('')
+  const [appName, setAppName] = useState('')
+  const [platform, setPlatform] = useState('web_mobile')
+  const [allowedOrigins, setAllowedOrigins] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createdApp, setCreatedApp] = useState(null)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (!tenantId && clients[0]?.id) setTenantId(String(clients[0].id))
+  }, [clients, tenantId])
+
+  async function createApp(event) {
+    event.preventDefault()
+    setCreating(true)
+    setCreatedApp(null)
+    setMessage('Generating SDK access...')
+
+    try {
+      const body = {
+        name: appName,
+        platform,
+        allowed_origins: allowedOrigins,
+      }
+      if (isSuperAdmin) body.tenant_id = tenantId
+
+      const data = await apiRequest('/admin/client-apps', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      setCreatedApp(data)
+      setMessage(data.message)
+      setAppName('')
+      setAllowedOrigins('')
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="dashboard-tab-panel">
+      <section className="enterprise-panel sdk-access-panel glass-card">
+        <div className="admin-panel-header">
+          <div>
+            <span className="eyebrow">SDK Access</span>
+            <h2>Generate App Credentials</h2>
+          </div>
+          <span>{formatNumber(apps.length)} apps</span>
+        </div>
+
+        <form className="sdk-access-form" onSubmit={createApp}>
+          {isSuperAdmin && clients.length > 1 ? (
+            <label>
+              <span>Client company</span>
+              <select value={tenantId} onChange={(event) => setTenantId(event.target.value)}>
+                {clients.map((client) => <option value={client.id} key={client.id}>{client.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          <label>
+            <span>App name</span>
+            <input value={appName} onChange={(event) => setAppName(event.target.value)} placeholder="Production mobile app" />
+          </label>
+          <label>
+            <span>Platform</span>
+            <select value={platform} onChange={(event) => setPlatform(event.target.value)}>
+              <option value="web_mobile">Web mobile</option>
+              <option value="web">Web</option>
+              <option value="ios">iOS</option>
+              <option value="android">Android</option>
+              <option value="server">Server</option>
+            </select>
+          </label>
+          <label className="sdk-origin-field">
+            <span>Allowed origins</span>
+            <textarea value={allowedOrigins} onChange={(event) => setAllowedOrigins(event.target.value)} placeholder="https://client-app.com" />
+          </label>
+          <button className="primary-button" type="submit" disabled={creating || (isSuperAdmin && !tenantId)}>
+            {creating ? 'Generating...' : 'Generate SDK access'}
+          </button>
+        </form>
+
+        {createdApp?.credentials ? (
+          <div className="sdk-created-credentials">
+            <strong>New credentials</strong>
+            <dl>
+              <dt>App key</dt>
+              <dd>{createdApp.credentials.app_key}</dd>
+              <dt>API key</dt>
+              <dd>{createdApp.credentials.api_key}</dd>
+              <dt>SDK token</dt>
+              <dd>{createdApp.credentials.sdk_token}</dd>
+            </dl>
+          </div>
+        ) : null}
+
+        {message ? <div className="company-edit-message">{message}</div> : null}
+      </section>
+
+      <ClientAppsPanel apps={apps} mode={mode} />
+      {apps.length ? null : <AdminEmptyState title="No SDK apps found" detail="Generate SDK access to connect a client app." />}
+    </div>
+  )
+}
+
+function CompanyProfilePanel({ enterprise }) {
+  const client = getPrimaryClient(enterprise)
+  if (!client) return <AdminEmptyState title="No company profile found" detail="This admin account is not attached to a client company." />
+
+  return (
+    <section className="enterprise-panel company-profile-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Company</span>
+          <h2>{client.name}</h2>
+        </div>
+        <span className={`admin-state ${client.status}`}>{client.status}</span>
+      </div>
+
+      <div className="company-profile-grid">
+        <div>
+          <span>Tenant ID</span>
+          <strong>{client.tenant_uid}</strong>
+        </div>
+        <div>
+          <span>Package</span>
+          <strong>{client.plan?.name || 'No package'}</strong>
+        </div>
+        <div>
+          <span>Business email</span>
+          <strong>{client.company_email || '-'}</strong>
+        </div>
+        <div>
+          <span>Billing email</span>
+          <strong>{client.billing_email || '-'}</strong>
+        </div>
+        <div>
+          <span>Primary contact</span>
+          <strong>{client.primary_contact_name || '-'}</strong>
+        </div>
+        <div>
+          <span>Contact email</span>
+          <strong>{client.primary_contact_email || '-'}</strong>
+        </div>
+      </div>
+
+      <div className="company-limit-strip">
+        <span><b>{formatNumber(client.default_limits?.app_count)}</b> apps</span>
+        <span><b>{formatNumber(client.default_limits?.room_count)}</b> rooms</span>
+        <span><b>{formatNumber(client.default_limits?.participant_limit)}</b> participants per room</span>
+        <span><b>{client.billing_type}</b> billing</span>
+      </div>
     </section>
   )
 }
@@ -1051,7 +1547,7 @@ function ParticipantRecordsTable({ records }) {
   )
 }
 
-export default function AdminView() {
+export default function AdminView({ onView }) {
   const [overview, setOverview] = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedAdminId, setSelectedAdminId] = useState(null)
@@ -1063,7 +1559,7 @@ export default function AdminView() {
   const [companySubmitMessage, setCompanySubmitMessage] = useState('')
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('command')
 
   const activePayload = selectedDetail || overview
   const dashboard = activePayload?.dashboard
@@ -1184,7 +1680,7 @@ export default function AdminView() {
 
   useEffect(() => {
     if (!dashboardTabs.some((tab) => tab.key === activeTab)) {
-      setActiveTab('overview')
+      setActiveTab('command')
     }
   }, [activeTab, dashboardTabs])
 
@@ -1201,7 +1697,7 @@ export default function AdminView() {
         <div>
           <span className="eyebrow">{isSuperAdmin ? 'Super Admin' : 'Client Admin'}</span>
           <h1>{pageTitle}</h1>
-          <p>{isSuperAdmin ? 'Manage client companies, service packages, SDK access, usage, and RTC health.' : 'Manage rooms, usage, SDK access, and your service limits.'}</p>
+          <p>{isSuperAdmin ? 'Sell RTC packages, onboard clients, issue SDK access, and monitor billing.' : 'Purchase RTC, connect your app, manage rooms, and track billing.'}</p>
         </div>
         <div className="admin-header-actions">
           {isSuperAdmin && selectedDetail ? (
@@ -1221,19 +1717,22 @@ export default function AdminView() {
 
       <DashboardTabs tabs={dashboardTabs} activeTab={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'overview' ? (
+      {activeTab === 'command' ? (
         <div className="dashboard-tab-panel">
-          <ScopeSummary payload={activePayload} scope={overview?.scope} />
-          <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
+          <CommandCenterPanel
+            enterprise={enterprise}
+            dashboard={dashboard}
+            mode={enterpriseMode}
+            onTabChange={setActiveTab}
+            onView={onView}
+          />
           <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
-          {enterpriseMode !== 'super_admin' ? (
-            <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
-          ) : null}
         </div>
       ) : null}
 
-      {activeTab === 'companies' && enterpriseMode === 'super_admin' ? (
+      {activeTab === 'clients' && enterpriseMode === 'super_admin' ? (
         <div className="dashboard-tab-panel">
+          <ScopeSummary payload={activePayload} scope={overview?.scope} />
           <CompanySetupPanel
             plans={enterprise?.plans || []}
             form={companyForm}
@@ -1257,20 +1756,38 @@ export default function AdminView() {
 
       {activeTab === 'packages' ? (
         <div className="dashboard-tab-panel">
-          <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={enterprise?.current_plan} mode={enterpriseMode} />
+          <PackagePurchasePanel
+            enterprise={enterprise}
+            mode={enterpriseMode}
+            onRefresh={() => load({ silent: true })}
+          />
+          <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+        </div>
+      ) : null}
+
+      {activeTab === 'purchase' ? (
+        <div className="dashboard-tab-panel">
+          <PackagePurchasePanel
+            enterprise={enterprise}
+            mode={enterpriseMode}
+            onRefresh={() => load({ silent: true })}
+          />
           <FeatureControlsPanel features={enterprise?.feature_controls || []} />
         </div>
       ) : null}
 
       {activeTab === 'sdk' ? (
-        <div className="dashboard-tab-panel">
-          <ClientAppsPanel apps={enterprise?.apps || []} mode={enterpriseMode} />
-          {enterprise?.apps?.length ? null : <AdminEmptyState title="No SDK apps found" detail="No app keys are available for this scope yet." />}
-        </div>
+        <SdkAccessPanel
+          enterprise={enterprise}
+          mode={enterpriseMode}
+          isSuperAdmin={isSuperAdmin}
+          onRefresh={() => load({ silent: true })}
+        />
       ) : null}
 
       {activeTab === 'usage' ? (
         <div className="dashboard-tab-panel">
+          <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
           <div className="admin-detail-grid">
             <DailyUsageTable usage={dailyUsage} />
             <ParticipantRecordsTable records={participantRecords} />
@@ -1304,10 +1821,25 @@ export default function AdminView() {
         </div>
       ) : null}
 
-      {activeTab === 'system' ? (
+      {activeTab === 'company' ? (
         <div className="dashboard-tab-panel">
+          <CompanyProfilePanel enterprise={enterprise} />
+        </div>
+      ) : null}
+
+      {activeTab === 'health' ? (
+        <div className="dashboard-tab-panel">
+          <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
           {enterpriseMode === 'super_admin' ? <ServiceFlowPanel flow={enterprise?.service_flow || []} /> : null}
           <ActiveSessionsMonitor monitor={dashboard?.active_sessions_monitor} />
+          <section className="usage-dashboard-grid">
+            <UsageVerificationCard
+              dashboard={dashboard}
+              verification={usageVerification}
+              status={usageStatus}
+            />
+            <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
+          </section>
         </div>
       ) : null}
     </div>
