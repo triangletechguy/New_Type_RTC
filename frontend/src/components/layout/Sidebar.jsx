@@ -1,3 +1,4 @@
+import { brandAssets } from '../../assets/rtc/catalog'
 import { canUseAdminDashboard } from '../../utils/roles'
 
 export function Sidebar({ user, currentView, onView, onLogout }) {
@@ -6,7 +7,9 @@ export function Sidebar({ user, currentView, onView, onLogout }) {
   return (
     <aside className="sidebar glass-card">
       <div className="logo-row">
-        <div className="logo-mark">T</div>
+        <div className="logo-mark image-mark">
+          <img src={brandAssets.appIcon} alt="TalkEachOther" />
+        </div>
         <div>
           <strong>talk-each-other</strong>
           <span>Video and music RTC</span>

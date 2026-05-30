@@ -1,52 +1,78 @@
 const jwt = require('jsonwebtoken')
 const { query } = require('../config/db')
 
+async function loadUserFromAuthorization(header) {
+  if (!header.startsWith('Bearer ')) return null
+
+  const token = header.replace('Bearer ', '').trim()
+  const payload = jwt.verify(token, process.env.JWT_SECRET)
+
+  const users = await query(
+    `
+    SELECT id, tenant_id, name, email, phone, avatar_url, status, last_login_at, created_at, updated_at
+    FROM users
+    WHERE id = :id
+    LIMIT 1
+    `,
+    { id: payload.sub }
+  )
+
+  if (!users.length) return null
+
+  const user = users[0]
+  if (user.status !== 'active') {
+    const error = new Error(user.status === 'pending_verification'
+      ? 'Please verify your email before logging in.'
+      : 'Your account is not active.')
+    error.status = 403
+    throw error
+  }
+
+  const roles = await query(
+    `
+    SELECT roles.name
+    FROM user_roles
+    JOIN roles ON roles.id = user_roles.role_id
+    WHERE user_roles.user_id = :userId
+    `,
+    { userId: user.id }
+  )
+
+  user.roles = roles.map((role) => role.name)
+  return user
+}
+
 async function authMiddleware(req, res, next) {
   try {
-    const header = req.headers.authorization || ''
+    const user = await loadUserFromAuthorization(req.headers.authorization || '')
 
-    if (!header.startsWith('Bearer ')) {
+    if (!user) {
       return res.status(401).json({ message: 'Unauthenticated' })
     }
 
-    const token = header.replace('Bearer ', '').trim()
-    const payload = jwt.verify(token, process.env.JWT_SECRET)
-
-    const users = await query(
-      `
-      SELECT id, tenant_id, name, email, phone, avatar_url, status, last_login_at, created_at, updated_at
-      FROM users
-      WHERE id = :id
-      LIMIT 1
-      `,
-      { id: payload.sub }
-    )
-
-    if (!users.length) {
-      return res.status(401).json({ message: 'Unauthenticated' })
-    }
-
-    const user = users[0]
-
-    if (user.status !== 'active') {
-      return res.status(403).json({ message: 'Your account is not active.' })
-    }
-
-    const roles = await query(
-      `
-      SELECT roles.name
-      FROM user_roles
-      JOIN roles ON roles.id = user_roles.role_id
-      WHERE user_roles.user_id = :userId
-      `,
-      { userId: user.id }
-    )
-
-    user.roles = roles.map((role) => role.name)
     req.user = user
     next()
   } catch (error) {
-    return res.status(401).json({ message: 'Unauthenticated' })
+    return res.status(error.status || 401).json({ message: error.status ? error.message : 'Unauthenticated' })
+  }
+}
+
+async function optionalAuthMiddleware(req, res, next) {
+  try {
+    const header = req.headers.authorization || ''
+
+    if (!header) {
+      req.user = null
+      return next()
+    }
+
+    const user = await loadUserFromAuthorization(header)
+    if (!user) return res.status(401).json({ message: 'Unauthenticated' })
+
+    req.user = user
+    return next()
+  } catch (error) {
+    return res.status(error.status || 401).json({ message: error.status ? error.message : 'Unauthenticated' })
   }
 }
 
@@ -68,6 +94,7 @@ function requireAnyRole(allowedRoles) {
 
 module.exports = {
   authMiddleware,
+  optionalAuthMiddleware,
   hasAnyRole,
   requireAnyRole,
 }

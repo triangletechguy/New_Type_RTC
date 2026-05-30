@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { brandAssets } from '../../assets/rtc/catalog'
 
 const sdkTabs = [
   {
@@ -393,6 +394,9 @@ export default function SdkView() {
           <span>SDK</span>
           <strong>v1.0 Web</strong>
           <small>Native RTC + Socket.IO</small>
+        </div>
+        <div className="sdk-visual-card">
+          <img src={brandAssets.appScreenshots} alt="" loading="lazy" />
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
-const { authMiddleware } = require('../middleware/auth')
+const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 
@@ -181,7 +181,9 @@ function buildRoomListWhere(options, tenantId, userId) {
   const conditions = ['r.tenant_id = :tenantId']
   const params = { tenantId }
 
-  if (options.status !== 'all') {
+  if (!userId) {
+    conditions.push("r.status = 'active'")
+  } else if (options.status !== 'all') {
     conditions.push('r.status = :status')
     params.status = options.status
   }
@@ -196,7 +198,9 @@ function buildRoomListWhere(options, tenantId, userId) {
     params.privacy = options.privacy
   }
 
-  if (options.canSeePrivateRooms) {
+  if (!userId) {
+    conditions.push("r.privacy_type IN ('public', 'password')")
+  } else if (options.canSeePrivateRooms) {
     // Tenant admins can audit every published room in the tenant.
   } else if (options.privacy === 'private') {
     params.viewerUserId = userId
@@ -541,15 +545,16 @@ async function isUserBanned(roomId, userId) {
   return rows.length > 0
 }
 
-router.get('/', authMiddleware, async (req, res, next) => {
+router.get('/', optionalAuthMiddleware, async (req, res, next) => {
   try {
     const options = getRoomListOptions(req)
     if (options.error) return res.status(422).json({ message: options.error })
+    const tenantId = req.user?.tenant_id || 1
 
     const { whereSql, params } = buildRoomListWhere({
       ...options,
       canSeePrivateRooms: canSeeAllTenantRooms(req.user),
-    }, req.user.tenant_id, req.user.id)
+    }, tenantId, req.user?.id || null)
     const offset = (options.page - 1) * options.perPage
     const limitSql = Number(options.perPage)
     const offsetSql = Number(offset)
@@ -661,13 +666,17 @@ router.post('/', authMiddleware, async (req, res, next) => {
   }
 })
 
-router.get('/:id', authMiddleware, async (req, res, next) => {
+router.get('/:id', optionalAuthMiddleware, async (req, res, next) => {
   try {
     const roomId = parseInteger(req.params.id, null)
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
 
-    const room = await findPublicRoomById(roomId, req.user.tenant_id)
+    const room = await findPublicRoomById(roomId, req.user?.tenant_id || 1)
     if (!room) return res.status(404).json({ message: 'Room not found.' })
+    if (!req.user && room.status !== 'active') return res.status(404).json({ message: 'Room not found.' })
+    if (room.privacy_type === 'private' && !req.user) {
+      return res.status(404).json({ message: 'Room not found.' })
+    }
     if (
       room.privacy_type === 'private'
       && !canSeeAllTenantRooms(req.user)

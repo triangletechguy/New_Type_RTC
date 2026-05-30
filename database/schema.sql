@@ -125,13 +125,28 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(50) NULL,
     password_hash VARCHAR(255) NOT NULL,
     avatar_url VARCHAR(255) NULL,
-    status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
+    status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active',
     last_login_at TIMESTAMP NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_tenant_email (tenant_id, email),
     INDEX idx_users_tenant_id (tenant_id),
     CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NOT NULL,
+    email VARCHAR(180) NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP NULL,
+    attempt_count INT DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email_verification_user_id (user_id),
+    INDEX idx_email_verification_email (email),
+    INDEX idx_email_verification_expires_at (expires_at),
+    CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS roles (

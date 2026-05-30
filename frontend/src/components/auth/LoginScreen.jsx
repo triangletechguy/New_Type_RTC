@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { avatarAssets, brandAssets, roomAssets } from '../../assets/rtc/catalog'
 import { login as loginApi, register as registerApi } from '../../services/api'
 import { getPasswordError, normalizeEmail, validateAuthFields } from '../../utils/authValidation'
 
@@ -70,7 +71,9 @@ export function LoginScreen({ onLogin }) {
     <main className="login-page">
       <section className="login-showcase" aria-label="Live room preview">
         <div className="showcase-topbar">
-          <div className="app-mark">TE</div>
+          <div className="app-mark image-mark">
+            <img src={brandAssets.appIcon} alt="TalkEachOther" />
+          </div>
           <div>
             <strong>TalkEachOther</strong>
             <span>Live video and music rooms</span>
@@ -86,9 +89,12 @@ export function LoginScreen({ onLogin }) {
           </div>
 
           <div className="preview-live-card">
+            <img className="preview-live-art" src={roomAssets.videoRoom} alt="" />
             <div className="live-chip"><span></span> LIVE</div>
             <div className="preview-host">
-              <div className="preview-avatar">T</div>
+              <div className="preview-avatar image-avatar">
+                <img src={avatarAssets[0]} alt="" />
+              </div>
               <div>
                 <strong>talk-each-other Studio</strong>
                 <span>Video and music hosts on stage</span>
@@ -102,11 +108,13 @@ export function LoginScreen({ onLogin }) {
 
           <div className="mini-live-grid">
             <div className="mini-live-card tone-video">
+              <img src={roomAssets.soloLive} alt="" />
               <div>Video Room</div>
               <strong>Daily Standup</strong>
               <span>8 seats</span>
             </div>
             <div className="mini-live-card tone-music">
+              <img src={roomAssets.musicRoom} alt="" />
               <div>Music Room</div>
               <strong>Open Mic Lounge</strong>
               <span>12 seats</span>

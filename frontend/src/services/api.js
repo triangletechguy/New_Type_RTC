@@ -73,6 +73,9 @@ export async function apiRequest(path, options = {}) {
     const requestError = new Error(data.message || `Request failed with status ${response.status}`)
     requestError.status = response.status
     requestError.errors = data.errors || {}
+    requestError.data = data
+    requestError.email = data.email
+    requestError.requires_verification = Boolean(data.requires_verification)
     if (response.status === 401) notifyAuthExpired()
     throw requestError
   }
@@ -94,6 +97,23 @@ export async function register(name, email, password) {
   return apiRequest('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name, email, password }),
+  })
+}
+
+export async function verifyEmail(email, code) {
+  const data = await apiRequest('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  })
+
+  saveSession(data.access_token, data.user)
+  return data
+}
+
+export async function resendVerification(email) {
+  return apiRequest('/auth/resend-verification', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   })
 }
 

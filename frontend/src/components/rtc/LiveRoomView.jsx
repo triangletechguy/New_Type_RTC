@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { avatarForIndex, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -88,6 +89,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
   const stageSeatCount = Math.min(16, Math.max(1, Number(room?.max_mic_count || 8)))
   const liveRoomSupportsVideo = !room || roomSupportsVideo(room.room_type)
+  const roomVisualIndex = Number(room?.id || roomId || 0)
+  const roomAvatar = avatarForIndex(roomVisualIndex)
+  const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
 
   function setAndStoreMediaMode(value) {
     setMediaMode(value)
@@ -800,7 +804,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     <div className="live-page">
       <header className="live-header glass-card">
         <div className="room-identity">
-          <div className="room-avatar large">{room?.name?.slice(0, 1)?.toUpperCase() || 'R'}</div>
+          <div className="room-avatar large image-avatar">
+            <img src={roomAvatar} alt="" />
+          </div>
           <div>
             <div className="live-badge"><span></span> Live RTC</div>
             <h1>{room?.name || `Room #${roomId}`}</h1>
@@ -865,6 +871,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       <main className="live-layout">
         <section className="stage glass-card">
+          <img className="stage-background-art" src={roomCover} alt="" />
           {joinEffect && (
             <div className="join-effect" key={joinEffect.key}>
               <span></span>

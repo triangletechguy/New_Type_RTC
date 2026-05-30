@@ -3,10 +3,12 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
 const mysql = require('mysql2/promise')
+const bcrypt = require('bcryptjs')
 
 const API_BASE_URL = process.env.E2E_API_BASE_URL || `http://127.0.0.1:${process.env.PORT || 8000}/api`
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'superadmin@talkeachother.com'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || '123!@#'
+const TEST_VERIFICATION_CODE = process.env.E2E_VERIFICATION_CODE || '123456'
 
 const connectionConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -59,15 +61,64 @@ async function request(path, { token, method = 'GET', body } = {}) {
   return data
 }
 
+async function getConnection() {
+  if (!state.connection) {
+    state.connection = await mysql.createConnection(connectionConfig)
+  }
+
+  return state.connection
+}
+
+async function setKnownVerificationCode(email, code = TEST_VERIFICATION_CODE) {
+  const connection = await getConnection()
+  const [[user]] = await connection.execute(
+    'SELECT id, status FROM users WHERE email = ? ORDER BY id DESC LIMIT 1',
+    [email]
+  )
+  assert(user?.id, `pending user was not created for ${email}`)
+  assert(user.status === 'pending_verification', `expected pending_verification for ${email}, found ${user.status}`)
+
+  const codeHash = await bcrypt.hash(code, 10)
+  const [result] = await connection.execute(
+    `
+    UPDATE email_verification_codes
+    SET code_hash = ?,
+        expires_at = DATE_ADD(NOW(), INTERVAL 15 MINUTE),
+        used_at = NULL,
+        attempt_count = 0
+    WHERE user_id = ?
+    AND email = ?
+    AND used_at IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [codeHash, user.id, email]
+  )
+  assert(result.affectedRows === 1, `verification code row was not available for ${email}`)
+  return user
+}
+
 async function registerAndLogin({ name, email, password }) {
   await request('/auth/register', {
     method: 'POST',
     body: { name, email, password },
   })
 
-  return request('/auth/login', {
+  try {
+    await request('/auth/login', {
+      method: 'POST',
+      body: { email, password },
+    })
+    throw new Error(`pending user ${email} was allowed to log in before verification`)
+  } catch (error) {
+    if (!isExpectedStatus(error, 403) || error.data?.requires_verification !== true) throw error
+  }
+
+  await setKnownVerificationCode(email)
+
+  return request('/auth/verify-email', {
     method: 'POST',
-    body: { email, password },
+    body: { email, code: TEST_VERIFICATION_CODE },
   })
 }
 
@@ -231,7 +282,7 @@ async function main() {
   })
   assert(ownerLeave.usage_logged === true, 'owner leave did not log usage')
 
-  state.connection = await mysql.createConnection(connectionConfig)
+  state.connection = await getConnection()
 
   const [[usage]] = await state.connection.execute(
     `

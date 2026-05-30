@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { avatarForIndex, brandAssets, coverForDemoTone, coverForRoomType, roomAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
@@ -14,6 +15,7 @@ import {
   privacyFilterOptions,
   roomFeatureOptions,
   roomFormPayload,
+  roomFilterOptions,
   roomPrivacyOptions,
   roomSortOptions,
   roomSupportsVideo,
@@ -41,33 +43,33 @@ const exploreFilters = [
 ]
 
 const demoCards = [
-  { id: 'demo-1', title: 'I am new here', host: 'PAYA', viewers: 5631, tone: 'aurora', country: 'United States', size: 'feature' },
-  { id: 'demo-2', title: 'naughty myfly', host: 'mandyiluvfrogs', viewers: 6018, tone: 'warm', category: 'Beauty' },
-  { id: 'demo-3', title: '20Tokens4ANYRequests', host: 'Mary Marie31688746', viewers: 1794, tone: 'rose' },
-  { id: 'demo-4', title: 'chill vibes only', host: 'BBreeBunnie', viewers: 6186, tone: 'sunset' },
-  { id: 'demo-5', title: 'I am new here', host: 'love31312268', viewers: 1090, tone: 'slate' },
-  { id: 'demo-6', title: 'relax..', host: 'MattM', viewers: 589, tone: 'amber' },
-  { id: 'demo-7', title: 'hi', host: '6.5k Nat_5', viewers: 5689, tone: 'night' },
-  { id: 'demo-8', title: 'Modo meta hasta amanecer', host: 'Lyss', viewers: 1418, tone: 'plum' },
-  { id: 'demo-9', title: 'Support small gifts', host: 'BG_Unnniieee', viewers: 2032, tone: 'copper', badge: 'Make friends' },
-  { id: 'demo-10', title: 'Holi', host: 'Sweetey', viewers: 7489, tone: 'cloud' },
-  { id: 'demo-11', title: 'PV AGORA', host: 'Gabyzinha', viewers: 21853, tone: 'wine' },
-  { id: 'demo-12', title: 'Hello', host: 'Maximum', viewers: 29888, tone: 'silver' },
-  { id: 'demo-13', title: 'On max dada', host: 'Wifeykins', viewers: 8, tone: 'olive', tab: 'latest' },
-  { id: 'demo-14', title: 'I am new here', host: 'Seyifunmi Debby', viewers: 8, tone: 'taupe', tab: 'latest' },
-  { id: 'demo-15', title: '15 link por 5 reais no pv', host: 'anjo66631877403', viewers: 7, tone: 'mono', tab: 'latest' },
-  { id: 'demo-16', title: 'Certified loner', host: 'vee sasha', viewers: 36, tone: 'rose', tab: 'latest' },
-  { id: 'demo-17', title: 'COWMAN LOOKING FOR COWLADY', host: 'John F. Ke31824857', viewers: 527, tone: 'earth', tab: 'nearby' },
-  { id: 'demo-18', title: 'I still feeling emotional cause got my prosthetic', host: 'Art232323', viewers: 181, tone: 'mid', tab: 'nearby' },
-  { id: 'demo-19', title: 'need a day 1 bouncer', host: 'OG_Ocean', viewers: 57, tone: 'violet', tab: 'nearby' },
-  { id: 'demo-20', title: 'I am new here', host: 'ChiChi80588', viewers: 1238, tone: 'pink', tab: 'nearby' },
-  { id: 'demo-21', title: 'Certified game room', host: 'PANIAX GAMING', viewers: 99, tone: 'game', tab: 'explore', explore: 'games' },
-  { id: 'demo-22', title: '1x equals 5', host: 'Cleo', viewers: 1230, tone: 'sand', tab: 'explore', explore: 'games' },
-  { id: 'demo-23', title: 'Film room', host: 'PRIME', viewers: 68279, tone: 'ocean', tab: 'explore', explore: 'games' },
-  { id: 'demo-24', title: 'Positive Boosting Time 24 7 365', host: 'United States', viewers: 865, tone: 'sky', tab: 'party', party: true },
-  { id: 'demo-25', title: 'women and ladies join in', host: 'United States', viewers: 5133, tone: 'storm', tab: 'party', party: true },
-  { id: 'demo-26', title: 'SUPPORT The Cozy Streamer', host: 'United States', viewers: 244, tone: 'ember', tab: 'party', party: true },
-  { id: 'demo-27', title: 'This room may contain sensitive content', host: 'mandyiluvfrogs', viewers: 6345, tone: 'sensitive', sensitive: true },
+  { id: 'demo-1', title: 'Creator Studio Warm-up', host: 'Maya Studio', viewers: 5631, tone: 'aurora', country: 'United States', size: 'feature', badge: 'Group Video', roomType: 'group_video', avatarIndex: 0 },
+  { id: 'demo-2', title: 'Open Mic Lounge', host: 'Luna Waves', viewers: 6018, tone: 'warm', category: 'Music', badge: 'Music', roomType: 'audio', avatarIndex: 1 },
+  { id: 'demo-3', title: 'Daily Product Standup', host: 'Nora Labs', viewers: 1794, tone: 'rose', category: 'Video', roomType: 'video', avatarIndex: 2 },
+  { id: 'demo-4', title: 'Design Review Live', host: 'Pixel Team', viewers: 6186, tone: 'sunset', roomType: 'group_video', avatarIndex: 3 },
+  { id: 'demo-5', title: 'Creator Office Hours', host: 'TalkEachOther', viewers: 1090, tone: 'slate', roomType: 'solo_live', avatarIndex: 4 },
+  { id: 'demo-6', title: 'Acoustic Session', host: 'Matt M.', viewers: 589, tone: 'amber', roomType: 'group_audio', avatarIndex: 5 },
+  { id: 'demo-7', title: 'Night Studio', host: 'Natalie', viewers: 5689, tone: 'night', roomType: 'video', avatarIndex: 6 },
+  { id: 'demo-8', title: 'Global Music Room', host: 'Lyss', viewers: 1418, tone: 'plum', country: 'Canada', roomType: 'audio', avatarIndex: 7 },
+  { id: 'demo-9', title: 'Supporter Lounge', host: 'Community Ops', viewers: 2032, tone: 'copper', badge: 'Gifts', roomType: 'group_audio', avatarIndex: 1 },
+  { id: 'demo-10', title: 'Morning Sync', host: 'Sarah', viewers: 7489, tone: 'cloud', roomType: 'group_video', avatarIndex: 2 },
+  { id: 'demo-11', title: 'Private Client Demo', host: 'Enterprise Desk', viewers: 1853, tone: 'wine', privacy: 'private', badge: 'Private', roomType: 'video', avatarIndex: 3 },
+  { id: 'demo-12', title: 'Password Beta Room', host: 'QA Studio', viewers: 928, tone: 'silver', privacy: 'password', badge: 'Locked', roomType: 'video', avatarIndex: 4 },
+  { id: 'demo-13', title: 'Fresh Creator Drop', host: 'Winnie', viewers: 208, tone: 'olive', tab: 'latest', roomType: 'solo_live', avatarIndex: 5 },
+  { id: 'demo-14', title: 'New Host Practice', host: 'Seyi', viewers: 84, tone: 'taupe', tab: 'latest', roomType: 'video', avatarIndex: 6 },
+  { id: 'demo-15', title: 'Audio Check Room', host: 'Engineering', viewers: 77, tone: 'mono', tab: 'latest', roomType: 'audio', avatarIndex: 7 },
+  { id: 'demo-16', title: 'First Stream Setup', host: 'Vee Studio', viewers: 136, tone: 'rose', tab: 'latest', roomType: 'solo_live', avatarIndex: 0 },
+  { id: 'demo-17', title: 'Nearby Creators', host: 'John F.', viewers: 527, tone: 'earth', tab: 'nearby', roomType: 'group_video', avatarIndex: 1 },
+  { id: 'demo-18', title: 'Community Check-in', host: 'Art Room', viewers: 181, tone: 'mid', tab: 'nearby', roomType: 'group_audio', avatarIndex: 2 },
+  { id: 'demo-19', title: 'Moderator Training', host: 'Ocean Ops', viewers: 57, tone: 'violet', tab: 'nearby', roomType: 'video', avatarIndex: 3 },
+  { id: 'demo-20', title: 'Local Music Circle', host: 'ChiChi', viewers: 1238, tone: 'pink', tab: 'nearby', roomType: 'audio', avatarIndex: 4 },
+  { id: 'demo-21', title: 'Game Night Voice', host: 'Paniax Gaming', viewers: 299, tone: 'game', tab: 'explore', explore: 'games', roomType: 'group_video', avatarIndex: 5 },
+  { id: 'demo-22', title: 'Watch Party Studio', host: 'Cleo', viewers: 1230, tone: 'sand', tab: 'explore', explore: 'games', roomType: 'group_video', avatarIndex: 6 },
+  { id: 'demo-23', title: 'Film Room Live', host: 'Prime Stage', viewers: 68279, tone: 'ocean', tab: 'explore', explore: 'games', roomType: 'video', avatarIndex: 7 },
+  { id: 'demo-24', title: 'PK Creator Battle', host: 'United States', viewers: 865, tone: 'sky', tab: 'party', party: true, roomType: 'pk_live', avatarIndex: 0 },
+  { id: 'demo-25', title: 'Community Party', host: 'Stage Hosts', viewers: 5133, tone: 'storm', tab: 'party', party: true, roomType: 'group_video', avatarIndex: 1 },
+  { id: 'demo-26', title: 'Cozy Streamer Night', host: 'The Cozy Studio', viewers: 244, tone: 'ember', tab: 'party', party: true, roomType: 'solo_live', avatarIndex: 2 },
+  { id: 'demo-27', title: 'Community Guidelines Preview', host: 'Trust and Safety', viewers: 6345, tone: 'sensitive', sensitive: true, privacy: 'private', roomType: 'video', avatarIndex: 3 },
 ]
 
 const dmThreads = [
@@ -153,6 +155,19 @@ function compactNumber(value) {
   return String(number)
 }
 
+function cardAvatarIndex(card, fallback = 0) {
+  if (Number.isFinite(Number(card?.avatarIndex))) return Number(card.avatarIndex)
+  if (card?.room?.id) return Number(card.room.id)
+  const numericId = String(card?.id || '').match(/\d+/)?.[0]
+  return Number(numericId || fallback)
+}
+
+function cardCover(card, fallback = 0) {
+  if (card?.room) return coverForRoomType(card.room.room_type, card.room.privacy_type, cardAvatarIndex(card, fallback))
+  if (card?.roomType || card?.privacy) return coverForRoomType(card.roomType, card.privacy, cardAvatarIndex(card, fallback))
+  return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
+}
+
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
   return {
@@ -166,6 +181,9 @@ function roomToFeedCard(room, index) {
     category: meta.label,
     country: 'United States',
     size: index === 0 ? 'feature' : '',
+    roomType: room.room_type,
+    privacy: room.privacy_type,
+    avatarIndex: Number(room.id) || index,
   }
 }
 
@@ -181,7 +199,9 @@ function IconButton({ label, children, badge, className = '', onClick }) {
 function BuzzLogo() {
   return (
     <div className="buzzcast-logo">
-      <div className="buzzcast-logo-mark">TE</div>
+      <div className="buzzcast-logo-mark image-mark">
+        <img src={brandAssets.appIcon} alt="TalkEachOther" />
+      </div>
       <div>
         <strong>TalkEachOther</strong>
         <span>Video and music rooms</span>
@@ -191,14 +211,22 @@ function BuzzLogo() {
 }
 
 function FeedCard({ card, featured, onOpen }) {
+  const cover = cardCover(card)
+  const avatarIndex = cardAvatarIndex(card)
+
   return (
     <article className={`buzzcast-room-card ${featured ? 'featured' : ''}`}>
       <button type="button" className="buzzcast-card-button" onClick={() => onOpen(card)}>
         <div className={`buzzcast-media media-${card.tone || 'aurora'}`}>
+          <img className="buzzcast-media-image" src={cover} alt="" loading="lazy" />
           {card.badge ? <span className="buzzcast-card-badge">{card.badge}</span> : null}
           {card.sensitive ? <span className="buzzcast-sensitive-dot"></span> : null}
           <span className="buzzcast-viewers">{compactNumber(card.viewers)}</span>
-          <span className="buzzcast-seat-dots"><i></i><i></i><i></i></span>
+          <span className="buzzcast-seat-dots">
+            {[0, 1, 2].map((offset) => (
+              <i key={offset}><img src={avatarForIndex(avatarIndex + offset)} alt="" loading="lazy" /></i>
+            ))}
+          </span>
         </div>
         <div className="buzzcast-card-copy">
           <strong>{card.title}</strong>
@@ -212,7 +240,9 @@ function FeedCard({ card, featured, onOpen }) {
 function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
   const meta = getRoomMeta(room.room_type)
   const tags = getRoomTags(room)
-  const initial = room.owner_name?.slice(0, 1)?.toUpperCase() || room.name?.slice(0, 1)?.toUpperCase() || 'R'
+  const avatarIndex = Number(room.owner_id || room.id || 0)
+  const hostAvatar = avatarForIndex(avatarIndex)
+  const cover = coverForRoomType(room.room_type, room.privacy_type, avatarIndex)
   const needsPassword = room.privacy_type === 'password'
   const isPrivate = room.privacy_type === 'private'
   const coverLabel = needsPassword ? 'Locked' : isPrivate ? 'Private' : meta.short
@@ -224,15 +254,13 @@ function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
   return (
     <article className={`talk-dashboard-card ${meta.tone}${isSelected ? ' selected' : ''}`}>
       <div className="talk-dashboard-cover">
+        <img className="talk-dashboard-cover-image" src={cover} alt="" loading="lazy" />
         <div className="talk-live-chip"><span></span> LIVE</div>
         <div className="talk-cover-chip">{coverLabel}</div>
-        <div className="talk-cover-asset" aria-hidden="true">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
         <div className="talk-cover-host">
-          <div className="talk-room-avatar large">{initial}</div>
+          <div className="talk-room-avatar large image-avatar">
+            <img src={hostAvatar} alt="" loading="lazy" />
+          </div>
           <div>
             <span>{room.owner_name || 'Room host'}</span>
             <strong>{meta.label}</strong>
@@ -246,7 +274,9 @@ function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
             <h2>#{room.id} - {room.name || meta.label}</h2>
             <p>{flowLabel} - {seatLabel} - {roomStatus}</p>
           </div>
-          <div className="talk-room-avatar">{initial}</div>
+          <div className="talk-room-avatar image-avatar">
+            <img src={hostAvatar} alt="" loading="lazy" />
+          </div>
         </div>
         <p className="talk-room-description">{description}</p>
         <div className="talk-room-stat-row">
@@ -269,7 +299,7 @@ function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
   )
 }
 
-export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
+export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
   const [status, setStatus] = useState('Ready')
@@ -306,8 +336,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   const [previewCard, setPreviewCard] = useState(null)
   const [acceptedWarnings, setAcceptedWarnings] = useState({})
 
-  const displayName = user?.name || user?.email?.split('@')[0] || 'Michael Sa32160161'
-  const displayId = user?.id || 32160161
+  const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
+  const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
@@ -343,6 +373,38 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const activeThreadData = dmThreads.find((thread) => thread.id === activeThread) || dmThreads[0]
+
+  function requireAuth(reason = 'Log in or sign up to continue.', mode = 'login') {
+    if (user) return true
+    onAuthRequired?.(reason, mode)
+    return false
+  }
+
+  function openProfileSection() {
+    if (!requireAuth('Log in or sign up to open your profile.', 'login')) return
+    setActiveSection('me')
+  }
+
+  function openSettingsSection(nextSettings = activeSettings) {
+    if (!requireAuth('Log in to manage your account settings.', 'login')) return
+    setActiveSettings(nextSettings)
+    setActiveSection('settings')
+  }
+
+  function openHostPanel(reason = 'Log in or sign up to create a live room.') {
+    if (!requireAuth(reason, 'register')) return
+    setShowHostPanel(true)
+  }
+
+  function openMessagesDrawer() {
+    if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
+    setShowMessages(true)
+  }
+
+  function openRechargePanel() {
+    if (!requireAuth('Log in to use wallet and room gifts.', 'login')) return
+    setShowRecharge(true)
+  }
 
   function updateRoomForm(field, value) {
     setRoomForm((previous) => ({ ...previous, [field]: value }))
@@ -403,20 +465,35 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     quiet = false,
   } = {}) {
     setLoadingRooms(true)
-    try {
-      if (!quiet) setStatus('Loading rooms...')
-      const data = await apiRequest(buildRoomsPath({
-        page,
-        search: searchValue,
-        filter: filterValue,
-        privacy: privacyValue,
-        sort: sortValue,
-      }))
+    const path = buildRoomsPath({
+      page,
+      search: searchValue,
+      filter: filterValue,
+      privacy: privacyValue,
+      sort: sortValue,
+    })
+
+    function applyRoomData(data) {
       const meta = data.rooms?.meta || { page, per_page: 24, total: 0, total_pages: 1 }
       setRooms(data.rooms?.data || [])
       setRoomMeta(meta)
       setStatus(meta.total === 1 ? 'Showing 1 room' : `Showing ${meta.total} rooms`)
+    }
+
+    try {
+      if (!quiet) setStatus('Loading rooms...')
+      applyRoomData(await apiRequest(path))
     } catch (error) {
+      if (error.status === 401) {
+        try {
+          applyRoomData(await apiRequest(path))
+          return
+        } catch (retryError) {
+          setStatus(retryError.message)
+          return
+        }
+      }
+
       setStatus(error.message)
     } finally {
       setLoadingRooms(false)
@@ -425,6 +502,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   async function createRoom(event) {
     event.preventDefault()
+    if (!requireAuth('Log in or sign up to create a live room.', 'register')) return
+
     const nextErrors = validateRoomForm(roomForm)
     setFormErrors(nextErrors)
 
@@ -470,6 +549,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   async function joinSelectedRoom() {
     if (!roomId.trim()) return
+    if (!requireAuth('Log in to open the RTC console.', 'login')) return
     if (selectedRoomNeedsPassword && !joinPassword.trim()) {
       setStatus('Enter the room password before joining.')
       return
@@ -504,6 +584,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   }
 
   function joinRoomFromCard(room) {
+    if (!requireAuth('Log in to join live rooms.', 'login')) return
+
     if (room.privacy_type === 'password') {
       selectRoom(room)
       setShowHostPanel(true)
@@ -525,6 +607,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function sendDmMessage(event) {
     event.preventDefault()
+    if (!requireAuth('Log in to send chat messages.', 'login')) return
     const body = dmInput.trim()
     if (!body) return
 
@@ -553,38 +636,107 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
 
   function renderLiveFeed() {
     return (
-      <section className="talk-dashboard">
-        <header className="talk-dashboard-header">
-          <h1>Live now</h1>
-          <span>{loadingRooms ? 'Refreshing rooms...' : `Page ${roomMeta.page} of ${roomMeta.total_pages || 1}`}</span>
-        </header>
+      <>
+        <section className="buzzcast-discover">
+          <nav className="buzzcast-feed-nav" aria-label="Room feed">
+            {feedTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                className={activeFeed === tab.value ? 'active' : ''}
+                onClick={() => switchFeed(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
 
-        {loadingRooms && rooms.length === 0 ? (
-          <div className="talk-dashboard-empty">Loading rooms...</div>
-        ) : (
-          <div className="talk-dashboard-grid">
-            {rooms.length === 0 ? (
-              <div className="talk-dashboard-empty">No matching rooms yet. Create one or change the filters.</div>
-            ) : rooms.map((room) => (
-              <DashboardRoomCard
-                key={room.id}
-                room={room}
-                isSelected={roomId === String(room.id)}
-                onSelect={selectRoom}
-                onJoin={joinRoomFromCard}
+          {activeFeed === 'explore' ? (
+            <div className="buzzcast-filter-pills">
+              {exploreFilters.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={activeExplore === option.value ? 'active' : ''}
+                  onClick={() => switchExplore(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="buzzcast-match-banner">
+            <strong>Live rooms built for video, music, chat, gifts, and enterprise RTC demos</strong>
+            <button type="button" onClick={() => openHostPanel()}>Create room</button>
+          </div>
+
+          <div className="buzzcast-feed-controls">
+            <span>{visibleCards.length} curated rooms - {status}</span>
+            <div>
+              <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
+                {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Room privacy filter">
+                {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Room sort">
+                {roomSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className={`buzzcast-card-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
+            {visibleCards.map((card, index) => (
+              <FeedCard
+                key={card.id}
+                card={card}
+                featured={index === 0 && activeFeed !== 'party'}
+                onOpen={openCard}
               />
             ))}
           </div>
-        )}
+        </section>
 
-        {roomMeta.total_pages > 1 ? (
-          <div className="talk-dashboard-pagination">
-            <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
-            <span>{roomMeta.total} total rooms</span>
-            <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
-          </div>
-        ) : null}
-      </section>
+        <section className="talk-dashboard">
+          <header className="talk-dashboard-header">
+            <h1>Active RTC rooms</h1>
+            <span>{loadingRooms ? 'Refreshing rooms...' : `Page ${roomMeta.page} of ${roomMeta.total_pages || 1}`}</span>
+          </header>
+
+          {loadingRooms && rooms.length === 0 ? (
+            <div className="talk-dashboard-empty">Loading rooms...</div>
+          ) : (
+            <div className="talk-dashboard-grid">
+              {rooms.length === 0 ? (
+                <div className="talk-dashboard-empty visual-empty">
+                  <img src={roomAssets.studioStage} alt="" loading="lazy" />
+                  <div>
+                    <strong>No matching rooms yet</strong>
+                    <span>Create one or adjust the filters to bring live rooms into this grid.</span>
+                  </div>
+                </div>
+              ) : rooms.map((room) => (
+                <DashboardRoomCard
+                  key={room.id}
+                  room={room}
+                  isSelected={roomId === String(room.id)}
+                  onSelect={selectRoom}
+                  onJoin={joinRoomFromCard}
+                />
+              ))}
+            </div>
+          )}
+
+          {roomMeta.total_pages > 1 ? (
+            <div className="talk-dashboard-pagination">
+              <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
+              <span>{roomMeta.total} total rooms</span>
+              <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
+            </div>
+          ) : null}
+        </section>
+      </>
     )
   }
 
@@ -592,7 +744,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     return (
       <section className="buzzcast-profile-panel">
         <div className="buzzcast-profile-hero">
-          <div className="buzzcast-profile-avatar">{profileInitials}</div>
+          <div className="buzzcast-profile-avatar image-avatar">
+            <img src={avatarForIndex(displayId)} alt="" loading="lazy" />
+          </div>
           <div>
             <h1>{displayName}</h1>
             <span>ID:{displayId}</span>
@@ -614,7 +768,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           </dl>
         </div>
         <div className="buzzcast-profile-links">
-          <button type="button" onClick={() => setShowRecharge(true)}>Wallet</button>
+          <button type="button" onClick={openRechargePanel}>Wallet</button>
           <button type="button">Backpack</button>
           <button type="button">Supporters</button>
           <button type="button" onClick={onLogout}>Sign out</button>
@@ -772,23 +926,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
   function renderRoomPreview() {
     const card = previewCard || demoCards[0]
     const isWarning = card.sensitive && !acceptedWarnings[card.id]
+    const previewCover = cardCover(card)
+    const previewAvatar = avatarForIndex(cardAvatarIndex(card))
 
     return (
       <section className="buzzcast-room-preview">
         <div className={`buzzcast-stage media-${card.tone || 'sensitive'}`}>
+          <img className="buzzcast-stage-image" src={previewCover} alt="" />
           {isWarning ? (
             <div className="buzzcast-warning-panel">
               <strong>This live broadcast may contain sensitive content</strong>
               <button type="button" onClick={() => setAcceptedWarnings((previous) => ({ ...previous, [card.id]: true }))}>View</button>
-              <button type="button" onClick={() => {
-                setActiveSettings('content')
-                setActiveSection('settings')
-              }}>Content Preferences</button>
+              <button type="button" onClick={() => openSettingsSection('content')}>Content Preferences</button>
             </div>
           ) : (
             <>
               <div className="buzzcast-host-pill">
-                <span>{initialsFromName(card.host)}</span>
+                <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
                 <strong>{card.host}</strong>
                 <small>{compactNumber(card.viewers)}</small>
               </div>
@@ -805,8 +959,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
                     <small>{gift.cost}</small>
                   </button>
                 ))}
-                <button type="button" onClick={() => setShowRecharge(true)}>More</button>
-                <button type="button" onClick={() => setShowRecharge(true)}>0</button>
+                <button type="button" onClick={openRechargePanel}>More</button>
+                <button type="button" onClick={openRechargePanel}>0</button>
               </div>
             </>
           )}
@@ -850,6 +1004,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
   }, [])
 
+  useEffect(() => {
+    if (user) return
+    if (activeSection === 'me' || activeSection === 'settings') setActiveSection('live')
+    setShowMessages(false)
+    setShowHostPanel(false)
+    setShowRecharge(false)
+  }, [activeSection, user])
+
   return (
     <div className="buzzcast-shell">
       <header className="buzzcast-topbar">
@@ -870,14 +1032,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
               <span>{roomSearchResults.length ? 'Rooms' : 'No room matches yet'}</span>
-              {roomSearchResults.map((item) => (
+              {roomSearchResults.map((item, index) => (
                 <button
                   key={item.id}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => selectRoom(item.room)}
                 >
-                  <i>{initialsFromName(item.name)}</i>
+                  <i className="image-avatar"><img src={avatarForIndex(item.id || index)} alt="" loading="lazy" /></i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                 </button>
               ))}
@@ -889,10 +1051,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
           <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
-          <IconButton label="Messages" badge="5" onClick={() => setShowMessages(true)}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
-          <IconButton label="Create live room" className="accent" onClick={() => setShowHostPanel(true)}>+</IconButton>
-          <button type="button" className="buzzcast-avatar-button" onClick={() => setActiveSection('me')}>
-            <span>{profileInitials}</span>
+          <IconButton label="Messages" badge="5" onClick={openMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
+          <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
+          <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
+            <span className="image-avatar">
+              <img src={avatarForIndex(displayId)} alt={profileInitials} loading="lazy" />
+            </span>
           </button>
         </div>
       </header>
@@ -902,7 +1066,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           <span className="buzzcast-rail-icon rail-live" aria-hidden="true"></span>
           <b>Live</b>
         </button>
-        <button type="button" className={activeSection === 'me' ? 'active' : ''} onClick={() => setActiveSection('me')}>
+        <button type="button" className={activeSection === 'me' ? 'active' : ''} onClick={openProfileSection}>
           <span className="buzzcast-rail-icon rail-me" aria-hidden="true"></span>
           <b>Me</b>
         </button>
@@ -911,7 +1075,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           <span className="buzzcast-rail-icon rail-app" aria-hidden="true"></span>
           <b>Get the App</b>
         </button>
-        <button type="button" className={activeSection === 'settings' ? 'active' : ''} onClick={() => setActiveSection('settings')}>
+        <button type="button" className={activeSection === 'settings' ? 'active' : ''} onClick={() => openSettingsSection()}>
           <span className="buzzcast-rail-icon rail-settings" aria-hidden="true"></span>
           <b>Settings</b>
         </button>
@@ -933,14 +1097,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
         <section className="buzzcast-messages-drawer">
           <aside>
             <input placeholder="Search" />
-            {dmThreads.map((thread) => (
+            {dmThreads.map((thread, index) => (
               <button
                 key={thread.id}
                 type="button"
                 className={activeThread === thread.id ? 'active' : ''}
                 onClick={() => setActiveThread(thread.id)}
               >
-                <i>{initialsFromName(thread.name)}</i>
+                <i className="image-avatar"><img src={avatarForIndex(index)} alt="" loading="lazy" /></i>
                 <span><strong>{thread.name}</strong><small>{thread.preview}</small></span>
                 <time>{thread.time}</time>
                 {thread.unread ? <em>{thread.unread}</em> : null}
@@ -971,7 +1135,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
           <section className="buzzcast-install-modal">
             <h2>Install app</h2>
             <div>
-              <div className="buzzcast-logo-mark">TE</div>
+              <div className="buzzcast-logo-mark image-mark">
+                <img src={brandAssets.appIcon} alt="" />
+              </div>
               <span><strong>TalkEachOther</strong><small>TalkEachOther RTC</small></span>
             </div>
             <footer>
@@ -1060,12 +1226,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView }) {
                 <button
                   className="buzzcast-submit"
                   type="button"
-                  onClick={() => onEnterRoom(String(createdRoom.id), {
-                    password: joinPassword.trim(),
-                    room: createdRoom,
-                    rtcMode: defaultRtcModeForRoom(createdRoom),
-                    autoConnect: true,
-                  })}
+                  onClick={() => {
+                    if (!requireAuth('Log in to open the RTC console.', 'login')) return
+                    onEnterRoom(String(createdRoom.id), {
+                      password: joinPassword.trim(),
+                      room: createdRoom,
+                      rtcMode: defaultRtcModeForRoom(createdRoom),
+                      autoConnect: true,
+                    })
+                  }}
                 >
                   Open Created Room #{createdRoom.id}
                 </button>

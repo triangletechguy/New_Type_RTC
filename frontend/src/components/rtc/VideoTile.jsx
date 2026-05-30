@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { getInitials } from '../../utils/formatters'
+import { avatarForIndex, roomAssets } from '../../assets/rtc/catalog'
+
+function visualIndexFromLabel(label) {
+  return String(label || 'User')
+    .split('')
+    .reduce((total, char) => total + char.charCodeAt(0), 0)
+}
 
 export function VideoTile({
   stream,
@@ -16,7 +22,13 @@ export function VideoTile({
   const audioRef = useRef(null)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
   const showVideo = Boolean(stream && hasVideo && cameraOn !== false && rtcMode === 'video')
-  const initials = getInitials(label)
+  const visualIndex = visualIndexFromLabel(label)
+  const avatar = avatarForIndex(visualIndex)
+  const placeholderArt = rtcMode === 'audio'
+    ? roomAssets.audioStage
+    : cameraOn === false
+      ? roomAssets.cameraOff
+      : roomAssets.avatarGrid
 
   useEffect(() => {
     const video = videoRef.current
@@ -49,8 +61,9 @@ export function VideoTile({
         <>
           <audio ref={audioRef} autoPlay muted={muted} className="audio-element" />
           <div className="video-placeholder media-avatar-panel">
+            <img className="video-placeholder-art" src={placeholderArt} alt="" />
             <div className="avatar-stage">
-              <div className="avatar-ring"><div className="avatar-core">{initials}</div></div>
+              <div className="avatar-ring"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
               {showMediaState && (
                 <div className="media-state-strip">
                   <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
@@ -62,8 +75,9 @@ export function VideoTile({
         </>
       ) : (
         <div className="video-placeholder">
+          <img className="video-placeholder-art" src={placeholderArt} alt="" />
           <div className="avatar-stage">
-            <div className="avatar-ring idle"><div className="avatar-core">{initials}</div></div>
+            <div className="avatar-ring idle"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
             {showMediaState && (
               <div className="media-state-strip">
                 <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>

@@ -1,11 +1,16 @@
 const express = require('express')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
-const { query } = require('../config/db')
+const crypto = require('crypto')
+const { query, transaction } = require('../config/db')
 const { verifyPassword } = require('../utils/password')
+const { sendVerificationEmail } = require('../utils/email')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
+const VERIFICATION_CODE_TTL_MINUTES = 15
+const MAX_VERIFICATION_ATTEMPTS = 5
+let authSchemaPromise = null
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase()
@@ -24,6 +29,138 @@ function validateStrongPassword(value) {
     && /[A-Z]/.test(password)
     && /\d/.test(password)
     && /[^A-Za-z0-9]/.test(password)
+}
+
+function createHttpError(status, message) {
+  const error = new Error(message)
+  error.status = status
+  return error
+}
+
+async function ensureAuthSchema() {
+  if (!authSchemaPromise) {
+    authSchemaPromise = (async () => {
+      await query(
+        "ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'"
+      )
+
+      await query(
+        `
+        CREATE TABLE IF NOT EXISTS email_verification_codes (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          user_id BIGINT UNSIGNED NOT NULL,
+          email VARCHAR(180) NOT NULL,
+          code_hash VARCHAR(255) NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          used_at TIMESTAMP NULL,
+          attempt_count INT DEFAULT 0,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_email_verification_user_id (user_id),
+          INDEX idx_email_verification_email (email),
+          INDEX idx_email_verification_expires_at (expires_at),
+          CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        `
+      )
+    })().catch((error) => {
+      authSchemaPromise = null
+      throw error
+    })
+  }
+
+  return authSchemaPromise
+}
+
+function generateVerificationCode() {
+  return String(crypto.randomInt(100000, 1000000))
+}
+
+async function getEndUserRoleId(connection) {
+  const [roles] = await connection.execute(
+    `
+    SELECT id
+    FROM roles
+    WHERE name = 'end_user'
+    LIMIT 1
+    `
+  )
+
+  if (!roles.length) throw createHttpError(500, 'End user role is missing from the database.')
+  return roles[0].id
+}
+
+async function createVerificationCode(connection, userId, email) {
+  const code = generateVerificationCode()
+  const codeHash = await bcrypt.hash(code, 10)
+
+  await connection.execute(
+    `
+    UPDATE email_verification_codes
+    SET used_at = NOW()
+    WHERE user_id = ?
+    AND used_at IS NULL
+    `,
+    [userId]
+  )
+
+  await connection.execute(
+    `
+    INSERT INTO email_verification_codes (
+      user_id,
+      email,
+      code_hash,
+      expires_at,
+      created_at
+    )
+    VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), NOW())
+    `,
+    [userId, email, codeHash, VERIFICATION_CODE_TTL_MINUTES]
+  )
+
+  return code
+}
+
+function signAccessToken(user) {
+  return jwt.sign(
+    {
+      sub: user.id,
+      tenant_id: user.tenant_id,
+      email: user.email,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  )
+}
+
+async function loginResponse(user, message = 'Login successful') {
+  await query(
+    `
+    UPDATE users
+    SET last_login_at = NOW()
+    WHERE id = :id
+    `,
+    { id: user.id }
+  )
+
+  const refreshedUsers = await query(
+    `
+    SELECT *
+    FROM users
+    WHERE id = :id
+    LIMIT 1
+    `,
+    { id: user.id }
+  )
+  const refreshedUser = refreshedUsers[0] || user
+  const roles = await getUserRoles(refreshedUser.id)
+  const accessToken = signAccessToken(refreshedUser)
+
+  return {
+    message,
+    token_type: 'Bearer',
+    access_token: accessToken,
+    user: formatUser(refreshedUser, roles),
+  }
 }
 
 function formatUser(user, roles = []) {
@@ -54,6 +191,8 @@ async function getUserRoles(userId) {
 
 router.post('/login', async (req, res, next) => {
   try {
+    await ensureAuthSchema()
+
     const email = normalizeEmail(req.body?.email)
     const password = String(req.body?.password || '')
 
@@ -87,37 +226,19 @@ router.post('/login', async (req, res, next) => {
       return res.status(422).json({ message: 'Invalid email or password.' })
     }
 
+    if (user.status === 'pending_verification') {
+      return res.status(403).json({
+        message: 'Please verify your email before logging in.',
+        requires_verification: true,
+        email: user.email,
+      })
+    }
+
     if (user.status !== 'active') {
       return res.status(403).json({ message: 'Your account is not active.' })
     }
 
-    await query(
-      `
-      UPDATE users
-      SET last_login_at = NOW()
-      WHERE id = :id
-      `,
-      { id: user.id }
-    )
-
-    const roles = await getUserRoles(user.id)
-
-    const accessToken = jwt.sign(
-      {
-        sub: user.id,
-        tenant_id: user.tenant_id,
-        email: user.email,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    )
-
-    return res.json({
-      message: 'Login successful',
-      token_type: 'Bearer',
-      access_token: accessToken,
-      user: formatUser(user, roles),
-    })
+    return res.json(await loginResponse(user))
   } catch (error) {
     next(error)
   }
@@ -125,6 +246,8 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/register', async (req, res, next) => {
   try {
+    await ensureAuthSchema()
+
     const name = String(req.body?.name || '').trim()
     const email = normalizeEmail(req.body?.email)
     const password = String(req.body?.password || '')
@@ -149,7 +272,7 @@ router.post('/register', async (req, res, next) => {
 
     const existing = await query(
       `
-      SELECT id
+      SELECT *
       FROM users
       WHERE tenant_id = 1
       AND email = :email
@@ -158,47 +281,199 @@ router.post('/register', async (req, res, next) => {
       { email }
     )
 
-    if (existing.length) {
+    if (existing.length && existing[0].status !== 'pending_verification') {
       return res.status(409).json({ message: 'Email already exists.' })
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
+    let userId = existing[0]?.id || null
 
-    const result = await query(
+    const code = await transaction(async (connection) => {
+      if (userId) {
+        await connection.execute(
+          `
+          UPDATE users
+          SET name = ?,
+              password_hash = ?,
+              status = 'pending_verification',
+              updated_at = NOW()
+          WHERE id = ?
+          `,
+          [name, passwordHash, userId]
+        )
+      } else {
+        const [result] = await connection.execute(
+          `
+          INSERT INTO users (
+            tenant_id,
+            name,
+            email,
+            password_hash,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            1,
+            ?,
+            ?,
+            ?,
+            'pending_verification',
+            NOW(),
+            NOW()
+          )
+          `,
+          [name, email, passwordHash]
+        )
+
+        userId = result.insertId
+      }
+
+      const roleId = await getEndUserRoleId(connection)
+      await connection.execute(
+        `
+        INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
+        SELECT ?, ?, 1, NOW()
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM user_roles
+          WHERE user_id = ?
+          AND role_id = ?
+          AND tenant_id = 1
+        )
+        `,
+        [userId, roleId, userId, roleId]
+      )
+
+      return createVerificationCode(connection, userId, email)
+    })
+
+    await sendVerificationEmail({ to: email, name, code })
+
+    return res.status(201).json({
+      message: 'Verification code sent. Check your email to finish signup.',
+      requires_verification: true,
+      email,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/verify-email', async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const email = normalizeEmail(req.body?.email)
+    const code = String(req.body?.code || '').replace(/\D/g, '').slice(0, 6)
+
+    if (!validateEmail(email) || code.length !== 6) {
+      return res.status(422).json({ message: 'Enter a valid email and 6-digit verification code.' })
+    }
+
+    const rows = await query(
       `
-      INSERT INTO users (
-        tenant_id,
-        name,
-        email,
-        password_hash,
-        status,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        1,
-        :name,
-        :email,
-        :passwordHash,
-        'active',
-        NOW(),
-        NOW()
-      )
+      SELECT
+        verification.id AS verification_id,
+        verification.code_hash,
+        verification.expires_at,
+        verification.attempt_count,
+        users.*
+      FROM email_verification_codes verification
+      JOIN users ON users.id = verification.user_id
+      WHERE verification.email = :email
+      AND verification.used_at IS NULL
+      ORDER BY verification.created_at DESC, verification.id DESC
+      LIMIT 1
       `,
-      { name, email, passwordHash }
+      { email }
     )
 
-    const userId = result.insertId
+    const verification = rows[0]
+    if (!verification || verification.status !== 'pending_verification') {
+      return res.status(422).json({ message: 'No pending verification was found for this email.' })
+    }
 
-    await query(
+    if (Number(verification.attempt_count || 0) >= MAX_VERIFICATION_ATTEMPTS) {
+      return res.status(429).json({ message: 'Too many verification attempts. Request a new code.' })
+    }
+
+    if (new Date(verification.expires_at).getTime() < Date.now()) {
+      return res.status(422).json({ message: 'Verification code expired. Request a new code.' })
+    }
+
+    const codeOk = await bcrypt.compare(code, verification.code_hash)
+    if (!codeOk) {
+      await query(
+        `
+        UPDATE email_verification_codes
+        SET attempt_count = attempt_count + 1
+        WHERE id = :id
+        `,
+        { id: verification.verification_id }
+      )
+
+      return res.status(422).json({ message: 'Verification code is incorrect.' })
+    }
+
+    await transaction(async (connection) => {
+      await connection.execute(
+        `
+        UPDATE users
+        SET status = 'active',
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [verification.id]
+      )
+
+      await connection.execute(
+        `
+        UPDATE email_verification_codes
+        SET used_at = NOW()
+        WHERE id = ?
+        `,
+        [verification.verification_id]
+      )
+    })
+
+    return res.json(await loginResponse({ ...verification, status: 'active' }, 'Email verified successfully'))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/resend-verification', async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const email = normalizeEmail(req.body?.email)
+    if (!validateEmail(email)) return res.status(422).json({ message: 'Enter a valid email address.' })
+
+    const users = await query(
       `
-      INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
-      VALUES (:userId, 1, 1, NOW())
+      SELECT *
+      FROM users
+      WHERE email = :email
+      AND status = 'pending_verification'
+      LIMIT 1
       `,
-      { userId }
+      { email }
     )
 
-    return res.status(201).json({ message: 'User registered successfully.' })
+    const user = users[0]
+    if (!user) {
+      return res.status(422).json({ message: 'No pending verification was found for this email.' })
+    }
+
+    const code = await transaction((connection) => createVerificationCode(connection, user.id, email))
+    await sendVerificationEmail({ to: email, name: user.name, code })
+
+    return res.json({
+      message: 'A new verification code was sent.',
+      requires_verification: true,
+      email,
+    })
   } catch (error) {
     next(error)
   }

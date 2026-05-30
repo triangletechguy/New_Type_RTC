@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { chatAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime, getInitials } from '../../utils/formatters'
 
@@ -344,7 +345,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
           <div className="empty-chat">Loading chat...</div>
         ) : visibleMessages.length === 0 ? (
           <div className="empty-chat">
-            <div className="empty-chat-mark">#</div>
+            <img className="empty-chat-art" src={chatAssets.mobileChat} alt="" loading="lazy" />
             <strong>No messages yet</strong>
             <span>The conversation will appear here.</span>
           </div>

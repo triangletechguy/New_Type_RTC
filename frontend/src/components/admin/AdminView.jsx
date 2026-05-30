@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { adminAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -184,8 +185,11 @@ function DashboardTabs({ tabs, activeTab, onChange }) {
 function AdminEmptyState({ title, detail }) {
   return (
     <section className="admin-empty-state glass-card">
-      <strong>{title}</strong>
-      {detail ? <span>{detail}</span> : null}
+      <img src={adminAssets.emptySessions} alt="" loading="lazy" />
+      <div>
+        <strong>{title}</strong>
+        {detail ? <span>{detail}</span> : null}
+      </div>
     </section>
   )
 }
@@ -290,10 +294,13 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
 
   return (
     <section className="rtc-command-center glass-card">
-      <div className="rtc-command-copy">
-        <span className="eyebrow">{isPlatform ? 'RTC Business Console' : client?.name || 'Client Console'}</span>
-        <h2>{title}</h2>
-        <p>{subtitle}</p>
+      <div className="rtc-command-hero">
+        <div className="rtc-command-copy">
+          <span className="eyebrow">{isPlatform ? 'RTC Business Console' : client?.name || 'Client Console'}</span>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <img src={isPlatform ? adminAssets.controlGrid : adminAssets.statusColors} alt="" loading="lazy" />
       </div>
 
       <div className="rtc-command-kpis">
