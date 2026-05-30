@@ -6073,6 +6073,148 @@ pre {
   font-weight: 900;
 }
 
+.service-plan-card.selectable {
+  text-align: left;
+  cursor: pointer;
+}
+
+.service-plan-card.selectable:hover {
+  border-color: rgba(56, 189, 248, .36);
+  background: rgba(56, 189, 248, .08);
+}
+
+.admin-room-create-form {
+  display: grid;
+  grid-template-columns: minmax(180px, .75fr) minmax(220px, 1.1fr) minmax(150px, .6fr) minmax(150px, .6fr) minmax(120px, .42fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.admin-room-create-form label {
+  min-width: 0;
+}
+
+.admin-room-create-form button {
+  min-height: 46px;
+}
+
+.admin-room-toggle {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .055);
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-room-toggle input {
+  width: auto;
+}
+
+.room-filter-row,
+.admin-room-actions,
+.simple-health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-filter-row {
+  margin-bottom: 10px;
+}
+
+.room-filter-row button {
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .055);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.room-filter-row button.active {
+  color: #fff;
+  border-color: rgba(56, 189, 248, .38);
+  background: rgba(56, 189, 248, .15);
+}
+
+.admin-room-table {
+  min-width: 920px;
+}
+
+.admin-room-actions {
+  min-width: 230px;
+}
+
+.admin-room-actions button {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.secondary-button.danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, .3);
+  background: rgba(248, 113, 113, .1);
+}
+
+.simple-health-panel {
+  padding: 18px;
+}
+
+.simple-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.simple-health-card {
+  min-width: 0;
+  min-height: 120px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .055);
+}
+
+.simple-health-card.good {
+  border-color: rgba(45, 212, 191, .28);
+  background: rgba(45, 212, 191, .08);
+}
+
+.simple-health-card.attention {
+  border-color: rgba(245, 158, 11, .34);
+  background: rgba(245, 158, 11, .09);
+}
+
+.simple-health-card span,
+.simple-health-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.simple-health-card strong {
+  color: #fff;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.simple-health-actions {
+  margin-top: 12px;
+}
+
 .admin-state.pending {
   color: #fde68a;
   border-color: rgba(245, 158, 11, .36);
@@ -6923,6 +7065,8 @@ pre {
   .purchase-request-form,
   .sdk-access-form,
   .company-profile-grid,
+  .admin-room-create-form,
+  .simple-health-grid,
   .enterprise-service-panel,
   .enterprise-dashboard-grid,
   .company-setup-form,

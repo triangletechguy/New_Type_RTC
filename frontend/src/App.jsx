@@ -87,7 +87,7 @@ export default function App() {
       <section className="content-shell">
         {safeView === 'admin' && (
           <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
-            <AdminView onView={changeView} />
+            <AdminView onView={changeView} onOpenRoom={openRoom} />
           </Suspense>
         )}
         {safeView === 'sdk' && (

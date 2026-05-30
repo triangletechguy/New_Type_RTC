@@ -11,6 +11,9 @@ const BILLING_TYPES = new Set(['monthly', 'prepaid', 'custom', 'enterprise'])
 const APP_PLATFORMS = new Set(['web', 'ios', 'android', 'web_mobile', 'server'])
 const APP_STATUSES = new Set(['active', 'inactive', 'suspended'])
 const PLAN_REVIEW_STATUSES = new Set(['approved', 'rejected'])
+const ADMIN_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
+const ADMIN_ROOM_PRIVACY = new Set(['public', 'private', 'password'])
+const ADMIN_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
 const DEFAULT_SERVICE_PLANS = [
   {
     code: 'free',
@@ -213,6 +216,11 @@ function normalizePlanReviewStatus(value) {
   return PLAN_REVIEW_STATUSES.has(status) ? status : ''
 }
 
+function normalizeAdminRoomStatus(value) {
+  const status = cleanString(value, 30).toLowerCase() || 'active'
+  return ADMIN_ROOM_STATUSES.has(status) ? status : 'active'
+}
+
 function userStatusForCompany(status) {
   return status === 'active' ? 'active' : 'inactive'
 }
@@ -240,6 +248,41 @@ function parseAllowedOrigins(value) {
     .map((origin) => cleanString(origin, 255))
     .filter(Boolean))]
     .slice(0, 20)
+}
+
+function parseAdminRoomPayload(body = {}) {
+  const name = cleanString(readBodyValue(body, 'name'), 150)
+  const description = emptyToNull(readBodyValue(body, 'description'), 700)
+  const roomType = cleanString(readBodyValue(body, 'room_type', 'roomType'), 30) || 'video'
+  const privacyType = cleanString(readBodyValue(body, 'privacy_type', 'privacyType'), 30) || 'public'
+  const password = cleanString(readBodyValue(body, 'password'), 100)
+  const maxMicCount = positiveInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), 8)
+  const errors = {}
+
+  if (!name) errors.name = 'Room name is required.'
+  if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
+  if (!ADMIN_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
+  if (!ADMIN_ROOM_PRIVACY.has(privacyType)) errors.privacy_type = 'Choose a valid privacy type.'
+  if (maxMicCount < 1 || maxMicCount > 16) errors.max_mic_count = 'Max mic count must be between 1 and 16.'
+  if (privacyType === 'password' && password.length < 4) errors.password = 'Password rooms need a password of at least 4 characters.'
+
+  return {
+    errors,
+    payload: {
+      tenantId: Number(readBodyValue(body, 'tenant_id', 'tenantId')),
+      ownerId: Number(readBodyValue(body, 'owner_id', 'ownerId')),
+      name,
+      description,
+      roomType,
+      privacyType,
+      password: privacyType === 'password' ? password : '',
+      maxMicCount,
+      chatEnabled: readBodyValue(body, 'chat_enabled', 'chatEnabled') !== false,
+      giftEnabled: readBodyValue(body, 'gift_enabled', 'giftEnabled') !== false,
+      screenShareEnabled: Boolean(readBodyValue(body, 'screen_share_enabled', 'screenShareEnabled')),
+      aiSecurityEnabled: Boolean(readBodyValue(body, 'ai_security_enabled', 'aiSecurityEnabled')),
+    },
+  }
 }
 
 async function ensureTenantCompanyColumns() {
@@ -1608,6 +1651,208 @@ async function updateClientAppForTenant(user, appId, body = {}) {
     )
 
     return app.tenant_id
+  })
+}
+
+async function findRoomOwnerForTenant(connection, tenantId, preferredOwnerId = null) {
+  if (preferredOwnerId && Number.isInteger(preferredOwnerId)) {
+    const [preferred] = await connection.execute(
+      `
+      SELECT id, name
+      FROM users
+      WHERE id = ?
+      AND tenant_id = ?
+      AND status = 'active'
+      LIMIT 1
+      `,
+      [preferredOwnerId, tenantId]
+    )
+
+    if (preferred.length) return preferred[0]
+  }
+
+  const [admins] = await connection.execute(
+    `
+    SELECT u.id, u.name
+    FROM users u
+    INNER JOIN user_roles ur ON ur.user_id = u.id
+    INNER JOIN roles r ON r.id = ur.role_id
+    WHERE u.tenant_id = ?
+    AND u.status = 'active'
+    AND r.name = 'client_admin'
+    ORDER BY u.created_at ASC, u.id ASC
+    LIMIT 1
+    `,
+    [tenantId]
+  )
+
+  if (admins.length) return admins[0]
+
+  const [users] = await connection.execute(
+    `
+    SELECT id, name
+    FROM users
+    WHERE tenant_id = ?
+    AND status = 'active'
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
+    `,
+    [tenantId]
+  )
+
+  if (users.length) return users[0]
+
+  const error = new Error('Create or invite a company admin before creating rooms for this client.')
+  error.status = 422
+  throw error
+}
+
+async function createAdminRoom(user, payload) {
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+  const tenantId = isSuperAdmin ? payload.tenantId : Number(user.tenant_id)
+
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    const error = new Error('Choose a client company before creating a room.')
+    error.status = 422
+    throw error
+  }
+
+  return transaction(async (connection) => {
+    const [tenants] = await connection.execute(
+      `
+      SELECT id, name, status
+      FROM tenants
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [tenantId]
+    )
+    const tenant = tenants[0]
+
+    if (!tenant) {
+      const error = new Error('Client company was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!['active', 'pending'].includes(tenant.status)) {
+      const error = new Error('Rooms cannot be created while this company is suspended or cancelled.')
+      error.status = 422
+      throw error
+    }
+
+    const owner = await findRoomOwnerForTenant(
+      connection,
+      tenantId,
+      isSuperAdmin ? payload.ownerId : user.id
+    )
+    const passwordHash = payload.password ? await bcrypt.hash(payload.password, 10) : null
+    const [insertResult] = await connection.execute(
+      `
+      INSERT INTO rooms (
+        tenant_id, owner_id, name, description, room_type,
+        privacy_type, password_hash, max_mic_count,
+        chat_enabled, gift_enabled, screen_share_enabled, ai_security_enabled,
+        status, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+      `,
+      [
+        tenantId,
+        owner.id,
+        payload.name,
+        payload.description,
+        payload.roomType,
+        payload.privacyType,
+        passwordHash,
+        payload.maxMicCount,
+        payload.chatEnabled ? 1 : 0,
+        payload.giftEnabled ? 1 : 0,
+        payload.screenShareEnabled ? 1 : 0,
+        payload.aiSecurityEnabled ? 1 : 0,
+      ]
+    )
+
+    await connection.execute(
+      `
+      INSERT INTO room_roles (room_id, user_id, role, created_at)
+      VALUES (?, ?, 'owner', NOW())
+      `,
+      [insertResult.insertId, owner.id]
+    )
+
+    return insertResult.insertId
+  })
+}
+
+async function assertAdminRoomAccess(connection, user, roomId) {
+  const [rooms] = await connection.execute(
+    `
+    SELECT id, tenant_id, name, status
+    FROM rooms
+    WHERE id = ?
+    LIMIT 1
+    `,
+    [roomId]
+  )
+  const room = rooms[0]
+
+  if (!room) {
+    const error = new Error('Room was not found.')
+    error.status = 404
+    throw error
+  }
+
+  if (!hasAnyRole(user, ['super_admin']) && Number(room.tenant_id) !== Number(user.tenant_id)) {
+    const error = new Error('You can only manage rooms for your company.')
+    error.status = 403
+    throw error
+  }
+
+  return room
+}
+
+async function setAdminRoomStatus(user, roomId, status) {
+  return transaction(async (connection) => {
+    const room = await assertAdminRoomAccess(connection, user, roomId)
+
+    await connection.execute(
+      `
+      UPDATE rooms
+      SET status = ?,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [status, room.id]
+    )
+
+    if (status !== 'active') {
+      await connection.execute(
+        `
+        UPDATE rtc_sessions
+        SET status = 'ended',
+            ended_at = COALESCE(ended_at, NOW()),
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND status = 'active'
+        `,
+        [room.id]
+      )
+
+      await connection.execute(
+        `
+        UPDATE rtc_session_participants
+        SET left_at = COALESCE(left_at, NOW()),
+            connection_status = 'disconnected',
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND left_at IS NULL
+        `,
+        [room.id]
+      )
+    }
+
+    return room
   })
 }
 
@@ -3012,6 +3257,65 @@ router.patch('/client-apps/:appId', async (req, res, next) => {
     return res.json({
       message: `${app?.name || 'Client app'} updated.`,
       app,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/rooms', async (req, res, next) => {
+  try {
+    const { errors, payload } = parseAdminRoomPayload(req.body || {})
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Check the room setup form.', errors })
+    }
+
+    const roomId = await createAdminRoom(req.user, payload)
+    const [room] = await getRoomRows([roomId])
+
+    return res.status(201).json({
+      message: `${room?.name || 'Room'} created successfully.`,
+      room,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/rooms/:roomId/status', async (req, res, next) => {
+  try {
+    const roomId = Number(req.params.roomId)
+    const status = normalizeAdminRoomStatus(req.body?.status)
+
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      return res.status(400).json({ message: 'Invalid room id.' })
+    }
+
+    await setAdminRoomStatus(req.user, roomId, status)
+    const [room] = await getRoomRows([roomId])
+
+    return res.json({
+      message: status === 'active' ? 'Room is active and available.' : 'Room availability updated.',
+      room,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.delete('/rooms/:roomId', async (req, res, next) => {
+  try {
+    const roomId = Number(req.params.roomId)
+
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      return res.status(400).json({ message: 'Invalid room id.' })
+    }
+
+    await setAdminRoomStatus(req.user, roomId, 'ended')
+
+    return res.json({
+      message: 'Room removed from availability. Usage history is preserved.',
+      room_id: roomId,
     })
   } catch (error) {
     return next(error)

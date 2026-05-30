@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
-import { ActiveSessionsMonitor } from './ActiveSessionsMonitor'
 import { DashboardMetrics } from './DashboardMetrics'
 import { UsageLogCard } from './UsageLogCard'
 import { UsageVerificationCard } from './UsageVerificationCard'
@@ -66,8 +65,47 @@ const INITIAL_COMPANY_FORM = {
   primary_contact_email: '',
 }
 
+const INITIAL_ROOM_FORM = {
+  tenant_id: '',
+  name: '',
+  description: '',
+  room_type: 'video',
+  privacy_type: 'public',
+  password: '',
+  max_mic_count: '8',
+  chat_enabled: true,
+  gift_enabled: true,
+  screen_share_enabled: false,
+  ai_security_enabled: false,
+}
+
 const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancelled']
 const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
+const FEATURE_CATALOG = [
+  { key: 'normal_audio_room', group: 'Audio SDK', label: 'Normal audio room SDK' },
+  { key: 'youtube_audio_room', group: 'Audio SDK', label: 'YouTube audio room SDK' },
+  { key: 'noise_cancellation', group: 'Audio SDK', label: 'Noise cancellation control' },
+  { key: 'voice_changer', group: 'Audio SDK', label: 'Voice changer' },
+  { key: 'one_to_one_voice_calling', group: 'Audio SDK', label: 'One-to-one voice calling' },
+  { key: 'ai_security_audio', group: 'Audio SDK', label: 'AI audio security' },
+  { key: 'group_voice_chat', group: 'Audio SDK', label: 'Group voice chat' },
+  { key: 'normal_video_group_chat', group: 'Video SDK', label: 'Normal video group chat' },
+  { key: 'live_video_pk', group: 'Video SDK', label: 'Live video PK' },
+  { key: 'ai_security_video', group: 'Video SDK', label: 'AI video security' },
+  { key: 'one_to_one_video_calling', group: 'Video SDK', label: 'One-to-one video calling with beauty' },
+  { key: 'solo_video_live', group: 'Video SDK', label: 'Solo video live' },
+  { key: 'screen_share', group: 'Video SDK', label: 'Screen share' },
+  { key: 'video_filter_beauty', group: 'Video SDK', label: 'Filters, stickers, face detect, beauty' },
+  { key: 'message_chat', group: 'Common', label: 'Messages, replies, media, gifts' },
+  { key: 'room_roles', group: 'Common', label: 'Room owner, admin, moderator limits' },
+  { key: 'private_room_password', group: 'Common', label: 'Private and password rooms' },
+  { key: 'room_theme', group: 'Common', label: 'Room theme and profile settings' },
+  { key: 'room_share', group: 'Common', label: 'Room share and room like' },
+  { key: 'comment_reply', group: 'Common', label: 'Comment replies and cleanup' },
+  { key: 'company_billing', group: 'Admin Panel', label: 'Company-wise billing by used minutes' },
+  { key: 'rtc_connection_indicator', group: 'Admin Panel', label: 'RTC connection indicator' },
+  { key: 'admin_panel_analytics', group: 'Admin Panel', label: 'Live monitoring and analytics' },
+]
 
 function buildDashboardTabs(mode) {
   if (mode === 'super_admin') {
@@ -158,6 +196,21 @@ function getPrimaryClient(enterprise) {
 
 function getPendingPlanRequest(enterprise) {
   return (enterprise?.plan_requests || []).find((request) => request.status === 'pending') || null
+}
+
+function planFeatureRows(plan) {
+  if (!plan) return []
+  const enabledKeys = new Set(plan.included_features || [])
+
+  return FEATURE_CATALOG.map((feature) => ({
+    ...feature,
+    enabled: enabledKeys.has(feature.key),
+    limit_value: feature.key === 'room_roles'
+      ? formatNumber(plan.max_room_admins)
+      : feature.key === 'normal_video_group_chat'
+        ? formatNumber(plan.max_participants_per_room)
+        : '',
+  }))
 }
 
 function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }) {
@@ -357,11 +410,10 @@ function PlanRequestsPanel({ requests, mode, onRefresh }) {
   )
 }
 
-function PackagePurchasePanel({ enterprise, mode, onRefresh }) {
+function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, onRefresh }) {
   const plans = (enterprise?.plans || []).filter((plan) => plan.status === 'active')
   const currentPlan = enterprise?.current_plan || getPrimaryClient(enterprise)?.plan
   const pendingRequest = getPendingPlanRequest(enterprise)
-  const [selectedPlanId, setSelectedPlanId] = useState('')
   const [billingType, setBillingType] = useState('monthly')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -371,8 +423,8 @@ function PackagePurchasePanel({ enterprise, mode, onRefresh }) {
   useEffect(() => {
     if (selectedPlanId || !plans.length) return
     const nextPlan = plans.find((plan) => Number(plan.id) !== Number(currentPlan?.id)) || plans[0]
-    if (nextPlan) setSelectedPlanId(String(nextPlan.id))
-  }, [currentPlan?.id, plans, selectedPlanId])
+    if (nextPlan) onSelectPlan?.(String(nextPlan.id))
+  }, [currentPlan?.id, onSelectPlan, plans, selectedPlanId])
 
   async function requestPackage(event) {
     event.preventDefault()
@@ -404,7 +456,13 @@ function PackagePurchasePanel({ enterprise, mode, onRefresh }) {
     return (
       <div className="dashboard-tab-panel">
         <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
-        <ServicePlansPanel plans={enterprise?.plans || []} currentPlan={currentPlan} mode={mode} />
+        <ServicePlansPanel
+          plans={enterprise?.plans || []}
+          currentPlan={currentPlan}
+          selectedPlanId={selectedPlanId}
+          onSelectPlan={onSelectPlan}
+          mode={mode}
+        />
       </div>
     )
   }
@@ -442,7 +500,7 @@ function PackagePurchasePanel({ enterprise, mode, onRefresh }) {
                 type="button"
                 className={isCurrent ? 'purchase-plan-card active' : isSelected ? 'purchase-plan-card selected' : 'purchase-plan-card'}
                 key={plan.id}
-                onClick={() => setSelectedPlanId(String(plan.id))}
+                onClick={() => onSelectPlan?.(String(plan.id))}
               >
                 <span className="eyebrow">{plan.code}</span>
                 <strong>{plan.name}</strong>
@@ -643,6 +701,70 @@ function CompanyProfilePanel({ enterprise }) {
   )
 }
 
+function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
+  const roomMetrics = dashboard?.metrics?.rooms || {}
+  const sessionMetrics = dashboard?.metrics?.sessions || {}
+  const verification = dashboard?.usage_verification || {}
+  const serviceOnline = enterprise?.service_model?.connection_indicator !== 'attention'
+  const availableRooms = (rooms || []).filter((room) => room.status === 'active').length
+  const disabledRooms = (rooms || []).filter((room) => room.status === 'inactive').length
+  const removedRooms = (rooms || []).filter((room) => room.status === 'ended').length
+  const checks = [
+    {
+      label: 'RTC service',
+      value: serviceOnline ? 'Online' : 'Needs attention',
+      detail: serviceOnline ? 'Clients can connect to RTC rooms.' : 'Check RTC provider or signaling service.',
+      state: serviceOnline ? 'good' : 'attention',
+    },
+    {
+      label: 'Live sessions',
+      value: formatNumber(sessionMetrics.active || dashboard?.active_sessions),
+      detail: `${formatNumber(sessionMetrics.started_today)} started today`,
+      state: Number(sessionMetrics.active || dashboard?.active_sessions || 0) > 0 ? 'good' : 'neutral',
+    },
+    {
+      label: 'Available rooms',
+      value: formatNumber(availableRooms || roomMetrics.active),
+      detail: `${formatNumber(disabledRooms || roomMetrics.inactive)} disabled · ${formatNumber(removedRooms || roomMetrics.ended)} removed`,
+      state: 'good',
+    },
+    {
+      label: 'Usage billing',
+      value: verification.status === 'verified' ? 'Verified' : 'Review',
+      detail: verification.status === 'verified' ? 'Usage records are matching billing checks.' : 'Open usage to inspect records.',
+      state: verification.status === 'verified' ? 'good' : 'attention',
+    },
+  ]
+
+  return (
+    <section className="simple-health-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Health</span>
+          <h2>Service Status</h2>
+        </div>
+        <span>{serviceOnline ? 'Running' : 'Attention'}</span>
+      </div>
+
+      <div className="simple-health-grid">
+        {checks.map((check) => (
+          <div className={`simple-health-card ${check.state}`} key={check.label}>
+            <span>{check.label}</span>
+            <strong>{check.value}</strong>
+            <small>{check.detail}</small>
+          </div>
+        ))}
+      </div>
+
+      <div className="simple-health-actions">
+        <button type="button" className="secondary-button" onClick={() => onTabChange('rooms')}>Manage rooms</button>
+        <button type="button" className="secondary-button" onClick={() => onTabChange('usage')}>Review usage</button>
+        <button type="button" className="secondary-button" onClick={() => onTabChange('sdk')}>Check SDK access</button>
+      </div>
+    </section>
+  )
+}
+
 function ScopeSummary({ payload, scope }) {
   const dashboard = payload?.dashboard
   const admin = payload?.admin
@@ -729,9 +851,10 @@ function ServiceFlowPanel({ flow }) {
   )
 }
 
-function ServicePlansPanel({ plans, currentPlan, mode }) {
+function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, mode }) {
   if (!plans?.length) return null
   const visiblePlans = plans.filter((plan) => plan.status === 'active' || currentPlan?.id === plan.id)
+  const selectedPlan = visiblePlans.find((plan) => String(plan.id) === String(selectedPlanId))
 
   return (
     <section className="enterprise-panel glass-card">
@@ -740,13 +863,18 @@ function ServicePlansPanel({ plans, currentPlan, mode }) {
           <span className="eyebrow">Packages</span>
           <h2>{mode === 'super_admin' ? 'Sellable Service Plans' : 'Available Package Limits'}</h2>
         </div>
-        {currentPlan ? <span>Current: {currentPlan.name}</span> : null}
+        <span>{selectedPlan ? `Viewing: ${selectedPlan.name}` : currentPlan ? `Current: ${currentPlan.name}` : 'Select a package'}</span>
       </div>
       <div className="service-plan-grid">
         {visiblePlans.map((plan) => {
-          const active = currentPlan?.code === plan.code
+          const active = String(selectedPlanId || currentPlan?.id || '') === String(plan.id)
           return (
-            <article className={active ? 'service-plan-card active' : 'service-plan-card'} key={plan.code}>
+            <button
+              type="button"
+              className={active ? 'service-plan-card active selectable' : 'service-plan-card selectable'}
+              key={plan.code}
+              onClick={() => onSelectPlan?.(String(plan.id))}
+            >
               <div>
                 <span className="eyebrow">{plan.code}</span>
                 <h3>{plan.name}</h3>
@@ -763,7 +891,7 @@ function ServicePlansPanel({ plans, currentPlan, mode }) {
                 <span>{formatNumber(plan.max_participants_per_room)} participants</span>
                 <span>{formatNumber(plan.feature_count)} tools</span>
               </div>
-            </article>
+            </button>
           )
         })}
       </div>
@@ -1344,18 +1472,20 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
   )
 }
 
-function FeatureControlsPanel({ features }) {
-  if (!features?.length) return null
-  const groups = groupedFeatures(features)
+function FeatureControlsPanel({ features, selectedPlan }) {
+  const displayFeatures = selectedPlan ? planFeatureRows(selectedPlan) : features || []
+  if (!displayFeatures.length) return null
+  const groups = groupedFeatures(displayFeatures)
+  const enabledCount = displayFeatures.filter((feature) => feature.enabled).length
 
   return (
     <section className="enterprise-panel glass-card">
       <div className="admin-panel-header">
         <div>
           <span className="eyebrow">Feature Controls</span>
-          <h2>RTC Tools Enabled By Package</h2>
+          <h2>{selectedPlan ? `${selectedPlan.name} Tools` : 'RTC Tools Enabled By Package'}</h2>
         </div>
-        <span>{formatNumber(features.filter((feature) => feature.enabled).length)} enabled</span>
+        <span>{formatNumber(enabledCount)} enabled</span>
       </div>
       <div className="feature-control-groups">
         {Object.entries(groups).map(([group, items]) => (
@@ -1363,7 +1493,7 @@ function FeatureControlsPanel({ features }) {
             <h3>{group}</h3>
             <div>
               {items.map((feature) => (
-                <span className={feature.enabled ? 'feature-pill enabled' : 'feature-pill disabled'} key={`${feature.app_id || 'plan'}-${feature.key}`}>
+                <span className={feature.enabled ? 'feature-pill enabled' : 'feature-pill disabled'} key={`${feature.app_id || selectedPlan?.id || 'plan'}-${feature.key}`}>
                   {feature.label}
                   {feature.limit_value ? <b>{feature.limit_value}</b> : null}
                 </span>
@@ -1461,6 +1591,255 @@ function AdminRoomsTable({ rooms }) {
   )
 }
 
+function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefresh }) {
+  const activeClients = (clients || []).filter((client) => client.status === 'active' || client.status === 'pending')
+  const [form, setForm] = useState(INITIAL_ROOM_FORM)
+  const [errors, setErrors] = useState({})
+  const [creating, setCreating] = useState(false)
+  const [busyRoomId, setBusyRoomId] = useState(null)
+  const [statusFilter, setStatusFilter] = useState('available')
+  const [message, setMessage] = useState('')
+  const visibleRooms = (rooms || []).filter((room) => {
+    if (statusFilter === 'all') return true
+    if (statusFilter === 'removed') return room.status === 'ended'
+    return room.status !== 'ended'
+  })
+
+  useEffect(() => {
+    if (!isSuperAdmin || form.tenant_id || !activeClients[0]?.id) return
+    setForm((current) => ({ ...current, tenant_id: String(activeClients[0].id) }))
+  }, [activeClients, form.tenant_id, isSuperAdmin])
+
+  function change(field, value) {
+    setErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function createRoom(event) {
+    event.preventDefault()
+    setCreating(true)
+    setErrors({})
+    setMessage('Creating room...')
+
+    try {
+      const payload = {
+        ...form,
+        max_mic_count: Number(form.max_mic_count || 8),
+      }
+      if (!isSuperAdmin) delete payload.tenant_id
+      const data = await apiRequest('/admin/rooms', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setMessage(data.message)
+      setForm((current) => ({
+        ...INITIAL_ROOM_FORM,
+        tenant_id: current.tenant_id,
+      }))
+      await onRefresh?.()
+    } catch (error) {
+      setErrors(error.errors || {})
+      setMessage(error.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function updateRoomStatus(room, status) {
+    setBusyRoomId(room.id)
+    setMessage(status === 'active' ? `Activating ${room.name}...` : `Disabling ${room.name}...`)
+
+    try {
+      const data = await apiRequest(`/admin/rooms/${room.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      setMessage(data.message)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setBusyRoomId(null)
+    }
+  }
+
+  async function removeRoom(room) {
+    const confirmed = window.confirm(`Remove ${room.name} from availability?`)
+    if (!confirmed) return
+
+    setBusyRoomId(room.id)
+    setMessage(`Removing ${room.name}...`)
+
+    try {
+      const data = await apiRequest(`/admin/rooms/${room.id}`, { method: 'DELETE' })
+      setMessage(data.message)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setBusyRoomId(null)
+    }
+  }
+
+  return (
+    <section className="admin-data-card room-management-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Rooms</span>
+          <h2>Create, Access, And Control Availability</h2>
+        </div>
+        <span>{formatNumber(visibleRooms.length)} shown</span>
+      </div>
+
+      <form className="admin-room-create-form" onSubmit={createRoom}>
+        {isSuperAdmin ? (
+          <label>
+            <span>Client company</span>
+            <select value={form.tenant_id} onChange={(event) => change('tenant_id', event.target.value)}>
+              {activeClients.map((client) => (
+                <option value={client.id} key={client.id}>{client.name}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <label>
+          <span>Room name</span>
+          <input
+            aria-invalid={Boolean(errors.name)}
+            value={form.name}
+            onChange={(event) => change('name', event.target.value)}
+            placeholder="Production support room"
+          />
+          {errors.name ? <small className="form-error">{errors.name}</small> : null}
+        </label>
+        <label>
+          <span>Type</span>
+          <select value={form.room_type} onChange={(event) => change('room_type', event.target.value)}>
+            <option value="video">Video</option>
+            <option value="group_video">Group video</option>
+            <option value="audio">Audio</option>
+            <option value="group_audio">Group audio</option>
+            <option value="solo_live">Solo live</option>
+            <option value="pk_live">PK live</option>
+          </select>
+        </label>
+        <label>
+          <span>Privacy</span>
+          <select value={form.privacy_type} onChange={(event) => change('privacy_type', event.target.value)}>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+            <option value="password">Password</option>
+          </select>
+        </label>
+        {form.privacy_type === 'password' ? (
+          <label>
+            <span>Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => change('password', event.target.value)}
+              placeholder="Room password"
+            />
+            {errors.password ? <small className="form-error">{errors.password}</small> : null}
+          </label>
+        ) : null}
+        <label>
+          <span>Max mic</span>
+          <input
+            type="number"
+            min="1"
+            max="16"
+            value={form.max_mic_count}
+            onChange={(event) => change('max_mic_count', event.target.value)}
+          />
+        </label>
+        <label className="admin-room-toggle">
+          <input
+            type="checkbox"
+            checked={form.screen_share_enabled}
+            onChange={(event) => change('screen_share_enabled', event.target.checked)}
+          />
+          <span>Screen share</span>
+        </label>
+        <button className="primary-button" type="submit" disabled={creating || (isSuperAdmin && !form.tenant_id)}>
+          {creating ? 'Creating...' : 'Create room'}
+        </button>
+      </form>
+
+      <div className="room-filter-row">
+        {[
+          ['available', 'Available'],
+          ['removed', 'Removed'],
+          ['all', 'All'],
+        ].map(([key, label]) => (
+          <button type="button" className={statusFilter === key ? 'active' : ''} key={key} onClick={() => setStatusFilter(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="admin-table-scroll">
+        <table className="admin-data-table admin-room-table">
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Status</th>
+              <th>Type</th>
+              <th>Live</th>
+              <th>Owner</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRooms.length === 0 ? (
+              <tr><td colSpan="6">No rooms in this scope.</td></tr>
+            ) : visibleRooms.map((room) => (
+              <tr key={room.id}>
+                <td>
+                  <strong>#{room.id} - {room.name}</strong>
+                  <span>{room.description || `${formatMinutes(room.billable_minutes)} used`}</span>
+                </td>
+                <td><span className={`admin-state ${room.status}`}>{room.status}</span></td>
+                <td>{String(room.room_type || '').replace(/_/g, ' ')}</td>
+                <td>{formatNumber(room.active_participants)} people · {formatNumber(room.active_sessions)} sessions</td>
+                <td>{room.owner_name}</td>
+                <td>
+                  <div className="admin-room-actions">
+                    <button type="button" className="secondary-button" onClick={() => onOpenRoom?.(room.id, { room })} disabled={room.status !== 'active'}>
+                      Open
+                    </button>
+                    {room.status === 'active' ? (
+                      <button type="button" className="secondary-button" disabled={busyRoomId === room.id} onClick={() => updateRoomStatus(room, 'inactive')}>
+                        Disable
+                      </button>
+                    ) : room.status !== 'ended' ? (
+                      <button type="button" className="secondary-button" disabled={busyRoomId === room.id} onClick={() => updateRoomStatus(room, 'active')}>
+                        Activate
+                      </button>
+                    ) : null}
+                    {room.status !== 'ended' ? (
+                      <button type="button" className="secondary-button danger" disabled={busyRoomId === room.id} onClick={() => removeRoom(room)}>
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {message ? <div className="company-edit-message">{message}</div> : null}
+    </section>
+  )
+}
+
 function DailyUsageTable({ usage }) {
   return (
     <section className="admin-data-card glass-card">
@@ -1547,7 +1926,7 @@ function ParticipantRecordsTable({ records }) {
   )
 }
 
-export default function AdminView({ onView }) {
+export default function AdminView({ onView, onOpenRoom }) {
   const [overview, setOverview] = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedAdminId, setSelectedAdminId] = useState(null)
@@ -1560,6 +1939,7 @@ export default function AdminView({ onView }) {
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
   const [activeTab, setActiveTab] = useState('command')
+  const [selectedPackageId, setSelectedPackageId] = useState('')
 
   const activePayload = selectedDetail || overview
   const dashboard = activePayload?.dashboard
@@ -1572,6 +1952,13 @@ export default function AdminView({ onView }) {
   const rooms = activePayload?.rooms || []
   const dailyUsage = activePayload?.daily_usage || []
   const participantRecords = activePayload?.participant_records || []
+  const selectedPackage = useMemo(() => {
+    const plans = enterprise?.plans || []
+    return plans.find((plan) => String(plan.id) === String(selectedPackageId))
+      || enterprise?.current_plan
+      || plans.find((plan) => plan.status === 'active')
+      || null
+  }, [enterprise?.current_plan, enterprise?.plans, selectedPackageId])
   const dashboardTabs = useMemo(() => buildDashboardTabs(enterpriseMode), [enterpriseMode])
   const pageTitle = useMemo(() => {
     if (isSuperAdmin && selectedDetail?.admin) return `${selectedDetail.admin.name} Dashboard`
@@ -1691,6 +2078,15 @@ export default function AdminView({ onView }) {
     }
   }, [overview?.enterprise?.plans, companyForm.plan_id])
 
+  useEffect(() => {
+    const plans = enterprise?.plans || []
+    if (!plans.length) return
+    const selectedStillExists = plans.some((plan) => String(plan.id) === String(selectedPackageId))
+    if (selectedStillExists) return
+    const nextPlan = enterprise?.current_plan || plans.find((plan) => plan.status === 'active') || plans[0]
+    if (nextPlan) setSelectedPackageId(String(nextPlan.id))
+  }, [enterprise?.current_plan, enterprise?.plans, selectedPackageId])
+
   return (
     <div className="view-stack admin-dashboard-view">
       <header className="page-header glass-card">
@@ -1759,9 +2155,11 @@ export default function AdminView({ onView }) {
           <PackagePurchasePanel
             enterprise={enterprise}
             mode={enterpriseMode}
+            selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
+            onSelectPlan={setSelectedPackageId}
             onRefresh={() => load({ silent: true })}
           />
-          <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+          <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
         </div>
       ) : null}
 
@@ -1770,9 +2168,11 @@ export default function AdminView({ onView }) {
           <PackagePurchasePanel
             enterprise={enterprise}
             mode={enterpriseMode}
+            selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
+            onSelectPlan={setSelectedPackageId}
             onRefresh={() => load({ silent: true })}
           />
-          <FeatureControlsPanel features={enterprise?.feature_controls || []} />
+          <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
         </div>
       ) : null}
 
@@ -1817,7 +2217,13 @@ export default function AdminView({ onView }) {
               }}
             />
           ) : null}
-          <AdminRoomsTable rooms={rooms} />
+          <RoomManagementPanel
+            rooms={rooms}
+            clients={enterprise?.clients || []}
+            isSuperAdmin={isSuperAdmin}
+            onOpenRoom={onOpenRoom}
+            onRefresh={() => load({ silent: true })}
+          />
         </div>
       ) : null}
 
@@ -1829,17 +2235,12 @@ export default function AdminView({ onView }) {
 
       {activeTab === 'health' ? (
         <div className="dashboard-tab-panel">
-          <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
-          {enterpriseMode === 'super_admin' ? <ServiceFlowPanel flow={enterprise?.service_flow || []} /> : null}
-          <ActiveSessionsMonitor monitor={dashboard?.active_sessions_monitor} />
-          <section className="usage-dashboard-grid">
-            <UsageVerificationCard
-              dashboard={dashboard}
-              verification={usageVerification}
-              status={usageStatus}
-            />
-            <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
-          </section>
+          <SimpleHealthPanel
+            dashboard={dashboard}
+            enterprise={enterprise}
+            rooms={rooms}
+            onTabChange={setActiveTab}
+          />
         </div>
       ) : null}
     </div>
