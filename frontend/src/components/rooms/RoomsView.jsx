@@ -6,11 +6,7 @@ import {
   buildRoomsPath,
   defaultRoomForm,
   defaultRtcModeForRoom,
-  formatRoomDate,
-  getRoomFlowLabel,
   getRoomMeta,
-  getRoomTags,
-  getSeatLabel,
   normalizeRtcMode,
   privacyFilterOptions,
   roomFeatureOptions,
@@ -237,68 +233,6 @@ function FeedCard({ card, featured, onOpen }) {
   )
 }
 
-function DashboardRoomCard({ room, isSelected, onSelect, onJoin }) {
-  const meta = getRoomMeta(room.room_type)
-  const tags = getRoomTags(room)
-  const avatarIndex = Number(room.owner_id || room.id || 0)
-  const hostAvatar = avatarForIndex(avatarIndex)
-  const cover = coverForRoomType(room.room_type, room.privacy_type, avatarIndex)
-  const needsPassword = room.privacy_type === 'password'
-  const isPrivate = room.privacy_type === 'private'
-  const coverLabel = needsPassword ? 'Locked' : isPrivate ? 'Private' : meta.short
-  const flowLabel = getRoomFlowLabel(room.room_type)
-  const seatLabel = getSeatLabel(room.room_type, room.max_mic_count)
-  const roomStatus = room.status || 'active'
-  const description = room.description || 'A hosted room for live video, music, chat, and creator collaboration.'
-
-  return (
-    <article className={`talk-dashboard-card ${meta.tone}${isSelected ? ' selected' : ''}`}>
-      <div className="talk-dashboard-cover">
-        <img className="talk-dashboard-cover-image" src={cover} alt="" loading="lazy" />
-        <div className="talk-live-chip"><span></span> LIVE</div>
-        <div className="talk-cover-chip">{coverLabel}</div>
-        <div className="talk-cover-host">
-          <div className="talk-room-avatar large image-avatar">
-            <img src={hostAvatar} alt="" loading="lazy" />
-          </div>
-          <div>
-            <span>{room.owner_name || 'Room host'}</span>
-            <strong>{meta.label}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div className="talk-dashboard-card-body">
-        <div className="talk-room-title-row">
-          <div>
-            <h2>#{room.id} - {room.name || meta.label}</h2>
-            <p>{flowLabel} - {seatLabel} - {roomStatus}</p>
-          </div>
-          <div className="talk-room-avatar image-avatar">
-            <img src={hostAvatar} alt="" loading="lazy" />
-          </div>
-        </div>
-        <p className="talk-room-description">{description}</p>
-        <div className="talk-room-stat-row">
-          <span>{room.active_participants || 0} active</span>
-          <time>{formatRoomDate(room.created_at)}</time>
-        </div>
-        <div className="talk-room-tags">
-          {tags.map((tag) => <span key={tag}>{tag}</span>)}
-        </div>
-        <div className="talk-room-actions">
-          <button type="button" className={isSelected ? 'selected' : ''} onClick={() => onSelect(room)}>
-            {isSelected ? 'Selected' : 'Select'}
-          </button>
-          <button type="button" className="primary" onClick={() => onJoin(room)}>
-            {needsPassword ? 'Unlock' : 'Open'}
-          </button>
-        </div>
-      </div>
-    </article>
-  )
-}
-
 export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
@@ -352,7 +286,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
     room,
   })), [rooms])
   const visibleCards = useMemo(() => {
-    let cards = [...roomCards, ...demoCards]
+    const usingLiveRooms = roomCards.length > 0
+    let cards = usingLiveRooms ? [...roomCards] : [...demoCards]
+
+    if (usingLiveRooms) {
+      if (activeFeed === 'party') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
+      if (activeFeed === 'explore' && activeExplore === 'pk') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
+      if (activeFeed === 'explore' && activeExplore === 'games') cards = cards.filter((card) => roomSupportsVideo(card.room?.room_type))
+      return cards.slice(0, 48)
+    }
 
     if (activeFeed === 'latest') cards = cards.filter((card) => card.tab === 'latest' || card.room).slice(0, 16)
     if (activeFeed === 'nearby') cards = cards.filter((card) => card.tab === 'nearby' || card.room).slice(0, 16)
@@ -636,107 +578,88 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
 
   function renderLiveFeed() {
     return (
-      <>
-        <section className="buzzcast-discover">
-          <nav className="buzzcast-feed-nav" aria-label="Room feed">
-            {feedTabs.map((tab) => (
+      <section className="buzzcast-discover">
+        <nav className="buzzcast-feed-nav" aria-label="Room feed">
+          {feedTabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              className={activeFeed === tab.value ? 'active' : ''}
+              onClick={() => switchFeed(tab.value)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        {activeFeed === 'explore' ? (
+          <div className="buzzcast-filter-pills">
+            {exploreFilters.map((option) => (
               <button
-                key={tab.value}
+                key={option.value}
                 type="button"
-                className={activeFeed === tab.value ? 'active' : ''}
-                onClick={() => switchFeed(tab.value)}
+                className={activeExplore === option.value ? 'active' : ''}
+                onClick={() => switchExplore(option.value)}
               >
-                {tab.label}
+                {option.label}
               </button>
             ))}
-          </nav>
-
-          {activeFeed === 'explore' ? (
-            <div className="buzzcast-filter-pills">
-              {exploreFilters.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={activeExplore === option.value ? 'active' : ''}
-                  onClick={() => switchExplore(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="buzzcast-match-banner">
-            <strong>Live rooms built for video, music, chat, gifts, and enterprise RTC demos</strong>
-            <button type="button" onClick={() => openHostPanel()}>Create room</button>
           </div>
+        ) : null}
 
-          <div className="buzzcast-feed-controls">
-            <span>{visibleCards.length} curated rooms - {status}</span>
+        <div className="buzzcast-match-banner">
+          <strong>Live rooms built for video, music, chat, gifts, and enterprise RTC demos</strong>
+          <button type="button" onClick={() => openHostPanel()}>Create room</button>
+        </div>
+
+        <div className="buzzcast-feed-controls">
+          <span>{visibleCards.length} rooms - {loadingRooms ? 'Refreshing rooms...' : status}</span>
+          <div>
+            <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
+              {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Room privacy filter">
+              {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Room sort">
+              {roomSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {loadingRooms && rooms.length === 0 ? (
+          <div className="buzzcast-empty-state">Loading rooms...</div>
+        ) : visibleCards.length === 0 ? (
+          <div className="buzzcast-empty-state visual">
+            <img src={roomAssets.studioStage} alt="" loading="lazy" />
             <div>
-              <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
-                {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Room privacy filter">
-                {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Room sort">
-                {roomSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <strong>No matching rooms yet</strong>
+              <span>Create one or adjust the filters to bring live rooms into this grid.</span>
             </div>
           </div>
-
-          <div className={`buzzcast-card-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
-            {visibleCards.map((card, index) => (
-              <FeedCard
-                key={card.id}
-                card={card}
-                featured={index === 0 && activeFeed !== 'party'}
-                onOpen={openCard}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="talk-dashboard">
-          <header className="talk-dashboard-header">
-            <h1>Active RTC rooms</h1>
-            <span>{loadingRooms ? 'Refreshing rooms...' : `Page ${roomMeta.page} of ${roomMeta.total_pages || 1}`}</span>
-          </header>
-
-          {loadingRooms && rooms.length === 0 ? (
-            <div className="talk-dashboard-empty">Loading rooms...</div>
-          ) : (
-            <div className="talk-dashboard-grid">
-              {rooms.length === 0 ? (
-                <div className="talk-dashboard-empty visual-empty">
-                  <img src={roomAssets.studioStage} alt="" loading="lazy" />
-                  <div>
-                    <strong>No matching rooms yet</strong>
-                    <span>Create one or adjust the filters to bring live rooms into this grid.</span>
-                  </div>
-                </div>
-              ) : rooms.map((room) => (
-                <DashboardRoomCard
-                  key={room.id}
-                  room={room}
-                  isSelected={roomId === String(room.id)}
-                  onSelect={selectRoom}
-                  onJoin={joinRoomFromCard}
+        ) : (
+          <>
+            <div className={`buzzcast-card-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
+              {visibleCards.map((card, index) => (
+                <FeedCard
+                  key={card.id}
+                  card={card}
+                  featured={index === 0 && activeFeed !== 'party'}
+                  onOpen={openCard}
                 />
               ))}
             </div>
-          )}
 
-          {roomMeta.total_pages > 1 ? (
-            <div className="talk-dashboard-pagination">
-              <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
-              <span>{roomMeta.total} total rooms</span>
-              <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
-            </div>
-          ) : null}
-        </section>
-      </>
+            {roomMeta.total_pages > 1 ? (
+              <div className="buzzcast-pagination">
+                <button type="button" onClick={() => loadRooms({ page: Math.max(1, roomMeta.page - 1) })} disabled={loadingRooms || roomMeta.page <= 1}>Previous</button>
+                <span>{roomMeta.total} total rooms</span>
+                <button type="button" onClick={() => loadRooms({ page: Math.min(roomMeta.total_pages, roomMeta.page + 1) })} disabled={loadingRooms || roomMeta.page >= roomMeta.total_pages}>Next</button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
     )
   }
 

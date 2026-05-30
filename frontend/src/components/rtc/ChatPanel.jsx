@@ -12,7 +12,21 @@ function isOwnMessage(message, currentUser) {
   return Number(message?.sender_id) === Number(currentUser?.id)
 }
 
-export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
+function roleNames(user) {
+  return (Array.isArray(user?.roles) ? user.roles : [])
+    .map((role) => (typeof role === 'string' ? role : role?.name))
+    .filter(Boolean)
+}
+
+function canModerateChat(currentUser, room) {
+  if (!currentUser) return false
+  if (Number(room?.owner_id) === Number(currentUser.id)) return true
+
+  const roles = roleNames(currentUser)
+  return roles.some((role) => ['super_admin', 'client_admin', 'admin', 'moderator'].includes(role))
+}
+
+export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, onMessagesChange }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
@@ -22,6 +36,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editText, setEditText] = useState('')
   const [savingEditId, setSavingEditId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
@@ -35,6 +50,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
   const canSend = chatEnabled && Boolean(text.trim()) && !sending
+  const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => !Boolean(Number(message.is_deleted || message.is_unsent)))
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
@@ -216,8 +232,25 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
     }
   }
 
-  async function deleteMessage(message) {
-    if (!message?.id || !isOwnMessage(message, user) || message.is_deleted) return
+  function canDeleteMessage(message) {
+    if (!message?.id || message.is_deleted) return false
+    return isOwnMessage(message, user) || canModerate
+  }
+
+  function requestDeleteMessage(message) {
+    if (!canDeleteMessage(message)) return
+    setDeleteTarget(message)
+    setStatus('')
+  }
+
+  function closeDeleteModal() {
+    if (deleteTarget && deletingMessageIds[deleteTarget.id]) return
+    setDeleteTarget(null)
+  }
+
+  async function confirmDeleteMessage() {
+    const message = deleteTarget
+    if (!canDeleteMessage(message)) return
 
     const previousMessages = messages
     setDeletingMessageIds((previous) => ({ ...previous, [message.id]: true }))
@@ -243,6 +276,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
       setMessages(previousMessages)
       setStatus(`Delete failed: ${error.message}`)
     } finally {
+      setDeleteTarget(null)
       setDeletingMessageIds((previous) => {
         const next = { ...previous }
         delete next[message.id]
@@ -266,6 +300,20 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
   useEffect(() => {
     setChatEnabled(room?.chat_enabled !== false)
   }, [room?.chat_enabled])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    composerRef.current?.focus()
+    composerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [focusRequest])
+
+  useEffect(() => {
+    appendMessage(externalMessage)
+  }, [externalMessage])
+
+  useEffect(() => {
+    onMessagesChange?.(visibleMessages)
+  }, [messages, onMessagesChange])
 
   useEffect(() => {
     loadMessages()
@@ -352,7 +400,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
+          const giftMessage = message.message_type === 'gift'
+          const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
+          const canDelete = canDeleteMessage(message)
           const deleting = Boolean(deletingMessageIds[message.id])
           const editing = editingMessageId === message.id
           const savingEdit = savingEditId === message.id
@@ -360,7 +411,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
               <div className="chat-avatar">{getInitials(senderName)}</div>
-              <div className="chat-bubble">
+              <div className={giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'}>
                 <div className="chat-meta">
                   <strong>{senderName}</strong>
                   <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
@@ -384,17 +435,23 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
                       </button>
                     </div>
                   </form>
+                ) : giftMessage ? (
+                  <p><span className="chat-gift-icon">Gift</span>{message.message_body}</p>
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {canModify && !editing && (
+                {(canModify || canDelete) && !editing && (
                   <div className="chat-actions">
-                    <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
-                      Edit
-                    </button>
-                    <button type="button" className="danger" onClick={() => deleteMessage(message)} disabled={deleting}>
-                      {deleting ? 'Deleting' : 'Delete'}
-                    </button>
+                    {canModify ? (
+                      <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
+                        Edit
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button type="button" className="danger" onClick={() => requestDeleteMessage(message)} disabled={deleting}>
+                        {deleting ? 'Deleting' : 'Delete'}
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -420,6 +477,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
           rows={2}
           disabled={!chatEnabled || sending}
         />
+        {!chatEnabled ? <small className="chat-disabled-note">Owner controls currently have Chat turned off.</small> : null}
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
           <button className="primary-button" type="submit" disabled={!canSend}>
@@ -428,6 +486,33 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room }) {
         </div>
       </form>
       {status && <small className="warning-text">{status}</small>}
+
+      {deleteTarget ? (
+        <div className="chat-delete-backdrop" onMouseDown={closeDeleteModal}>
+          <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-delete-title" onMouseDown={(event) => event.stopPropagation()}>
+            <h3 id="chat-delete-title">Delete message?</h3>
+            <p>
+              {isOwnMessage(deleteTarget, user)
+                ? 'This will delete your message for everyone in the room.'
+                : `This will delete ${chatSenderName(deleteTarget, user)}'s message for everyone in the room.`}
+            </p>
+            <div className="chat-delete-preview">
+              <strong>{chatSenderName(deleteTarget, user)}</strong>
+              <span>{deleteTarget.message_body}</span>
+            </div>
+            <label className="chat-delete-option">
+              <input type="checkbox" checked readOnly />
+              <span>Delete for everyone</span>
+            </label>
+            <footer>
+              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>Cancel</button>
+              <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>
+                {deletingMessageIds[deleteTarget.id] ? 'Deleting...' : 'Delete'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </aside>
   )
 }

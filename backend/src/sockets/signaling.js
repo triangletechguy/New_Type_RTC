@@ -29,6 +29,7 @@ function registerSignaling(io) {
       rtcMode: user.rtcMode,
       micEnabled: user.micEnabled,
       cameraEnabled: user.cameraEnabled,
+      screenShared: user.screenShared,
     }
   }
 
@@ -51,13 +52,16 @@ function registerSignaling(io) {
     return messages[0] || null
   }
 
-  async function fetchOwnedDeletedChatMessage(messageId, userId) {
+  async function fetchAuthorizedDeletedChatMessage(messageId, userId) {
     const messages = await query(
       `
       SELECT id, sender_id, is_deleted, is_unsent
       FROM chat_messages
       WHERE id = :messageId
-      AND sender_id = :userId
+      AND (
+        sender_id = :userId
+        OR deleted_by = :userId
+      )
       LIMIT 1
       `,
       { messageId, userId }
@@ -90,7 +94,7 @@ function registerSignaling(io) {
   io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id)
 
-    socket.on('join-room', ({ roomId, userId, userName, rtcMode, micEnabled, cameraEnabled } = {}, acknowledge) => {
+    socket.on('join-room', ({ roomId, userId, userName, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -109,6 +113,7 @@ function registerSignaling(io) {
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
         cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+        screenShared: normalizeBoolean(screenShared, false),
       })
 
       socket.join(roomKey)
@@ -136,6 +141,7 @@ function registerSignaling(io) {
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
         cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+        screenShared: normalizeBoolean(screenShared, false),
       })
 
       console.log(`Socket ${socket.id} joined room ${roomKey}`)
@@ -156,7 +162,7 @@ function registerSignaling(io) {
       socket.to(targetSocketId).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
     })
 
-    socket.on('media-state-change', ({ roomId, rtcMode, micEnabled, cameraEnabled } = {}, acknowledge) => {
+    socket.on('media-state-change', ({ roomId, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -181,6 +187,7 @@ function registerSignaling(io) {
         rtcMode: nextRtcMode,
         micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
         cameraEnabled: normalizeBoolean(cameraEnabled, currentUser.cameraEnabled),
+        screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
       }
 
       users.set(socket.id, nextUser)
@@ -264,7 +271,7 @@ function registerSignaling(io) {
       try {
         const currentUser = getSocketRoomUser(roomId, socket.id)
         const deletedMessage = currentUser?.userId
-          ? await fetchOwnedDeletedChatMessage(messageId, currentUser.userId)
+          ? await fetchAuthorizedDeletedChatMessage(messageId, currentUser.userId)
           : null
 
         if (!deletedMessage || (!Number(deletedMessage.is_deleted) && !Number(deletedMessage.is_unsent))) {
@@ -300,7 +307,7 @@ function registerSignaling(io) {
       try {
         const currentUser = getSocketRoomUser(roomId, socket.id)
         const deletedMessage = currentUser?.userId
-          ? await fetchOwnedDeletedChatMessage(messageId, currentUser.userId)
+          ? await fetchAuthorizedDeletedChatMessage(messageId, currentUser.userId)
           : null
 
         if (!deletedMessage || (!Number(deletedMessage.is_deleted) && !Number(deletedMessage.is_unsent))) {

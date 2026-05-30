@@ -61,6 +61,29 @@ Password room password: Room@1234
 Run `npm run db:seed` to create or refresh the two admin accounts, demo rooms,
 active RTC sessions, chat messages, moderation examples, and verified usage logs.
 
+## Email verification
+
+Signup creates a pending account and requires a 6-digit verification code before
+login. For production email, the simplest setup is Resend:
+
+```bash
+RESEND_API_KEY=re_xxxxxxxxx
+EMAIL_FROM="TalkEachOther <verify@yourdomain.com>"
+```
+
+Standard SMTP is also supported:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_FROM="TalkEachOther <verify@yourdomain.com>"
+```
+
+If no email provider is configured, local development still enters the code
+verification screen and prints/returns a local verification code for testing.
+
 ## Notes
 
 - Use `http://localhost:5173` locally, not HTTPS.

@@ -1367,25 +1367,33 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       const participant = participants[0]
       const currentMicEnabled = Boolean(Number(participant.mic_enabled))
       const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
+      const currentScreenShared = Boolean(Number(participant.screen_shared))
       const micEnabled = parseBoolean(req.body?.mic_enabled, currentMicEnabled)
       const cameraEnabled = roomSupportsVideo(room.room_type)
         ? parseBoolean(req.body?.camera_enabled, currentCameraEnabled)
         : false
+      const screenShared = parseBoolean(req.body?.screen_shared, currentScreenShared)
+
+      if (screenShared && !Boolean(Number(room.screen_share_enabled))) {
+        throw createHttpError(403, 'Screen share is disabled in this room.')
+      }
 
       await connection.execute(
         `
         UPDATE rtc_session_participants
         SET mic_enabled = ?,
             camera_enabled = ?,
+            screen_shared = ?,
             updated_at = NOW()
         WHERE id = ?
         `,
-        [micEnabled ? 1 : 0, cameraEnabled ? 1 : 0, participant.id]
+        [micEnabled ? 1 : 0, cameraEnabled ? 1 : 0, screenShared ? 1 : 0, participant.id]
       )
 
       const mediaChanges = []
       if (currentMicEnabled !== micEnabled) mediaChanges.push(micEnabled ? 'mic_on' : 'mic_off')
       if (currentCameraEnabled !== cameraEnabled) mediaChanges.push(cameraEnabled ? 'camera_on' : 'camera_off')
+      if (currentScreenShared !== screenShared) mediaChanges.push(screenShared ? 'screen_share_start' : 'screen_share_stop')
 
       for (const eventType of mediaChanges) {
         await connection.execute(
@@ -1403,6 +1411,7 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
               rtc_provider: 'native_webrtc',
               mic_enabled: micEnabled,
               camera_enabled: cameraEnabled,
+              screen_shared: screenShared,
             }),
           ]
         )
@@ -1422,6 +1431,7 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       rtc: {
         mic_enabled: Boolean(Number(result.participant.mic_enabled)),
         camera_enabled: Boolean(Number(result.participant.camera_enabled)),
+        screen_shared: Boolean(Number(result.participant.screen_shared)),
       },
       events: result.mediaChanges,
     })

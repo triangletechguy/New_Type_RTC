@@ -105,9 +105,11 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       setStatus('Creating account and sending code...')
       const data = await registerApi(name.trim(), normalizedEmail, password)
       setEmail(data.email || normalizedEmail)
-      setCode('')
       switchMode('verify')
-      setStatus(data.message || 'Verification code sent. Check your email.')
+      setCode(data.dev_verification_code || '')
+      setStatus(data.dev_verification_code
+        ? `${data.message} Local code: ${data.dev_verification_code}`
+        : data.message || 'Verification code sent. Check your email.')
     } catch (error) {
       setStatus(error.message)
     } finally {
@@ -149,7 +151,10 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     try {
       setStatus('Sending a new code...')
       const data = await resendVerification(normalizedEmail)
-      setStatus(data.message || 'A new verification code was sent.')
+      if (data.dev_verification_code) setCode(data.dev_verification_code)
+      setStatus(data.dev_verification_code
+        ? `${data.message} Local code: ${data.dev_verification_code}`
+        : data.message || 'A new verification code was sent.')
     } catch (error) {
       setStatus(error.message)
     } finally {

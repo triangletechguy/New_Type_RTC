@@ -75,7 +75,7 @@ export const stageLayoutOptions = [
 ]
 
 export const defaultRoomForm = {
-  name: 'talk-each-other Live Room',
+  name: '',
   description: 'A hosted room for live video, music, chat, and creator collaboration.',
   room_type: 'video',
   privacy_type: 'public',
@@ -230,6 +230,7 @@ export function peerMediaFromSignal(user) {
     rtcMode,
     micOn: user?.micEnabled !== false,
     cameraOn: rtcMode === 'video' && user?.cameraEnabled !== false,
+    screenShared: user?.screenShared === true,
   }
 }
 

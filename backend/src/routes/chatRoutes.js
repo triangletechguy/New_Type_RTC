@@ -27,6 +27,32 @@ function messageSelectSql() {
   `
 }
 
+function userHasTenantModerationRole(user) {
+  const roles = Array.isArray(user?.roles) ? user.roles : []
+  return roles.some((role) => ['super_admin', 'client_admin', 'admin', 'moderator'].includes(
+    typeof role === 'string' ? role : role?.name
+  ))
+}
+
+async function canDeleteMessageForEveryone(message, user) {
+  if (Number(message.sender_id) === Number(user.id)) return true
+  if (userHasTenantModerationRole(user)) return true
+
+  const roles = await query(
+    `
+    SELECT role
+    FROM room_roles
+    WHERE room_id = :roomId
+    AND user_id = :userId
+    AND role IN ('owner', 'admin', 'moderator')
+    LIMIT 1
+    `,
+    { roomId: message.room_id, userId: user.id }
+  )
+
+  return roles.length > 0
+}
+
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   try {
     const roomId = parsePositiveInteger(req.params.id)
@@ -36,7 +62,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     const rooms = await query(
       `
-      SELECT id, chat_enabled
+      SELECT id, chat_enabled, gift_enabled
       FROM rooms
       WHERE id = :roomId
       AND tenant_id = :tenantId
@@ -64,6 +90,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       meta: {
         limit,
         chat_enabled: Boolean(Number(rooms[0].chat_enabled)),
+        gift_enabled: Boolean(Number(rooms[0].gift_enabled)),
       },
     })
   } catch (error) {
@@ -99,8 +126,12 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     const room = rooms[0]
 
-    if (!room.chat_enabled) {
+    if (messageType !== 'gift' && !room.chat_enabled) {
       return res.status(403).json({ message: 'Chat is disabled in this room.' })
+    }
+
+    if (messageType === 'gift' && !room.gift_enabled) {
+      return res.status(403).json({ message: 'Gifts are disabled in this room.' })
     }
 
     const result = await query(
@@ -218,8 +249,8 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
 
     const message = messages[0]
 
-    if (Number(message.sender_id) !== Number(req.user.id)) {
-      return res.status(403).json({ message: 'You can only delete your own message.' })
+    if (!(await canDeleteMessageForEveryone(message, req.user))) {
+      return res.status(403).json({ message: 'You do not have permission to delete this message.' })
     }
 
     await query(

@@ -254,6 +254,38 @@ export class NativeRtcClient {
     await this.renegotiateAll()
   }
 
+  async replaceLocalTrack(kind, track, stream = this.localStream) {
+    const mediaStream = stream || this.localStream || (track ? new MediaStream([track]) : null)
+    if (mediaStream) this.localStream = mediaStream
+
+    if (track && mediaStream && !mediaStream.getTracks().includes(track)) {
+      mediaStream.addTrack(track)
+    }
+
+    const remoteSocketIds = Object.keys(this.peerConnections)
+
+    for (const remoteSocketId of remoteSocketIds) {
+      const peerConnection = this.peerConnections[remoteSocketId]
+      const sender = peerConnection.getSenders()
+        .find((item) => item.track?.kind === kind)
+      const transceiver = peerConnection.getTransceivers()
+        .find((item) => item.sender && item.receiver?.track?.kind === kind)
+
+      if (sender) {
+        await sender.replaceTrack(track || null)
+      } else if (transceiver) {
+        transceiver.direction = track
+          ? transceiver.direction.includes('recv') ? 'sendrecv' : 'sendonly'
+          : transceiver.direction.includes('recv') ? 'recvonly' : 'inactive'
+        await transceiver.sender.replaceTrack(track || null)
+      } else if (track && mediaStream) {
+        peerConnection.addTrack(track, mediaStream)
+      }
+    }
+
+    await this.renegotiateAll()
+  }
+
   async renegotiateAll() {
     const remoteSocketIds = Object.keys(this.peerConnections)
 

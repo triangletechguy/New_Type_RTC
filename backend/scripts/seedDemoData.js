@@ -265,6 +265,17 @@ async function deactivateKnownDemoUsers(connection) {
   )
 }
 
+async function deleteLegacySeedRooms(connection) {
+  await connection.execute(
+    `
+    DELETE FROM rooms
+    WHERE tenant_id = ?
+    AND name = 'Demo BuzzCast Stage'
+    `,
+    [tenantId]
+  )
+}
+
 async function ensureServicePlans(connection) {
   const planIds = {}
 
@@ -1009,6 +1020,7 @@ async function main() {
       viewer: await upsertUser(connection, { name: 'Inactive Demo Viewer', email: 'demo-viewer@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
       banned: await upsertUser(connection, { name: 'Inactive Demo Blocked Viewer', email: 'demo-banned@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
     }
+    await deleteLegacySeedRooms(connection)
 
     const roomConfigs = [
       {

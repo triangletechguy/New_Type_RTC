@@ -23,6 +23,17 @@ import { RtcConnectionIndicator } from './RtcConnectionIndicator'
 import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
+const giftCatalog = [
+  { id: 'rose', label: 'Rose', cost: 9 },
+  { id: 'lipstick', label: 'Lipstick', cost: 99 },
+  { id: 'melody', label: 'Sweet Melody', cost: 399 },
+  { id: 'candy', label: 'Candy World', cost: 1000 },
+  { id: 'star', label: 'Star', cost: 5 },
+  { id: 'spark', label: 'Sparklers', cost: 99 },
+  { id: 'racer', label: 'Racing Car', cost: 599 },
+  { id: 'spray', label: 'Spray', cost: 1 },
+]
+const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
@@ -50,10 +61,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [stageLayout, setStageLayout] = useState('grid')
   const [rtcConfigState, setRtcConfigState] = useState(null)
   const [joinEffect, setJoinEffect] = useState(null)
+  const [activeToolPanel, setActiveToolPanel] = useState(null)
+  const [chatFocusRequest, setChatFocusRequest] = useState(0)
+  const [externalChatMessage, setExternalChatMessage] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [sendingGiftId, setSendingGiftId] = useState('')
+  const [giftToast, setGiftToast] = useState(null)
+  const [screenSharing, setScreenSharing] = useState(false)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
   const streamRef = useRef(null)
+  const screenShareTrackRef = useRef(null)
   const activeRoomIdRef = useRef(null)
   const signalingRoomRef = useRef(null)
   const localSocketIdRef = useRef(null)
@@ -64,6 +83,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
+  const giftToastTimerRef = useRef(null)
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -82,6 +102,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         mediaState,
         peerState,
         label: `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerState}`,
+        badge: mediaState.screenShared ? 'screen' : '',
       }
     })
   }, [peerMediaStates, peerStates, remoteStreams])
@@ -117,6 +138,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcRef.current = null
     }
     stopMediaStream(streamRef.current)
+    if (screenShareTrackRef.current) {
+      try { screenShareTrackRef.current.stop() } catch {}
+      screenShareTrackRef.current = null
+    }
     pendingLocalTracksRef.current.forEach(({ track }) => {
       try { track.stop() } catch {}
     })
@@ -135,6 +160,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setSignalingState('idle')
       setMediaState('idle')
       setConnectStep('ready')
+      setScreenSharing(false)
+      setActiveToolPanel(null)
     }
   }
 
@@ -210,16 +237,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return attachCapturedLocalTrack(kind, track, options)
   }
 
-  async function publishMediaState(nextMicOn, nextCameraOn) {
+  async function publishMediaState(nextMicOn, nextCameraOn, options = {}) {
     if (!joined || !activeRoomIdRef.current) return { micOn: nextMicOn, cameraOn: nextCameraOn }
 
     const currentRtcMode = rtcModeRef.current
     const allowedCameraOn = currentRtcMode === 'video' && nextCameraOn
+    const includesScreenState = Object.prototype.hasOwnProperty.call(options, 'screenShared')
     const data = await apiRequest(`/rooms/${activeRoomIdRef.current}/media-state`, {
       method: 'POST',
       body: JSON.stringify({
         mic_enabled: nextMicOn,
         camera_enabled: allowedCameraOn,
+        ...(includesScreenState ? { screen_shared: options.screenShared } : {}),
       }),
     })
 
@@ -235,6 +264,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         rtcMode: currentRtcMode,
         micEnabled: serverMicOn,
         cameraEnabled: serverCameraOn,
+        ...(includesScreenState ? { screenShared: Boolean(data.rtc?.screen_shared) } : {}),
       }).catch((error) => setStatus(`Media state saved, signaling sync failed: ${error.message}`))
     }
 
@@ -303,6 +333,195 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     window.clearTimeout(joinEffectTimerRef.current)
     setJoinEffect({ name: name || 'Guest', key: Date.now() })
     joinEffectTimerRef.current = window.setTimeout(() => setJoinEffect(null), 1800)
+  }
+
+  function showGiftToast(gift) {
+    window.clearTimeout(giftToastTimerRef.current)
+    setGiftToast({ ...gift, key: Date.now() })
+    giftToastTimerRef.current = window.setTimeout(() => setGiftToast(null), 2200)
+  }
+
+  function emitSavedChatMessage(message) {
+    if (!message?.id) return
+
+    setExternalChatMessage({ ...message, local_event_key: Date.now() })
+
+    if (socketRef.current && signalingRoomRef.current) {
+      socketRef.current.timeout(3000).emit(
+        'chat-message',
+        {
+          roomId: signalingRoomRef.current,
+          message,
+        },
+        (error, response) => {
+          if (error || !response?.ok) setStatus('Message saved. Realtime delivery will resume when signaling reconnects.')
+        }
+      )
+    }
+  }
+
+  function openChatTool() {
+    setActiveToolPanel(null)
+    setChatFocusRequest((request) => request + 1)
+    setStatus(room?.chat_enabled === false ? 'Chat is disabled by owner controls.' : 'Chat composer is ready')
+  }
+
+  function toggleToolPanel(panel) {
+    if (panel === 'chat') {
+      openChatTool()
+      return
+    }
+
+    setActiveToolPanel((current) => (current === panel ? null : panel))
+  }
+
+  async function sendGift(gift) {
+    if (!joined) {
+      setStatus('Connect RTC before sending gifts.')
+      setActiveToolPanel('gifts')
+      return
+    }
+
+    if (room?.gift_enabled === false) {
+      setStatus('Gifts are disabled by owner controls.')
+      setActiveToolPanel('gifts')
+      return
+    }
+
+    try {
+      setSendingGiftId(gift.id)
+      setStatus(`Sending ${gift.label}...`)
+      const data = await apiRequest(`/rooms/${roomId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          message_type: 'gift',
+          message_body: `sent ${gift.label}`,
+          media_url: gift.id,
+        }),
+      })
+      emitSavedChatMessage(data.chat_message)
+      showGiftToast(gift)
+      setStatus(`${gift.label} sent`)
+    } catch (error) {
+      setStatus(error.message)
+    } finally {
+      setSendingGiftId('')
+    }
+  }
+
+  function currentCameraTrack(excludeTrack = null) {
+    return streamRef.current?.getVideoTracks?.().find((track) => (
+      track !== excludeTrack && track.readyState === 'live' && track !== screenShareTrackRef.current
+    )) || null
+  }
+
+  async function syncScreenShareState(nextScreenSharing) {
+    if (!joined || !activeRoomIdRef.current) return
+    await publishMediaState(micOnRef.current, cameraOnRef.current, { screenShared: nextScreenSharing })
+  }
+
+  async function stopScreenShare({ fromTrackEnded = false } = {}) {
+    const track = screenShareTrackRef.current
+    if (!track && !screenSharing) return
+
+    screenShareTrackRef.current = null
+    setMediaUpdating((state) => ({ ...state, screen: true }))
+
+    try {
+      if (track) {
+        track.onended = null
+        streamRef.current?.removeTrack?.(track)
+        if (!fromTrackEnded && track.readyState !== 'ended') {
+          try { track.stop() } catch {}
+        }
+      }
+
+      const cameraTrack = currentCameraTrack(track)
+
+      if (cameraOnRef.current && cameraTrack) {
+        await rtcRef.current?.replaceLocalTrack('video', cameraTrack, streamRef.current)
+      } else if (cameraOnRef.current && joinedRef.current && rtcModeRef.current === 'video') {
+        const restoredTrack = await attachNewLocalTrack('video', { publish: false })
+        await rtcRef.current?.replaceLocalTrack('video', restoredTrack, streamRef.current)
+      } else {
+        await rtcRef.current?.replaceLocalTrack('video', null, streamRef.current)
+      }
+
+      setScreenSharing(false)
+      await syncScreenShareState(false)
+      setStatus('Screen share stopped')
+    } catch (error) {
+      setStatus(`Screen share stop failed: ${error.message}`)
+    } finally {
+      setMediaUpdating((state) => ({ ...state, screen: false }))
+    }
+  }
+
+  async function startScreenShare() {
+    if (!joined) {
+      setStatus('Connect RTC before starting screen share.')
+      setActiveToolPanel('screen')
+      return
+    }
+
+    if (room?.screen_share_enabled === false) {
+      setStatus('Screen share is disabled by owner controls.')
+      setActiveToolPanel('screen')
+      return
+    }
+
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setStatus('This browser does not support screen sharing.')
+      setActiveToolPanel('screen')
+      return
+    }
+
+    try {
+      setMediaUpdating((state) => ({ ...state, screen: true }))
+      setStatus('Choose a screen or window to share...')
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false,
+      })
+      const [track] = displayStream.getVideoTracks()
+      if (!track) throw new Error('No screen video track was selected.')
+
+      if (screenShareTrackRef.current) {
+        await stopScreenShare()
+      }
+
+      screenShareTrackRef.current = track
+      track.contentHint = 'detail'
+      track.onended = () => {
+        stopScreenShare({ fromTrackEnded: true }).catch((error) => setStatus(`Screen share stopped with warning: ${error.message}`))
+      }
+
+      const targetStream = streamRef.current || displayStream
+      if (targetStream && !targetStream.getTracks().includes(track)) targetStream.addTrack(track)
+      if (!streamRef.current) {
+        streamRef.current = targetStream
+        setLocalStream(targetStream)
+      }
+
+      await rtcRef.current?.replaceLocalTrack('video', track, targetStream)
+      setScreenSharing(true)
+      setActiveToolPanel('screen')
+      await syncScreenShareState(true)
+      setStatus('Screen share is live')
+    } catch (error) {
+      if (screenShareTrackRef.current) {
+        await stopScreenShare().catch(() => {})
+      }
+      setStatus(error.name === 'NotAllowedError' ? 'Screen share was cancelled.' : `Screen share failed: ${error.message}`)
+    } finally {
+      setMediaUpdating((state) => ({ ...state, screen: false }))
+    }
+  }
+
+  async function toggleScreenShare() {
+    if (mediaUpdating.screen) return
+    if (screenSharing) return stopScreenShare()
+    return startScreenShare()
   }
 
   function shouldInitiateOffer(remoteSocketId) {
@@ -645,6 +864,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         rtcMode: joinedRtcMode,
         micEnabled: actualMicOn,
         cameraEnabled: actualCameraOn,
+        screenShared: false,
       })
 
       localSocketIdRef.current = signalingJoin.socketId || socket.id
@@ -778,6 +998,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
+    window.clearTimeout(giftToastTimerRef.current)
     resetRtcState({ clearState: false })
   }, [])
 
@@ -792,13 +1013,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const micCanRetry = joined && !micOn && !localAudioAvailable
   const cameraCanRetry = joined && rtcMode === 'video' && !cameraOn && !localVideoAvailable
   const micButtonDisabled = joining || mediaUpdating.mic
-  const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio'
+  const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio' || screenSharing
   const micButtonTitle = micCanRetry
     ? 'Start microphone'
     : mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'
   const cameraButtonTitle = cameraCanRetry
     ? 'Start camera'
-    : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
+    : screenSharing ? 'Stop screen share before changing camera' : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
+  const guardFindings = chatMessages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => {
+      const body = String(message.message_body || '')
+      const matchedKeyword = aiGuardKeywords.find((keyword) => body.toLowerCase().includes(keyword))
+      return matchedKeyword ? { message, matchedKeyword } : null
+    })
+    .filter(Boolean)
+    .slice(-5)
 
   return (
     <div className="live-page">
@@ -878,6 +1108,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
+          {giftToast && (
+            <div className="gift-toast" key={giftToast.key}>
+              <span>Gift</span>
+              <strong>{user?.name || 'You'} sent {giftToast.label}</strong>
+            </div>
+          )}
           <div className="stage-toolbar">
             <div>
               <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>
@@ -901,7 +1137,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               stream={localStream}
               muted
               label={user?.name || 'Local User'}
-              badge={mediaMode}
+              badge={screenSharing ? 'screen' : mediaMode}
               micOn={micOn}
               cameraOn={cameraOn}
               rtcMode={rtcMode}
@@ -909,12 +1145,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             />
             {remoteTiles.length === 0 ? (
               <VideoTile label="Waiting for remote users" />
-            ) : remoteTiles.map(({ socketId, stream, mediaState, peerState, label }) => {
+            ) : remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
               return (
                 <VideoTile
                   key={socketId}
                   stream={stream}
                   label={label}
+                  badge={badge}
                   micOn={mediaState.micOn !== false}
                   cameraOn={mediaState.cameraOn !== false}
                   rtcMode={mediaState.rtcMode || 'video'}
@@ -933,7 +1170,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             ))}
           </div>
 
-          {showPasswordRecovery && (
+            {showPasswordRecovery && (
             <div className="join-recovery">
               <div>
                 <strong>Room password required</strong>
@@ -946,6 +1183,59 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 placeholder="Room password"
                 autoComplete="current-password"
               />
+            </div>
+          )}
+
+          {activeToolPanel && (
+            <div className="live-tool-panel">
+              <header>
+                <strong>
+                  {activeToolPanel === 'gifts' ? 'Gifts'
+                    : activeToolPanel === 'screen' ? 'Screen share'
+                      : 'AI guard'}
+                </strong>
+                <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
+              </header>
+
+              {activeToolPanel === 'gifts' ? (
+                <div className="live-gift-grid">
+                  {giftCatalog.map((gift) => (
+                    <button
+                      key={gift.id}
+                      type="button"
+                      onClick={() => sendGift(gift)}
+                      disabled={sendingGiftId === gift.id}
+                    >
+                      <strong>{gift.label}</strong>
+                      <span>{gift.cost}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : activeToolPanel === 'screen' ? (
+                <div className="tool-status-panel">
+                  <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
+                  <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
+                    {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
+                  </button>
+                  <small>{room?.screen_share_enabled === false ? 'Owner controls have Screen share turned off.' : 'Presenter tools are available for this room.'}</small>
+                </div>
+              ) : (
+                <div className="tool-status-panel ai-guard-panel">
+                  <p>Be polite and respectful. The guard watches current room text for risky phrases and keeps moderation visible for owners.</p>
+                  <div className="guard-summary">
+                    <span>{room?.ai_security_enabled ? 'Active' : 'Off'}</span>
+                    <strong>{guardFindings.length}</strong>
+                    <small>flagged message{guardFindings.length === 1 ? '' : 's'}</small>
+                  </div>
+                  {guardFindings.length ? (
+                    <div className="guard-findings">
+                      {guardFindings.map(({ message, matchedKeyword }) => (
+                        <span key={message.id}>{matchedKeyword}: {message.message_body}</span>
+                      ))}
+                    </div>
+                  ) : <small>No flagged chat messages in the visible room log.</small>}
+                </div>
+              )}
             </div>
           )}
 
@@ -975,20 +1265,54 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             >
               <span className="control-glyph camera"></span>
             </button>
-            <button className="media-control-button icon-only utility" disabled aria-label="Screen share" title="Screen share">
+            <button
+              className="media-control-button icon-only utility"
+              onClick={() => toggleToolPanel('chat')}
+              aria-label="Open chat"
+              title="Open chat"
+            >
+              <span className="control-glyph chat"></span>
+            </button>
+            <button
+              className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+              onClick={toggleScreenShare}
+              disabled={joining || mediaUpdating.screen}
+              aria-label={screenSharing ? 'Stop screen share' : 'Screen share'}
+              aria-pressed={screenSharing}
+              title={screenSharing ? 'Stop screen share' : 'Screen share'}
+            >
               <span className="control-glyph screen"></span>
             </button>
-            <button className="media-control-button icon-only utility" disabled aria-label="Effects" title="Effects">
-              <span className="control-glyph effects"></span>
-            </button>
-            <button className="media-control-button icon-only utility" disabled aria-label="Gifts" title="Gifts">
+            <button
+              className={activeToolPanel === 'gifts' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+              onClick={() => toggleToolPanel('gifts')}
+              aria-label="Gifts"
+              title="Gifts"
+            >
               <span className="control-glyph gift"></span>
+            </button>
+            <button
+              className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+              onClick={() => toggleToolPanel('guard')}
+              aria-label="AI guard"
+              title="AI guard"
+            >
+              <span className="control-glyph guard"></span>
             </button>
           </div>
         </section>
 
         <div className="side-column">
-          <ChatPanel roomId={roomId} signalingRoom={signalingRoomRef.current} socket={socketRef.current} user={user} room={room} />
+          <ChatPanel
+            roomId={roomId}
+            signalingRoom={signalingRoomRef.current}
+            socket={socketRef.current}
+            user={user}
+            room={room}
+            focusRequest={chatFocusRequest}
+            externalMessage={externalChatMessage}
+            onMessagesChange={setChatMessages}
+          />
           <OwnerControlsPanel
             roomId={roomId}
             room={room}

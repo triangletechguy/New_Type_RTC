@@ -1,35 +1,17 @@
 const nodemailer = require('nodemailer')
 
-function smtpConfig() {
+function emailConfig() {
   const port = Number(process.env.SMTP_PORT || 0)
 
   return {
+    resendApiKey: process.env.RESEND_API_KEY || '',
     host: process.env.SMTP_HOST || '',
     port,
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
-    from: process.env.SMTP_FROM || '',
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '',
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
   }
-}
-
-function assertSmtpConfigured() {
-  const config = smtpConfig()
-  const missing = []
-
-  if (!config.host) missing.push('SMTP_HOST')
-  if (!config.port) missing.push('SMTP_PORT')
-  if (!config.user) missing.push('SMTP_USER')
-  if (!config.pass) missing.push('SMTP_PASS')
-  if (!config.from) missing.push('SMTP_FROM')
-
-  if (missing.length) {
-    const error = new Error(`Email service is not configured. Missing ${missing.join(', ')}.`)
-    error.status = 500
-    throw error
-  }
-
-  return config
 }
 
 function escapeHtml(value) {
@@ -41,22 +23,12 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;')
 }
 
-async function sendVerificationEmail({ to, name, code }) {
-  const config = assertSmtpConfigured()
+function verificationMessage({ to, name, code, from }) {
   const safeName = escapeHtml(name || 'there')
   const safeCode = escapeHtml(code)
-  const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: {
-      user: config.user,
-      pass: config.pass,
-    },
-  })
 
-  await transporter.sendMail({
-    from: config.from,
+  return {
+    from,
     to,
     subject: 'Verify your TalkEachOther account',
     text: [
@@ -77,7 +49,75 @@ async function sendVerificationEmail({ to, name, code }) {
         <p>If you did not request this, you can ignore this email.</p>
       </div>
     `,
+  }
+}
+
+function smtpReady(config) {
+  return Boolean(config.host && config.port && config.user && config.pass && config.from)
+}
+
+function resendReady(config) {
+  return Boolean(config.resendApiKey && config.from)
+}
+
+async function sendWithResend(config, message) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.resendApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: message.from,
+      to: [message.to],
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    }),
   })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    const error = new Error(errorText || `Resend email failed with status ${response.status}.`)
+    error.status = 502
+    throw error
+  }
+
+  return { provider: 'resend' }
+}
+
+async function sendWithSmtp(config, message) {
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.pass,
+    },
+  })
+
+  await transporter.sendMail(message)
+  return { provider: 'smtp' }
+}
+
+async function sendVerificationEmail({ to, name, code }) {
+  const config = emailConfig()
+  const message = verificationMessage({
+    to,
+    name,
+    code,
+    from: config.from || 'TalkEachOther <no-reply@localhost>',
+  })
+
+  if (resendReady(config)) return sendWithResend(config, message)
+  if (smtpReady(config)) return sendWithSmtp(config, message)
+
+  console.warn(`[email:local] Verification code for ${to}: ${code}`)
+  return {
+    provider: 'local',
+    devVerificationCode: code,
+  }
 }
 
 module.exports = {

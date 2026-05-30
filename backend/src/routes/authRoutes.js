@@ -348,12 +348,15 @@ router.post('/register', async (req, res, next) => {
       return createVerificationCode(connection, userId, email)
     })
 
-    await sendVerificationEmail({ to: email, name, code })
+    const emailResult = await sendVerificationEmail({ to: email, name, code })
 
     return res.status(201).json({
-      message: 'Verification code sent. Check your email to finish signup.',
+      message: emailResult.provider === 'local'
+        ? 'Verification code generated. Enter the code below to finish signup.'
+        : 'Verification code sent. Check your email to finish signup.',
       requires_verification: true,
       email,
+      ...(emailResult.devVerificationCode ? { dev_verification_code: emailResult.devVerificationCode } : {}),
     })
   } catch (error) {
     next(error)
@@ -467,12 +470,15 @@ router.post('/resend-verification', async (req, res, next) => {
     }
 
     const code = await transaction((connection) => createVerificationCode(connection, user.id, email))
-    await sendVerificationEmail({ to: email, name: user.name, code })
+    const emailResult = await sendVerificationEmail({ to: email, name: user.name, code })
 
     return res.json({
-      message: 'A new verification code was sent.',
+      message: emailResult.provider === 'local'
+        ? 'New verification code generated. Enter the code below to finish signup.'
+        : 'A new verification code was sent.',
       requires_verification: true,
       email,
+      ...(emailResult.devVerificationCode ? { dev_verification_code: emailResult.devVerificationCode } : {}),
     })
   } catch (error) {
     next(error)
