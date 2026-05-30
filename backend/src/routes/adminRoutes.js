@@ -1,9 +1,68 @@
 const express = require('express')
-const { query } = require('../config/db')
+const crypto = require('crypto')
+const bcrypt = require('bcryptjs')
+const { query, transaction } = require('../config/db')
 const { authMiddleware, hasAnyRole, requireAnyRole } = require('../middleware/auth')
 
 const router = express.Router()
 const ADMIN_ROLES = ['client_admin', 'super_admin']
+const COMPANY_STATUSES = new Set(['pending', 'active', 'inactive', 'suspended', 'cancelled'])
+const BILLING_TYPES = new Set(['monthly', 'prepaid', 'custom', 'enterprise'])
+const DEFAULT_SERVICE_PLANS = [
+  {
+    code: 'free',
+    name: 'Free RTC',
+    description: 'Trial package for validating one app with core audio, video, chat, and basic room controls.',
+    monthly_base_price: 0,
+    minute_rate: 0.012,
+    monthly_minute_allowance: 1000,
+    max_room_admins: 2,
+    max_rooms: 3,
+    max_apps: 1,
+    max_participants_per_room: 10,
+    included_features: ['normal_audio_room', 'normal_video_group_chat', 'message_chat', 'rtc_connection_indicator'],
+  },
+  {
+    code: 'basic',
+    name: 'Basic RTC',
+    description: 'Small production package for one app with standard RTC rooms, chat, and moderation roles.',
+    monthly_base_price: 199,
+    minute_rate: 0.01,
+    monthly_minute_allowance: 20000,
+    max_room_admins: 10,
+    max_rooms: 25,
+    max_apps: 1,
+    max_participants_per_room: 50,
+    included_features: ['normal_audio_room', 'normal_video_group_chat', 'group_voice_chat', 'one_to_one_voice_calling', 'one_to_one_video_calling', 'message_chat', 'room_roles', 'private_room_password', 'rtc_connection_indicator'],
+  },
+  {
+    code: 'pro',
+    name: 'Pro RTC',
+    description: 'Growth package for live apps with screen share, room themes, filters, analytics, and more capacity.',
+    monthly_base_price: 799,
+    minute_rate: 0.008,
+    monthly_minute_allowance: 100000,
+    max_room_admins: 20,
+    max_rooms: 120,
+    max_apps: 3,
+    max_participants_per_room: 200,
+    included_features: ['normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'admin_panel_analytics', 'rtc_connection_indicator'],
+  },
+  {
+    code: 'enterprise',
+    name: 'Enterprise RTC',
+    description: 'Full RTC service with multi-app SDK controls, AI security, billing analytics, moderation history, and global monitoring.',
+    monthly_base_price: 1999,
+    minute_rate: 0.006,
+    monthly_minute_allowance: 500000,
+    max_room_admins: 50,
+    max_rooms: 500,
+    max_apps: 10,
+    max_participants_per_room: 1000,
+    included_features: ['normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'ai_security_audio', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'ai_security_video', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'comment_reply', 'company_billing', 'admin_panel_analytics', 'rtc_connection_indicator'],
+  },
+]
+let tenantCompanySchemaPromise = null
 
 function toNumber(row, key, decimals = null) {
   const value = Number(row?.[key] || 0)
@@ -12,6 +71,54 @@ function toNumber(row, key, decimals = null) {
 
 function boolValue(value) {
   return Boolean(Number(value || 0))
+}
+
+function cleanString(value, maxLength = 255) {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+function emptyToNull(value, maxLength = 255) {
+  const text = cleanString(value, maxLength)
+  return text || null
+}
+
+function normalizeEmail(value) {
+  return cleanString(value, 180).toLowerCase()
+}
+
+function isValidEmail(value) {
+  const email = normalizeEmail(value)
+  return !email || /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(email)
+}
+
+function slugify(value) {
+  const slug = cleanString(value, 120)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return slug || `company-${crypto.randomBytes(3).toString('hex')}`
+}
+
+function normalizeTenantUid(value) {
+  const normalized = cleanString(value, 80)
+    .toLowerCase()
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  if (!normalized) return ''
+  return normalized.startsWith('tenant_') ? normalized.slice(0, 80) : `tenant_${normalized}`.slice(0, 80)
+}
+
+function isValidTenantUid(value) {
+  return /^tenant_[a-z0-9](?:[a-z0-9_]{0,71}[a-z0-9])?$/.test(String(value || ''))
+}
+
+function tenantUidPrefix(companyName) {
+  const slug = slugify(companyName || 'client-company').replace(/-/g, '_')
+  return `tenant_${slug}`.slice(0, 73).replace(/_+$/g, '')
 }
 
 function makeInFilter(column, values, prefix) {
@@ -70,6 +177,167 @@ function maskSecret(value) {
   if (!text) return ''
   if (text.length <= 8) return `${text.slice(0, 2)}...${text.slice(-2)}`
   return `${text.slice(0, 6)}...${text.slice(-4)}`
+}
+
+function temporaryPassword() {
+  return `Rtc@${crypto.randomBytes(5).toString('hex')}A1`
+}
+
+function normalizeCompanyStatus(value) {
+  const status = cleanString(value, 30).toLowerCase() || 'active'
+  return COMPANY_STATUSES.has(status) ? status : 'active'
+}
+
+function normalizeBillingType(value) {
+  const billingType = cleanString(value, 30).toLowerCase() || 'monthly'
+  return BILLING_TYPES.has(billingType) ? billingType : 'monthly'
+}
+
+function userStatusForCompany(status) {
+  return status === 'active' ? 'active' : 'inactive'
+}
+
+function positiveInteger(value, fallback = 0) {
+  const number = Number(value)
+  return Number.isInteger(number) && number >= 0 ? number : fallback
+}
+
+function planDefaultLimits(plan = {}) {
+  return {
+    app_limit: positiveInteger(plan.max_apps, 1),
+    room_limit: positiveInteger(plan.max_rooms, 0),
+    participant_limit: positiveInteger(plan.max_participants_per_room, 0),
+  }
+}
+
+async function ensureTenantCompanyColumns() {
+  if (!tenantCompanySchemaPromise) {
+    tenantCompanySchemaPromise = (async () => {
+      const tenantRows = await query(
+        `
+        SELECT COLUMN_NAME AS column_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'tenants'
+        `
+      )
+      const columns = new Set(tenantRows.map((row) => row.column_name))
+      const additions = [
+        ['tenant_uid', 'ALTER TABLE tenants ADD COLUMN tenant_uid VARCHAR(80) NULL AFTER id'],
+        ['company_slug', 'ALTER TABLE tenants ADD COLUMN company_slug VARCHAR(160) NULL AFTER name'],
+        ['legal_name', 'ALTER TABLE tenants ADD COLUMN legal_name VARCHAR(180) NULL AFTER company_slug'],
+        ['industry', 'ALTER TABLE tenants ADD COLUMN industry VARCHAR(120) NULL AFTER legal_name'],
+        ['company_email', 'ALTER TABLE tenants ADD COLUMN company_email VARCHAR(180) NULL AFTER industry'],
+        ['phone', 'ALTER TABLE tenants ADD COLUMN phone VARCHAR(60) NULL AFTER company_email'],
+        ['address', 'ALTER TABLE tenants ADD COLUMN address VARCHAR(255) NULL AFTER phone'],
+        ['country', 'ALTER TABLE tenants ADD COLUMN country VARCHAR(100) NULL AFTER address'],
+        ['timezone', 'ALTER TABLE tenants ADD COLUMN timezone VARCHAR(80) NULL AFTER country'],
+        ['primary_contact_name', 'ALTER TABLE tenants ADD COLUMN primary_contact_name VARCHAR(150) NULL AFTER timezone'],
+        ['primary_contact_email', 'ALTER TABLE tenants ADD COLUMN primary_contact_email VARCHAR(180) NULL AFTER primary_contact_name'],
+        ['billing_email', 'ALTER TABLE tenants ADD COLUMN billing_email VARCHAR(180) NULL AFTER primary_contact_email'],
+        ['billing_type', "ALTER TABLE tenants ADD COLUMN billing_type ENUM('monthly', 'prepaid', 'custom', 'enterprise') DEFAULT 'monthly' AFTER billing_email"],
+        ['default_app_limit', 'ALTER TABLE tenants ADD COLUMN default_app_limit INT DEFAULT 1 AFTER billing_rate_per_minute'],
+        ['default_room_limit', 'ALTER TABLE tenants ADD COLUMN default_room_limit INT DEFAULT 0 AFTER default_app_limit'],
+        ['default_participant_limit', 'ALTER TABLE tenants ADD COLUMN default_participant_limit INT DEFAULT 0 AFTER default_room_limit'],
+      ]
+
+      await query(
+        "ALTER TABLE tenants MODIFY COLUMN status ENUM('pending', 'active', 'inactive', 'suspended', 'cancelled') DEFAULT 'active'"
+      )
+
+      for (const [column, statement] of additions) {
+        if (!columns.has(column)) {
+          await query(statement)
+        }
+      }
+
+      await query("UPDATE tenants SET tenant_uid = CONCAT('tenant_', id) WHERE tenant_uid IS NULL OR tenant_uid = ''")
+
+      const servicePlanRows = await query(
+        `
+        SELECT COLUMN_NAME AS column_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'service_plans'
+        `
+      )
+      const servicePlanColumns = new Set(servicePlanRows.map((row) => row.column_name))
+      if (!servicePlanColumns.has('max_participants_per_room')) {
+        await query('ALTER TABLE service_plans ADD COLUMN max_participants_per_room INT DEFAULT 0 AFTER max_apps')
+      }
+
+      await query(
+        `
+        CREATE TABLE IF NOT EXISTS company_admin_invites (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          tenant_id BIGINT UNSIGNED NOT NULL,
+          invited_name VARCHAR(150) NULL,
+          invited_email VARCHAR(180) NOT NULL,
+          token VARCHAR(120) NOT NULL,
+          role_name VARCHAR(100) DEFAULT 'client_admin',
+          status ENUM('pending', 'accepted', 'cancelled', 'expired') DEFAULT 'pending',
+          expires_at TIMESTAMP NULL,
+          accepted_at TIMESTAMP NULL,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_company_invite_token (token),
+          INDEX idx_company_invites_tenant_id (tenant_id),
+          CONSTRAINT fk_company_invites_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+        )
+        `
+      )
+
+      for (const plan of DEFAULT_SERVICE_PLANS) {
+        await query(
+          `
+          INSERT INTO service_plans (
+            code, name, description, monthly_base_price, minute_rate,
+            monthly_minute_allowance, max_room_admins, max_rooms, max_apps,
+            max_participants_per_room, included_features, status, created_at, updated_at
+          )
+          VALUES (
+            :code, :name, :description, :monthlyBasePrice, :minuteRate,
+            :monthlyMinuteAllowance, :maxRoomAdmins, :maxRooms, :maxApps,
+            :maxParticipantsPerRoom, :includedFeatures, 'active', NOW(), NOW()
+          )
+          ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            description = VALUES(description),
+            monthly_base_price = VALUES(monthly_base_price),
+            minute_rate = VALUES(minute_rate),
+            monthly_minute_allowance = VALUES(monthly_minute_allowance),
+            max_room_admins = VALUES(max_room_admins),
+            max_rooms = VALUES(max_rooms),
+            max_apps = VALUES(max_apps),
+            max_participants_per_room = VALUES(max_participants_per_room),
+            included_features = VALUES(included_features),
+            status = 'active',
+            updated_at = NOW()
+          `,
+          {
+            code: plan.code,
+            name: plan.name,
+            description: plan.description,
+            monthlyBasePrice: plan.monthly_base_price,
+            minuteRate: plan.minute_rate,
+            monthlyMinuteAllowance: plan.monthly_minute_allowance,
+            maxRoomAdmins: plan.max_room_admins,
+            maxRooms: plan.max_rooms,
+            maxApps: plan.max_apps,
+            maxParticipantsPerRoom: plan.max_participants_per_room,
+            includedFeatures: JSON.stringify(plan.included_features),
+          }
+        )
+      }
+
+      await query("UPDATE service_plans SET status = 'inactive' WHERE code IN ('starter', 'growth')")
+    })().catch((error) => {
+      tenantCompanySchemaPromise = null
+      throw error
+    })
+  }
+
+  return tenantCompanySchemaPromise
 }
 
 const FEATURE_CATALOG = [
@@ -189,14 +457,16 @@ async function getClientAdmins() {
 }
 
 async function getServicePlans() {
+  await ensureTenantCompanyColumns()
+
   const rows = await query(
     `
     SELECT
       id, code, name, description, monthly_base_price, minute_rate,
       monthly_minute_allowance, max_room_admins, max_rooms, max_apps,
-      included_features, status, created_at, updated_at
+      max_participants_per_room, included_features, status, created_at, updated_at
     FROM service_plans
-    ORDER BY monthly_base_price ASC, id ASC
+    ORDER BY status = 'active' DESC, monthly_base_price ASC, id ASC
     `
   )
 
@@ -211,6 +481,7 @@ async function getServicePlans() {
     max_room_admins: Number(plan.max_room_admins || 0),
     max_rooms: Number(plan.max_rooms || 0),
     max_apps: Number(plan.max_apps || 0),
+    max_participants_per_room: Number(plan.max_participants_per_room || 0),
     included_features: parseJsonArray(plan.included_features),
     status: plan.status,
     created_at: plan.created_at,
@@ -229,7 +500,7 @@ async function getTenantPlan(tenantId) {
       tpa.ends_at,
       sp.id, sp.code, sp.name, sp.description, sp.monthly_base_price, sp.minute_rate,
       sp.monthly_minute_allowance, sp.max_room_admins, sp.max_rooms, sp.max_apps,
-      sp.included_features, sp.status
+      sp.max_participants_per_room, sp.included_features, sp.status
     FROM tenant_plan_assignments tpa
     INNER JOIN service_plans sp ON sp.id = tpa.plan_id
     WHERE tpa.tenant_id = :tenantId
@@ -256,17 +527,344 @@ async function getTenantPlan(tenantId) {
     max_room_admins: Number(plan.max_room_admins || 0),
     max_rooms: Number(plan.max_rooms || 0),
     max_apps: Number(plan.max_apps || 0),
+    max_participants_per_room: Number(plan.max_participants_per_room || 0),
     included_features: parseJsonArray(plan.included_features),
     status: plan.status,
   }
 }
 
+async function getUniqueCompanySlug(connection, companyName) {
+  const base = slugify(companyName).slice(0, 120)
+
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const suffix = attempt ? `-${attempt + 1}` : ''
+    const candidate = `${base.slice(0, 160 - suffix.length)}${suffix}`
+    const [rows] = await connection.execute(
+      'SELECT id FROM tenants WHERE company_slug = ? LIMIT 1',
+      [candidate]
+    )
+
+    if (!rows.length) return candidate
+  }
+
+  return `${base.slice(0, 151)}-${crypto.randomBytes(4).toString('hex')}`
+}
+
+async function getUniqueTenantUid(connection, companyName = '') {
+  const prefix = tenantUidPrefix(companyName)
+
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const randomPart = crypto.randomBytes(3).toString('hex')
+    const candidate = `${prefix.slice(0, 80 - randomPart.length - 1)}_${randomPart}`
+    const [rows] = await connection.execute(
+      'SELECT id FROM tenants WHERE tenant_uid = ? LIMIT 1',
+      [candidate]
+    )
+
+    if (!rows.length) return candidate
+  }
+
+  return `tenant_${Date.now()}`
+}
+
+async function tenantUidExists(connection, tenantUid) {
+  const [rows] = await connection.execute(
+    'SELECT id FROM tenants WHERE tenant_uid = ? LIMIT 1',
+    [tenantUid]
+  )
+
+  return rows.length > 0
+}
+
+async function ensureRoleIds(connection) {
+  await connection.execute(
+    `
+    INSERT IGNORE INTO roles (name, label, created_at)
+    VALUES
+      ('end_user', 'End User', NOW()),
+      ('client_admin', 'Client Admin', NOW())
+    `
+  )
+
+  const [roles] = await connection.execute(
+    `
+    SELECT id, name
+    FROM roles
+    WHERE name IN ('end_user', 'client_admin')
+    `
+  )
+
+  return roles.reduce((map, role) => {
+    map[role.name] = role.id
+    return map
+  }, {})
+}
+
+async function createClientAdmin(connection, tenantId, companyStatus, contact) {
+  if (!contact.email) return null
+
+  const roleIds = await ensureRoleIds(connection)
+  const userStatus = userStatusForCompany(companyStatus)
+  const [existing] = await connection.execute(
+    `
+    SELECT id, tenant_id, name, email, status
+    FROM users
+    WHERE email = ?
+    LIMIT 1
+    `,
+    [contact.email]
+  )
+
+  if (existing.length) {
+    const user = existing[0]
+    if (user.tenant_id && Number(user.tenant_id) !== Number(tenantId)) {
+      const error = new Error('Primary contact email already belongs to another company.')
+      error.status = 409
+      throw error
+    }
+
+    await connection.execute(
+      `
+      UPDATE users
+      SET tenant_id = ?,
+          name = ?,
+          phone = ?,
+          status = ?,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [tenantId, contact.name || user.name, contact.phone || null, userStatus, user.id]
+    )
+
+    for (const roleName of ['end_user', 'client_admin']) {
+      if (!roleIds[roleName]) continue
+
+      await connection.execute(
+        `
+        INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
+        SELECT ?, ?, ?, NOW()
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM user_roles
+          WHERE user_id = ?
+          AND role_id = ?
+          AND tenant_id = ?
+        )
+        `,
+        [user.id, roleIds[roleName], tenantId, user.id, roleIds[roleName], tenantId]
+      )
+    }
+
+    return {
+      id: user.id,
+      tenant_id: tenantId,
+      name: contact.name || user.name,
+      email: contact.email,
+      status: userStatus,
+      temporary_password: null,
+      roles: ['end_user', 'client_admin'],
+      existing_account: true,
+    }
+  }
+
+  const password = contact.password || temporaryPassword()
+  const passwordHash = await bcrypt.hash(password, 10)
+
+  const [result] = await connection.execute(
+    `
+    INSERT INTO users (
+      tenant_id, name, email, phone, password_hash, status, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `,
+    [tenantId, contact.name, contact.email, contact.phone, passwordHash, userStatus]
+  )
+
+  for (const roleName of ['end_user', 'client_admin']) {
+    if (!roleIds[roleName]) continue
+
+    await connection.execute(
+      `
+      INSERT INTO user_roles (user_id, role_id, tenant_id, created_at)
+      VALUES (?, ?, ?, NOW())
+      `,
+      [result.insertId, roleIds[roleName], tenantId]
+    )
+  }
+
+  return {
+    id: result.insertId,
+    tenant_id: tenantId,
+    name: contact.name,
+    email: contact.email,
+    status: userStatus,
+    temporary_password: password,
+    roles: ['end_user', 'client_admin'],
+  }
+}
+
+async function createCompanyAdminInvite(connection, tenantId, contact) {
+  if (!contact.email) return null
+
+  const token = `invite_${crypto.randomBytes(18).toString('hex')}`
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+  const [result] = await connection.execute(
+    `
+    INSERT INTO company_admin_invites (
+      tenant_id, invited_name, invited_email, token, role_name,
+      status, expires_at, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, 'client_admin', 'pending', ?, NOW(), NOW())
+    `,
+    [tenantId, contact.name || null, contact.email, token, expiresAt]
+  )
+
+  return {
+    id: result.insertId,
+    tenant_id: tenantId,
+    invited_name: contact.name || null,
+    invited_email: contact.email,
+    token,
+    invite_url: `/client-admin/invite/${token}`,
+    status: 'pending',
+    expires_at: expiresAt.toISOString(),
+  }
+}
+
+async function createClientCompany(payload) {
+  await ensureTenantCompanyColumns()
+
+  return transaction(async (connection) => {
+    const [plans] = await connection.execute(
+      `
+      SELECT id, name, code, minute_rate, max_apps, max_rooms, max_participants_per_room
+      FROM service_plans
+      WHERE id = ?
+      AND status = 'active'
+      LIMIT 1
+      `,
+      [payload.planId]
+    )
+    const plan = plans[0]
+    const planLimits = planDefaultLimits(plan)
+
+    if (!plan) {
+      const error = new Error('Select an active service plan for this company.')
+      error.status = 422
+      throw error
+    }
+
+    const [existingNames] = await connection.execute(
+      `
+      SELECT id
+      FROM tenants
+      WHERE LOWER(name) = LOWER(?)
+      LIMIT 1
+      `,
+      [payload.companyName]
+    )
+
+    if (existingNames.length) {
+      const error = new Error('A company with this name already exists.')
+      error.status = 409
+      throw error
+    }
+
+    const tenantUid = payload.tenantUid || await getUniqueTenantUid(connection, payload.companyName)
+    if (await tenantUidExists(connection, tenantUid)) {
+      const error = new Error('This tenant_id is already used. Generate a new tenant_id.')
+      error.status = 409
+      throw error
+    }
+
+    const companySlug = await getUniqueCompanySlug(connection, payload.companyName)
+    const billingEmail = payload.billingEmail || payload.companyEmail || payload.primaryContactEmail || null
+    const defaultAppLimit = positiveInteger(payload.defaultAppLimit, planLimits.app_limit)
+    const defaultRoomLimit = positiveInteger(payload.defaultRoomLimit, planLimits.room_limit)
+    const defaultParticipantLimit = positiveInteger(payload.defaultParticipantLimit, planLimits.participant_limit)
+
+    const [tenantResult] = await connection.execute(
+      `
+      INSERT INTO tenants (
+        tenant_uid, name, company_slug, legal_name, industry, company_email,
+        phone, address, country, timezone, primary_contact_name, primary_contact_email,
+        billing_email, billing_type, status, billing_rate_per_minute,
+        default_app_limit, default_room_limit, default_participant_limit,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      `,
+      [
+        tenantUid,
+        payload.companyName,
+        companySlug,
+        payload.legalName,
+        payload.industry,
+        payload.companyEmail,
+        payload.phone,
+        payload.address,
+        payload.country,
+        payload.timezone,
+        payload.primaryContactName || null,
+        payload.primaryContactEmail,
+        billingEmail,
+        payload.billingType,
+        payload.status,
+        Number(plan.minute_rate || 0),
+        defaultAppLimit,
+        defaultRoomLimit,
+        defaultParticipantLimit,
+      ]
+    )
+
+    const tenantId = tenantResult.insertId
+
+    await connection.execute(
+      `
+      INSERT INTO tenant_plan_assignments (
+        tenant_id, plan_id, status, starts_at, created_at, updated_at
+      )
+      VALUES (?, ?, 'active', NOW(), NOW(), NOW())
+      `,
+      [tenantId, plan.id]
+    )
+
+    const adminAccount = await createClientAdmin(connection, tenantId, payload.status, {
+      name: payload.primaryContactName || `${payload.companyName} Admin`,
+      email: payload.primaryContactEmail,
+      phone: payload.phone,
+      password: payload.primaryContactPassword,
+    })
+    const adminInvite = await createCompanyAdminInvite(connection, tenantId, {
+      name: payload.primaryContactName || `${payload.companyName} Admin`,
+      email: payload.primaryContactEmail,
+    })
+
+    return {
+      tenantId,
+      tenant_uid: tenantUid,
+      company_slug: companySlug,
+      plan_name: plan.name,
+      admin_account: adminAccount,
+      admin_invite: adminInvite,
+    }
+  })
+}
+
 async function getClientRows(tenantId = null) {
+  await ensureTenantCompanyColumns()
+
   const tenantClause = tenantId ? 'WHERE t.id = :tenantId' : ''
   const rows = await query(
     `
     SELECT
-      t.id, t.name, t.status, t.billing_rate_per_minute, t.created_at, t.updated_at,
+      t.id, t.tenant_uid, t.name, t.company_slug, t.legal_name, t.industry,
+      t.company_email, t.phone, t.address, t.country, t.timezone,
+      t.primary_contact_name, t.primary_contact_email,
+      t.billing_email, t.billing_type, t.status, t.billing_rate_per_minute,
+      t.default_app_limit, t.default_room_limit, t.default_participant_limit,
+      t.created_at, t.updated_at,
       sp.id AS plan_id,
       sp.code AS plan_code,
       sp.name AS plan_name,
@@ -276,6 +874,12 @@ async function getClientRows(tenantId = null) {
       sp.max_room_admins,
       sp.max_rooms,
       sp.max_apps,
+      sp.max_participants_per_room,
+      invite.id AS invite_id,
+      invite.invited_email AS invite_email,
+      invite.status AS invite_status,
+      invite.expires_at AS invite_expires_at,
+      invite.created_at AS invite_created_at,
       COALESCE(apps.app_count, 0) AS app_count,
       COALESCE(apps.active_app_count, 0) AS active_app_count,
       COALESCE(room_counts.room_count, 0) AS room_count,
@@ -294,6 +898,15 @@ async function getClientRows(tenantId = null) {
       ) chosen ON chosen.latest_id = latest.id
     ) active_plan ON active_plan.tenant_id = t.id
     LEFT JOIN service_plans sp ON sp.id = active_plan.plan_id
+    LEFT JOIN (
+      SELECT latest_invite.*
+      FROM company_admin_invites latest_invite
+      INNER JOIN (
+        SELECT tenant_id, MAX(id) AS latest_id
+        FROM company_admin_invites
+        GROUP BY tenant_id
+      ) chosen_invite ON chosen_invite.latest_id = latest_invite.id
+    ) invite ON invite.tenant_id = t.id
     LEFT JOIN (
       SELECT
         tenant_id,
@@ -335,9 +948,34 @@ async function getClientRows(tenantId = null) {
 
     return {
       id: client.id,
+      tenant_uid: client.tenant_uid || `tenant_${client.id}`,
       name: client.name,
+      company_slug: client.company_slug || slugify(client.name),
+      legal_name: client.legal_name,
+      industry: client.industry,
+      company_email: client.company_email,
+      phone: client.phone,
+      address: client.address,
+      country: client.country,
+      timezone: client.timezone,
+      primary_contact_name: client.primary_contact_name,
+      primary_contact_email: client.primary_contact_email,
+      billing_email: client.billing_email,
+      billing_type: client.billing_type || 'monthly',
       status: client.status,
       billing_rate_per_minute: Number(client.billing_rate_per_minute || 0),
+      default_limits: {
+        app_count: Number(client.default_app_limit || client.max_apps || 0),
+        room_count: Number(client.default_room_limit || client.max_rooms || 0),
+        participant_limit: Number(client.default_participant_limit || client.max_participants_per_room || 0),
+      },
+      admin_invite: client.invite_id ? {
+        id: client.invite_id,
+        email: client.invite_email,
+        status: client.invite_status,
+        expires_at: client.invite_expires_at,
+        created_at: client.invite_created_at,
+      } : null,
       plan: client.plan_id ? {
         id: client.plan_id,
         code: client.plan_code,
@@ -348,6 +986,7 @@ async function getClientRows(tenantId = null) {
         max_room_admins: Number(client.max_room_admins || 0),
         max_rooms: Number(client.max_rooms || 0),
         max_apps: Number(client.max_apps || 0),
+        max_participants_per_room: Number(client.max_participants_per_room || 0),
       } : null,
       app_count: Number(client.app_count || 0),
       active_app_count: Number(client.active_app_count || 0),
@@ -1252,6 +1891,7 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
       max_room_admins: currentPlan.max_room_admins,
       max_rooms: currentPlan.max_rooms,
       max_apps: currentPlan.max_apps,
+      max_participants_per_room: currentPlan.max_participants_per_room,
       monthly_minute_allowance: currentPlan.monthly_minute_allowance,
     } : null,
     billing: buildBillingSummary({ dashboard, clients, plan: currentPlan }),
@@ -1295,7 +1935,427 @@ async function buildScopePayload({ adminRow = null, roomIds, enterpriseScope = '
   }
 }
 
+async function updateClientCompany(companyId, payload) {
+  await ensureTenantCompanyColumns()
+
+  return transaction(async (connection) => {
+    const [tenants] = await connection.execute(
+      `
+      SELECT id, name
+      FROM tenants
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [companyId]
+    )
+
+    if (!tenants.length) {
+      const error = new Error('Company was not found.')
+      error.status = 404
+      throw error
+    }
+
+    const [plans] = await connection.execute(
+      `
+      SELECT id, name, code, minute_rate, max_apps, max_rooms, max_participants_per_room
+      FROM service_plans
+      WHERE id = ?
+      AND status = 'active'
+      LIMIT 1
+      `,
+      [payload.planId]
+    )
+    const plan = plans[0]
+
+    if (!plan) {
+      const error = new Error('Select an active service plan for this company.')
+      error.status = 422
+      throw error
+    }
+
+    const [duplicateNames] = await connection.execute(
+      `
+      SELECT id
+      FROM tenants
+      WHERE LOWER(name) = LOWER(?)
+      AND id <> ?
+      LIMIT 1
+      `,
+      [payload.companyName, companyId]
+    )
+
+    if (duplicateNames.length) {
+      const error = new Error('A company with this name already exists.')
+      error.status = 409
+      throw error
+    }
+
+    const planLimits = planDefaultLimits(plan)
+    const billingEmail = payload.billingEmail || payload.companyEmail || payload.primaryContactEmail || null
+    const defaultAppLimit = positiveInteger(payload.defaultAppLimit, planLimits.app_limit)
+    const defaultRoomLimit = positiveInteger(payload.defaultRoomLimit, planLimits.room_limit)
+    const defaultParticipantLimit = positiveInteger(payload.defaultParticipantLimit, planLimits.participant_limit)
+
+    await connection.execute(
+      `
+      UPDATE tenants
+      SET name = ?,
+          legal_name = ?,
+          industry = ?,
+          company_email = ?,
+          phone = ?,
+          address = ?,
+          country = ?,
+          timezone = ?,
+          primary_contact_name = ?,
+          primary_contact_email = ?,
+          billing_email = ?,
+          billing_type = ?,
+          status = ?,
+          billing_rate_per_minute = ?,
+          default_app_limit = ?,
+          default_room_limit = ?,
+          default_participant_limit = ?,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        payload.companyName,
+        payload.legalName,
+        payload.industry,
+        payload.companyEmail,
+        payload.phone,
+        payload.address,
+        payload.country,
+        payload.timezone,
+        payload.primaryContactName || null,
+        payload.primaryContactEmail,
+        billingEmail,
+        payload.billingType,
+        payload.status,
+        Number(plan.minute_rate || 0),
+        defaultAppLimit,
+        defaultRoomLimit,
+        defaultParticipantLimit,
+        companyId,
+      ]
+    )
+
+    await connection.execute(
+      `
+      UPDATE tenant_plan_assignments
+      SET status = 'inactive',
+          ends_at = COALESCE(ends_at, NOW()),
+          updated_at = NOW()
+      WHERE tenant_id = ?
+      AND status = 'active'
+      `,
+      [companyId]
+    )
+
+    await connection.execute(
+      `
+      INSERT INTO tenant_plan_assignments (
+        tenant_id, plan_id, status, starts_at, created_at, updated_at
+      )
+      VALUES (?, ?, 'active', NOW(), NOW(), NOW())
+      `,
+      [companyId, plan.id]
+    )
+
+    await connection.execute(
+      `
+      UPDATE client_apps
+      SET plan_id = ?,
+          updated_at = NOW()
+      WHERE tenant_id = ?
+      `,
+      [plan.id, companyId]
+    )
+
+    return companyId
+  })
+}
+
+async function inviteClientCompanyAdmin(companyId, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  return transaction(async (connection) => {
+    const [tenants] = await connection.execute(
+      `
+      SELECT id, name, status, phone, primary_contact_name, primary_contact_email
+      FROM tenants
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [companyId]
+    )
+    const tenant = tenants[0]
+
+    if (!tenant) {
+      const error = new Error('Company was not found.')
+      error.status = 404
+      throw error
+    }
+
+    const invitedName = cleanString(readBodyValue(body, 'primary_contact_name', 'primaryContactName') || tenant.primary_contact_name || `${tenant.name} Admin`, 150)
+    const invitedEmail = normalizeEmail(readBodyValue(body, 'primary_contact_email', 'primaryContactEmail') || tenant.primary_contact_email)
+
+    if (!invitedEmail || !isValidEmail(invitedEmail)) {
+      const error = new Error('Primary contact email is required before creating an admin invite.')
+      error.status = 422
+      throw error
+    }
+
+    await connection.execute(
+      `
+      UPDATE tenants
+      SET primary_contact_name = ?,
+          primary_contact_email = ?,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [invitedName, invitedEmail, companyId]
+    )
+
+    const adminAccount = await createClientAdmin(connection, companyId, tenant.status, {
+      name: invitedName,
+      email: invitedEmail,
+      phone: tenant.phone,
+    })
+    const adminInvite = await createCompanyAdminInvite(connection, companyId, {
+      name: invitedName,
+      email: invitedEmail,
+    })
+
+    return { adminAccount, adminInvite }
+  })
+}
+
+function readBodyValue(body, snakeKey, camelKey = snakeKey) {
+  return body?.[snakeKey] ?? body?.[camelKey]
+}
+
+function parseCompanyPayload(body) {
+  const tenantUid = normalizeTenantUid(readBodyValue(body, 'tenant_id', 'tenantUid') || readBodyValue(body, 'tenant_uid', 'tenantUid'))
+  const companyName = cleanString(readBodyValue(body, 'company_name', 'companyName'), 150)
+  const legalName = emptyToNull(readBodyValue(body, 'legal_name', 'legalName'), 180)
+  const companyEmail = normalizeEmail(readBodyValue(body, 'company_email', 'companyEmail'))
+  const billingEmail = normalizeEmail(readBodyValue(body, 'billing_email', 'billingEmail'))
+  const primaryContactEmail = normalizeEmail(readBodyValue(body, 'primary_contact_email', 'primaryContactEmail'))
+  const primaryContactName = cleanString(readBodyValue(body, 'primary_contact_name', 'primaryContactName'), 150)
+  const primaryContactPassword = cleanString(readBodyValue(body, 'primary_contact_password', 'primaryContactPassword'), 120)
+  const planId = Number(readBodyValue(body, 'plan_id', 'planId'))
+  const status = normalizeCompanyStatus(readBodyValue(body, 'status'))
+  const billingType = normalizeBillingType(readBodyValue(body, 'billing_type', 'billingType'))
+  const defaultAppLimit = Number(readBodyValue(body, 'default_app_limit', 'defaultAppLimit'))
+  const defaultRoomLimit = Number(readBodyValue(body, 'default_room_limit', 'defaultRoomLimit'))
+  const defaultParticipantLimit = Number(readBodyValue(body, 'default_participant_limit', 'defaultParticipantLimit'))
+  const errors = {}
+
+  if (tenantUid && !isValidTenantUid(tenantUid)) errors.tenant_id = 'Generate a valid tenant_id before creating the company.'
+  if (!companyName) errors.company_name = 'Company name is required.'
+  if (!Number.isInteger(planId) || planId <= 0) errors.plan_id = 'Select a service plan.'
+  if (!isValidEmail(companyEmail)) errors.company_email = 'Enter a valid business email.'
+  if (!isValidEmail(billingEmail)) errors.billing_email = 'Enter a valid billing email.'
+  if (!isValidEmail(primaryContactEmail)) errors.primary_contact_email = 'Enter a valid primary contact email.'
+  if (primaryContactPassword && primaryContactPassword.length < 8) {
+    errors.primary_contact_password = 'Password must be at least 8 characters.'
+  }
+
+  return {
+    errors,
+    payload: {
+      tenantUid: tenantUid || null,
+      companyName,
+      legalName,
+      companyEmail: companyEmail || null,
+      phone: emptyToNull(readBodyValue(body, 'phone'), 60),
+      address: emptyToNull(readBodyValue(body, 'address'), 255),
+      country: emptyToNull(readBodyValue(body, 'country'), 100),
+      timezone: emptyToNull(readBodyValue(body, 'timezone'), 80),
+      industry: emptyToNull(readBodyValue(body, 'industry'), 120),
+      billingEmail: billingEmail || null,
+      billingType,
+      status,
+      planId,
+      defaultAppLimit: Number.isFinite(defaultAppLimit) ? defaultAppLimit : null,
+      defaultRoomLimit: Number.isFinite(defaultRoomLimit) ? defaultRoomLimit : null,
+      defaultParticipantLimit: Number.isFinite(defaultParticipantLimit) ? defaultParticipantLimit : null,
+      primaryContactName,
+      primaryContactEmail: primaryContactEmail || null,
+      primaryContactPassword: primaryContactPassword || null,
+    },
+  }
+}
+
 router.use(authMiddleware, requireAnyRole(ADMIN_ROLES))
+
+router.get('/companies/generate-tenant-id', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can generate tenant IDs.' })
+    }
+
+    await ensureTenantCompanyColumns()
+    const companyName = cleanString(req.query?.company_name || req.query?.companyName || '', 150)
+    const tenantId = await transaction(async (connection) => getUniqueTenantUid(connection, companyName))
+
+    return res.json({
+      tenant_id: tenantId,
+      tenant_uid: tenantId,
+      format: 'tenant_companyname_random',
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.get('/companies', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can view all client companies.' })
+    }
+
+    return res.json({ companies: await getClientRows() })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/companies', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can create client companies.' })
+    }
+
+    const { errors, payload } = parseCompanyPayload(req.body || {})
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Check the company setup form.', errors })
+    }
+
+    const created = await createClientCompany(payload)
+    const [company] = await getClientRows(created.tenantId)
+
+    return res.status(201).json({
+      message: `${company.name} company created successfully.`,
+      company,
+      admin_account: created.admin_account,
+      admin_invite: created.admin_invite,
+      next_step: 'Generate SDK access for this company.',
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/companies/:companyId', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can edit client companies.' })
+    }
+
+    const companyId = Number(req.params.companyId)
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return res.status(400).json({ message: 'Invalid company id.' })
+    }
+
+    const { errors, payload } = parseCompanyPayload(req.body || {})
+    delete errors.tenant_id
+
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Check the company edit form.', errors })
+    }
+
+    await updateClientCompany(companyId, payload)
+    const [company] = await getClientRows(companyId)
+
+    return res.json({
+      message: `${company.name} company updated successfully.`,
+      company,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/companies/:companyId/admin-invite', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can invite company admins.' })
+    }
+
+    const companyId = Number(req.params.companyId)
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return res.status(400).json({ message: 'Invalid company id.' })
+    }
+
+    const { adminAccount, adminInvite } = await inviteClientCompanyAdmin(companyId, req.body || {})
+    const [company] = await getClientRows(companyId)
+
+    return res.status(201).json({
+      message: `Admin invite created for ${adminInvite.invited_email}.`,
+      company,
+      admin_account: adminAccount,
+      admin_invite: adminInvite,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.get('/companies/:companyId', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can inspect client companies.' })
+    }
+
+    const companyId = Number(req.params.companyId)
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return res.status(400).json({ message: 'Invalid company id.' })
+    }
+
+    const [company] = await getClientRows(companyId)
+    if (!company) return res.status(404).json({ message: 'Company was not found.' })
+
+    return res.json({ company })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/companies/:companyId/status', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can change company status.' })
+    }
+
+    const companyId = Number(req.params.companyId)
+    const status = normalizeCompanyStatus(req.body?.status)
+
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return res.status(400).json({ message: 'Invalid company id.' })
+    }
+
+    await ensureTenantCompanyColumns()
+    const result = await query(
+      `
+      UPDATE tenants
+      SET status = :status,
+          updated_at = NOW()
+      WHERE id = :companyId
+      `,
+      { status, companyId }
+    )
+
+    if (!result.affectedRows) return res.status(404).json({ message: 'Company was not found.' })
+    const [company] = await getClientRows(companyId)
+
+    return res.json({ message: 'Company status updated.', company })
+  } catch (error) {
+    return next(error)
+  }
+})
 
 router.get('/dashboard', async (req, res, next) => {
   try {

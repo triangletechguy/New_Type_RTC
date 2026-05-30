@@ -45,6 +45,63 @@ function groupedFeatures(features) {
   }, {})
 }
 
+const INITIAL_COMPANY_FORM = {
+  tenant_id: '',
+  company_name: '',
+  legal_name: '',
+  company_email: '',
+  phone: '',
+  address: '',
+  country: '',
+  timezone: 'America/New_York',
+  industry: '',
+  billing_email: '',
+  billing_type: 'monthly',
+  plan_id: '',
+  status: 'active',
+  default_app_limit: '',
+  default_room_limit: '',
+  default_participant_limit: '',
+  primary_contact_name: '',
+  primary_contact_email: '',
+}
+
+const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancelled']
+const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
+
+function limitsFromPlan(plan) {
+  if (!plan) return {}
+
+  return {
+    default_app_limit: String(plan.max_apps || ''),
+    default_room_limit: String(plan.max_rooms || ''),
+    default_participant_limit: String(plan.max_participants_per_room || ''),
+  }
+}
+
+function companyToForm(company) {
+  return {
+    tenant_id: company?.tenant_uid || '',
+    company_name: company?.name || '',
+    legal_name: company?.legal_name || '',
+    company_email: company?.company_email || '',
+    phone: company?.phone || '',
+    address: company?.address || '',
+    country: company?.country || '',
+    timezone: company?.timezone || 'America/New_York',
+    industry: company?.industry || '',
+    billing_email: company?.billing_email || '',
+    billing_type: company?.billing_type || 'monthly',
+    plan_id: company?.plan?.id ? String(company.plan.id) : '',
+    status: company?.status || 'active',
+    default_app_limit: company?.default_limits?.app_count ? String(company.default_limits.app_count) : '',
+    default_room_limit: company?.default_limits?.room_count ? String(company.default_limits.room_count) : '',
+    default_participant_limit: company?.default_limits?.participant_limit ? String(company.default_limits.participant_limit) : '',
+    primary_contact_name: company?.primary_contact_name || '',
+    primary_contact_email: company?.primary_contact_email || '',
+  }
+}
+
 function ScopeSummary({ payload, scope }) {
   const dashboard = payload?.dashboard
   const admin = payload?.admin
@@ -133,6 +190,7 @@ function ServiceFlowPanel({ flow }) {
 
 function ServicePlansPanel({ plans, currentPlan, mode }) {
   if (!plans?.length) return null
+  const visiblePlans = plans.filter((plan) => plan.status === 'active' || currentPlan?.id === plan.id)
 
   return (
     <section className="enterprise-panel glass-card">
@@ -144,7 +202,7 @@ function ServicePlansPanel({ plans, currentPlan, mode }) {
         {currentPlan ? <span>Current: {currentPlan.name}</span> : null}
       </div>
       <div className="service-plan-grid">
-        {plans.map((plan) => {
+        {visiblePlans.map((plan) => {
           const active = currentPlan?.code === plan.code
           return (
             <article className={active ? 'service-plan-card active' : 'service-plan-card'} key={plan.code}>
@@ -161,6 +219,7 @@ function ServicePlansPanel({ plans, currentPlan, mode }) {
                 <span>{formatNumber(plan.max_room_admins)} room admins</span>
                 <span>{formatNumber(plan.max_rooms)} rooms</span>
                 <span>{formatNumber(plan.max_apps)} apps</span>
+                <span>{formatNumber(plan.max_participants_per_room)} participants</span>
                 <span>{formatNumber(plan.feature_count)} tools</span>
               </div>
             </article>
@@ -204,6 +263,255 @@ function ClientAppsPanel({ apps, mode }) {
           </article>
         ))}
       </div>
+    </section>
+  )
+}
+
+function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, result, message, onChange, onGenerateTenantId, onSubmit }) {
+  const activePlans = (plans || []).filter((plan) => plan.status === 'active')
+
+  return (
+    <section className="enterprise-panel company-setup-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Client Company Setup</span>
+          <h2>Create Client Tenant</h2>
+        </div>
+        <span>{formatNumber(activePlans.length)} packages</span>
+      </div>
+
+      <form className="company-setup-form" onSubmit={onSubmit}>
+        <div className="company-setup-fields">
+          <div className="tenant-id-control">
+            <label>
+              <span>Tenant ID</span>
+              <input
+                aria-invalid={Boolean(errors.tenant_id)}
+                value={form.tenant_id}
+                onChange={(event) => onChange('tenant_id', event.target.value)}
+                placeholder="tenant_abc_health_9x72k"
+              />
+              {errors.tenant_id ? <small className="form-error">{errors.tenant_id}</small> : null}
+            </label>
+            <button type="button" className="secondary-button" onClick={onGenerateTenantId} disabled={generatingTenantId || creating}>
+              {generatingTenantId ? 'Generating...' : 'Generate tenant_id'}
+            </button>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Company name</span>
+              <input
+                aria-invalid={Boolean(errors.company_name)}
+                value={form.company_name}
+                onChange={(event) => onChange('company_name', event.target.value)}
+                placeholder="ABC Health App"
+                required
+              />
+              {errors.company_name ? <small className="form-error">{errors.company_name}</small> : null}
+            </label>
+            <label>
+              <span>Legal name</span>
+              <input
+                value={form.legal_name}
+                onChange={(event) => onChange('legal_name', event.target.value)}
+                placeholder="ABC Health Technologies LLC"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Business email</span>
+              <input
+                aria-invalid={Boolean(errors.company_email)}
+                type="email"
+                value={form.company_email}
+                onChange={(event) => onChange('company_email', event.target.value)}
+                placeholder="hello@company.com"
+              />
+              {errors.company_email ? <small className="form-error">{errors.company_email}</small> : null}
+            </label>
+            <label>
+              <span>Billing email</span>
+              <input
+                aria-invalid={Boolean(errors.billing_email)}
+                type="email"
+                value={form.billing_email}
+                onChange={(event) => onChange('billing_email', event.target.value)}
+                placeholder="billing@company.com"
+              />
+              {errors.billing_email ? <small className="form-error">{errors.billing_email}</small> : null}
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Phone</span>
+              <input
+                value={form.phone}
+                onChange={(event) => onChange('phone', event.target.value)}
+                placeholder="+1 555 0100"
+              />
+            </label>
+            <label>
+              <span>Industry</span>
+              <input
+                value={form.industry}
+                onChange={(event) => onChange('industry', event.target.value)}
+                placeholder="Healthcare"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Address</span>
+              <input
+                value={form.address}
+                onChange={(event) => onChange('address', event.target.value)}
+                placeholder="123 Market Street, Suite 400"
+              />
+            </label>
+            <label>
+              <span>Country</span>
+              <input
+                value={form.country}
+                onChange={(event) => onChange('country', event.target.value)}
+                placeholder="United States"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Timezone</span>
+              <input
+                value={form.timezone}
+                onChange={(event) => onChange('timezone', event.target.value)}
+                placeholder="America/New_York"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Package</span>
+              <select
+                aria-invalid={Boolean(errors.plan_id)}
+                value={form.plan_id}
+                onChange={(event) => onChange('plan_id', event.target.value)}
+                required
+              >
+                <option value="">Select package</option>
+                {activePlans.map((plan) => (
+                  <option value={plan.id} key={plan.id}>
+                    {plan.name} - {formatNumber(plan.monthly_minute_allowance)} min
+                  </option>
+                ))}
+              </select>
+              {errors.plan_id ? <small className="form-error">{errors.plan_id}</small> : null}
+            </label>
+            <label>
+              <span>Billing type</span>
+              <select value={form.billing_type} onChange={(event) => onChange('billing_type', event.target.value)}>
+                {BILLING_TYPE_OPTIONS.map((type) => (
+                  <option value={type} key={type}>{type}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="default-limit-grid">
+            <label>
+              <span>Default apps</span>
+              <input
+                type="number"
+                min="0"
+                value={form.default_app_limit}
+                onChange={(event) => onChange('default_app_limit', event.target.value)}
+                placeholder="1"
+              />
+            </label>
+            <label>
+              <span>Default rooms</span>
+              <input
+                type="number"
+                min="0"
+                value={form.default_room_limit}
+                onChange={(event) => onChange('default_room_limit', event.target.value)}
+                placeholder="25"
+              />
+            </label>
+            <label>
+              <span>Participant limit</span>
+              <input
+                type="number"
+                min="0"
+                value={form.default_participant_limit}
+                onChange={(event) => onChange('default_participant_limit', event.target.value)}
+                placeholder="50"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Primary contact</span>
+              <input
+                value={form.primary_contact_name}
+                onChange={(event) => onChange('primary_contact_name', event.target.value)}
+                placeholder="Jane Admin"
+              />
+            </label>
+            <label>
+              <span>Contact email</span>
+              <input
+                aria-invalid={Boolean(errors.primary_contact_email)}
+                type="email"
+                value={form.primary_contact_email}
+                onChange={(event) => onChange('primary_contact_email', event.target.value)}
+                placeholder="admin@company.com"
+              />
+              {errors.primary_contact_email ? <small className="form-error">{errors.primary_contact_email}</small> : null}
+            </label>
+          </div>
+
+          <div className="company-setup-actions">
+            <label>
+              <span>Status</span>
+              <select value={form.status} onChange={(event) => onChange('status', event.target.value)}>
+                {COMPANY_STATUS_OPTIONS.map((status) => (
+                  <option value={status} key={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <button className="primary-button" type="submit" disabled={creating || activePlans.length === 0}>
+              {creating ? 'Creating...' : 'Create company'}
+            </button>
+          </div>
+        </div>
+
+        <div className="company-created-summary">
+          {message ? <strong>{message}</strong> : <strong>Ready for setup</strong>}
+          {result?.company ? (
+            <dl>
+              <dt>Tenant</dt>
+              <dd>{result.company.tenant_uid}</dd>
+              <dt>Package</dt>
+              <dd>{result.company.plan?.name || 'No plan'}</dd>
+              <dt>Admin</dt>
+              <dd>{result.admin_account?.email || 'Not created'}</dd>
+              <dt>Password</dt>
+              <dd>{result.admin_account?.temporary_password || '-'}</dd>
+              <dt>Invite</dt>
+              <dd>{result.admin_invite?.token || '-'}</dd>
+            </dl>
+          ) : (
+            <span>No company created in this session.</span>
+          )}
+        </div>
+      </form>
     </section>
   )
 }
@@ -258,7 +566,7 @@ function ClientsBillingPanel({ clients, billing, mode }) {
               <tr key={client.id}>
                 <td>
                   <strong>{client.name}</strong>
-                  <span>{client.status}</span>
+                  <span>{client.tenant_uid} · {client.status}</span>
                 </td>
                 <td>
                   <strong>{client.plan?.name || 'No plan'}</strong>
@@ -272,6 +580,224 @@ function ClientsBillingPanel({ clients, billing, mode }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </section>
+  )
+}
+
+function CompanyManagementPanel({ clients, plans, onSaved }) {
+  const activePlans = (plans || []).filter((plan) => plan.status === 'active')
+  const [selectedCompanyId, setSelectedCompanyId] = useState(clients?.[0]?.id || null)
+  const selectedCompany = clients.find((client) => Number(client.id) === Number(selectedCompanyId)) || clients[0] || null
+  const planOptions = selectedCompany?.plan && !activePlans.some((plan) => Number(plan.id) === Number(selectedCompany.plan.id))
+    ? [selectedCompany.plan, ...activePlans]
+    : activePlans
+  const [form, setForm] = useState(companyToForm(selectedCompany))
+  const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [inviting, setInviting] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    setSelectedCompanyId((current) => current || clients?.[0]?.id || null)
+  }, [clients])
+
+  useEffect(() => {
+    setForm(companyToForm(selectedCompany))
+    setErrors({})
+    setMessage('')
+  }, [selectedCompany?.id])
+
+  function change(field, value) {
+    setErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+    setForm((current) => {
+      if (field !== 'plan_id') return { ...current, [field]: value }
+      const chosenPlan = planOptions.find((plan) => String(plan.id) === String(value))
+      return { ...current, plan_id: value, ...limitsFromPlan(chosenPlan) }
+    })
+  }
+
+  async function saveCompany(event) {
+    event.preventDefault()
+    if (!selectedCompany) return
+
+    setSaving(true)
+    setErrors({})
+    setMessage('Saving company...')
+
+    try {
+      const data = await apiRequest(`/admin/companies/${selectedCompany.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(form),
+      })
+      setMessage(data.message)
+      await onSaved?.()
+    } catch (error) {
+      setErrors(error.errors || {})
+      setMessage(error.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function sendInvite() {
+    if (!selectedCompany) return
+
+    setInviting(true)
+    setMessage('Creating admin invite...')
+
+    try {
+      const data = await apiRequest(`/admin/companies/${selectedCompany.id}/admin-invite`, {
+        method: 'POST',
+        body: JSON.stringify({
+          primary_contact_name: form.primary_contact_name,
+          primary_contact_email: form.primary_contact_email,
+        }),
+      })
+      setMessage(`${data.message} Token: ${data.admin_invite?.token || 'created'}`)
+      await onSaved?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  if (!clients?.length) return null
+
+  return (
+    <section className="enterprise-panel company-management-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">View / Edit Company</span>
+          <h2>Company Profile, Package, Limits, And Invite</h2>
+        </div>
+        <span>{formatNumber(clients.length)} companies</span>
+      </div>
+
+      <div className="company-management-grid">
+        <div className="company-picker-list">
+          {clients.map((client) => (
+            <button
+              type="button"
+              className={Number(selectedCompany?.id) === Number(client.id) ? 'company-picker active' : 'company-picker'}
+              key={client.id}
+              onClick={() => setSelectedCompanyId(client.id)}
+            >
+              <strong>{client.name}</strong>
+              <span>{client.tenant_uid} · {client.plan?.name || 'No package'}</span>
+              <small>{client.status} · {client.billing_type}</small>
+            </button>
+          ))}
+        </div>
+
+        <form className="company-edit-form" onSubmit={saveCompany}>
+          <div className="field-row">
+            <label>
+              <span>Company name</span>
+              <input value={form.company_name} onChange={(event) => change('company_name', event.target.value)} />
+              {errors.company_name ? <small className="form-error">{errors.company_name}</small> : null}
+            </label>
+            <label>
+              <span>Legal name</span>
+              <input value={form.legal_name} onChange={(event) => change('legal_name', event.target.value)} />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Email</span>
+              <input type="email" value={form.company_email} onChange={(event) => change('company_email', event.target.value)} />
+              {errors.company_email ? <small className="form-error">{errors.company_email}</small> : null}
+            </label>
+            <label>
+              <span>Phone</span>
+              <input value={form.phone} onChange={(event) => change('phone', event.target.value)} />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Address</span>
+              <input value={form.address} onChange={(event) => change('address', event.target.value)} />
+            </label>
+            <label>
+              <span>Industry</span>
+              <input value={form.industry} onChange={(event) => change('industry', event.target.value)} />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Status</span>
+              <select value={form.status} onChange={(event) => change('status', event.target.value)}>
+                {COMPANY_STATUS_OPTIONS.map((status) => <option value={status} key={status}>{status}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Billing scope</span>
+              <select value={form.billing_type} onChange={(event) => change('billing_type', event.target.value)}>
+                {BILLING_TYPE_OPTIONS.map((type) => <option value={type} key={type}>{type}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Package</span>
+              <select value={form.plan_id} onChange={(event) => change('plan_id', event.target.value)}>
+                {planOptions.map((plan) => <option value={plan.id} key={plan.id}>{plan.name}</option>)}
+              </select>
+              {errors.plan_id ? <small className="form-error">{errors.plan_id}</small> : null}
+            </label>
+            <label>
+              <span>Billing email</span>
+              <input type="email" value={form.billing_email} onChange={(event) => change('billing_email', event.target.value)} />
+              {errors.billing_email ? <small className="form-error">{errors.billing_email}</small> : null}
+            </label>
+          </div>
+
+          <div className="default-limit-grid">
+            <label>
+              <span>Apps</span>
+              <input type="number" min="0" value={form.default_app_limit} onChange={(event) => change('default_app_limit', event.target.value)} />
+            </label>
+            <label>
+              <span>Rooms</span>
+              <input type="number" min="0" value={form.default_room_limit} onChange={(event) => change('default_room_limit', event.target.value)} />
+            </label>
+            <label>
+              <span>Participants</span>
+              <input type="number" min="0" value={form.default_participant_limit} onChange={(event) => change('default_participant_limit', event.target.value)} />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Primary contact</span>
+              <input value={form.primary_contact_name} onChange={(event) => change('primary_contact_name', event.target.value)} />
+            </label>
+            <label>
+              <span>Contact email</span>
+              <input type="email" value={form.primary_contact_email} onChange={(event) => change('primary_contact_email', event.target.value)} />
+              {errors.primary_contact_email ? <small className="form-error">{errors.primary_contact_email}</small> : null}
+            </label>
+          </div>
+
+          <div className="company-edit-actions">
+            <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save company'}</button>
+            <button className="secondary-button" type="button" disabled={inviting || !form.primary_contact_email} onClick={sendInvite}>
+              {inviting ? 'Inviting...' : 'Create admin invite'}
+            </button>
+          </div>
+
+          {message ? <div className="company-edit-message">{message}</div> : null}
+        </form>
       </div>
     </section>
   )
@@ -484,6 +1010,12 @@ export default function AdminView() {
   const [overview, setOverview] = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedAdminId, setSelectedAdminId] = useState(null)
+  const [companyForm, setCompanyForm] = useState(INITIAL_COMPANY_FORM)
+  const [companyFormErrors, setCompanyFormErrors] = useState({})
+  const [companyCreating, setCompanyCreating] = useState(false)
+  const [companyGeneratingTenantId, setCompanyGeneratingTenantId] = useState(false)
+  const [createdCompany, setCreatedCompany] = useState(null)
+  const [companySubmitMessage, setCompanySubmitMessage] = useState('')
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
 
@@ -532,11 +1064,83 @@ export default function AdminView() {
     }
   }
 
+  function updateCompanyForm(field, value) {
+    setCompanyForm((current) => {
+      if (field !== 'plan_id') return { ...current, [field]: value }
+      const chosenPlan = overview?.enterprise?.plans?.find((plan) => String(plan.id) === String(value))
+      return { ...current, plan_id: value, ...limitsFromPlan(chosenPlan) }
+    })
+    setCompanyFormErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
+
+  async function generateTenantId() {
+    setCompanyGeneratingTenantId(true)
+    setCompanyFormErrors((current) => {
+      if (!current.tenant_id) return current
+      const next = { ...current }
+      delete next.tenant_id
+      return next
+    })
+    setCompanySubmitMessage('Generating tenant_id...')
+
+    try {
+      const query = companyForm.company_name ? `?company_name=${encodeURIComponent(companyForm.company_name)}` : ''
+      const data = await apiRequest(`/admin/companies/generate-tenant-id${query}`)
+      setCompanyForm((current) => ({ ...current, tenant_id: data.tenant_id }))
+      setCompanySubmitMessage(`${data.tenant_id} generated`)
+    } catch (error) {
+      setCompanySubmitMessage(error.message)
+      setStatus(error.message)
+    } finally {
+      setCompanyGeneratingTenantId(false)
+    }
+  }
+
+  async function createCompany(event) {
+    event.preventDefault()
+    setCompanyCreating(true)
+    setCompanyFormErrors({})
+    setCreatedCompany(null)
+    setCompanySubmitMessage('Creating company...')
+
+    try {
+      const data = await apiRequest('/admin/companies', {
+        method: 'POST',
+        body: JSON.stringify(companyForm),
+      })
+      const planId = companyForm.plan_id
+      const selectedPlan = overview?.enterprise?.plans?.find((plan) => String(plan.id) === String(planId))
+      setCreatedCompany(data)
+      setCompanySubmitMessage(data.message)
+      setCompanyForm({ ...INITIAL_COMPANY_FORM, plan_id: planId, ...limitsFromPlan(selectedPlan) })
+      await load({ silent: true })
+      setStatus(data.next_step ? `${data.message} ${data.next_step}` : data.message)
+    } catch (error) {
+      setCompanyFormErrors(error.errors || {})
+      setCompanySubmitMessage(error.message)
+      setStatus(error.message)
+    } finally {
+      setCompanyCreating(false)
+    }
+  }
+
   useEffect(() => {
     load()
     const timer = window.setInterval(() => load({ silent: true }), 15000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    const firstPlan = overview?.enterprise?.plans?.find((plan) => plan.status === 'active') || overview?.enterprise?.plans?.[0]
+    if (firstPlan && !companyForm.plan_id) {
+      setCompanyForm((current) => ({ ...current, plan_id: String(firstPlan.id), ...limitsFromPlan(firstPlan) }))
+    }
+  }, [overview?.enterprise?.plans, companyForm.plan_id])
 
   return (
     <div className="view-stack admin-dashboard-view">
@@ -578,6 +1182,29 @@ export default function AdminView() {
       <ScopeSummary payload={activePayload} scope={overview?.scope} />
 
       <EnterpriseServicePanel enterprise={enterprise} mode={enterpriseMode} />
+
+      {enterpriseMode === 'super_admin' ? (
+        <CompanySetupPanel
+          plans={enterprise?.plans || []}
+          form={companyForm}
+          errors={companyFormErrors}
+          creating={companyCreating}
+          generatingTenantId={companyGeneratingTenantId}
+          result={createdCompany}
+          message={companySubmitMessage}
+          onChange={updateCompanyForm}
+          onGenerateTenantId={generateTenantId}
+          onSubmit={createCompany}
+        />
+      ) : null}
+
+      {enterpriseMode === 'super_admin' ? (
+        <CompanyManagementPanel
+          clients={enterprise?.clients || []}
+          plans={enterprise?.plans || []}
+          onSaved={() => load({ silent: true })}
+        />
+      ) : null}
 
       <div className="enterprise-dashboard-grid">
         <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />

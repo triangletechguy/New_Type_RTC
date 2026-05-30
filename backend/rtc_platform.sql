@@ -6,11 +6,29 @@ USE rtc_platform;
 
 CREATE TABLE IF NOT EXISTS tenants (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_uid VARCHAR(80) NULL,
     name VARCHAR(150) NOT NULL,
-    status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
+    company_slug VARCHAR(160) NULL,
+    legal_name VARCHAR(180) NULL,
+    industry VARCHAR(120) NULL,
+    company_email VARCHAR(180) NULL,
+    phone VARCHAR(60) NULL,
+    address VARCHAR(255) NULL,
+    country VARCHAR(100) NULL,
+    timezone VARCHAR(80) NULL,
+    primary_contact_name VARCHAR(150) NULL,
+    primary_contact_email VARCHAR(180) NULL,
+    billing_email VARCHAR(180) NULL,
+    billing_type ENUM('monthly', 'prepaid', 'custom', 'enterprise') DEFAULT 'monthly',
+    status ENUM('pending', 'active', 'inactive', 'suspended', 'cancelled') DEFAULT 'active',
     billing_rate_per_minute DECIMAL(10,4) DEFAULT 0.0000,
+    default_app_limit INT DEFAULT 1,
+    default_room_limit INT DEFAULT 0,
+    default_participant_limit INT DEFAULT 0,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_tenant_uid (tenant_uid),
+    UNIQUE KEY unique_company_slug (company_slug)
 );
 
 CREATE TABLE IF NOT EXISTS service_plans (
@@ -24,6 +42,7 @@ CREATE TABLE IF NOT EXISTS service_plans (
     max_room_admins INT DEFAULT 0,
     max_rooms INT DEFAULT 0,
     max_apps INT DEFAULT 1,
+    max_participants_per_room INT DEFAULT 0,
     included_features JSON NULL,
     status ENUM('active', 'inactive') DEFAULT 'active',
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -79,6 +98,23 @@ CREATE TABLE IF NOT EXISTS client_feature_flags (
     INDEX idx_client_feature_app_id (app_id),
     CONSTRAINT fk_client_feature_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_client_feature_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS company_admin_invites (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    invited_name VARCHAR(150) NULL,
+    invited_email VARCHAR(180) NOT NULL,
+    token VARCHAR(120) NOT NULL,
+    role_name VARCHAR(100) DEFAULT 'client_admin',
+    status ENUM('pending', 'accepted', 'cancelled', 'expired') DEFAULT 'pending',
+    expires_at TIMESTAMP NULL,
+    accepted_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_company_invite_token (token),
+    INDEX idx_company_invites_tenant_id (tenant_id),
+    CONSTRAINT fk_company_invites_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS users (

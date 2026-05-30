@@ -6052,6 +6052,159 @@ pre {
   padding: 16px;
 }
 
+.company-setup-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.company-setup-fields {
+  min-width: 0;
+}
+
+.tenant-id-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.tenant-id-control label {
+  min-width: 0;
+}
+
+.tenant-id-control button {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
+.default-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.company-setup-fields label span {
+  display: block;
+  margin-bottom: 7px;
+}
+
+.company-setup-actions {
+  display: grid;
+  grid-template-columns: minmax(180px, .45fr) minmax(180px, .55fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.company-setup-actions button {
+  min-height: 46px;
+  margin-bottom: 0;
+}
+
+.company-created-summary {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, .24);
+  background: rgba(56, 189, 248, .075);
+}
+
+.company-created-summary > strong {
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.company-created-summary > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.company-created-summary dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 8px 10px;
+}
+
+.company-created-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.company-created-summary dd {
+  margin: 0;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.company-management-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, .35fr) minmax(0, .65fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.company-picker-list,
+.company-edit-form {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.company-picker {
+  min-width: 0;
+  min-height: 76px;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  text-align: left;
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .055);
+}
+
+.company-picker.active {
+  border-color: rgba(56, 189, 248, .55);
+  background: rgba(56, 189, 248, .14);
+}
+
+.company-picker strong,
+.company-picker span,
+.company-picker small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-picker span,
+.company-picker small,
+.company-edit-message {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.company-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.company-edit-message {
+  padding: 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, .22);
+  background: rgba(56, 189, 248, .08);
+  overflow-wrap: anywhere;
+}
+
 .service-plan-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
@@ -6408,6 +6561,8 @@ pre {
   .buzz-hero-grid,
   .enterprise-service-panel,
   .enterprise-dashboard-grid,
+  .company-setup-form,
+  .company-management-grid,
   .service-plan-grid,
   .enterprise-flow-grid,
   .admin-detail-grid,
@@ -6581,10 +6736,13 @@ pre {
   .buzz-mini-stats,
   .chat-form,
   .field-row,
+  .tenant-id-control,
+  .default-limit-grid,
   .toggle-grid,
   .room-tools,
   .join-recovery,
   .owner-toggle-grid,
+  .company-setup-actions,
   .compact-controls,
   .privacy-control-grid,
   .control-summary,
@@ -6595,6 +6753,7 @@ pre {
   .usage-check-grid,
   .usage-period-row,
   .client-app-card dl,
+  .company-created-summary dl,
   .usage-log-row {
     grid-template-columns: 1fr;
   }
