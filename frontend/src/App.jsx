@@ -178,13 +178,8 @@ export default function App() {
   }
 
   function leaveActiveRoomViaHistory() {
-    const state = window.history.state
-    if (state?.activeRoom?.id && state.openedFromApp && window.history.length > 1) {
-      window.history.back()
-      return
-    }
-
     setActiveRoom(null)
+    setView('rooms')
     setBrowserRoute({ view: 'rooms', activeRoom: null }, 'replace')
   }
 

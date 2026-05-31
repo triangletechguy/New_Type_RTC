@@ -71,10 +71,10 @@ const demoCards = [
 ]
 
 const dmThreads = [
-  { id: 'donna', name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: '[Stickers]', unread: 1 },
-  { id: 'jennifer', name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: '[Stickers]', unread: 1 },
-  { id: 'friend', name: 'Friend...', time: 'Wednesday 01:27', preview: '@Jessica An3215971...', unread: 4 },
-  { id: 'buzz', name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to TalkEachOther...', unread: 1 },
+  { id: 'donna', peerId: 32165333, name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: '[Stickers]', unread: 1, followed: false },
+  { id: 'jennifer', peerId: 32165334, name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: '[Stickers]', unread: 1, followed: false },
+  { id: 'friend', peerId: 32165335, name: 'Friend...', time: 'Wednesday 01:27', preview: '@Jessica An3215971...', unread: 4, followed: true },
+  { id: 'buzz', peerId: 32165336, name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to TalkEachOther...', unread: 1, followed: true },
 ]
 
 const initialDmMessages = {
@@ -246,6 +246,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [activeExplore, setActiveExplore] = useState('all')
   const [showSearchPanel, setShowSearchPanel] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
+  const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
   const [showRecharge, setShowRecharge] = useState(false)
@@ -272,6 +273,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [activeThread, setActiveThread] = useState(dmThreads[0].id)
   const [dmMessages, setDmMessages] = useState(initialDmMessages)
   const [dmInput, setDmInput] = useState('')
+  const [dmStatus, setDmStatus] = useState('')
+  const [followedThreadIds, setFollowedThreadIds] = useState(() => dmThreads.filter((thread) => thread.followed).map((thread) => thread.id))
+  const [activeRanking, setActiveRanking] = useState('rooms')
   const [previewCard, setPreviewCard] = useState(null)
   const [acceptedWarnings, setAcceptedWarnings] = useState({})
   const [feedbackForm, setFeedbackForm] = useState({
@@ -351,6 +355,59 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const activeThreadData = dmThreads.find((thread) => thread.id === activeThread) || dmThreads[0]
+  const activeThreadFollowed = followedThreadIds.includes(activeThread)
+  const unreadThreadCount = dmThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
+  const sentBeforeFollowCount = (dmMessages[activeThread] || []).filter((message) => message.mine).length
+  const dmNotice = activeThreadFollowed
+    ? 'You follow each other. Private messages are open.'
+    : 'Follow this user to keep sending and receiving private messages.'
+  const rankingRows = useMemo(() => {
+    const cards = roomCards.length ? roomCards : demoCards
+
+    if (activeRanking === 'hosts') {
+      const hosts = new Map()
+      cards.forEach((card) => {
+        const key = card.host || 'Room host'
+        const previous = hosts.get(key) || {
+          key,
+          name: key,
+          detail: '0 rooms',
+          score: 0,
+          avatarIndex: cardAvatarIndex(card),
+        }
+        previous.score += Number(card.viewers || 0) + (card.room ? 120 : 0)
+        previous.rooms = Number(previous.rooms || 0) + 1
+        previous.detail = `${previous.rooms} room${previous.rooms === 1 ? '' : 's'} hosted`
+        hosts.set(key, previous)
+      })
+      return Array.from(hosts.values()).sort((a, b) => b.score - a.score).slice(0, 10)
+    }
+
+    if (activeRanking === 'gifts') {
+      return giftCatalog
+        .slice()
+        .sort((a, b) => Number(b.cost || 0) - Number(a.cost || 0))
+        .slice(0, 10)
+        .map((gift, index) => ({
+          key: gift.id,
+          name: gift.label,
+          detail: `${gift.cost} diamonds`,
+          score: Number(gift.cost || 0) * (10 - index),
+          icon: gift.icon,
+        }))
+    }
+
+    return cards
+      .map((card) => ({
+        key: card.id,
+        name: card.title,
+        detail: `${card.host} - ${getRoomMeta(card.roomType).label}`,
+        score: Number(card.viewers || 0) + (card.room ? Number(card.room.active_participants || 0) * 25 : 0),
+        avatarIndex: cardAvatarIndex(card),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+  }, [activeRanking, roomCards])
 
   function requireAuth(reason = 'Log in or sign up to continue.', mode = 'login') {
     if (user) return true
@@ -414,7 +471,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function openMessagesDrawer() {
     if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
+    setShowRankings(false)
     setShowMessages(true)
+  }
+
+  function openRankings() {
+    if (!requireAuth('Log in to view live rankings.', 'login')) return
+    setShowMessages(false)
+    setShowRankings(true)
   }
 
   function openRechargePanel() {
@@ -449,6 +513,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function removeFeedbackAttachment() {
     setFeedbackForm((previous) => ({ ...previous, attachment: null }))
     setFeedbackStatus('Attachment removed.')
+  }
+
+  function toggleThreadFollow(threadId = activeThread) {
+    setFollowedThreadIds((previous) => {
+      const following = previous.includes(threadId)
+      const next = following ? previous.filter((id) => id !== threadId) : [...previous, threadId]
+      setDmStatus(following ? 'Follow removed. Message sending returns to first-contact limits.' : 'Following. You can now send and receive private messages normally.')
+      return next
+    })
   }
 
   function updateRoomForm(field, value) {
@@ -690,6 +763,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (!requireAuth('Log in to send chat messages.', 'login')) return
     const body = dmInput.trim()
     if (!body) return
+    if (!activeThreadFollowed && sentBeforeFollowCount >= 2) {
+      setDmStatus('Follow this user first to continue the private chat.')
+      return
+    }
 
     setDmMessages((previous) => ({
       ...previous,
@@ -699,6 +776,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ],
     }))
     setDmInput('')
+    setDmStatus(activeThreadFollowed ? 'Message sent.' : `${Math.max(0, 1 - sentBeforeFollowCount)} first-contact message remaining before follow is required.`)
   }
 
   function submitFeedback(event) {
@@ -1194,6 +1272,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (user) return
     if (activeSection === 'me' || activeSection === 'settings') setActiveSection('live')
     setShowMessages(false)
+    setShowRankings(false)
     setShowHostPanel(false)
     setShowRecharge(false)
   }, [activeSection, user])
@@ -1240,7 +1319,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           {showAdminDashboard ? (
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
-          <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
+          <IconButton label="Rankings" onClick={openRankings}><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
+          <IconButton label="Messages" badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={openMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
           <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
@@ -1291,10 +1371,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 key={thread.id}
                 type="button"
                 className={activeThread === thread.id ? 'active' : ''}
-                onClick={() => setActiveThread(thread.id)}
+                onClick={() => {
+                  setActiveThread(thread.id)
+                  setDmStatus('')
+                }}
               >
                 <i className="image-avatar"><img src={avatarForIndex(index)} alt="" loading="lazy" /></i>
-                <span><strong>{thread.name}</strong><small>{thread.preview}</small></span>
+                <span><strong>{thread.name}</strong><small>{followedThreadIds.includes(thread.id) ? 'Following - ' : ''}{thread.preview}</small></span>
                 <time>{thread.time}</time>
                 {thread.unread ? <em>{thread.unread}</em> : null}
               </button>
@@ -1303,20 +1386,74 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <main>
             <header>
               <strong>{activeThreadData.name}</strong>
-              <span>( ID: 32165333)</span>
+              <span>( ID: {activeThreadData.peerId})</span>
+              <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
+                {activeThreadFollowed ? 'Following' : 'Follow'}
+              </button>
               <button type="button" onClick={() => setShowMessages(false)}>End session</button>
             </header>
-            <div className="buzzcast-dm-notice">You can send up to 2 messages before they reply or follow you</div>
+            <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
+              {dmStatus || dmNotice}
+            </div>
             <div className="buzzcast-dm-body">
               {(dmMessages[activeThread] || []).map((message) => (
                 <p key={message.id} className={message.mine ? 'mine' : ''}>{message.body}</p>
               ))}
             </div>
             <form onSubmit={sendDmMessage}>
-              <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Send a chat" />
+              <input
+                value={dmInput}
+                onChange={(event) => setDmInput(event.target.value)}
+                placeholder={activeThreadFollowed ? 'Send a chat' : 'Send up to 2 messages, or follow first'}
+              />
             </form>
           </main>
         </section>
+      ) : null}
+
+      {showRankings ? (
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowRankings(false)}>
+          <section className="buzzcast-rankings-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <h2>Rankings</h2>
+                <p>Calculated from room viewers, active participants, host activity, and gift value.</p>
+              </div>
+              <button type="button" onClick={() => setShowRankings(false)}>x</button>
+            </header>
+            <nav>
+              {[
+                { value: 'rooms', label: 'Rooms' },
+                { value: 'hosts', label: 'Hosts' },
+                { value: 'gifts', label: 'Gifts' },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  className={activeRanking === item.value ? 'active' : ''}
+                  onClick={() => setActiveRanking(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <div className="buzzcast-ranking-list">
+              {rankingRows.map((item, index) => (
+                <article key={item.key}>
+                  <b>{index + 1}</b>
+                  <span className="image-avatar">
+                    <img src={item.icon || avatarForIndex(item.avatarIndex || index)} alt="" loading="lazy" />
+                  </span>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>{item.detail}</small>
+                  </div>
+                  <em>{compactNumber(item.score)}</em>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {showInstall ? (

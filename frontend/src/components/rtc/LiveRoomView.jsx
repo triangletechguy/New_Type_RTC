@@ -907,6 +907,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return leaveResult
     } catch (error) {
       setStatus(error.message)
+      setJoined(false)
+      setConnectStep('ready')
+      setConnectionIssue('')
+      if (navigateAfterLeave) onBack?.()
       return null
     }
   }

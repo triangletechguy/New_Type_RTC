@@ -1995,7 +1995,7 @@
   top: 62px;
   left: 58px;
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .buzzcast-room-metadata span {
@@ -2004,9 +2004,13 @@
 
 .buzzcast-room-metadata strong {
   max-width: 220px;
+  overflow: hidden;
   padding: 10px;
   border-radius: 4px;
   background: rgba(0, 0, 0, .48);
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .buzzcast-room-metadata small {
@@ -2200,22 +2204,47 @@
 }
 
 .buzzcast-messages-drawer main header button {
-  margin-left: auto;
   border: 0;
   background: transparent;
   color: #aaa6bb;
   font-weight: 500;
 }
 
+.buzzcast-messages-drawer main header button:first-of-type {
+  margin-left: auto;
+}
+
+.buzzcast-messages-drawer main header button.follow,
+.buzzcast-messages-drawer main header button.following {
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #7459ff;
+  color: #fff;
+  font-size: 12px;
+}
+
+.buzzcast-messages-drawer main header button.following {
+  background: rgba(52, 211, 153, .16);
+  color: #a7f3d0;
+}
+
 .buzzcast-dm-notice {
   min-height: 40px;
   display: grid;
   place-items: center;
+  padding: 8px 10px;
   border-radius: 6px;
   background: #4b4a62;
   color: #fff;
   font-size: 13px;
   font-weight: 700;
+  text-align: center;
+}
+
+.buzzcast-dm-notice.open {
+  background: rgba(52, 211, 153, .16);
+  color: #d1fae5;
 }
 
 .buzzcast-dm-body {
@@ -2236,6 +2265,115 @@
 .buzzcast-dm-body p.mine {
   margin-left: auto;
   background: #7658ff;
+}
+
+.buzzcast-rankings-modal {
+  width: min(620px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 10px;
+  background: #2f2e3e;
+  color: #fff;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .48);
+}
+
+.buzzcast-rankings-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.buzzcast-rankings-modal h2,
+.buzzcast-rankings-modal p {
+  margin: 0;
+}
+
+.buzzcast-rankings-modal p {
+  margin-top: 6px;
+  color: #b7b2c8;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.buzzcast-rankings-modal header > button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #d8d5e8;
+  font-size: 22px;
+}
+
+.buzzcast-rankings-modal nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 18px 0 14px;
+}
+
+.buzzcast-rankings-modal nav button {
+  min-height: 38px;
+  border-color: #4d4b60;
+  background: #38364a;
+}
+
+.buzzcast-rankings-modal nav button.active {
+  border-color: #8f62ff;
+  background: #7254ec;
+}
+
+.buzzcast-ranking-list {
+  display: grid;
+  gap: 8px;
+}
+
+.buzzcast-ranking-list article {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 32px 44px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #3a394c;
+}
+
+.buzzcast-ranking-list article > b {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  color: #facc15;
+}
+
+.buzzcast-ranking-list .image-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.buzzcast-ranking-list strong,
+.buzzcast-ranking-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buzzcast-ranking-list small {
+  margin-top: 3px;
+  color: #aaa6bb;
+  font-size: 12px;
+}
+
+.buzzcast-ranking-list em {
+  color: #d8d2ff;
+  font-style: normal;
+  font-weight: 1000;
 }
 
 .buzzcast-modal-backdrop {
@@ -6045,7 +6183,7 @@ pre {
 }
 
 .buzzcast-room-status {
-  top: 106px;
+  top: 150px;
   left: 58px;
   max-width: 310px;
   display: inline-flex;
