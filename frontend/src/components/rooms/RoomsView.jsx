@@ -173,6 +173,49 @@ function roomToFeedCard(room, index) {
   }
 }
 
+function cardMatchesActiveFeed(card, activeFeed, activeExplore) {
+  if (activeFeed === 'latest') return card.tab === 'latest' || card.room
+  if (activeFeed === 'nearby') return card.tab === 'nearby' || card.room
+  if (activeFeed === 'party') return card.party || card.tab === 'party' || card.room?.room_type === 'pk_live'
+  if (activeFeed === 'following') return Boolean(card.room || card.following || card.host === 'TalkEachOther')
+  if (activeFeed === 'global') return card.tab === 'latest' || card.room || card.country || card.host === 'TalkEachOther'
+  if (activeFeed === 'explore') {
+    if (activeExplore === 'all') return card.tab !== 'party'
+    if (activeExplore === 'pk') return card.room?.room_type === 'pk_live' || card.explore === 'pk'
+    if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(card.room?.room_type || card.roomType)
+    return card.room || card.explore === activeExplore
+  }
+
+  return true
+}
+
+function cardMatchesRoomFilters(card, filter, privacyFilter) {
+  const roomType = card.room?.room_type || card.roomType
+  const privacyType = card.room?.privacy_type || card.privacy || 'public'
+  const typeMatches = filter === 'all'
+    || (filter === 'live' && ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType))
+    || (filter === 'video' && roomSupportsVideo(roomType))
+    || (filter === 'music' && ['audio', 'group_audio'].includes(roomType))
+    || (filter === 'pk' && roomType === 'pk_live')
+  const privacyMatches = privacyFilter === 'all' || privacyType === privacyFilter
+
+  return typeMatches && privacyMatches
+}
+
+function sortCardsForView(cards, sort) {
+  const nextCards = [...cards]
+
+  if (sort === 'name') {
+    nextCards.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+  } else if (sort === 'active') {
+    nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0))
+  } else if (sort === 'oldest') {
+    nextCards.sort((a, b) => Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b)))
+  }
+
+  return nextCards
+}
+
 function IconButton({ label, children, badge, className = '', onClick }) {
   return (
     <button type="button" className={`buzzcast-icon-button ${className}`} onClick={onClick} aria-label={label} title={label}>
@@ -296,35 +339,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
-  const searchTerm = search.trim().toLowerCase()
-  const roomSearchResults = useMemo(() => {
-    const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
-    const liveResults = rooms
-      .filter((room) => !searchTerm || includesTerm(`${room.name} ${room.host_name} ${room.room_type} ${room.privacy_type}`))
-      .slice(0, 8)
-      .map((room) => ({
-        id: room.id,
-        type: 'room',
-        name: room.name || `Room ${room.id}`,
-        detail: `${getRoomMeta(room.room_type).label} - ${room.privacy_type || 'public'}`,
-        room,
-      }))
-    const demoResults = searchTerm
-      ? demoCards
-        .filter((card) => includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.privacy || 'public'}`))
-        .slice(0, 6)
-        .map((card) => ({
-          id: card.id,
-          type: 'demo',
-          name: card.title,
-          detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
-          avatarIndex: card.avatarIndex,
-          card,
-        }))
-      : []
-
-    return [...liveResults, ...demoResults].slice(0, 8)
-  }, [rooms, searchTerm])
   const visibleCards = useMemo(() => {
     const usingLiveRooms = roomCards.length > 0
     let cards = usingLiveRooms ? [...roomCards] : [...demoCards]
@@ -333,7 +347,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       if (activeFeed === 'party') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
       if (activeFeed === 'explore' && activeExplore === 'pk') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
       if (activeFeed === 'explore' && activeExplore === 'games') cards = cards.filter((card) => roomSupportsVideo(card.room?.room_type))
-      return cards.slice(0, 48)
+      return sortCardsForView(cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter)), sort).slice(0, 48)
     }
 
     if (activeFeed === 'latest') cards = cards.filter((card) => card.tab === 'latest' || card.room).slice(0, 16)
@@ -350,11 +364,36 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (activeFeed === 'following') cards = cards.filter((card, index) => card.room || index < 6)
     if (activeFeed === 'global') cards = cards.filter((card) => card.tab === 'latest' || card.room).concat(demoCards.slice(0, 4))
 
-    return cards.slice(0, activeFeed === 'party' ? 10 : 24)
-  }, [activeExplore, activeFeed, roomCards])
+    cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+    return sortCardsForView(cards, sort).slice(0, activeFeed === 'party' ? 10 : 24)
+  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, sort])
+  const searchTerm = search.trim().toLowerCase()
+  const roomSearchResults = useMemo(() => {
+    const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
+    const candidateCards = (roomCards.length ? roomCards : demoCards)
+      .filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore))
+      .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+      .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country}`))
+
+    return candidateCards.slice(0, 8).map((card) => ({
+      id: card.id,
+      type: card.room ? 'room' : 'demo',
+      name: card.title,
+      detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
+      avatarIndex: cardAvatarIndex(card),
+      room: card.room,
+      card,
+    }))
+  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const activeThreadData = dmThreads.find((thread) => thread.id === activeThread) || dmThreads[0]
+  const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
+  const searchPanelTitle = loadingRooms
+    ? 'Searching rooms...'
+    : search.trim()
+      ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
+      : `${activeFilterLabel} rooms`
   const activeThreadFollowed = followedThreadIds.includes(activeThread)
   const unreadThreadCount = dmThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
   const sentBeforeFollowCount = (dmMessages[activeThread] || []).filter((message) => message.mine).length
@@ -543,20 +582,28 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openSearchResult(item) {
+    setShowSearchPanel(false)
+
     if (item.room) {
-      selectRoom(item.room)
       setActiveSection('live')
       setPreviewCard(null)
+      joinRoomFromCard(item.room)
+      return
     } else if (item.card) {
       openCard(item.card)
     }
-
-    setShowSearchPanel(false)
   }
 
   function runSearch() {
+    setActiveSection('live')
     setShowSearchPanel(true)
-    loadRooms({ page: 1, searchValue: search })
+    loadRooms({
+      page: 1,
+      searchValue: search,
+      filterValue: filter,
+      privacyValue: privacyFilter,
+      sortValue: sort,
+    })
   }
 
   function handleSearchKeyDown(event) {
@@ -1297,7 +1344,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </button>
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
-              <span>{loadingRooms ? 'Searching rooms...' : search.trim() ? `${roomSearchResults.length} result${roomSearchResults.length === 1 ? '' : 's'}` : 'Search live rooms'}</span>
+              <span>{searchPanelTitle}</span>
               {roomSearchResults.map((item, index) => (
                 <button
                   key={`${item.type}-${item.id}`}
