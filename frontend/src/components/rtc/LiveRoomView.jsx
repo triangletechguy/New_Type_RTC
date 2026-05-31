@@ -12,6 +12,7 @@ import {
   normalizeRtcMode,
   peerMediaFromSignal,
   peerMediaMapFromUsers,
+  roomSupportsVideo,
 } from '../../utils/roomConfig'
 import { giftCatalog } from '../../utils/gifts'
 import { ChatPanel } from './ChatPanel'
@@ -103,6 +104,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomAvatar = avatarForIndex(roomVisualIndex)
   const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
   const isRoomOwner = Number(room?.owner_id || initialRoom?.owner_id) === Number(user?.id)
+  const ownerCanEndVideoRoom = isRoomOwner && roomSupportsVideo(room?.room_type || initialRoom?.room_type)
 
   function resetRtcState({ clearState = true } = {}) {
     if (socketRef.current) {
@@ -876,12 +878,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  async function leaveRoom() {
+  async function leaveRoom({ navigateAfterEnd = true } = {}) {
     try {
-      setStatus('Leaving room...')
+      const shouldEndRoom = ownerCanEndVideoRoom
+      setStatus(shouldEndRoom ? 'Ending live room...' : 'Leaving room...')
       resetRtcState()
+      let leaveResult = null
       if (activeRoomIdRef.current) {
-        await apiRequest(`/rooms/${activeRoomIdRef.current}/leave`, { method: 'POST', body: JSON.stringify({}) })
+        leaveResult = await apiRequest(`/rooms/${activeRoomIdRef.current}/leave`, {
+          method: 'POST',
+          body: JSON.stringify({ end_room: shouldEndRoom }),
+        })
         activeRoomIdRef.current = null
       }
       setJoined(false)
@@ -889,9 +896,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setConnectionIssue('')
       setSignalingState('idle')
       setMediaState('idle')
+      if (leaveResult?.room_ended) {
+        setRoom((currentRoom) => currentRoom ? { ...currentRoom, status: 'ended' } : currentRoom)
+        setStatus('Live ended and room removed')
+        if (navigateAfterEnd) window.setTimeout(() => onBack?.(), 250)
+        return leaveResult
+      }
       setStatus('Session ended and usage logged')
+      return leaveResult
     } catch (error) {
       setStatus(error.message)
+      return null
     }
   }
 
@@ -953,7 +968,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function handleBack() {
     if (joined || activeRoomIdRef.current) {
-      await leaveRoom()
+      await leaveRoom({ navigateAfterEnd: false })
     }
     onBack()
   }
@@ -1201,7 +1216,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <button className="primary-button buzzcast-connect-button" onClick={joinRoom} disabled={joining}>
                   {joining ? 'Connecting...' : connectAttempted ? 'Rejoin' : 'Connect RTC'}
                 </button>
-              ) : <button className="danger-button buzzcast-connect-button" onClick={leaveRoom}>Leave</button>}
+              ) : (
+                <button className="danger-button buzzcast-connect-button" onClick={() => leaveRoom()}>
+                  {ownerCanEndVideoRoom ? 'End live' : 'Leave'}
+                </button>
+              )}
               <button
                 className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
                 onClick={toggleMic}

@@ -72,6 +72,15 @@ function roomSupportsVideo(roomType) {
   return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
 }
 
+function shouldEndRoomOnLeave(room, userId, payload = {}) {
+  const requestedEnd = parseBoolean(
+    payload.end_room ?? payload.endRoom ?? payload.end_live ?? payload.endLive,
+    false
+  )
+
+  return requestedEnd && Number(room?.owner_id) === Number(userId) && roomSupportsVideo(room?.room_type)
+}
+
 function defaultRtcModeForRoom(roomType) {
   return roomSupportsVideo(roomType) ? 'video' : 'audio'
 }
@@ -1484,6 +1493,7 @@ router.post('/:id/leave', authMiddleware, async (req, res, next) => {
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
 
     const room = rooms[0]
+    const endRoom = shouldEndRoomOnLeave(room, req.user.id, req.body || {})
 
     const result = await transaction(async (connection) => {
       const [participants] = await connection.execute(
@@ -1500,39 +1510,125 @@ router.post('/:id/leave', authMiddleware, async (req, res, next) => {
         [room.id, req.user.id]
       )
 
-      if (!participants.length) {
-        return { left: false, message: 'User is not currently inside this room.' }
+      let leavePayload = {
+        left: false,
+        message: 'User is not currently inside this room.',
+        room_ended: false,
+        room_status: room.status,
+      }
+      let closedParticipants = 0
+
+      if (participants.length) {
+        const participant = participants[0]
+        const leaveResult = await closeParticipantSession(connection, room, participant, req.user.id)
+        closedParticipants += leaveResult.alreadyClosed ? 0 : 1
+
+        await connection.execute(
+          `
+          INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+          VALUES (?, ?, ?, ?, 'leave', ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            participant.session_id,
+            req.user.id,
+            JSON.stringify({
+              duration_seconds: leaveResult.durationSeconds,
+              billable_minutes: leaveResult.billableMinutes,
+              usage_log_id: leaveResult.usageLogId,
+              rtc_provider: 'native_webrtc',
+              end_room_requested: endRoom,
+            }),
+          ]
+        )
+
+        leavePayload = {
+          left: true,
+          message: 'Left room successfully',
+          duration_seconds: leaveResult.durationSeconds,
+          billable_minutes: leaveResult.billableMinutes,
+          usage_log_id: leaveResult.usageLogId,
+          usage_logged: Boolean(leaveResult.usageLogId),
+          room_ended: false,
+          room_status: room.status,
+        }
       }
 
-      const participant = participants[0]
-      const leaveResult = await closeParticipantSession(connection, room, participant, req.user.id)
+      if (!endRoom) return leavePayload
+
+      const [remainingParticipants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND left_at IS NULL
+        FOR UPDATE
+        `,
+        [room.id]
+      )
+
+      for (const activeParticipant of remainingParticipants) {
+        const forcedLeaveResult = await closeParticipantSession(
+          connection,
+          room,
+          activeParticipant,
+          activeParticipant.user_id
+        )
+        closedParticipants += forcedLeaveResult.alreadyClosed ? 0 : 1
+
+        await connection.execute(
+          `
+          INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+          VALUES (?, ?, ?, ?, 'leave', ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            activeParticipant.session_id,
+            activeParticipant.user_id,
+            JSON.stringify({
+              duration_seconds: forcedLeaveResult.durationSeconds,
+              billable_minutes: forcedLeaveResult.billableMinutes,
+              usage_log_id: forcedLeaveResult.usageLogId,
+              rtc_provider: 'native_webrtc',
+              ended_by_user_id: req.user.id,
+              room_ended: true,
+            }),
+          ]
+        )
+      }
 
       await connection.execute(
         `
-        INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
-        VALUES (?, ?, ?, ?, 'leave', ?, NOW())
+        UPDATE rooms
+        SET status = 'ended',
+            updated_at = NOW()
+        WHERE id = ?
+        AND tenant_id = ?
         `,
-        [
-          room.tenant_id,
-          room.id,
-          participant.session_id,
-          req.user.id,
-          JSON.stringify({
-            duration_seconds: leaveResult.durationSeconds,
-            billable_minutes: leaveResult.billableMinutes,
-            usage_log_id: leaveResult.usageLogId,
-            rtc_provider: 'native_webrtc',
-          }),
-        ]
+        [room.id, room.tenant_id]
+      )
+
+      await connection.execute(
+        `
+        UPDATE rtc_sessions
+        SET status = 'ended',
+            ended_at = COALESCE(ended_at, NOW()),
+            total_duration_seconds = COALESCE(total_duration_seconds, TIMESTAMPDIFF(SECOND, started_at, NOW())),
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND status = 'active'
+        `,
+        [room.id]
       )
 
       return {
-        left: true,
-        message: 'Left room successfully',
-        duration_seconds: leaveResult.durationSeconds,
-        billable_minutes: leaveResult.billableMinutes,
-        usage_log_id: leaveResult.usageLogId,
-        usage_logged: Boolean(leaveResult.usageLogId),
+        ...leavePayload,
+        message: 'Live room ended successfully',
+        room_ended: true,
+        room_status: 'ended',
+        closed_participants: closedParticipants,
       }
     })
 
