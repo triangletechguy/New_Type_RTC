@@ -6,7 +6,9 @@ const router = express.Router()
 
 const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
 const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
+const audioDataUrlPattern = /^data:audio\/(webm|ogg|mpeg|mp3|mp4|wav|x-m4a)(;codecs=[^;]+)?;base64,[a-z0-9+/=\s]+$/i
 const maxImageDataUrlLength = 7 * 1024 * 1024
+const maxAudioDataUrlLength = 7 * 1024 * 1024
 let chatSchemaPromise = null
 
 async function ensureChatSchema() {
@@ -44,6 +46,27 @@ async function ensureChatSchema() {
       `)
 
       await query('ALTER TABLE chat_messages MODIFY media_url MEDIUMTEXT NULL')
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS direct_messages (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        sender_id BIGINT UNSIGNED NOT NULL,
+        recipient_id BIGINT UNSIGNED NOT NULL,
+        message_type ENUM('text', 'image', 'voice', 'system') DEFAULT 'text',
+        message_body TEXT NULL,
+        media_url MEDIUMTEXT NULL,
+        is_deleted BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_direct_messages_sender (sender_id),
+        INDEX idx_direct_messages_recipient (recipient_id),
+        INDEX idx_direct_messages_pair (tenant_id, sender_id, recipient_id, id),
+        CONSTRAINT fk_direct_messages_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
     })().catch((error) => {
       chatSchemaPromise = null
       throw error
@@ -83,6 +106,22 @@ function imageMediaError(mediaUrl) {
   }
 }
 
+function audioMediaError(mediaUrl) {
+  if (!mediaUrl) return 'Audio message is required.'
+  if (mediaUrl.length > maxAudioDataUrlLength) return 'Audio message must be smaller than 5 MB.'
+
+  if (mediaUrl.startsWith('data:')) {
+    return audioDataUrlPattern.test(mediaUrl) ? '' : 'Audio must be WebM, OGG, MP3, MP4, M4A, or WAV.'
+  }
+
+  try {
+    const url = new URL(mediaUrl)
+    return ['http:', 'https:'].includes(url.protocol) ? '' : 'Audio URL must be HTTP or HTTPS.'
+  } catch {
+    return 'Audio URL is invalid.'
+  }
+}
+
 function messageSelectSql() {
   return `
     SELECT
@@ -91,6 +130,20 @@ function messageSelectSql() {
       u.avatar_url AS sender_avatar_url
     FROM chat_messages cm
     LEFT JOIN users u ON u.id = cm.sender_id
+  `
+}
+
+function directMessageSelectSql() {
+  return `
+    SELECT
+      dm.*,
+      sender.name AS sender_name,
+      sender.avatar_url AS sender_avatar_url,
+      recipient.name AS recipient_name,
+      recipient.avatar_url AS recipient_avatar_url
+    FROM direct_messages dm
+    LEFT JOIN users sender ON sender.id = dm.sender_id
+    LEFT JOIN users recipient ON recipient.id = dm.recipient_id
   `
 }
 
@@ -147,6 +200,21 @@ async function blockedUserIdsForRoom(roomId, userId) {
   )
 
   return blockedRows.map((row) => Number(row.blocked_user_id)).filter(Boolean)
+}
+
+async function findUserForDirectMessage(userId, tenantId) {
+  const users = await query(
+    `
+    SELECT id, name, avatar_url
+    FROM users
+    WHERE id = :userId
+    AND tenant_id = :tenantId
+    LIMIT 1
+    `,
+    { userId, tenantId }
+  )
+
+  return users[0] || null
 }
 
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
@@ -229,6 +297,9 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     if (messageType === 'image') {
       const mediaError = imageMediaError(mediaUrl)
       if (mediaError) return res.status(422).json({ message: mediaError })
+    } else if (messageType === 'voice') {
+      const mediaError = audioMediaError(mediaUrl)
+      if (mediaError) return res.status(422).json({ message: mediaError })
     } else if (!body) {
       return res.status(422).json({ message: 'Message body is required.' })
     }
@@ -263,8 +334,10 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
         senderId: req.user.id,
         parentMessageId,
         messageType,
-        messageBody: messageType === 'image' ? (body || 'sent a photo') : body,
-        mediaUrl: messageType === 'image' ? mediaUrl : mediaUrl || null,
+        messageBody: messageType === 'image'
+          ? (body || 'sent a photo')
+          : messageType === 'voice' ? (body || 'sent a voice message') : body,
+        mediaUrl: ['image', 'voice'].includes(messageType) ? mediaUrl : mediaUrl || null,
       }
     )
 
@@ -331,6 +404,155 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
       message: 'User blocked for this room.',
       room_id: roomId,
       blocked_user_id: blockedUserId,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/direct-messages/threads', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const rows = await query(
+      `
+      SELECT
+        latest.peer_id,
+        peer.name AS peer_name,
+        peer.avatar_url AS peer_avatar_url,
+        dm.id AS last_message_id,
+        dm.sender_id,
+        dm.recipient_id,
+        dm.message_type,
+        dm.message_body,
+        dm.media_url,
+        dm.created_at,
+        dm.updated_at
+      FROM (
+        SELECT
+          CASE WHEN sender_id = :userId THEN recipient_id ELSE sender_id END AS peer_id,
+          MAX(id) AS last_message_id
+        FROM direct_messages
+        WHERE tenant_id = :tenantId
+        AND is_deleted = 0
+        AND (sender_id = :userId OR recipient_id = :userId)
+        GROUP BY peer_id
+      ) latest
+      INNER JOIN direct_messages dm ON dm.id = latest.last_message_id
+      INNER JOIN users peer ON peer.id = latest.peer_id
+      ORDER BY dm.id DESC
+      LIMIT 40
+      `,
+      { tenantId: req.user.tenant_id, userId: req.user.id }
+    )
+
+    return res.json({
+      threads: rows.map((row) => ({
+        peer_id: Number(row.peer_id),
+        peer_name: row.peer_name,
+        peer_avatar_url: row.peer_avatar_url,
+        last_message: row,
+      })),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const peerId = parsePositiveInteger(req.params.userId)
+    const limit = Math.min(100, parsePositiveInteger(req.query.limit, 50) || 50)
+
+    if (!peerId) return res.status(422).json({ message: 'Invalid user ID.' })
+
+    const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
+    if (!peer) return res.status(404).json({ message: 'User not found.' })
+
+    const messages = await query(
+      `
+      ${directMessageSelectSql()}
+      WHERE dm.tenant_id = :tenantId
+      AND dm.is_deleted = 0
+      AND (
+        (dm.sender_id = :userId AND dm.recipient_id = :peerId)
+        OR (dm.sender_id = :peerId AND dm.recipient_id = :userId)
+      )
+      ORDER BY dm.id DESC
+      LIMIT ${limit}
+      `,
+      { tenantId: req.user.tenant_id, userId: req.user.id, peerId }
+    )
+
+    return res.json({
+      peer,
+      messages: messages.reverse(),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const peerId = parsePositiveInteger(req.params.userId)
+    const body = cleanMessageBody(req.body?.message_body).trim()
+    const messageType = String(req.body?.message_type || 'text').trim()
+    const mediaUrl = cleanMediaUrl(req.body?.media_url)
+
+    if (!peerId) return res.status(422).json({ message: 'Invalid user ID.' })
+    if (Number(peerId) === Number(req.user.id)) return res.status(422).json({ message: 'You cannot message yourself.' })
+    if (!['text', 'image', 'voice'].includes(messageType)) return res.status(422).json({ message: 'Invalid message type.' })
+    if (body.length > 1200) return res.status(422).json({ message: 'Message body must be 1200 characters or fewer.' })
+
+    if (messageType === 'image') {
+      const mediaError = imageMediaError(mediaUrl)
+      if (mediaError) return res.status(422).json({ message: mediaError })
+    } else if (messageType === 'voice') {
+      const mediaError = audioMediaError(mediaUrl)
+      if (mediaError) return res.status(422).json({ message: mediaError })
+    } else if (!body) {
+      return res.status(422).json({ message: 'Message body is required.' })
+    }
+
+    const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
+    if (!peer) return res.status(404).json({ message: 'User not found.' })
+
+    const result = await query(
+      `
+      INSERT INTO direct_messages (
+        tenant_id, sender_id, recipient_id, message_type, message_body,
+        media_url, is_deleted, created_at, updated_at
+      )
+      VALUES (
+        :tenantId, :senderId, :recipientId, :messageType, :messageBody,
+        :mediaUrl, 0, NOW(), NOW()
+      )
+      `,
+      {
+        tenantId: req.user.tenant_id,
+        senderId: req.user.id,
+        recipientId: peerId,
+        messageType,
+        messageBody: messageType === 'image'
+          ? (body || 'sent a photo')
+          : messageType === 'voice' ? (body || 'sent a voice message') : body,
+        mediaUrl: ['image', 'voice'].includes(messageType) ? mediaUrl : null,
+      }
+    )
+
+    const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, {
+      id: result.insertId,
+    })
+
+    return res.status(201).json({
+      message: 'Direct message sent.',
+      direct_message: messages[0],
+      peer,
     })
   } catch (error) {
     next(error)

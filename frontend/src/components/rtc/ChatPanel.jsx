@@ -5,7 +5,26 @@ import { formatChatTime } from '../../utils/formatters'
 import { giftById, giftIconForId, giftLabelForId } from '../../utils/gifts'
 
 const maxPhotoBytes = 5 * 1024 * 1024
+const maxAudioBytes = 5 * 1024 * 1024
 const supportedPhotoTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
+function preferredAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
+
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ].find((type) => MediaRecorder.isTypeSupported(type)) || ''
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.round(Number(ms || 0) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${minutes}:${seconds}`
+}
 
 function chatSenderName(message, currentUser) {
   if (isOwnMessage(message, currentUser)) return 'You'
@@ -46,6 +65,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [photoDraft, setPhotoDraft] = useState(null)
+  const [audioDraft, setAudioDraft] = useState(null)
+  const [recording, setRecording] = useState(false)
+  const [recordingMs, setRecordingMs] = useState(0)
   const [deletingMessageIds, setDeletingMessageIds] = useState({})
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editText, setEditText] = useState('')
@@ -55,11 +77,24 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [blockTarget, setBlockTarget] = useState(null)
   const [blockingUserIds, setBlockingUserIds] = useState({})
   const [blockedSenderIds, setBlockedSenderIds] = useState([])
+  const [chatMode, setChatMode] = useState('comments')
+  const [inboxThreads, setInboxThreads] = useState([])
+  const [inboxMessages, setInboxMessages] = useState([])
+  const [inboxTarget, setInboxTarget] = useState(null)
+  const [inboxText, setInboxText] = useState('')
+  const [loadingInbox, setLoadingInbox] = useState(false)
+  const [sendingInbox, setSendingInbox] = useState(false)
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
+  const inboxEndRef = useRef(null)
   const composerRef = useRef(null)
   const photoInputRef = useRef(null)
+  const recorderRef = useRef(null)
+  const recordingChunksRef = useRef([])
+  const recordingStreamRef = useRef(null)
+  const recordingStartedAtRef = useRef(0)
+  const recordingTimerRef = useRef(null)
   const refocusComposerRef = useRef(false)
   const typingTimeoutRef = useRef(null)
 
@@ -68,7 +103,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     .filter(Boolean)
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
-  const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft)) && !sending
+  const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft) || Boolean(audioDraft)) && !sending && !recording
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => (
     !Boolean(Number(message.is_deleted || message.is_unsent))
@@ -174,6 +209,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         name: file.name,
         size: file.size,
       })
+      setAudioDraft(null)
       refocusComposerRef.current = true
     } catch (error) {
       setStatus(error.message)
@@ -187,26 +223,120 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     if (photoInputRef.current) photoInputRef.current.value = ''
   }
 
+  function stopRecordingTracks() {
+    recordingStreamRef.current?.getTracks?.().forEach((track) => {
+      try { track.stop() } catch {}
+    })
+    recordingStreamRef.current = null
+  }
+
+  function clearRecordingTimer() {
+    window.clearInterval(recordingTimerRef.current)
+    recordingTimerRef.current = null
+  }
+
+  async function startAudioRecording() {
+    if (!chatEnabled || sending || recording) return
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setStatus('Audio recording is not supported in this browser.')
+      return
+    }
+
+    try {
+      setStatus('')
+      setAudioDraft(null)
+      setPhotoDraft(null)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = preferredAudioMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      recordingChunksRef.current = []
+      recordingStreamRef.current = stream
+      recorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) recordingChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = async () => {
+        clearRecordingTimer()
+        setRecording(false)
+        stopRecordingTracks()
+
+        try {
+          const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          recordingChunksRef.current = []
+          if (!blob.size) return
+          if (blob.size > maxAudioBytes) {
+            setStatus('Audio message must be smaller than 5 MB.')
+            return
+          }
+          const dataUrl = await readFileAsDataUrl(blob)
+          setAudioDraft({
+            dataUrl,
+            size: blob.size,
+            durationMs: Date.now() - recordingStartedAtRef.current,
+          })
+          refocusComposerRef.current = true
+        } catch (error) {
+          setStatus(error.message)
+        } finally {
+          recorderRef.current = null
+        }
+      }
+
+      recordingStartedAtRef.current = Date.now()
+      setRecordingMs(0)
+      setRecording(true)
+      recorder.start()
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingMs(Date.now() - recordingStartedAtRef.current)
+      }, 250)
+    } catch (error) {
+      clearRecordingTimer()
+      setRecording(false)
+      stopRecordingTracks()
+      setStatus(`Audio recording failed: ${error.message}`)
+    }
+  }
+
+  function stopAudioRecording() {
+    if (!recording || !recorderRef.current) return
+    try {
+      recorderRef.current.stop()
+    } catch (error) {
+      setStatus(error.message)
+      clearRecordingTimer()
+      setRecording(false)
+      stopRecordingTracks()
+    }
+  }
+
+  function cancelAudioDraft() {
+    setAudioDraft(null)
+  }
+
   async function sendMessage(event) {
     event.preventDefault()
     const value = text.trim()
-    if ((!value && !photoDraft) || sending) return
+    if ((!value && !photoDraft && !audioDraft) || sending || recording) return
 
     try {
       setSending(true)
       setStatus('')
-      const messageType = photoDraft ? 'image' : 'text'
+      const messageType = audioDraft ? 'voice' : photoDraft ? 'image' : 'text'
       const data = await apiRequest(`/rooms/${roomId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           message_body: value,
           message_type: messageType,
           ...(photoDraft ? { media_url: photoDraft.dataUrl } : {}),
+          ...(audioDraft ? { media_url: audioDraft.dataUrl } : {}),
         }),
       })
       appendMessage(data.chat_message)
       setText('')
       clearPhotoDraft()
+      cancelAudioDraft()
       refocusComposerRef.current = true
       emitTyping(false)
       window.clearTimeout(typingTimeoutRef.current)
@@ -374,6 +504,79 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
+  async function loadInboxThreads() {
+    try {
+      setLoadingInbox(true)
+      setStatus('')
+      const data = await apiRequest('/direct-messages/threads')
+      setInboxThreads(data.threads || [])
+    } catch (error) {
+      setStatus(`Inbox failed: ${error.message}`)
+    } finally {
+      setLoadingInbox(false)
+    }
+  }
+
+  async function loadInboxConversation(peer) {
+    if (!peer?.id && !peer?.peer_id) return
+    const peerId = Number(peer.id || peer.peer_id)
+    const target = {
+      id: peerId,
+      name: peer.name || peer.peer_name || `User #${peerId}`,
+      avatar_url: peer.avatar_url || peer.peer_avatar_url || '',
+    }
+
+    setInboxTarget(target)
+    setChatMode('inbox')
+    setLoadingInbox(true)
+    setStatus('')
+
+    try {
+      const data = await apiRequest(`/direct-messages/${peerId}`)
+      setInboxTarget(data.peer ? {
+        id: Number(data.peer.id),
+        name: data.peer.name || target.name,
+        avatar_url: data.peer.avatar_url || target.avatar_url,
+      } : target)
+      setInboxMessages(data.messages || [])
+    } catch (error) {
+      setStatus(`Inbox failed: ${error.message}`)
+    } finally {
+      setLoadingInbox(false)
+    }
+  }
+
+  function openInboxFromMessage(message) {
+    if (!message?.sender_id || isOwnMessage(message, user)) return
+    loadInboxConversation({
+      id: message.sender_id,
+      name: message.sender_name,
+      avatar_url: message.sender_avatar_url,
+    })
+  }
+
+  async function sendInboxMessage(event) {
+    event.preventDefault()
+    const value = inboxText.trim()
+    if (!value || !inboxTarget?.id || sendingInbox) return
+
+    try {
+      setSendingInbox(true)
+      setStatus('')
+      const data = await apiRequest(`/direct-messages/${inboxTarget.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ message_body: value, message_type: 'text' }),
+      })
+      setInboxMessages((previous) => [...previous, data.direct_message])
+      setInboxText('')
+      loadInboxThreads()
+    } catch (error) {
+      setStatus(`Send failed: ${error.message}`)
+    } finally {
+      setSendingInbox(false)
+    }
+  }
+
   async function confirmDeleteMessage() {
     const message = deleteTarget
     if (!canDeleteMessage(message)) return
@@ -450,8 +653,16 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [roomId])
 
   useEffect(() => {
+    if (chatMode === 'inbox') loadInboxThreads()
+  }, [chatMode])
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
   }, [visibleMessages.length])
+
+  useEffect(() => {
+    inboxEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [inboxMessages.length, chatMode])
 
   useEffect(() => {
     if (!sending && refocusComposerRef.current) {
@@ -505,20 +716,32 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   useEffect(() => () => {
     window.clearTimeout(typingTimeoutRef.current)
     emitTyping(false)
+    if (recorderRef.current?.state !== 'inactive') {
+      try { recorderRef.current.stop() } catch {}
+    }
+    clearRecordingTimer()
+    stopRecordingTracks()
   }, [socket, signalingRoom])
 
   return (
     <aside className="chat-panel glass-card">
       <div className="chat-panel-header">
         <div>
-          <span className="eyebrow">Room Chat</span>
-          <h3>Live Chat</h3>
+          <span className="eyebrow">{chatMode === 'inbox' ? 'Personal Inbox' : 'Room Comments'}</span>
+          <h3>{chatMode === 'inbox' ? (inboxTarget?.name || 'Inbox') : 'Live Chat'}</h3>
         </div>
         <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
-          {typingNames.length ? 'Typing' : realtimeConnected ? 'Realtime' : 'Saved'}
+          {chatMode === 'inbox' ? 'Private' : typingNames.length ? 'Typing' : realtimeConnected ? 'Realtime' : 'Saved'}
         </span>
       </div>
 
+      <div className="chat-mode-tabs" role="tablist" aria-label="Chat mode">
+        <button type="button" className={chatMode === 'comments' ? 'active' : ''} onClick={() => setChatMode('comments')}>Comments</button>
+        <button type="button" className={chatMode === 'inbox' ? 'active' : ''} onClick={() => setChatMode('inbox')}>Inbox</button>
+      </div>
+
+      {chatMode === 'comments' ? (
+      <>
       <div className="messages">
         {loading ? (
           <div className="empty-chat">Loading chat...</div>
@@ -534,11 +757,13 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
           const giftMessage = message.message_type === 'gift'
           const imageMessage = message.message_type === 'image'
+          const voiceMessage = message.message_type === 'voice'
           const gift = giftMessage ? giftById(message.media_url) : null
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
           const canBlock = canBlockMessage(message)
+          const canMessage = !mine && Boolean(message.sender_id)
           const deleting = Boolean(deletingMessageIds[message.id])
           const editing = editingMessageId === message.id
           const savingEdit = savingEditId === message.id
@@ -547,7 +772,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
             : ''
           const bubbleClass = giftMessage
             ? 'chat-bubble gift-message'
-            : imageMessage ? 'chat-bubble image-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
+            : imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
@@ -590,11 +815,21 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                     </a>
                     {photoCaption ? <p>{photoCaption}</p> : null}
                   </div>
+                ) : voiceMessage ? (
+                  <div className="chat-voice-message">
+                    <audio controls src={message.media_url}></audio>
+                    <span>{message.message_body || 'Voice message'}</span>
+                  </div>
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {(canModify || canDelete || canBlock) && !editing && (
+                {(canModify || canDelete || canBlock || canMessage) && !editing && (
                   <div className="chat-actions">
+                    {canMessage ? (
+                      <button type="button" className="neutral" onClick={() => openInboxFromMessage(message)}>
+                        Message
+                      </button>
+                    ) : null}
                     {canModify ? (
                       <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
                         Edit
@@ -634,6 +869,19 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
             <button type="button" onClick={clearPhotoDraft} disabled={sending} aria-label="Remove photo">x</button>
           </div>
         ) : null}
+        {audioDraft ? (
+          <div className="chat-audio-draft">
+            <audio controls src={audioDraft.dataUrl}></audio>
+            <span>{formatDuration(audioDraft.durationMs)} voice note</span>
+            <button type="button" onClick={cancelAudioDraft} disabled={sending} aria-label="Remove audio">x</button>
+          </div>
+        ) : null}
+        {recording ? (
+          <div className="chat-recording-line">
+            <span>{formatDuration(recordingMs)}</span>
+            <b>Recording voice message</b>
+          </div>
+        ) : null}
         <input
           ref={photoInputRef}
           className="chat-photo-input"
@@ -648,10 +896,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           onBlur={stopTyping}
-          placeholder={chatEnabled ? (photoDraft ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
+          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
           maxLength={1200}
           rows={2}
-          disabled={!chatEnabled || sending}
+          disabled={!chatEnabled || sending || recording}
         />
         {!chatEnabled ? <small className="chat-disabled-note">Owner controls currently have Chat turned off.</small> : null}
         <div className="chat-form-footer">
@@ -660,12 +908,118 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
             <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending}>
               Photo
             </button>
+            <button
+              type="button"
+              className={recording ? 'secondary-button chat-audio-button recording' : 'secondary-button chat-audio-button'}
+              onClick={recording ? stopAudioRecording : startAudioRecording}
+              disabled={!chatEnabled || sending}
+            >
+              {recording ? 'Stop' : 'Audio'}
+            </button>
             <button className="primary-button" type="submit" disabled={!canSend}>
               {sending ? 'Sending' : 'Send'}
             </button>
           </div>
         </div>
       </form>
+      </>
+      ) : (
+      <>
+      <div className="personal-inbox">
+        <div className="inbox-thread-strip">
+          {loadingInbox && !inboxThreads.length ? (
+            <span>Loading inbox...</span>
+          ) : inboxThreads.length ? inboxThreads.map((thread) => {
+            const active = Number(inboxTarget?.id) === Number(thread.peer_id)
+            const preview = thread.last_message?.message_type === 'voice'
+              ? 'Voice message'
+              : thread.last_message?.message_type === 'image' ? 'Photo' : thread.last_message?.message_body
+
+            return (
+              <button key={thread.peer_id} type="button" className={active ? 'active' : ''} onClick={() => loadInboxConversation(thread)}>
+                <span className="image-avatar"><img src={thread.peer_avatar_url || avatarForIndex(thread.peer_id)} alt="" loading="lazy" /></span>
+                <b>{thread.peer_name || `User #${thread.peer_id}`}</b>
+                <small>{preview || 'New chat'}</small>
+              </button>
+            )
+          }) : (
+            <span>No private chats yet</span>
+          )}
+        </div>
+
+        <div className="messages inbox-messages">
+          {!inboxTarget ? (
+            <div className="empty-chat">
+              <strong>Personal inbox</strong>
+              <span>Tap Message on a room comment to start a private chat.</span>
+            </div>
+          ) : loadingInbox ? (
+            <div className="empty-chat">Loading conversation...</div>
+          ) : inboxMessages.length === 0 ? (
+            <div className="empty-chat">
+              <strong>{inboxTarget.name}</strong>
+              <span>No private messages yet.</span>
+            </div>
+          ) : inboxMessages.map((message) => {
+            const mine = Number(message.sender_id) === Number(user?.id)
+            const senderName = mine ? 'You' : message.sender_name || inboxTarget.name
+            const imageMessage = message.message_type === 'image'
+            const voiceMessage = message.message_type === 'voice'
+            const body = message.message_body || ''
+
+            return (
+              <div className={mine ? 'chat-row mine' : 'chat-row'} key={`dm-${message.id}`}>
+                <div className="chat-avatar image-avatar">
+                  <img src={(mine ? user?.avatar_url : inboxTarget.avatar_url) || avatarForIndex(message.sender_id || 0)} alt={senderName} loading="lazy" />
+                </div>
+                <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
+                  <div className="chat-meta">
+                    <strong>{senderName}</strong>
+                    <time>{formatChatTime(message.created_at)}</time>
+                  </div>
+                  {imageMessage ? (
+                    <div className="chat-image-message">
+                      <a href={message.media_url} target="_blank" rel="noreferrer" aria-label="Open photo">
+                        <img className="chat-photo" src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
+                      </a>
+                      {body && body !== 'sent a photo' ? <p>{body}</p> : null}
+                    </div>
+                  ) : voiceMessage ? (
+                    <div className="chat-voice-message">
+                      <audio controls src={message.media_url}></audio>
+                      <span>{body || 'Voice message'}</span>
+                    </div>
+                  ) : (
+                    <p>{body}</p>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          <div ref={inboxEndRef} />
+        </div>
+      </div>
+
+      <form className="chat-form" onSubmit={sendInboxMessage}>
+        <textarea
+          value={inboxText}
+          onChange={(event) => setInboxText(event.target.value)}
+          placeholder={inboxTarget ? `Message ${inboxTarget.name}` : 'Choose a private chat'}
+          maxLength={1200}
+          rows={2}
+          disabled={!inboxTarget || sendingInbox}
+        />
+        <div className="chat-form-footer">
+          <span>{inboxText.length}/1200</span>
+          <div className="chat-form-actions">
+            <button className="primary-button" type="submit" disabled={!inboxTarget || !inboxText.trim() || sendingInbox}>
+              {sendingInbox ? 'Sending' : 'Send'}
+            </button>
+          </div>
+        </div>
+      </form>
+      </>
+      )}
       {status && <small className="warning-text">{status}</small>}
 
       {deleteTarget ? (
