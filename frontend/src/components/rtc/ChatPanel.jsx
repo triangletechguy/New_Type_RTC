@@ -26,6 +26,11 @@ function formatDuration(ms) {
   return `${minutes}:${seconds}`
 }
 
+function shouldSendOnEnter() {
+  if (typeof window === 'undefined') return true
+  return window.matchMedia('(min-width: 821px) and (hover: hover) and (pointer: fine)').matches
+}
+
 function chatSenderName(message, currentUser) {
   if (isOwnMessage(message, currentUser)) return 'You'
   return message.sender_name || `User #${message.sender_id || 'system'}`
@@ -619,7 +624,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }
 
   function handleComposerKeyDown(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && shouldSendOnEnter()) {
       event.preventDefault()
       sendMessage(event)
     }

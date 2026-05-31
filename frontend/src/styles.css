@@ -6119,6 +6119,7 @@ pre {
   min-height: 0;
   padding: 8px 0 12px;
   justify-content: flex-end;
+  overflow-anchor: none;
 }
 
 .buzzcast-live-side .chat-form {
@@ -6126,12 +6127,17 @@ pre {
   padding: 0;
   border-top: 0;
   background: transparent;
+  overflow-anchor: none;
 }
 
 .buzzcast-live-side .chat-form textarea {
-  min-height: 46px;
+  height: 58px;
+  min-height: 58px;
+  max-height: 58px;
   border-radius: 7px;
   background: #4a485d;
+  resize: none;
+  overflow-y: auto;
 }
 
 .buzzcast-live-side .typing-line {
@@ -6214,7 +6220,26 @@ pre {
   }
 
   .buzzcast-live-side {
+    height: min(620px, calc(100svh - 82px));
     min-height: 460px;
+    overflow: hidden;
+  }
+
+  .buzzcast-live-side .chat-panel {
+    min-height: 0;
+  }
+
+  .buzzcast-live-side .messages,
+  .buzzcast-live-side .personal-inbox,
+  .buzzcast-live-side .inbox-messages {
+    min-height: 0;
+  }
+
+  .buzzcast-live-side .chat-form textarea {
+    height: 64px;
+    min-height: 64px;
+    max-height: 64px;
+    font-size: 16px;
   }
 
   .buzzcast-live-stage-streams {
@@ -6263,12 +6288,19 @@ pre {
   padding: 12px 14px 14px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, .035);
+  overflow-anchor: none;
 }
 
 .chat-form textarea {
-  min-height: 68px;
-  max-height: 128px;
-  resize: vertical;
+  height: 74px;
+  min-height: 74px;
+  max-height: 74px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.42;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
 }
 
 .chat-mode-tabs {
