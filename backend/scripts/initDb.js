@@ -25,7 +25,28 @@ if (!fs.existsSync(schemaFile)) {
 
 const schema = fs.readFileSync(schemaFile, 'utf8')
 
+function escapeIdentifier(value) {
+  return `\`${String(value || '').replace(/`/g, '``')}\``
+}
+
+async function tableExists(connection, tableName) {
+  const [tables] = await connection.query(
+    `
+    SELECT TABLE_NAME
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = ?
+    LIMIT 1
+    `,
+    [tableName]
+  )
+
+  return tables.length > 0
+}
+
 async function addColumnIfMissing(connection, tableName, columnName, alterSql) {
+  if (!(await tableExists(connection, tableName))) return
+
   const [columns] = await connection.query(
     `
     SELECT COLUMN_NAME
@@ -41,6 +62,49 @@ async function addColumnIfMissing(connection, tableName, columnName, alterSql) {
   if (!columns.length) await connection.query(alterSql)
 }
 
+async function indexExists(connection, tableName, indexName) {
+  const [indexes] = await connection.query(
+    `
+    SELECT INDEX_NAME
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = ?
+    AND INDEX_NAME = ?
+    LIMIT 1
+    `,
+    [tableName, indexName]
+  )
+
+  return indexes.length > 0
+}
+
+async function addIndexIfMissing(connection, tableName, indexName, alterSql) {
+  if (!(await tableExists(connection, tableName))) return
+  if (!(await indexExists(connection, tableName, indexName))) await connection.query(alterSql)
+}
+
+async function dropIndexIfExists(connection, tableName, indexName) {
+  if (!(await tableExists(connection, tableName))) return
+  if (await indexExists(connection, tableName, indexName)) {
+    await connection.query(`ALTER TABLE ${escapeIdentifier(tableName)} DROP INDEX ${escapeIdentifier(indexName)}`)
+  }
+}
+
+async function runLegacyMigrations(connection) {
+  await addColumnIfMissing(connection, 'client_apps', 'api_key_hash', 'ALTER TABLE client_apps ADD COLUMN api_key_hash CHAR(64) NULL AFTER api_key')
+  await addColumnIfMissing(connection, 'client_apps', 'last_key_rotated_at', 'ALTER TABLE client_apps ADD COLUMN last_key_rotated_at TIMESTAMP NULL AFTER sdk_token')
+  await addIndexIfMissing(connection, 'client_apps', 'unique_client_api_key_hash', 'ALTER TABLE client_apps ADD UNIQUE KEY unique_client_api_key_hash (api_key_hash)')
+  await dropIndexIfExists(connection, 'client_apps', 'unique_client_api_key')
+
+  if (await tableExists(connection, 'client_apps')) {
+    await connection.query("UPDATE client_apps SET api_key_hash = COALESCE(NULLIF(api_key_hash, ''), SHA2(api_key, 256)), api_key = CONCAT(LEFT(api_key, 6), '...', RIGHT(api_key, 4)) WHERE api_key NOT LIKE '%...%'")
+  }
+
+  if (await tableExists(connection, 'rtc_sessions')) {
+    await connection.query("ALTER TABLE rtc_sessions MODIFY COLUMN rtc_provider ENUM('native_webrtc', 'mediasoup', 'janus', 'livekit_style') NOT NULL DEFAULT 'native_webrtc'")
+  }
+}
+
 async function initializeDatabase() {
   try {
     console.log(`📡 Connecting to database at ${DB_HOST}:${DB_PORT} as ${DB_USER}...`)
@@ -54,10 +118,18 @@ async function initializeDatabase() {
     })
 
     console.log('✓ Connected to MySQL')
+
+    await connection.query(`CREATE DATABASE IF NOT EXISTS ${escapeIdentifier(DB_DATABASE)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
+    await connection.query(`USE ${escapeIdentifier(DB_DATABASE)}`)
+
+    console.log('✓ Applied legacy table compatibility checks')
+    await runLegacyMigrations(connection)
+
     console.log(`📝 Executing schema from ${schemaFile}...`)
 
     // Execute the schema SQL file
     await connection.query(schema)
+    await runLegacyMigrations(connection)
     await addColumnIfMissing(connection, 'users', 'gender', 'ALTER TABLE users ADD COLUMN gender VARCHAR(30) NULL AFTER avatar_url')
     await addColumnIfMissing(connection, 'users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
     await addColumnIfMissing(connection, 'users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
