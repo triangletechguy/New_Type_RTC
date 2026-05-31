@@ -5,12 +5,14 @@ const { authMiddleware } = require('../middleware/auth')
 const router = express.Router()
 
 const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
+const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
+const maxImageDataUrlLength = 7 * 1024 * 1024
 let chatSchemaPromise = null
 
 async function ensureChatSchema() {
   if (!chatSchemaPromise) {
-    chatSchemaPromise = query(
-      `
+    chatSchemaPromise = (async () => {
+      await query(`
       CREATE TABLE IF NOT EXISTS chat_message_hides (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         message_id BIGINT UNSIGNED NOT NULL,
@@ -21,8 +23,28 @@ async function ensureChatSchema() {
         CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-      `
-    ).catch((error) => {
+      `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS chat_user_blocks (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        room_id BIGINT UNSIGNED NOT NULL,
+        blocker_id BIGINT UNSIGNED NOT NULL,
+        blocked_user_id BIGINT UNSIGNED NOT NULL,
+        blocked_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_chat_user_block (room_id, blocker_id, blocked_user_id),
+        INDEX idx_chat_user_blocks_blocker (blocker_id),
+        INDEX idx_chat_user_blocks_blocked_user (blocked_user_id),
+        CONSTRAINT fk_chat_blocks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_blocks_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_blocks_blocker FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_blocks_blocked_user FOREIGN KEY (blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query('ALTER TABLE chat_messages MODIFY media_url MEDIUMTEXT NULL')
+    })().catch((error) => {
       chatSchemaPromise = null
       throw error
     })
@@ -39,6 +61,26 @@ function parsePositiveInteger(value, defaultValue = null) {
 
 function cleanMessageBody(value) {
   return String(value || '').replace(/\s+$/g, '')
+}
+
+function cleanMediaUrl(value) {
+  return String(value || '').trim()
+}
+
+function imageMediaError(mediaUrl) {
+  if (!mediaUrl) return 'Photo is required.'
+  if (mediaUrl.length > maxImageDataUrlLength) return 'Photo must be smaller than 5 MB.'
+
+  if (mediaUrl.startsWith('data:')) {
+    return imageDataUrlPattern.test(mediaUrl) ? '' : 'Photo must be a PNG, JPG, GIF, or WebP image.'
+  }
+
+  try {
+    const url = new URL(mediaUrl)
+    return ['http:', 'https:'].includes(url.protocol) ? '' : 'Photo URL must be HTTP or HTTPS.'
+  } catch {
+    return 'Photo URL is invalid.'
+  }
 }
 
 function messageSelectSql() {
@@ -78,6 +120,35 @@ async function canDeleteMessageForEveryone(message, user) {
   return roles.length > 0
 }
 
+async function findRoomForChat(roomId, tenantId) {
+  const rooms = await query(
+    `
+    SELECT *
+    FROM rooms
+    WHERE id = :roomId
+    AND tenant_id = :tenantId
+    LIMIT 1
+    `,
+    { roomId, tenantId }
+  )
+
+  return rooms[0] || null
+}
+
+async function blockedUserIdsForRoom(roomId, userId) {
+  const blockedRows = await query(
+    `
+    SELECT blocked_user_id
+    FROM chat_user_blocks
+    WHERE room_id = :roomId
+    AND blocker_id = :userId
+    `,
+    { roomId, userId }
+  )
+
+  return blockedRows.map((row) => Number(row.blocked_user_id)).filter(Boolean)
+}
+
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
@@ -99,6 +170,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     )
 
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+    const blockedUserIds = await blockedUserIdsForRoom(roomId, req.user.id)
 
     const messages = await query(
       `
@@ -112,6 +184,13 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
         WHERE hidden.message_id = cm.id
         AND hidden.user_id = :userId
       )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM chat_user_blocks blocked
+        WHERE blocked.room_id = cm.room_id
+        AND blocked.blocker_id = :userId
+        AND blocked.blocked_user_id = cm.sender_id
+      )
       ORDER BY cm.id DESC
       LIMIT ${limit}
       `,
@@ -124,6 +203,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
         limit,
         chat_enabled: Boolean(Number(rooms[0].chat_enabled)),
         gift_enabled: Boolean(Number(rooms[0].gift_enabled)),
+        blocked_user_ids: blockedUserIds,
       },
     })
   } catch (error) {
@@ -133,31 +213,29 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
 router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   try {
+    await ensureChatSchema()
+
     const roomId = parsePositiveInteger(req.params.id)
     const body = cleanMessageBody(req.body?.message_body).trim()
     const messageType = String(req.body?.message_type || 'text').trim()
+    const mediaUrl = cleanMediaUrl(req.body?.media_url)
     const parentMessageId = parsePositiveInteger(req.body?.parent_message_id)
 
     if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
 
-    if (!body) return res.status(422).json({ message: 'Message body is required.' })
     if (body.length > 1200) return res.status(422).json({ message: 'Message body must be 1200 characters or fewer.' })
     if (!validMessageTypes.has(messageType)) return res.status(422).json({ message: 'Invalid message type.' })
 
-    const rooms = await query(
-      `
-      SELECT *
-      FROM rooms
-      WHERE id = :roomId
-      AND tenant_id = :tenantId
-      LIMIT 1
-      `,
-      { roomId, tenantId: req.user.tenant_id }
-    )
+    if (messageType === 'image') {
+      const mediaError = imageMediaError(mediaUrl)
+      if (mediaError) return res.status(422).json({ message: mediaError })
+    } else if (!body) {
+      return res.status(422).json({ message: 'Message body is required.' })
+    }
 
-    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+    const room = await findRoomForChat(roomId, req.user.tenant_id)
 
-    const room = rooms[0]
+    if (!room) return res.status(404).json({ message: 'Room not found.' })
 
     if (messageType !== 'gift' && !room.chat_enabled) {
       return res.status(403).json({ message: 'Chat is disabled in this room.' })
@@ -185,8 +263,8 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
         senderId: req.user.id,
         parentMessageId,
         messageType,
-        messageBody: body,
-        mediaUrl: req.body?.media_url || null,
+        messageBody: messageType === 'image' ? (body || 'sent a photo') : body,
+        mediaUrl: messageType === 'image' ? mediaUrl : mediaUrl || null,
       }
     )
 
@@ -197,6 +275,62 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     return res.status(201).json({
       message: 'Message sent successfully',
       chat_message: messages[0],
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const roomId = parsePositiveInteger(req.params.id)
+    const blockedUserId = parsePositiveInteger(req.body?.blocked_user_id)
+
+    if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!blockedUserId) return res.status(422).json({ message: 'Choose a user to block.' })
+    if (Number(blockedUserId) === Number(req.user.id)) {
+      return res.status(422).json({ message: 'You cannot block yourself.' })
+    }
+
+    const room = await findRoomForChat(roomId, req.user.tenant_id)
+    if (!room) return res.status(404).json({ message: 'Room not found.' })
+
+    const users = await query(
+      `
+      SELECT id
+      FROM users
+      WHERE id = :blockedUserId
+      AND tenant_id = :tenantId
+      LIMIT 1
+      `,
+      { blockedUserId, tenantId: req.user.tenant_id }
+    )
+
+    if (!users.length) return res.status(404).json({ message: 'User not found.' })
+
+    await query(
+      `
+      INSERT IGNORE INTO chat_user_blocks (
+        tenant_id, room_id, blocker_id, blocked_user_id, blocked_at
+      )
+      VALUES (
+        :tenantId, :roomId, :blockerId, :blockedUserId, NOW()
+      )
+      `,
+      {
+        tenantId: req.user.tenant_id,
+        roomId,
+        blockerId: req.user.id,
+        blockedUserId,
+      }
+    )
+
+    return res.status(201).json({
+      message: 'User blocked for this room.',
+      room_id: roomId,
+      blocked_user_id: blockedUserId,
     })
   } catch (error) {
     next(error)

@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     parent_message_id BIGINT UNSIGNED NULL,
     message_type ENUM('text', 'image', 'voice', 'gift', 'system') DEFAULT 'text',
     message_body TEXT NULL,
-    media_url VARCHAR(255) NULL,
+    media_url MEDIUMTEXT NULL,
     is_deleted BOOLEAN DEFAULT FALSE,
     is_unsent BOOLEAN DEFAULT FALSE,
     deleted_by BIGINT UNSIGNED NULL,
@@ -461,6 +461,22 @@ CREATE TABLE IF NOT EXISTS chat_message_hides (
     INDEX idx_chat_message_hides_user_id (user_id),
     CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
     CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS chat_user_blocks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    blocker_id BIGINT UNSIGNED NOT NULL,
+    blocked_user_id BIGINT UNSIGNED NOT NULL,
+    blocked_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_chat_user_block (room_id, blocker_id, blocked_user_id),
+    INDEX idx_chat_user_blocks_blocker (blocker_id),
+    INDEX idx_chat_user_blocks_blocked_user (blocked_user_id),
+    CONSTRAINT fk_chat_blocks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_blocks_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_blocks_blocker FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_blocks_blocked_user FOREIGN KEY (blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS usage_logs (

@@ -4,6 +4,9 @@ import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 import { giftById, giftIconForId, giftLabelForId } from '../../utils/gifts'
 
+const maxPhotoBytes = 5 * 1024 * 1024
+const supportedPhotoTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+
 function chatSenderName(message, currentUser) {
   if (isOwnMessage(message, currentUser)) return 'You'
   return message.sender_name || `User #${message.sender_id || 'system'}`
@@ -27,22 +30,36 @@ function canModerateChat(currentUser, room) {
   return roles.some((role) => ['super_admin', 'client_admin', 'admin', 'moderator'].includes(role))
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Could not read this photo.'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, onMessagesChange }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [photoDraft, setPhotoDraft] = useState(null)
   const [deletingMessageIds, setDeletingMessageIds] = useState({})
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editText, setEditText] = useState('')
   const [savingEditId, setSavingEditId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteForEveryone, setDeleteForEveryone] = useState(true)
+  const [blockTarget, setBlockTarget] = useState(null)
+  const [blockingUserIds, setBlockingUserIds] = useState({})
+  const [blockedSenderIds, setBlockedSenderIds] = useState([])
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
   const composerRef = useRef(null)
+  const photoInputRef = useRef(null)
   const refocusComposerRef = useRef(false)
   const typingTimeoutRef = useRef(null)
 
@@ -51,15 +68,20 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     .filter(Boolean)
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
-  const canSend = chatEnabled && Boolean(text.trim()) && !sending
+  const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft)) && !sending
   const canModerate = canModerateChat(user, room)
-  const visibleMessages = messages.filter((message) => !Boolean(Number(message.is_deleted || message.is_unsent)))
+  const visibleMessages = messages.filter((message) => (
+    !Boolean(Number(message.is_deleted || message.is_unsent))
+    && !blockedSenderIds.some((id) => Number(id) === Number(message.sender_id))
+  ))
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
     : realtimeConnected ? 'No one is typing' : 'Typing status starts after RTC connects'
 
   function appendMessage(message) {
     if (!message?.id) return
+    if (blockedSenderIds.some((id) => Number(id) === Number(message.sender_id))) return
+
     setMessages((previous) => {
       if (previous.some((item) => item.id === message.id)) {
         return previous.map((item) => (item.id === message.id ? { ...item, ...message } : item))
@@ -93,6 +115,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       const data = await apiRequest(`/rooms/${roomId}/messages`)
       setMessages(data.messages || [])
       setChatEnabled(data.meta?.chat_enabled !== false)
+      setBlockedSenderIds(data.meta?.blocked_user_ids || [])
     } catch (error) {
       setStatus(error.message)
     } finally {
@@ -124,20 +147,66 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     typingTimeoutRef.current = window.setTimeout(() => emitTyping(false), 1400)
   }
 
+  function openPhotoPicker() {
+    if (!chatEnabled || sending) return
+    photoInputRef.current?.click()
+  }
+
+  async function selectPhoto(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setStatus('')
+      if (!supportedPhotoTypes.has(file.type)) {
+        setStatus('Choose a PNG, JPG, GIF, or WebP photo.')
+        return
+      }
+
+      if (file.size > maxPhotoBytes) {
+        setStatus('Photo must be smaller than 5 MB.')
+        return
+      }
+
+      const dataUrl = await readFileAsDataUrl(file)
+      setPhotoDraft({
+        dataUrl,
+        name: file.name,
+        size: file.size,
+      })
+      refocusComposerRef.current = true
+    } catch (error) {
+      setStatus(error.message)
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  function clearPhotoDraft() {
+    setPhotoDraft(null)
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
   async function sendMessage(event) {
     event.preventDefault()
     const value = text.trim()
-    if (!value || sending) return
+    if ((!value && !photoDraft) || sending) return
 
     try {
       setSending(true)
       setStatus('')
+      const messageType = photoDraft ? 'image' : 'text'
       const data = await apiRequest(`/rooms/${roomId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ message_body: value, message_type: 'text' }),
+        body: JSON.stringify({
+          message_body: value,
+          message_type: messageType,
+          ...(photoDraft ? { media_url: photoDraft.dataUrl } : {}),
+        }),
       })
       appendMessage(data.chat_message)
       setText('')
+      clearPhotoDraft()
       refocusComposerRef.current = true
       emitTyping(false)
       window.clearTimeout(typingTimeoutRef.current)
@@ -244,6 +313,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     return isOwnMessage(message, user) || canModerate
   }
 
+  function canBlockMessage(message) {
+    if (!message?.id || !message.sender_id || isOwnMessage(message, user)) return false
+    return !blockedSenderIds.some((id) => Number(id) === Number(message.sender_id))
+  }
+
   function requestDeleteMessage(message) {
     if (!canDeleteMessage(message)) return
     setDeleteTarget(message)
@@ -254,6 +328,50 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   function closeDeleteModal() {
     if (deleteTarget && deletingMessageIds[deleteTarget.id]) return
     setDeleteTarget(null)
+  }
+
+  function requestBlockUser(message) {
+    if (!canBlockMessage(message)) return
+    setBlockTarget(message)
+    setStatus('')
+  }
+
+  function closeBlockModal() {
+    if (blockTarget && blockingUserIds[blockTarget.sender_id]) return
+    setBlockTarget(null)
+  }
+
+  async function confirmBlockUser() {
+    const target = blockTarget
+    const blockedUserId = Number(target?.sender_id)
+    if (!target || !blockedUserId || blockingUserIds[blockedUserId]) return
+
+    setBlockingUserIds((previous) => ({ ...previous, [blockedUserId]: true }))
+    setStatus('')
+
+    try {
+      await apiRequest(`/rooms/${roomId}/blocks`, {
+        method: 'POST',
+        body: JSON.stringify({ blocked_user_id: blockedUserId }),
+      })
+      setBlockedSenderIds((previous) => (
+        previous.some((id) => Number(id) === blockedUserId) ? previous : [...previous, blockedUserId]
+      ))
+      setMessages((previous) => previous.filter((message) => Number(message.sender_id) !== blockedUserId))
+      setTypingUsers((previous) => Object.fromEntries(
+        Object.entries(previous).filter(([, typingUser]) => Number(typingUser?.id) !== blockedUserId)
+      ))
+      setStatus(`${chatSenderName(target, user)} is blocked in this room.`)
+      setBlockTarget(null)
+    } catch (error) {
+      setStatus(`Block failed: ${error.message}`)
+    } finally {
+      setBlockingUserIds((previous) => {
+        const next = { ...previous }
+        delete next[blockedUserId]
+        return next
+      })
+    }
   }
 
   async function confirmDeleteMessage() {
@@ -325,7 +443,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   useEffect(() => {
     onMessagesChange?.(visibleMessages)
-  }, [messages, onMessagesChange])
+  }, [messages, blockedSenderIds, onMessagesChange])
 
   useEffect(() => {
     loadMessages()
@@ -356,6 +474,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
     const handleTypingStart = ({ user: typingUser, socketId }) => {
       if (!typingUser || typingUser.id === user?.id) return
+      if (blockedSenderIds.some((id) => Number(id) === Number(typingUser.id))) return
       setTypingUsers((previous) => ({ ...previous, [socketId || typingUser.id]: typingUser }))
     }
     const handleTypingStop = ({ user: typingUser, socketId }) => {
@@ -381,7 +500,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
     }
-  }, [socket, user?.id])
+  }, [socket, user?.id, blockedSenderIds])
 
   useEffect(() => () => {
     window.clearTimeout(typingTimeoutRef.current)
@@ -412,22 +531,30 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
-      const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
-      const giftMessage = message.message_type === 'gift'
-      const gift = giftMessage ? giftById(message.media_url) : null
-      const systemMessage = message.message_type === 'system'
-      const canModify = mine && message.message_type === 'text'
+          const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
+          const giftMessage = message.message_type === 'gift'
+          const imageMessage = message.message_type === 'image'
+          const gift = giftMessage ? giftById(message.media_url) : null
+          const systemMessage = message.message_type === 'system'
+          const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
+          const canBlock = canBlockMessage(message)
           const deleting = Boolean(deletingMessageIds[message.id])
           const editing = editingMessageId === message.id
           const savingEdit = savingEditId === message.id
+          const photoCaption = imageMessage && message.message_body !== 'sent a photo'
+            ? String(message.message_body || '').trim()
+            : ''
+          const bubbleClass = giftMessage
+            ? 'chat-bubble gift-message'
+            : imageMessage ? 'chat-bubble image-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
               <div className="chat-avatar image-avatar">
                 <img src={senderAvatar} alt={senderName} loading="lazy" />
               </div>
-              <div className={giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'}>
+              <div className={bubbleClass}>
                 <div className="chat-meta">
                   <strong>{senderName}</strong>
                   <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
@@ -456,10 +583,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                     <span className="chat-gift-icon"><img src={gift?.icon || giftIconForId(message.media_url)} alt="" /></span>
                     <span>{message.message_body || `sent ${giftLabelForId(message.media_url)}`}</span>
                   </p>
+                ) : imageMessage ? (
+                  <div className="chat-image-message">
+                    <a href={message.media_url} target="_blank" rel="noreferrer" aria-label="Open photo">
+                      <img className="chat-photo" src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
+                    </a>
+                    {photoCaption ? <p>{photoCaption}</p> : null}
+                  </div>
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {(canModify || canDelete) && !editing && (
+                {(canModify || canDelete || canBlock) && !editing && (
                   <div className="chat-actions">
                     {canModify ? (
                       <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
@@ -469,6 +603,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                     {canDelete ? (
                       <button type="button" className="danger" onClick={() => requestDeleteMessage(message)} disabled={deleting}>
                         {deleting ? 'Deleting' : 'Delete'}
+                      </button>
+                    ) : null}
+                    {canBlock ? (
+                      <button type="button" className="block" onClick={() => requestBlockUser(message)} disabled={Boolean(blockingUserIds[message.sender_id])}>
+                        {blockingUserIds[message.sender_id] ? 'Blocking' : 'Block'}
                       </button>
                     ) : null}
                   </div>
@@ -485,13 +624,31 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       </div>
 
       <form className="chat-form" onSubmit={sendMessage}>
+        {photoDraft ? (
+          <div className="chat-photo-draft">
+            <img src={photoDraft.dataUrl} alt="" />
+            <span>
+              <strong>{photoDraft.name || 'Photo'}</strong>
+              <small>{Math.max(1, Math.round(photoDraft.size / 1024))} KB ready</small>
+            </span>
+            <button type="button" onClick={clearPhotoDraft} disabled={sending} aria-label="Remove photo">x</button>
+          </div>
+        ) : null}
+        <input
+          ref={photoInputRef}
+          className="chat-photo-input"
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          onChange={selectPhoto}
+          disabled={!chatEnabled || sending}
+        />
         <textarea
           ref={composerRef}
           value={text}
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           onBlur={stopTyping}
-          placeholder={chatEnabled ? 'Message this room' : 'Chat is disabled'}
+          placeholder={chatEnabled ? (photoDraft ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
           maxLength={1200}
           rows={2}
           disabled={!chatEnabled || sending}
@@ -499,9 +656,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         {!chatEnabled ? <small className="chat-disabled-note">Owner controls currently have Chat turned off.</small> : null}
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
-          <button className="primary-button" type="submit" disabled={!canSend}>
-            {sending ? 'Sending' : 'Send'}
-          </button>
+          <div className="chat-form-actions">
+            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending}>
+              Photo
+            </button>
+            <button className="primary-button" type="submit" disabled={!canSend}>
+              {sending ? 'Sending' : 'Send'}
+            </button>
+          </div>
         </div>
       </form>
       {status && <small className="warning-text">{status}</small>}
@@ -531,6 +693,22 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>CANCEL</button>
               <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>
                 {deletingMessageIds[deleteTarget.id] ? 'DELETING...' : 'DELETE'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {blockTarget ? (
+        <div className="chat-delete-backdrop" onMouseDown={closeBlockModal}>
+          <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-block-title" onMouseDown={(event) => event.stopPropagation()}>
+            <h3 id="chat-block-title">Block user</h3>
+            <p>Block {chatSenderName(blockTarget, user)} in this room?</p>
+            <small className="chat-delete-hint">Their current messages will disappear from your chat and new messages from them will be hidden.</small>
+            <footer>
+              <button type="button" className="secondary-button" onClick={closeBlockModal} disabled={Boolean(blockingUserIds[blockTarget.sender_id])}>CANCEL</button>
+              <button type="button" className="danger-button" onClick={confirmBlockUser} disabled={Boolean(blockingUserIds[blockTarget.sender_id])}>
+                {blockingUserIds[blockTarget.sender_id] ? 'BLOCKING...' : 'BLOCK'}
               </button>
             </footer>
           </section>

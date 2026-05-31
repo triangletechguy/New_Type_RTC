@@ -5525,6 +5525,12 @@ pre {
     rgba(255, 255, 255, .075);
 }
 
+.chat-bubble.image-message {
+  width: min(78%, 320px);
+  padding: 8px;
+  border-color: rgba(125, 211, 252, .28);
+}
+
 .chat-bubble.system-message {
   border-style: dashed;
   background: rgba(148, 163, 184, .08);
@@ -5615,6 +5621,25 @@ pre {
   object-fit: cover;
 }
 
+.chat-image-message {
+  display: grid;
+  gap: 7px;
+}
+
+.chat-image-message a {
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.chat-photo {
+  width: 100%;
+  max-height: 260px;
+  display: block;
+  object-fit: cover;
+  background: rgba(15, 23, 42, .42);
+}
+
 .chat-bubble.unsent {
   border-style: dashed;
   background: rgba(148, 163, 184, .09);
@@ -5654,6 +5679,12 @@ pre {
   border-color: rgba(239, 68, 68, .32);
   background: rgba(239, 68, 68, .11);
   color: #fecaca;
+}
+
+.chat-actions button.block {
+  border-color: rgba(251, 191, 36, .32);
+  background: rgba(251, 191, 36, .12);
+  color: #fde68a;
 }
 
 .chat-edit-form {
@@ -6218,6 +6249,67 @@ pre {
   resize: vertical;
 }
 
+.chat-photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chat-photo-draft {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 9px;
+  min-height: 68px;
+  padding: 8px;
+  border: 1px solid rgba(125, 211, 252, .22);
+  border-radius: 8px;
+  background: rgba(125, 211, 252, .08);
+}
+
+.chat-photo-draft img {
+  width: 58px;
+  height: 52px;
+  display: block;
+  object-fit: cover;
+  border-radius: 7px;
+}
+
+.chat-photo-draft span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.chat-photo-draft strong,
+.chat-photo-draft small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-photo-draft strong {
+  color: #e0f2fe;
+  font-size: 13px;
+}
+
+.chat-photo-draft small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.chat-photo-draft button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-color: rgba(239, 68, 68, .32);
+  background: rgba(239, 68, 68, .12);
+  color: #fecaca;
+}
+
 .chat-disabled-note {
   color: #fecaca;
   font-size: 12px;
@@ -6239,6 +6331,18 @@ pre {
 
 .chat-form-footer button {
   min-width: 86px;
+}
+
+.chat-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-form-actions .chat-photo-button {
+  border-color: rgba(125, 211, 252, .25);
+  background: rgba(125, 211, 252, .1);
+  color: #dbeafe;
 }
 
 .control-panel {
