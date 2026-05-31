@@ -878,7 +878,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  async function leaveRoom({ navigateAfterEnd = true } = {}) {
+  async function leaveRoom({ navigateAfterLeave = true } = {}) {
     try {
       const shouldEndRoom = ownerCanEndVideoRoom
       setStatus(shouldEndRoom ? 'Ending live room...' : 'Leaving room...')
@@ -899,10 +899,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       if (leaveResult?.room_ended) {
         setRoom((currentRoom) => currentRoom ? { ...currentRoom, status: 'ended' } : currentRoom)
         setStatus('Live ended and room removed')
-        if (navigateAfterEnd) window.setTimeout(() => onBack?.(), 250)
+        if (navigateAfterLeave) onBack?.()
         return leaveResult
       }
       setStatus('Session ended and usage logged')
+      if (navigateAfterLeave) onBack?.()
       return leaveResult
     } catch (error) {
       setStatus(error.message)
@@ -968,7 +969,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function handleBack() {
     if (joined || activeRoomIdRef.current) {
-      await leaveRoom({ navigateAfterEnd: false })
+      await leaveRoom({ navigateAfterLeave: false })
     }
     onBack()
   }
