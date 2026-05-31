@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { avatarForIndex, brandAssets, coverForDemoTone, coverForRoomType, roomAssets } from '../../assets/rtc/catalog'
+import { ProfilePanel } from '../profile/ProfilePanel'
 import { apiRequest } from '../../services/api'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
@@ -233,7 +234,7 @@ function FeedCard({ card, featured, onOpen }) {
   )
 }
 
-export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired }) {
+export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, onAuthRequired }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
   const [status, setStatus] = useState('Ready')
@@ -322,13 +323,51 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
     return false
   }
 
+  function pushSectionHistory(section, options = {}) {
+    if (typeof window === 'undefined') return
+
+    const state = {
+      ...(window.history.state || {}),
+      view: 'rooms',
+      activeRoom: null,
+      buzzcastSection: section,
+      previewCardId: options.previewCardId || null,
+    }
+    const path = section === 'room' && options.previewCardId
+      ? `/preview/${encodeURIComponent(options.previewCardId)}`
+      : section === 'live'
+        ? '/'
+        : `/${section}`
+
+    window.history.pushState(state, '', path)
+  }
+
+  function applySectionFromHistory(state = {}) {
+    const section = state.buzzcastSection || 'live'
+    if (section === 'room' && state.previewCardId) {
+      const card = demoCards.find((item) => item.id === state.previewCardId)
+      if (card) {
+        setPreviewCard(card)
+        setActiveSection('room')
+        return
+      }
+    }
+
+    if (['live', 'me', 'settings', 'help'].includes(section)) {
+      setActiveSection(section)
+      if (section !== 'room') setPreviewCard(null)
+    }
+  }
+
   function openProfileSection() {
     if (!requireAuth('Log in or sign up to open your profile.', 'login')) return
+    pushSectionHistory('me')
     setActiveSection('me')
   }
 
   function openSettingsSection(nextSettings = activeSettings) {
     if (!requireAuth('Log in to manage your account settings.', 'login')) return
+    pushSectionHistory('settings')
     setActiveSettings(nextSettings)
     setActiveSection('settings')
   }
@@ -379,6 +418,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
   }
 
   function openLiveSection() {
+    pushSectionHistory('live')
     setActiveSection('live')
     setPreviewCard(null)
   }
@@ -543,6 +583,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
       return
     }
 
+    pushSectionHistory('room', { previewCardId: card.id })
     setPreviewCard(card)
     setActiveSection('room')
   }
@@ -664,40 +705,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
   }
 
   function renderProfile() {
-    return (
-      <section className="buzzcast-profile-panel">
-        <div className="buzzcast-profile-hero">
-          <div className="buzzcast-profile-avatar image-avatar">
-            <img src={avatarForIndex(displayId)} alt="" loading="lazy" />
-          </div>
-          <div>
-            <h1>{displayName}</h1>
-            <span>ID:{displayId}</span>
-            <div className="buzzcast-profile-badges">
-              <strong>29</strong>
-              <strong>1</strong>
-            </div>
-            <p>Following <b>0</b> Followers <b>3</b> Received <b>0</b> Sent <b>0</b></p>
-            <small>United States</small>
-          </div>
-        </div>
-        <div className="buzzcast-profile-grid">
-          <h2>Profile</h2>
-          <dl>
-            <dt>Name</dt><dd>{displayName}</dd>
-            <dt>Gender</dt><dd>Male</dd>
-            <dt>Birthday</dt><dd>12/10/1996</dd>
-            <dt>Current Residence</dt><dd>United States</dd>
-          </dl>
-        </div>
-        <div className="buzzcast-profile-links">
-          <button type="button" onClick={openRechargePanel}>Wallet</button>
-          <button type="button">Backpack</button>
-          <button type="button">Supporters</button>
-          <button type="button" onClick={onLogout}>Sign out</button>
-        </div>
-      </section>
-    )
+    return <ProfilePanel user={user} onSaved={onUserUpdated} onLogout={onLogout} onWallet={openRechargePanel} />
   }
 
   function renderSettingsContent() {
@@ -928,6 +936,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
   }, [])
 
   useEffect(() => {
+    function handlePopState(event) {
+      applySectionFromHistory(event.state || {})
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  useEffect(() => {
     if (user) return
     if (activeSection === 'me' || activeSection === 'settings') setActiveSection('live')
     setShowMessages(false)
@@ -1002,7 +1019,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onView, onAuthRequired 
           <span className="buzzcast-rail-icon rail-settings" aria-hidden="true"></span>
           <b>Settings</b>
         </button>
-        <button type="button" className={activeSection === 'help' ? 'active' : ''} onClick={() => setActiveSection('help')}>
+        <button type="button" className={activeSection === 'help' ? 'active' : ''} onClick={() => { pushSectionHistory('help'); setActiveSection('help') }}>
           <span className="buzzcast-rail-icon rail-help" aria-hidden="true"></span>
           <b>Feedback and Help</b>
         </button>

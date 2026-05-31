@@ -2,6 +2,7 @@ const express = require('express')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
+const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 
 const router = express.Router()
 
@@ -331,6 +332,14 @@ async function canAccessPrivateRoom(roomId, userId, ownerId) {
   return rows.length > 0
 }
 
+function tokenGrantsRoomJoin(user, roomId) {
+  const claims = user?.token_claims || {}
+  if (claims.token_use !== 'rtc_room') return false
+  if (Number(claims.room_id) !== Number(roomId)) return false
+  const permissions = Array.isArray(claims.permissions) ? claims.permissions : []
+  return permissions.includes('room:join')
+}
+
 function normalizeModerationAction(action) {
   const normalized = cleanString(action, 40)
   return normalized === 'mute' ? 'mute_mic' : normalized
@@ -478,7 +487,8 @@ async function closeParticipantSession(connection, room, participant, userId) {
 }
 
 async function getRoomControls(connection, room, userId) {
-  const role = await getRoomRole(connection, room.id, userId)
+  const isOwner = Number(room.owner_id) === Number(userId)
+  const role = isOwner ? 'owner' : await getRoomRole(connection, room.id, userId)
   const [participants] = await connection.execute(
     `
     SELECT
@@ -499,7 +509,7 @@ async function getRoomControls(connection, room, userId) {
 
   return {
     role,
-    can_manage: canManageRoom(role),
+    can_manage: isOwner,
     room: serializeRoom(room),
     participants: participants.map((participant) => ({
       id: participant.id,
@@ -619,6 +629,8 @@ router.post('/', authMiddleware, async (req, res, next) => {
     const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : null
 
     const roomId = await transaction(async (connection) => {
+      await assertTenantCanUseRoomConfig(connection, req.user.tenant_id, data)
+
       const [insertResult] = await connection.execute(
         `
         INSERT INTO rooms (
@@ -708,6 +720,9 @@ router.get('/:id/controls', authMiddleware, async (req, res, next) => {
       )
 
       if (!rooms.length) throw createHttpError(404, 'Room not found.')
+      if (Number(rooms[0].owner_id) !== Number(req.user.id)) {
+        throw createHttpError(403, 'Only the room owner can view room controls.')
+      }
 
       return getRoomControls(connection, rooms[0], req.user.id)
     })
@@ -738,20 +753,22 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
       if (!rooms.length) throw createHttpError(404, 'Room not found.')
 
       const room = rooms[0]
-      const role = await getRoomRole(connection, room.id, req.user.id)
 
-      if (!canManageRoom(role)) {
-        throw createHttpError(403, 'Only room owners and moderators can update room controls.')
+      if (Number(room.owner_id) !== Number(req.user.id)) {
+        throw createHttpError(403, 'Only the room owner can update room controls.')
       }
 
       const updates = []
       const values = []
       const booleanFields = ['chat_enabled', 'gift_enabled', 'screen_share_enabled', 'ai_security_enabled']
+      const proposedRoom = { ...room }
 
       for (const field of booleanFields) {
         if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
+          const nextValue = parseBoolean(req.body[field], Boolean(Number(room[field]))) ? 1 : 0
           updates.push(`${field} = ?`)
-          values.push(parseBoolean(req.body[field], Boolean(Number(room[field]))) ? 1 : 0)
+          values.push(nextValue)
+          proposedRoom[field] = nextValue
         }
       }
 
@@ -760,6 +777,7 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
         if (theme && !validControlThemes.has(theme)) throw createHttpError(422, 'Invalid room theme.')
         updates.push('theme = ?')
         values.push(theme || null)
+        proposedRoom.theme = theme || null
       }
 
       if (Object.prototype.hasOwnProperty.call(req.body || {}, 'privacy_type')) {
@@ -770,6 +788,7 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
 
         updates.push('privacy_type = ?')
         values.push(privacyType)
+        proposedRoom.privacy_type = privacyType
 
         if (privacyType === 'password') {
           if (password) {
@@ -781,6 +800,7 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
           }
         } else {
           updates.push('password_hash = NULL')
+          proposedRoom.password_hash = null
         }
       } else if (Object.prototype.hasOwnProperty.call(req.body || {}, 'password')) {
         const password = cleanString(req.body.password, 100)
@@ -797,9 +817,12 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
         }
         updates.push('max_mic_count = ?')
         values.push(maxMicCount)
+        proposedRoom.max_mic_count = maxMicCount
       }
 
       if (updates.length) {
+        await assertTenantCanUseRoomConfig(connection, req.user.tenant_id, proposedRoom, { skipRoomLimit: true })
+
         await connection.execute(
           `
           UPDATE rooms
@@ -1136,11 +1159,13 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
       return res.status(403).json({ message: 'You are banned from this room.' })
     }
 
-    if (room.privacy_type === 'private' && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))) {
+    const hasIssuedRoomToken = tokenGrantsRoomJoin(req.user, room.id)
+
+    if (room.privacy_type === 'private' && !hasIssuedRoomToken && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))) {
       return res.status(403).json({ message: 'This room is private.' })
     }
 
-    if (room.privacy_type === 'password') {
+    if (room.privacy_type === 'password' && !hasIssuedRoomToken) {
       const password = cleanString(req.body?.password, 100)
       if (!password || !(await bcrypt.compare(password, room.password_hash))) {
         return res.status(403).json({ message: 'Invalid room password.' })

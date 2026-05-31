@@ -9,7 +9,7 @@ async function loadUserFromAuthorization(header) {
 
   const users = await query(
     `
-    SELECT id, tenant_id, name, email, phone, avatar_url, status, last_login_at, created_at, updated_at
+    SELECT id, tenant_id, name, email, phone, avatar_url, gender, age, birthday, current_residence, status, last_login_at, created_at, updated_at
     FROM users
     WHERE id = :id
     LIMIT 1
@@ -39,6 +39,7 @@ async function loadUserFromAuthorization(header) {
   )
 
   user.roles = roles.map((role) => role.name)
+  user.token_claims = payload
   return user
 }
 

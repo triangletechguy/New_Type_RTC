@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { AUTH_EXPIRED_EVENT, clearSession, getUser } from './services/api'
+import { avatarForIndex } from './assets/rtc/catalog'
+import { AUTH_EXPIRED_EVENT, clearSession, getUser, saveUser } from './services/api'
 import { AuthModal } from './components/auth/AuthModal'
 import { Sidebar } from './components/layout/Sidebar'
+import { ProfileModal } from './components/profile/ProfilePanel'
 import { RoomsView } from './components/rooms/RoomsView'
 import { LiveRoomView } from './components/rtc/LiveRoomView'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
@@ -14,6 +16,61 @@ function ViewFallback({ label }) {
   return <div className="status-bar glass-card"><strong>Loading:</strong> {label}</div>
 }
 
+function AppProfileButton({ user, onClick }) {
+  const label = user ? 'Open profile' : 'Login or signup'
+
+  return (
+    <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>
+      {user ? <img src={avatarForIndex(user.id || 0)} alt="" /> : <span></span>}
+    </button>
+  )
+}
+
+function roomRoutePath(roomId) {
+  return `/room/${encodeURIComponent(roomId)}`
+}
+
+function appPathForRoute(route) {
+  if (route?.activeRoom?.id) return roomRoutePath(route.activeRoom.id)
+  if (route?.view === 'admin') return '/admin'
+  if (route?.view === 'sdk') return '/sdk'
+  return '/'
+}
+
+function normalizeRoomRoute(room) {
+  if (!room?.id) return null
+
+  return {
+    id: Number(room.id),
+    password: room.password || '',
+    room: room.room || null,
+    rtcMode: room.rtcMode || defaultRtcModeForRoom(room.room),
+    autoConnect: room.autoConnect !== false,
+  }
+}
+
+function routeFromLocation(currentUser) {
+  if (typeof window === 'undefined') return { view: 'rooms', activeRoom: null }
+
+  const roomMatch = window.location.pathname.match(/^\/room\/(\d+)\/?$/)
+  if (roomMatch && currentUser) {
+    return {
+      view: 'rooms',
+      activeRoom: {
+        id: Number(roomMatch[1]),
+        password: '',
+        room: null,
+        rtcMode: 'video',
+        autoConnect: true,
+      },
+    }
+  }
+
+  if (window.location.pathname === '/admin') return { view: 'admin', activeRoom: null }
+  if (window.location.pathname === '/sdk') return { view: 'sdk', activeRoom: null }
+  return { view: 'rooms', activeRoom: null }
+}
+
 export default function App() {
   const [user, setUser] = useState(getUser())
   const [view, setView] = useState('rooms')
@@ -22,12 +79,47 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login')
   const [authReason, setAuthReason] = useState('')
   const [pendingSignupEmail, setPendingSignupEmail] = useState('')
+  const [profileOpen, setProfileOpen] = useState(false)
+
+  function setBrowserRoute(route, action = 'push') {
+    if (typeof window === 'undefined') return
+
+    const nextRoute = {
+      view: route?.view || 'rooms',
+      activeRoom: normalizeRoomRoute(route?.activeRoom),
+      openedFromApp: action === 'push' || Boolean(route?.openedFromApp),
+    }
+    const path = appPathForRoute(nextRoute)
+    if (action === 'replace') window.history.replaceState(nextRoute, '', path)
+    else window.history.pushState(nextRoute, '', path)
+  }
+
+  function applyRoute(route) {
+    const nextRoute = route || { view: 'rooms', activeRoom: null }
+    setActiveRoom(normalizeRoomRoute(nextRoute.activeRoom))
+    setView(nextRoute.view || 'rooms')
+    setProfileOpen(false)
+  }
+
+  useEffect(() => {
+    const initialRoute = routeFromLocation(user)
+    setBrowserRoute(initialRoute, 'replace')
+    applyRoute(initialRoute)
+
+    function handlePopState(event) {
+      applyRoute(event.state || routeFromLocation(user))
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     function handleAuthExpired() {
       setUser(null)
       setActiveRoom(null)
       setView('rooms')
+      setBrowserRoute({ view: 'rooms', activeRoom: null }, 'replace')
       setAuthReason('Your session expired. Log in again to continue.')
     }
 
@@ -38,13 +130,21 @@ export default function App() {
   function handleLogin(currentUser) {
     setUser(currentUser)
     setView('rooms')
+    setActiveRoom(null)
+    setBrowserRoute({ view: 'rooms', activeRoom: null }, 'replace')
     setAuthModalOpen(false)
     setAuthReason('')
+  }
+
+  function handleProfileSaved(currentUser) {
+    setUser(currentUser)
+    saveUser(currentUser)
   }
 
   function logout() {
     clearSession()
     setUser(null)
+    setProfileOpen(false)
   }
 
   function changeView(nextView) {
@@ -53,7 +153,9 @@ export default function App() {
       return
     }
     if (nextView === 'admin' && !canAccessAdminDashboard) return
+    setActiveRoom(null)
     setView(nextView)
+    setBrowserRoute({ view: nextView, activeRoom: null })
   }
 
   function requireAuth(reason = 'Log in or sign up to continue.', mode = 'login', email = '') {
@@ -64,26 +166,52 @@ export default function App() {
   }
 
   function openRoom(roomId, options = {}) {
-    setActiveRoom({
+    const nextRoom = {
       id: roomId,
       password: options.password || '',
       room: options.room || null,
       rtcMode: options.rtcMode || defaultRtcModeForRoom(options.room),
       autoConnect: options.autoConnect !== false,
-    })
+    }
+    setActiveRoom(nextRoom)
+    setBrowserRoute({ view: 'rooms', activeRoom: nextRoom })
+  }
+
+  function leaveActiveRoomViaHistory() {
+    const state = window.history.state
+    if (state?.activeRoom?.id && state.openedFromApp && window.history.length > 1) {
+      window.history.back()
+      return
+    }
+
+    setActiveRoom(null)
+    setBrowserRoute({ view: 'rooms', activeRoom: null }, 'replace')
+  }
+
+  function openProfile() {
+    if (!user) {
+      requireAuth('Log in or sign up to open your profile.', 'login')
+      return
+    }
+
+    setProfileOpen(true)
   }
 
   if (activeRoom?.id && user) {
     return (
-      <LiveRoomView
-        roomId={activeRoom.id}
-        roomPassword={activeRoom.password}
-        initialRoom={activeRoom.room}
-        initialRtcMode={activeRoom.rtcMode}
-        autoConnect={activeRoom.autoConnect === true}
-        user={user}
-        onBack={() => setActiveRoom(null)}
-      />
+      <>
+        <LiveRoomView
+          roomId={activeRoom.id}
+          roomPassword={activeRoom.password}
+          initialRoom={activeRoom.room}
+          initialRtcMode={activeRoom.rtcMode}
+          autoConnect={activeRoom.autoConnect === true}
+          user={user}
+          onBack={leaveActiveRoomViaHistory}
+          onProfile={openProfile}
+        />
+        <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+      </>
     )
   }
 
@@ -97,6 +225,7 @@ export default function App() {
           onEnterRoom={openRoom}
           user={user}
           onLogout={logout}
+          onUserUpdated={handleProfileSaved}
           onView={changeView}
           onAuthRequired={requireAuth}
         />
@@ -129,6 +258,10 @@ export default function App() {
           )}
         </section>
       </main>
+      <div className="global-profile-anchor">
+        <AppProfileButton user={user} onClick={openProfile} />
+      </div>
+      <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
       <AuthModal
         open={authModalOpen}
         initialMode={authMode}

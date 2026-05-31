@@ -107,17 +107,15 @@ async function sendVerificationEmail({ to, name, code }) {
     to,
     name,
     code,
-    from: config.from || 'TalkEachOther <no-reply@localhost>',
+    from: config.from,
   })
 
   if (resendReady(config)) return sendWithResend(config, message)
   if (smtpReady(config)) return sendWithSmtp(config, message)
 
-  console.warn(`[email:local] Verification code for ${to}: ${code}`)
-  return {
-    provider: 'local',
-    devVerificationCode: code,
-  }
+  const error = new Error('Email service is not configured. Set RESEND_API_KEY with EMAIL_FROM, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.')
+  error.status = 503
+  throw error
 }
 
 module.exports = {

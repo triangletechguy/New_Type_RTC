@@ -36,6 +36,19 @@ function formatPercent(value) {
   return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
 }
 
+function clientApiBaseUrl() {
+  if (typeof window === 'undefined') return 'https://your-domain.com/api/client'
+
+  const { hostname, port, protocol, origin } = window.location
+  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
+
+  if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
+    return `${protocol}//${hostname}:8000/api/client`
+  }
+
+  return `${origin}/api/client`
+}
+
 function groupedFeatures(features) {
   return (features || []).reduce((groups, feature) => {
     const group = feature.group || 'Features'
@@ -51,6 +64,11 @@ const INITIAL_COMPANY_FORM = {
   legal_name: '',
   company_email: '',
   phone: '',
+  website_url: '',
+  app_url: '',
+  telegram_contact: '',
+  whatsapp_contact: '',
+  discord_contact: '',
   address: '',
   country: '',
   timezone: 'America/New_York',
@@ -80,8 +98,23 @@ const INITIAL_ROOM_FORM = {
   ai_security_enabled: false,
 }
 
+const INITIAL_PLAN_FORM = {
+  name: '',
+  description: '',
+  monthly_base_price: '0',
+  minute_rate: '0',
+  monthly_minute_allowance: '0',
+  max_room_admins: '0',
+  max_rooms: '0',
+  max_apps: '1',
+  max_participants_per_room: '0',
+  status: 'active',
+  included_features: [],
+}
+
 const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancelled']
 const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
+const PLAN_STATUS_OPTIONS = ['active', 'inactive']
 const FEATURE_CATALOG = [
   { key: 'normal_audio_room', group: 'Audio SDK', label: 'Normal audio room SDK' },
   { key: 'youtube_audio_room', group: 'Audio SDK', label: 'YouTube audio room SDK' },
@@ -108,15 +141,61 @@ const FEATURE_CATALOG = [
   { key: 'admin_panel_analytics', group: 'Admin Panel', label: 'Live monitoring and analytics' },
 ]
 
+const CLIENT_API_TOKEN_CLAIMS = [
+  ['tenant_id', 'Prevents cross-company access.'],
+  ['app_id', 'Connects usage and room access to the correct client app.'],
+  ['external_user_id', 'Maps the RTC session back to the client company user.'],
+  ['room_id', 'Limits the token to one room/channel.'],
+  ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
+  ['permissions', 'Controls join, media publish, screen share, chat, mute, and kick.'],
+  ['exp / iat', 'Keeps tokens short-lived; 15 minutes is the default target.'],
+]
+
+const CLIENT_API_ERROR_CODES = [
+  ['invalid_api_key', 'API key is missing, invalid, revoked, or malformed.'],
+  ['company_suspended', 'Tenant company is suspended, so token and room APIs should fail.'],
+  ['app_suspended', 'The specific client app is suspended.'],
+  ['origin_not_allowed', 'The web origin is not in the app allowed origins list.'],
+  ['room_disabled', 'The requested room exists but is disabled.'],
+  ['room_not_found', 'The room does not exist inside this tenant/app scope.'],
+  ['user_not_synced', 'The external user must be synced before token generation.'],
+  ['permission_denied', 'Requested role or permissions are not allowed.'],
+  ['package_limit_reached', 'The company has reached a hard package limit.'],
+]
+
+const CLIENT_API_WEBHOOK_EVENTS = [
+  'room.started',
+  'room.ended',
+  'room.disabled',
+  'participant.joined',
+  'participant.left',
+  'participant.reconnected',
+  'usage.updated',
+  'package.limit_warning',
+  'package.limit_reached',
+]
+
 function buildDashboardTabs(mode) {
   if (mode === 'super_admin') {
     return [
-      { key: 'command', label: 'Start' },
-      { key: 'clients', label: 'Clients' },
+      { key: 'companies', label: 'Companies' },
       { key: 'packages', label: 'Packages' },
       { key: 'sdk', label: 'SDK Access' },
       { key: 'usage', label: 'Usage' },
       { key: 'rooms', label: 'Rooms' },
+      { key: 'health', label: 'Health' },
+    ]
+  }
+
+  if (mode === 'company_detail') {
+    return [
+      { key: 'company_overview', label: 'Overview' },
+      { key: 'rooms', label: 'Rooms' },
+      { key: 'users', label: 'Users' },
+      { key: 'sdk', label: 'SDK Apps' },
+      { key: 'usage', label: 'Usage' },
+      { key: 'packages', label: 'Package' },
+      { key: 'company', label: 'Settings' },
       { key: 'health', label: 'Health' },
     ]
   }
@@ -149,6 +228,11 @@ function companyToForm(company) {
     legal_name: company?.legal_name || '',
     company_email: company?.company_email || '',
     phone: company?.phone || '',
+    website_url: company?.website_url || '',
+    app_url: company?.app_url || '',
+    telegram_contact: company?.telegram_contact || '',
+    whatsapp_contact: company?.whatsapp_contact || '',
+    discord_contact: company?.discord_contact || '',
     address: company?.address || '',
     country: company?.country || '',
     timezone: company?.timezone || 'America/New_York',
@@ -162,6 +246,24 @@ function companyToForm(company) {
     default_participant_limit: company?.default_limits?.participant_limit ? String(company.default_limits.participant_limit) : '',
     primary_contact_name: company?.primary_contact_name || '',
     primary_contact_email: company?.primary_contact_email || '',
+  }
+}
+
+function planToForm(plan) {
+  if (!plan) return INITIAL_PLAN_FORM
+
+  return {
+    name: plan.name || '',
+    description: plan.description || '',
+    monthly_base_price: String(plan.monthly_base_price ?? 0),
+    minute_rate: String(plan.minute_rate ?? 0),
+    monthly_minute_allowance: String(plan.monthly_minute_allowance ?? 0),
+    max_room_admins: String(plan.max_room_admins ?? 0),
+    max_rooms: String(plan.max_rooms ?? 0),
+    max_apps: String(plan.max_apps ?? 1),
+    max_participants_per_room: String(plan.max_participants_per_room ?? 0),
+    status: plan.status || 'active',
+    included_features: [...(plan.included_features || [])],
   }
 }
 
@@ -194,8 +296,48 @@ function AdminEmptyState({ title, detail }) {
   )
 }
 
+function AdminCopyButton({ value, label = 'Copy' }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value || '')
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <button type="button" className="admin-copy-button" onClick={copy}>
+      {copied ? 'Copied' : label}
+    </button>
+  )
+}
+
+function ApiSnippetCard({ eyebrow, title, detail, code }) {
+  return (
+    <article className="api-snippet-card">
+      <div className="api-snippet-head">
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <strong>{title}</strong>
+          {detail ? <small>{detail}</small> : null}
+        </div>
+        <AdminCopyButton value={code} />
+      </div>
+      <pre>{code}</pre>
+    </article>
+  )
+}
+
 function getPrimaryClient(enterprise) {
   return enterprise?.clients?.[0] || null
+}
+
+function getActiveCompany(payload) {
+  return payload?.company || getPrimaryClient(payload?.enterprise)
 }
 
 function getPendingPlanRequest(enterprise) {
@@ -237,8 +379,8 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Create client company',
       detail: 'Tenant, package, billing scope, admin invite, and default limits.',
       meta: `${formatNumber(totals.total_clients)} total clients`,
-      action: 'Open clients',
-      onClick: () => onTabChange('clients'),
+      action: 'Open companies',
+      onClick: () => onTabChange('companies'),
     },
     {
       title: 'Review purchases',
@@ -470,6 +612,11 @@ function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, 
           onSelectPlan={onSelectPlan}
           mode={mode}
         />
+        <ServicePlanEditorPanel
+          plan={(enterprise?.plans || []).find((plan) => String(plan.id) === String(selectedPlanId))}
+          onSaved={onRefresh}
+          onSelectPlan={onSelectPlan}
+        />
       </div>
     )
   }
@@ -553,13 +700,28 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
   const [appName, setAppName] = useState('')
   const [platform, setPlatform] = useState('web_mobile')
   const [allowedOrigins, setAllowedOrigins] = useState('')
+  const [selectedDocsAppId, setSelectedDocsAppId] = useState('')
   const [creating, setCreating] = useState(false)
   const [createdApp, setCreatedApp] = useState(null)
   const [message, setMessage] = useState('')
+  const docsApp = useMemo(() => {
+    return apps.find((app) => String(app.id) === String(selectedDocsAppId))
+      || createdApp?.app
+      || apps[0]
+      || null
+  }, [apps, createdApp, selectedDocsAppId])
+  const docsCredentials = createdApp?.app && String(createdApp.app.id) === String(docsApp?.id)
+    ? createdApp.credentials
+    : null
 
   useEffect(() => {
     if (!tenantId && clients[0]?.id) setTenantId(String(clients[0].id))
   }, [clients, tenantId])
+
+  useEffect(() => {
+    if (selectedDocsAppId || !apps[0]?.id) return
+    setSelectedDocsAppId(String(apps[0].id))
+  }, [apps, selectedDocsAppId])
 
   async function createApp(event) {
     event.preventDefault()
@@ -580,6 +742,7 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
         body: JSON.stringify(body),
       })
       setCreatedApp(data)
+      if (data.app?.id) setSelectedDocsAppId(String(data.app.id))
       setMessage(data.message)
       setAppName('')
       setAllowedOrigins('')
@@ -589,6 +752,12 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
     } finally {
       setCreating(false)
     }
+  }
+
+  function handleCredentialsResult(data) {
+    setCreatedApp(data)
+    if (data.app?.id) setSelectedDocsAppId(String(data.app.id))
+    setMessage(data.message)
   }
 
   return (
@@ -651,9 +820,206 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
         {message ? <div className="company-edit-message">{message}</div> : null}
       </section>
 
-      <ClientAppsPanel apps={apps} mode={mode} />
+      <ClientAppsPanel
+        apps={apps}
+        mode={mode}
+        onRefresh={onRefresh}
+        onCredentialsRotated={handleCredentialsResult}
+      />
+      <ClientApiDocsPanel
+        app={docsApp}
+        apps={apps}
+        credentials={docsCredentials}
+        selectedAppId={selectedDocsAppId}
+        onSelectApp={setSelectedDocsAppId}
+      />
       {apps.length ? null : <AdminEmptyState title="No SDK apps found" detail="Generate SDK access to connect a client app." />}
     </div>
+  )
+}
+
+function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp }) {
+  const apiBase = clientApiBaseUrl()
+  const publicApiBase = apiBase.endsWith('/client') ? apiBase.slice(0, -7) : apiBase
+  const apiKey = credentials?.api_key || 'CLIENT_API_KEY'
+  const appKey = credentials?.app_key || app?.app_key || 'CLIENT_APP_KEY'
+  const apiKeyLabel = credentials?.api_key ? 'Full key available from the new credentials above.' : 'Use the full API key saved when this app was generated.'
+  const verifyCurl = `curl ${apiBase}/me \\
+  -H "Authorization: Bearer ${apiKey}"`
+  const syncCurl = `curl -X POST ${apiBase}/users/sync \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "external_user_id": "user_42",
+    "name": "Mina Carter",
+    "email": "mina@example.com",
+    "avatar_url": "https://client-app.com/avatar/user_42.png",
+    "status": "active",
+    "metadata": { "vip": true }
+  }'`
+  const createRoomCurl = `curl -X POST ${apiBase}/rooms \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "external_user_id": "user_42",
+    "name": "Mina Live Room",
+    "room_type": "video",
+    "privacy_type": "public",
+    "max_mic_count": 8,
+    "chat_enabled": true,
+    "gift_enabled": true
+  }'`
+  const updateRoomCurl = `curl -X PATCH ${apiBase}/rooms/123 \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "Mina VIP Room",
+    "privacy_type": "password",
+    "password": "2468",
+    "chat_enabled": true,
+    "gift_enabled": false,
+    "screen_share_enabled": true
+  }'`
+  const endRoomCurl = `curl -X DELETE ${apiBase}/rooms/123 \\
+  -H "Authorization: Bearer ${apiKey}"`
+  const tokenCurl = `curl -X POST ${apiBase}/rtc/token \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "external_user_id": "user_42",
+    "room_id": 123,
+    "role": "publisher",
+    "rtc_mode": "video",
+    "permissions": ["join", "publish_audio", "publish_video", "chat"]
+  }'`
+  const startSessionCurl = `curl -X POST ${apiBase}/rtc/session/start \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "external_user_id": "user_42",
+    "room_id": 123,
+    "role": "publisher",
+    "rtc_mode": "video",
+    "mic_enabled": true,
+    "camera_enabled": true
+  }'`
+  const endSessionCurl = `curl -X POST ${apiBase}/rtc/session/end \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "external_user_id": "user_42",
+    "room_id": 123
+  }'`
+  const webSample = `const rtc = new TalkEachOtherRTC({
+  appKey: '${appKey}',
+  apiBaseUrl: '${publicApiBase}',
+  signalingUrl: window.location.origin,
+})
+
+await rtc.authenticate(rtcTokenFromYourBackend)
+await rtc.joinRoom(123, {
+  mode: 'video',
+  micEnabled: true,
+  cameraEnabled: true,
+})`
+
+  return (
+    <section className="enterprise-panel client-api-docs-panel glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Client API</span>
+          <h2>Integration Test Guide</h2>
+        </div>
+        {apps.length > 1 ? (
+          <select value={selectedAppId} onChange={(event) => onSelectApp?.(event.target.value)}>
+            {apps.map((item) => (
+              <option value={item.id} key={item.id}>{item.name}</option>
+            ))}
+          </select>
+        ) : app ? <span>{app.name}</span> : <span>Generate app first</span>}
+      </div>
+
+      <div className="client-api-summary">
+        <div>
+          <span>API base</span>
+          <strong>{apiBase}</strong>
+          <AdminCopyButton value={apiBase} label="Copy URL" />
+        </div>
+        <div>
+          <span>Auth header</span>
+          <strong>Authorization: Bearer CLIENT_API_KEY</strong>
+          <small>{apiKeyLabel}</small>
+        </div>
+        <div>
+          <span>Browser rule</span>
+          <strong>Never expose the API key</strong>
+          <small>Browser apps receive only the short-lived RTC token.</small>
+        </div>
+      </div>
+
+      <div className="client-api-flow-grid">
+        <div><b>1</b><strong>Verify key</strong><span>Call `/me` from the company backend.</span></div>
+        <div><b>2</b><strong>Sync app user</strong><span>Map the client app user to an RTC shadow user.</span></div>
+        <div><b>3</b><strong>Manage room</strong><span>Create, list, update, or end rooms from the client backend.</span></div>
+        <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
+        <div><b>5</b><strong>Join RTC</strong><span>Use the room token in the web/mobile SDK.</span></div>
+      </div>
+
+      <div className="api-snippet-grid">
+        <ApiSnippetCard eyebrow="GET" title="/api/client/me" detail="Checks tenant, app, package, and API key status." code={verifyCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Run this whenever your app user logs in or profile changes." code={syncCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates a room for the synced external user and enforces the company package." code={createRoomCurl} />
+        <ApiSnippetCard eyebrow="PATCH" title="/api/client/rooms/:id" detail="Updates room name, privacy, password, seats, theme, and enabled features." code={updateRoomCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/token" detail="Use the returned `room.id`; returns `rtc_token`, controls, grants, and expiry." code={tokenCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and returns billable minutes." code={endSessionCurl} />
+        <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Ends a room, disconnects active sessions, and keeps usage history." code={endRoomCurl} />
+        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="The browser uses your backend token response, not the API key." code={webSample} />
+      </div>
+
+      <div className="api-contract-grid">
+        <div><span>API key storage</span><strong>Raw key shown once</strong><small>The backend stores a SHA-256 hash and a masked display value.</small></div>
+        <div><span>Allowed origins</span><strong>Checked on browser-origin calls</strong><small>Server-to-server calls can omit the Origin header.</small></div>
+        <div><span>Token ledger</span><strong>Hashed RTC token records</strong><small>Issued room tokens are recorded without storing the raw bearer token.</small></div>
+        <div><span>Usage ledger</span><strong>Daily aggregates</strong><small>Session start/end updates token count, participant minutes, room minutes, and peak concurrency.</small></div>
+        <div><span>Webhook queue</span><strong>Pending delivery events</strong><small>Room, participant, and usage events are queued for the delivery worker.</small></div>
+        <div><span>Token TTL</span><strong>15 minutes default</strong><small>Configurable with CLIENT_RTC_TOKEN_TTL_SECONDS.</small></div>
+        <div><span>User statuses</span><strong>active, inactive, banned</strong><small>Inactive or banned external users cannot receive room tokens.</small></div>
+        <div><span>Room creation</span><strong>Package enforced</strong><small>Room type, privacy, seats, and features follow the assigned service plan.</small></div>
+        <div><span>Room lifecycle</span><strong>Update or end by API</strong><small>Ending a room closes active sessions but preserves billing history.</small></div>
+        <div><span>Roles</span><strong>audience, publisher, moderator, admin, owner</strong><small>Publisher includes media publish and chat permissions.</small></div>
+        <div><span>Room access</span><strong>Room-scoped token</strong><small>Password/private checks are satisfied only for that exact room.</small></div>
+      </div>
+
+      <div className="client-api-section-title">
+        <span className="eyebrow">Token contract</span>
+        <strong>Claims encoded in each RTC token</strong>
+      </div>
+      <div className="api-contract-grid">
+        {CLIENT_API_TOKEN_CLAIMS.map(([claim, detail]) => (
+          <div key={claim}>
+            <span>{claim}</span>
+            <strong>{detail}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="client-api-section-title">
+        <span className="eyebrow">Errors and webhooks</span>
+        <strong>Integration surface for production clients</strong>
+      </div>
+      <div className="api-contract-grid">
+        {CLIENT_API_ERROR_CODES.map(([code, detail]) => (
+          <div key={code}>
+            <span>{code}</span>
+            <strong>{detail}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="api-chip-list">
+        {CLIENT_API_WEBHOOK_EVENTS.map((event) => <code key={event}>{event}</code>)}
+      </div>
+    </section>
   )
 }
 
@@ -685,6 +1051,14 @@ function CompanyProfilePanel({ enterprise }) {
           <strong>{client.company_email || '-'}</strong>
         </div>
         <div>
+          <span>Website</span>
+          <strong>{client.website_url || '-'}</strong>
+        </div>
+        <div>
+          <span>App URL</span>
+          <strong>{client.app_url || '-'}</strong>
+        </div>
+        <div>
           <span>Billing email</span>
           <strong>{client.billing_email || '-'}</strong>
         </div>
@@ -695,6 +1069,18 @@ function CompanyProfilePanel({ enterprise }) {
         <div>
           <span>Contact email</span>
           <strong>{client.primary_contact_email || '-'}</strong>
+        </div>
+        <div>
+          <span>Telegram</span>
+          <strong>{client.telegram_contact || '-'}</strong>
+        </div>
+        <div>
+          <span>WhatsApp</span>
+          <strong>{client.whatsapp_contact || '-'}</strong>
+        </div>
+        <div>
+          <span>Discord</span>
+          <strong>{client.discord_contact || '-'}</strong>
         </div>
       </div>
 
@@ -860,7 +1246,9 @@ function ServiceFlowPanel({ flow }) {
 
 function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, mode }) {
   if (!plans?.length) return null
-  const visiblePlans = plans.filter((plan) => plan.status === 'active' || currentPlan?.id === plan.id)
+  const visiblePlans = mode === 'super_admin'
+    ? plans
+    : plans.filter((plan) => plan.status === 'active' || currentPlan?.id === plan.id)
   const selectedPlan = visiblePlans.find((plan) => String(plan.id) === String(selectedPlanId))
 
   return (
@@ -892,6 +1280,7 @@ function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, m
                 <span>{formatNumber(plan.monthly_minute_allowance)} min/month</span>
               </div>
               <div className="service-plan-limits">
+                <span>{plan.status}</span>
                 <span>{formatNumber(plan.max_room_admins)} room admins</span>
                 <span>{formatNumber(plan.max_rooms)} rooms</span>
                 <span>{formatNumber(plan.max_apps)} apps</span>
@@ -906,8 +1295,198 @@ function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, m
   )
 }
 
-function ClientAppsPanel({ apps, mode }) {
+function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
+  const [form, setForm] = useState(() => planToForm(plan))
+  const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    setForm(planToForm(plan))
+    setErrors({})
+    setMessage('')
+  }, [plan?.id])
+
+  if (!plan) return null
+
+  function change(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+    setErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
+
+  function toggleFeature(featureKey) {
+    setForm((current) => {
+      const selected = new Set(current.included_features || [])
+      if (selected.has(featureKey)) selected.delete(featureKey)
+      else selected.add(featureKey)
+      return { ...current, included_features: [...selected] }
+    })
+    setErrors((current) => {
+      if (!current.included_features) return current
+      const next = { ...current }
+      delete next.included_features
+      return next
+    })
+  }
+
+  async function savePlan(event) {
+    event.preventDefault()
+    setSaving(true)
+    setErrors({})
+    setMessage(`Saving ${form.name || plan.name}...`)
+
+    try {
+      const data = await apiRequest(`/admin/service-plans/${plan.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...form,
+          monthly_base_price: Number(form.monthly_base_price || 0),
+          minute_rate: Number(form.minute_rate || 0),
+          monthly_minute_allowance: Number(form.monthly_minute_allowance || 0),
+          max_room_admins: Number(form.max_room_admins || 0),
+          max_rooms: Number(form.max_rooms || 0),
+          max_apps: Number(form.max_apps || 1),
+          max_participants_per_room: Number(form.max_participants_per_room || 0),
+        }),
+      })
+      setMessage(data.message)
+      onSelectPlan?.(String(data.plan?.id || plan.id))
+      await onSaved?.()
+    } catch (error) {
+      setErrors(error.errors || {})
+      setMessage(error.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="enterprise-panel service-plan-editor glass-card">
+      <div className="admin-panel-header">
+        <div>
+          <span className="eyebrow">Edit Package</span>
+          <h2>{plan.name}</h2>
+        </div>
+        <span>{plan.code}</span>
+      </div>
+
+      <form className="service-plan-editor-form" onSubmit={savePlan}>
+        <div className="service-plan-editor-grid">
+          <label>
+            <span>Package name</span>
+            <input value={form.name} onChange={(event) => change('name', event.target.value)} />
+            {errors.name ? <small className="form-error">{errors.name}</small> : null}
+          </label>
+          <label>
+            <span>Status</span>
+            <select value={form.status} onChange={(event) => change('status', event.target.value)}>
+              {PLAN_STATUS_OPTIONS.map((status) => <option value={status} key={status}>{status}</option>)}
+            </select>
+          </label>
+          <label className="wide">
+            <span>Description</span>
+            <textarea value={form.description} onChange={(event) => change('description', event.target.value)} />
+          </label>
+          <label>
+            <span>Monthly base price</span>
+            <input type="number" min="0" step="0.01" value={form.monthly_base_price} onChange={(event) => change('monthly_base_price', event.target.value)} />
+            {errors.monthly_base_price ? <small className="form-error">{errors.monthly_base_price}</small> : null}
+          </label>
+          <label>
+            <span>Minute rate</span>
+            <input type="number" min="0" step="0.0001" value={form.minute_rate} onChange={(event) => change('minute_rate', event.target.value)} />
+            {errors.minute_rate ? <small className="form-error">{errors.minute_rate}</small> : null}
+          </label>
+          <label>
+            <span>Included minutes</span>
+            <input type="number" min="0" step="1" value={form.monthly_minute_allowance} onChange={(event) => change('monthly_minute_allowance', event.target.value)} />
+          </label>
+          <label>
+            <span>Room admins</span>
+            <input type="number" min="0" step="1" value={form.max_room_admins} onChange={(event) => change('max_room_admins', event.target.value)} />
+          </label>
+          <label>
+            <span>Rooms</span>
+            <input type="number" min="0" step="1" value={form.max_rooms} onChange={(event) => change('max_rooms', event.target.value)} />
+          </label>
+          <label>
+            <span>Apps</span>
+            <input type="number" min="1" step="1" value={form.max_apps} onChange={(event) => change('max_apps', event.target.value)} />
+            {errors.max_apps ? <small className="form-error">{errors.max_apps}</small> : null}
+          </label>
+          <label>
+            <span>Participants per room</span>
+            <input type="number" min="0" step="1" value={form.max_participants_per_room} onChange={(event) => change('max_participants_per_room', event.target.value)} />
+            {errors.max_participants_per_room ? <small className="form-error">{errors.max_participants_per_room}</small> : null}
+          </label>
+        </div>
+
+        <div className="plan-feature-editor">
+          <div>
+            <span className="eyebrow">Included Tools</span>
+            <strong>{formatNumber(form.included_features.length)} selected</strong>
+          </div>
+          <div className="plan-feature-select-grid">
+            {FEATURE_CATALOG.map((feature) => (
+              <label className="plan-feature-toggle" key={feature.key}>
+                <input
+                  type="checkbox"
+                  checked={(form.included_features || []).includes(feature.key)}
+                  onChange={() => toggleFeature(feature.key)}
+                />
+                <span>
+                  <strong>{feature.label}</strong>
+                  <small>{feature.group}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          {errors.included_features ? <small className="form-error">{errors.included_features}</small> : null}
+        </div>
+
+        <div className="service-plan-editor-actions">
+          <button className="primary-button" type="submit" disabled={saving}>
+            {saving ? 'Saving...' : 'Save package'}
+          </button>
+          {message ? <div className="company-edit-message">{message}</div> : null}
+        </div>
+      </form>
+    </section>
+  )
+}
+
+function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
+  const [rotatingId, setRotatingId] = useState(null)
+  const [message, setMessage] = useState('')
+
   if (!apps?.length) return null
+
+  async function rotateCredentials(app) {
+    const confirmed = window.confirm(`Rotate API key and SDK token for ${app.name}? Old backend credentials will stop working immediately.`)
+    if (!confirmed) return
+
+    setRotatingId(app.id)
+    setMessage(`Rotating ${app.name} credentials...`)
+
+    try {
+      const data = await apiRequest(`/admin/client-apps/${app.id}/rotate-credentials`, {
+        method: 'POST',
+        body: JSON.stringify({ scope: 'all' }),
+      })
+      setMessage(data.message)
+      onCredentialsRotated?.(data)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setRotatingId(null)
+    }
+  }
 
   return (
     <section className="enterprise-panel glass-card">
@@ -918,6 +1497,7 @@ function ClientAppsPanel({ apps, mode }) {
         </div>
         <span>{formatNumber(apps.length)} apps</span>
       </div>
+      <p className="enterprise-note">Full secrets are shown only when generated or rotated. Save them in the client company's backend environment, never in browser code.</p>
       <div className="client-app-grid">
         {apps.map((app) => (
           <article className="client-app-card" key={app.id}>
@@ -936,9 +1516,20 @@ function ClientAppsPanel({ apps, mode }) {
               <dt>Allowed origins</dt>
               <dd>{app.allowed_origins?.join(', ') || 'Any configured origin'}</dd>
             </dl>
+            <div className="client-app-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={rotatingId === app.id}
+                onClick={() => rotateCredentials(app)}
+              >
+                {rotatingId === app.id ? 'Rotating...' : 'Rotate keys'}
+              </button>
+            </div>
           </article>
         ))}
       </div>
+      {message ? <div className="company-edit-message">{message}</div> : null}
     </section>
   )
 }
@@ -1036,6 +1627,55 @@ function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, 
                 value={form.industry}
                 onChange={(event) => onChange('industry', event.target.value)}
                 placeholder="Healthcare"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Website URL</span>
+              <input
+                value={form.website_url}
+                onChange={(event) => onChange('website_url', event.target.value)}
+                placeholder="https://company.com"
+              />
+            </label>
+            <label>
+              <span>App / product URL</span>
+              <input
+                value={form.app_url}
+                onChange={(event) => onChange('app_url', event.target.value)}
+                placeholder="https://app.company.com"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Telegram</span>
+              <input
+                value={form.telegram_contact}
+                onChange={(event) => onChange('telegram_contact', event.target.value)}
+                placeholder="@companysupport"
+              />
+            </label>
+            <label>
+              <span>WhatsApp</span>
+              <input
+                value={form.whatsapp_contact}
+                onChange={(event) => onChange('whatsapp_contact', event.target.value)}
+                placeholder="+1 555 0100"
+              />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Discord</span>
+              <input
+                value={form.discord_contact}
+                onChange={(event) => onChange('discord_contact', event.target.value)}
+                placeholder="company#1234 or invite URL"
               />
             </label>
           </div>
@@ -1261,6 +1901,243 @@ function ClientsBillingPanel({ clients, billing, mode }) {
   )
 }
 
+function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, onSelectCompany }) {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const normalizedSearch = search.trim().toLowerCase()
+  const visibleClients = (clients || []).filter((client) => {
+    const matchesStatus = statusFilter === 'all' || client.status === statusFilter
+    const haystack = [
+      client.name,
+      client.tenant_uid,
+      client.company_email,
+      client.primary_contact_email,
+      client.phone,
+      client.website_url,
+      client.app_url,
+      client.telegram_contact,
+      client.whatsapp_contact,
+      client.discord_contact,
+      client.country,
+      client.plan?.name,
+    ].filter(Boolean).join(' ').toLowerCase()
+
+    return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch))
+  })
+  const activeClients = (clients || []).filter((client) => client.status === 'active').length
+  const liveRooms = (clients || []).reduce((total, client) => total + Number(client.active_room_count || 0), 0)
+  const invoiceTotal = (clients || []).reduce((total, client) => total + Number(client.estimated_invoice || 0), 0)
+
+  return (
+    <section className="enterprise-panel company-directory-panel glass-card">
+      <div className="admin-panel-header company-directory-header">
+        <div>
+          <span className="eyebrow">Client Companies</span>
+          <h2>Company RTC Service Directory</h2>
+        </div>
+        <div className="company-directory-tools">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company, tenant, email" />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Company status filter">
+            <option value="all">All status</option>
+            {COMPANY_STATUS_OPTIONS.map((status) => <option value={status} key={status}>{status}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="company-directory-kpis">
+        <div><span>Total companies</span><strong>{formatNumber(clients?.length || 0)}</strong></div>
+        <div><span>Active clients</span><strong>{formatNumber(activeClients)}</strong></div>
+        <div><span>Live rooms</span><strong>{formatNumber(liveRooms)}</strong></div>
+        <div><span>Manual invoice estimate</span><strong>{formatCurrency(invoiceTotal)}</strong></div>
+      </div>
+
+      <div className="company-directory-grid">
+        {visibleClients.length === 0 ? (
+          <div className="empty-control">No client company matches this filter.</div>
+        ) : visibleClients.map((client) => {
+          const isSelected = Number(selectedCompanyId) === Number(client.id)
+          const isLoading = Number(loadingCompanyId) === Number(client.id)
+
+          return (
+            <button
+              type="button"
+              className={isSelected ? 'company-directory-card active' : 'company-directory-card'}
+              key={client.id}
+              onClick={() => onSelectCompany?.(client)}
+            >
+              <div className="company-directory-main">
+                <span className="company-logo-mark">{getInitials(client.name)}</span>
+                <span>
+                  <strong>{client.name}</strong>
+                  <small>{client.tenant_uid} · {client.plan?.name || 'No package'}</small>
+                </span>
+                <b className={`admin-state ${client.status}`}>{client.status}</b>
+              </div>
+              <div className="company-directory-stats">
+                <span><b>{formatNumber(client.active_room_count)}</b> live rooms</span>
+                <span><b>{formatNumber(client.room_count)}</b> total rooms</span>
+                <span><b>{formatNumber(client.active_app_count)}</b> SDK apps</span>
+                <span><b>{formatMinutes(client.minutes_month)}</b> this month</span>
+              </div>
+              <div className="company-directory-contact">
+                <span>{client.company_email || client.primary_contact_email || 'No email saved'}</span>
+                <span>{client.phone || client.telegram_contact || client.whatsapp_contact || client.discord_contact || 'Contact details pending'}</span>
+                <span>{client.website_url || client.app_url || client.country || 'Website/app URL pending'}</span>
+              </div>
+              <strong className="company-directory-open">{isLoading ? 'Loading...' : 'Open company dashboard'}</strong>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function CompanyDetailSummary({ company, dashboard, users, onTabChange }) {
+  if (!company) return null
+  const roomMetrics = dashboard?.metrics?.rooms || {}
+  const sessionMetrics = dashboard?.metrics?.sessions || {}
+  const usageMonth = dashboard?.usage_month || {}
+  const actionCards = [
+    {
+      title: 'Company rooms',
+      value: `${formatNumber(roomMetrics.active || company.active_room_count)} live`,
+      detail: `${formatNumber(roomMetrics.total || company.room_count)} total rooms`,
+      action: 'Manage rooms',
+      tab: 'rooms',
+    },
+    {
+      title: 'Company users',
+      value: formatNumber(users?.length || 0),
+      detail: 'Tenant accounts and synced app users',
+      action: 'View users',
+      tab: 'users',
+    },
+    {
+      title: 'SDK apps',
+      value: formatNumber(company.active_app_count),
+      detail: 'App key, API key, token, allowed origins',
+      action: 'Manage SDK',
+      tab: 'sdk',
+    },
+    {
+      title: 'Manual billing',
+      value: formatCurrency(company.estimated_invoice),
+      detail: `${formatMinutes(usageMonth.minutes || company.minutes_month)} used this month`,
+      action: 'Review usage',
+      tab: 'usage',
+    },
+  ]
+
+  return (
+    <section className="enterprise-panel company-detail-summary glass-card">
+      <div className="company-detail-hero">
+        <div className="company-detail-title">
+          <span className="company-logo-mark large">{getInitials(company.name)}</span>
+          <div>
+            <span className="eyebrow">Selected Client Company</span>
+            <h2>{company.name}</h2>
+            <p>{company.tenant_uid} · {company.plan?.name || 'No package'} · {company.billing_type}</p>
+          </div>
+        </div>
+        <span className={`admin-state ${company.status}`}>{company.status}</span>
+      </div>
+
+      <div className="company-detail-strip">
+        <span><b>{company.company_email || '-'}</b> business email</span>
+        <span><b>{company.phone || '-'}</b> phone</span>
+        <span><b>{company.website_url || company.app_url || '-'}</b> website/app</span>
+        <span><b>{company.telegram_contact || company.whatsapp_contact || company.discord_contact || '-'}</b> social contact</span>
+        <span><b>{company.country || '-'}</b> country</span>
+        <span><b>{formatNumber(sessionMetrics.active || 0)}</b> active sessions</span>
+      </div>
+
+      <div className="rtc-action-grid company-action-grid">
+        {actionCards.map((card) => (
+          <button type="button" className="rtc-action-card" key={card.title} onClick={() => onTabChange?.(card.tab)}>
+            <span>{card.value}</span>
+            <strong>{card.title}</strong>
+            <small>{card.detail}</small>
+            <b>{card.action}</b>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CompanyUsersPanel({ users }) {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const normalizedSearch = search.trim().toLowerCase()
+  const visibleUsers = (users || []).filter((user) => {
+    const matchesStatus = statusFilter === 'all' || user.status === statusFilter
+    const haystack = [user.name, user.email, user.phone, ...(user.roles || [])].filter(Boolean).join(' ').toLowerCase()
+    return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch))
+  })
+  const activeUsers = (users || []).filter((user) => Number(user.active_rooms || 0) > 0).length
+
+  return (
+    <section className="admin-data-card company-users-panel glass-card">
+      <div className="admin-panel-header company-directory-header">
+        <div>
+          <span className="eyebrow">Company Users</span>
+          <h2>Tenant Accounts And App Users</h2>
+        </div>
+        <div className="company-directory-tools">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search user, email, role" />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="User status filter">
+            <option value="all">All users</option>
+            <option value="active">Active</option>
+            <option value="pending_verification">Pending</option>
+            <option value="inactive">Inactive</option>
+            <option value="banned">Banned</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="company-directory-kpis compact">
+        <div><span>Total users</span><strong>{formatNumber(users?.length || 0)}</strong></div>
+        <div><span>Live now</span><strong>{formatNumber(activeUsers)}</strong></div>
+        <div><span>Visible rows</span><strong>{formatNumber(visibleUsers.length)}</strong></div>
+        <div><span>Usage records</span><strong>{formatNumber((users || []).reduce((total, user) => total + Number(user.participant_records || 0), 0))}</strong></div>
+      </div>
+
+      <div className="admin-table-scroll">
+        <table className="admin-data-table company-users-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Roles</th>
+              <th>Status</th>
+              <th>Live</th>
+              <th>Total Usage</th>
+              <th>Last Joined</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.length === 0 ? (
+              <tr><td colSpan="6">No users found for this company yet.</td></tr>
+            ) : visibleUsers.map((user) => (
+              <tr key={user.id}>
+                <td>
+                  <strong>{user.name}</strong>
+                  <span>{user.email || user.phone || `User #${user.id}`}</span>
+                </td>
+                <td>{user.roles?.length ? user.roles.join(', ') : 'end_user'}</td>
+                <td><span className={`admin-state ${user.status}`}>{user.status}</span></td>
+                <td>{formatNumber(user.active_rooms)} active rooms</td>
+                <td>{formatMinutes(user.total_minutes)}</td>
+                <td>{user.last_joined_at ? formatUsageDate(user.last_joined_at) : 'No RTC activity'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 function CompanyManagementPanel({ clients, plans, onSaved }) {
   const activePlans = (plans || []).filter((plan) => plan.status === 'active')
   const [selectedCompanyId, setSelectedCompanyId] = useState(clients?.[0]?.id || null)
@@ -1394,6 +2271,35 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
             <label>
               <span>Phone</span>
               <input value={form.phone} onChange={(event) => change('phone', event.target.value)} />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Website URL</span>
+              <input value={form.website_url} onChange={(event) => change('website_url', event.target.value)} placeholder="https://company.com" />
+            </label>
+            <label>
+              <span>App / product URL</span>
+              <input value={form.app_url} onChange={(event) => change('app_url', event.target.value)} placeholder="https://app.company.com" />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Telegram</span>
+              <input value={form.telegram_contact} onChange={(event) => change('telegram_contact', event.target.value)} placeholder="@companysupport" />
+            </label>
+            <label>
+              <span>WhatsApp</span>
+              <input value={form.whatsapp_contact} onChange={(event) => change('whatsapp_contact', event.target.value)} placeholder="+1 555 0100" />
+            </label>
+          </div>
+
+          <div className="field-row">
+            <label>
+              <span>Discord</span>
+              <input value={form.discord_contact} onChange={(event) => change('discord_contact', event.target.value)} placeholder="company#1234 or invite URL" />
             </label>
           </div>
 
@@ -1888,6 +2794,17 @@ function DailyUsageTable({ usage }) {
 }
 
 function ParticipantRecordsTable({ records }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+  const totalPages = Math.max(1, Math.ceil(records.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageStart = (currentPage - 1) * pageSize
+  const pagedRecords = records.slice(pageStart, pageStart + pageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [records.length, pageSize])
+
   return (
     <section className="admin-data-card glass-card">
       <div className="admin-panel-header">
@@ -1895,7 +2812,14 @@ function ParticipantRecordsTable({ records }) {
           <span className="eyebrow">Detailed Records</span>
           <h2>Join And Exit History</h2>
         </div>
-        <span>{formatNumber(records.length)} records</span>
+        <div className="admin-table-controls">
+          <span>{formatNumber(records.length)} records</span>
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} aria-label="Records per page">
+            <option value={6}>6 per page</option>
+            <option value={10}>10 per page</option>
+            <option value={20}>20 per page</option>
+          </select>
+        </div>
       </div>
 
       <div className="admin-table-scroll compact">
@@ -1913,7 +2837,7 @@ function ParticipantRecordsTable({ records }) {
           <tbody>
             {records.length === 0 ? (
               <tr><td colSpan="6">No join or exit records in this scope yet.</td></tr>
-            ) : records.map((record) => (
+            ) : pagedRecords.map((record) => (
               <tr key={record.id}>
                 <td>
                   <strong>{record.user_name}</strong>
@@ -1929,6 +2853,13 @@ function ParticipantRecordsTable({ records }) {
           </tbody>
         </table>
       </div>
+      {records.length > pageSize ? (
+        <div className="admin-pagination">
+          <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage <= 1}>Previous</button>
+          <span>Page {currentPage} of {totalPages}</span>
+          <button type="button" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage >= totalPages}>Next</button>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -1937,6 +2868,8 @@ export default function AdminView({ onView, onOpenRoom }) {
   const [overview, setOverview] = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedAdminId, setSelectedAdminId] = useState(null)
+  const [selectedCompanyDetail, setSelectedCompanyDetail] = useState(null)
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null)
   const [companyForm, setCompanyForm] = useState(INITIAL_COMPANY_FORM)
   const [companyFormErrors, setCompanyFormErrors] = useState({})
   const [companyCreating, setCompanyCreating] = useState(false)
@@ -1945,18 +2878,23 @@ export default function AdminView({ onView, onOpenRoom }) {
   const [companySubmitMessage, setCompanySubmitMessage] = useState('')
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
-  const [activeTab, setActiveTab] = useState('command')
+  const [loadingCompanyId, setLoadingCompanyId] = useState(null)
+  const [activeTab, setActiveTab] = useState('companies')
   const [selectedPackageId, setSelectedPackageId] = useState('')
 
-  const activePayload = selectedDetail || overview
+  const activePayload = selectedCompanyDetail || selectedDetail || overview
   const dashboard = activePayload?.dashboard
   const usageVerification = dashboard?.usage_verification
   const recentUsageLogs = dashboard?.recent_usage_logs || []
   const usageStatus = getUsageStatus(usageVerification)
   const isSuperAdmin = overview?.scope === 'super_admin'
   const enterprise = activePayload?.enterprise
-  const enterpriseMode = isSuperAdmin && !selectedDetail ? 'super_admin' : 'client_admin'
+  const activeCompany = getActiveCompany(activePayload)
+  const enterpriseMode = isSuperAdmin
+    ? selectedCompanyDetail ? 'company_detail' : 'super_admin'
+    : 'client_admin'
   const rooms = activePayload?.rooms || []
+  const companyUsers = activePayload?.users || []
   const dailyUsage = activePayload?.daily_usage || []
   const participantRecords = activePayload?.participant_records || []
   const selectedPackage = useMemo(() => {
@@ -1968,22 +2906,65 @@ export default function AdminView({ onView, onOpenRoom }) {
   }, [enterprise?.current_plan, enterprise?.plans, selectedPackageId])
   const dashboardTabs = useMemo(() => buildDashboardTabs(enterpriseMode), [enterpriseMode])
   const pageTitle = useMemo(() => {
+    if (isSuperAdmin && selectedCompanyDetail?.company) return `${selectedCompanyDetail.company.name} RTC Dashboard`
     if (isSuperAdmin && selectedDetail?.admin) return `${selectedDetail.admin.name} Dashboard`
-    if (isSuperAdmin) return 'Super Admin Dashboard'
+    if (isSuperAdmin) return 'Client Company Dashboard'
     return 'Admin Dashboard'
-  }, [isSuperAdmin, selectedDetail])
+  }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
 
   async function load(options = {}) {
     try {
       if (!options.silent) setStatus('Loading dashboard...')
+      const companyIdToReload = selectedCompanyDetail?.company?.id || selectedCompanyId
       const data = await apiRequest('/admin/overview')
       setOverview(data)
-      setSelectedDetail(null)
-      setSelectedAdminId(null)
+      if (companyIdToReload && data.scope === 'super_admin' && options.keepSelection !== false) {
+        await loadCompanyById(companyIdToReload, { silent: true, keepTab: true })
+      } else {
+        setSelectedCompanyDetail(null)
+        setSelectedCompanyId(null)
+        setSelectedDetail(null)
+        setSelectedAdminId(null)
+      }
       setStatus(options.silent ? 'Dashboard auto-refreshed' : 'Dashboard loaded')
     } catch (error) {
       setStatus(error.message)
     }
+  }
+
+  async function loadCompanyById(companyId, options = {}) {
+    try {
+      setSelectedCompanyId(companyId)
+      setLoadingCompanyId(companyId)
+      if (!options.silent) setStatus('Loading company dashboard...')
+      const data = await apiRequest(`/admin/companies/${companyId}/detail`)
+      setSelectedCompanyDetail(data)
+      setSelectedDetail(null)
+      setSelectedAdminId(null)
+      if (!options.keepTab) setActiveTab('company_overview')
+      if (!options.silent) setStatus(`${data.company?.name || 'Company'} loaded`)
+      return data
+    } catch (error) {
+      setStatus(error.message)
+      return null
+    } finally {
+      setLoadingCompanyId(null)
+    }
+  }
+
+  function loadCompany(company) {
+    const companyId = Number(company?.id || company)
+    if (!Number.isInteger(companyId) || companyId <= 0) return
+    loadCompanyById(companyId)
+  }
+
+  function clearCompanySelection() {
+    setSelectedCompanyDetail(null)
+    setSelectedCompanyId(null)
+    setSelectedDetail(null)
+    setSelectedAdminId(null)
+    setActiveTab('companies')
+    setStatus('Showing all client companies')
   }
 
   async function loadAdmin(admin) {
@@ -2055,7 +3036,8 @@ export default function AdminView({ onView, onOpenRoom }) {
       setCreatedCompany(data)
       setCompanySubmitMessage(data.message)
       setCompanyForm({ ...INITIAL_COMPANY_FORM, plan_id: planId, ...limitsFromPlan(selectedPlan) })
-      await load({ silent: true })
+      await load({ silent: true, keepSelection: false })
+      if (data.company?.id) await loadCompanyById(data.company.id)
       setStatus(data.next_step ? `${data.message} ${data.next_step}` : data.message)
     } catch (error) {
       setCompanyFormErrors(error.errors || {})
@@ -2074,7 +3056,7 @@ export default function AdminView({ onView, onOpenRoom }) {
 
   useEffect(() => {
     if (!dashboardTabs.some((tab) => tab.key === activeTab)) {
-      setActiveTab('command')
+      setActiveTab(dashboardTabs[0]?.key || 'command')
     }
   }, [activeTab, dashboardTabs])
 
@@ -2098,11 +3080,20 @@ export default function AdminView({ onView, onOpenRoom }) {
     <div className="view-stack admin-dashboard-view">
       <header className="page-header glass-card">
         <div>
-          <span className="eyebrow">{isSuperAdmin ? 'Super Admin' : 'Client Admin'}</span>
+          <span className="eyebrow">{isSuperAdmin ? selectedCompanyDetail ? 'Company Scope' : 'Super Admin' : 'Client Admin'}</span>
           <h1>{pageTitle}</h1>
-          <p>{isSuperAdmin ? 'Sell RTC packages, onboard clients, issue SDK access, and monitor billing.' : 'Purchase RTC, connect your app, manage rooms, and track billing.'}</p>
+          <p>
+            {isSuperAdmin
+              ? selectedCompanyDetail
+                ? 'Inspect this company users, rooms, SDK apps, package, and billing usage.'
+                : 'Start with client companies, then open one company to manage its RTC service.'
+              : 'Purchase RTC, connect your app, manage rooms, and track billing.'}
+          </p>
         </div>
         <div className="admin-header-actions">
+          {isSuperAdmin && selectedCompanyDetail ? (
+            <button className="secondary-button" onClick={clearCompanySelection}>All companies</button>
+          ) : null}
           {isSuperAdmin && selectedDetail ? (
             <button className="secondary-button" onClick={() => {
               setSelectedDetail(null)
@@ -2115,7 +3106,7 @@ export default function AdminView({ onView, onOpenRoom }) {
       </header>
 
       <div className="admin-status-bar status-bar glass-card">
-        <strong>Status:</strong> {loadingAdminId ? `${status} (#${loadingAdminId})` : status}
+        <strong>Status:</strong> {loadingCompanyId ? `${status} (#${loadingCompanyId})` : loadingAdminId ? `${status} (#${loadingAdminId})` : status}
       </div>
 
       <DashboardTabs tabs={dashboardTabs} activeTab={activeTab} onChange={setActiveTab} />
@@ -2133,9 +3124,14 @@ export default function AdminView({ onView, onOpenRoom }) {
         </div>
       ) : null}
 
-      {activeTab === 'clients' && enterpriseMode === 'super_admin' ? (
+      {activeTab === 'companies' && enterpriseMode === 'super_admin' ? (
         <div className="dashboard-tab-panel">
-          <ScopeSummary payload={activePayload} scope={overview?.scope} />
+          <CompanyDirectoryPanel
+            clients={enterprise?.clients || []}
+            selectedCompanyId={selectedCompanyId}
+            loadingCompanyId={loadingCompanyId}
+            onSelectCompany={loadCompany}
+          />
           <CompanySetupPanel
             plans={enterprise?.plans || []}
             form={companyForm}
@@ -2157,15 +3153,35 @@ export default function AdminView({ onView, onOpenRoom }) {
         </div>
       ) : null}
 
+      {activeTab === 'company_overview' && enterpriseMode === 'company_detail' ? (
+        <div className="dashboard-tab-panel">
+          <CompanyDetailSummary
+            company={activeCompany}
+            dashboard={dashboard}
+            users={companyUsers}
+            onTabChange={setActiveTab}
+          />
+          <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
+        </div>
+      ) : null}
+
       {activeTab === 'packages' ? (
         <div className="dashboard-tab-panel">
-          <PackagePurchasePanel
-            enterprise={enterprise}
-            mode={enterpriseMode}
-            selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
-            onSelectPlan={setSelectedPackageId}
-            onRefresh={() => load({ silent: true })}
-          />
+          {enterpriseMode === 'company_detail' ? (
+            <CompanyManagementPanel
+              clients={enterprise?.clients || []}
+              plans={enterprise?.plans || []}
+              onSaved={() => loadCompanyById(activeCompany?.id, { silent: true, keepTab: true })}
+            />
+          ) : (
+            <PackagePurchasePanel
+              enterprise={enterprise}
+              mode={enterpriseMode}
+              selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
+              onSelectPlan={setSelectedPackageId}
+              onRefresh={() => load({ silent: true })}
+            />
+          )}
           <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
         </div>
       ) : null}
@@ -2212,31 +3228,44 @@ export default function AdminView({ onView, onOpenRoom }) {
 
       {activeTab === 'rooms' ? (
         <div className="dashboard-tab-panel">
-          {isSuperAdmin ? (
-            <AdminList
-              admins={overview?.admins || []}
-              selectedAdminId={selectedAdminId}
-              onSelect={loadAdmin}
-              onPlatform={() => {
-                setSelectedDetail(null)
-                setSelectedAdminId(null)
-                setStatus('Showing all admin data')
-              }}
+          {enterpriseMode === 'super_admin' ? (
+            <CompanyDirectoryPanel
+              clients={enterprise?.clients || []}
+              selectedCompanyId={selectedCompanyId}
+              loadingCompanyId={loadingCompanyId}
+              onSelectCompany={loadCompany}
             />
           ) : null}
-          <RoomManagementPanel
-            rooms={rooms}
-            clients={enterprise?.clients || []}
-            isSuperAdmin={isSuperAdmin}
-            onOpenRoom={onOpenRoom}
-            onRefresh={() => load({ silent: true })}
-          />
+          {enterpriseMode !== 'super_admin' ? (
+            <RoomManagementPanel
+              rooms={rooms}
+              clients={enterprise?.clients || []}
+              isSuperAdmin={isSuperAdmin}
+              onOpenRoom={onOpenRoom}
+              onRefresh={() => selectedCompanyDetail
+                ? loadCompanyById(activeCompany?.id, { silent: true, keepTab: true })
+                : load({ silent: true })}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === 'users' && enterpriseMode === 'company_detail' ? (
+        <div className="dashboard-tab-panel">
+          <CompanyUsersPanel users={companyUsers} />
         </div>
       ) : null}
 
       {activeTab === 'company' ? (
         <div className="dashboard-tab-panel">
           <CompanyProfilePanel enterprise={enterprise} />
+          {enterpriseMode === 'company_detail' ? (
+            <CompanyManagementPanel
+              clients={enterprise?.clients || []}
+              plans={enterprise?.plans || []}
+              onSaved={() => loadCompanyById(activeCompany?.id, { silent: true, keepTab: true })}
+            />
+          ) : null}
         </div>
       ) : null}
 

@@ -42,6 +42,10 @@ export function saveSession(token, user) {
   localStorage.setItem('rtc_user', JSON.stringify(user))
 }
 
+export function saveUser(user) {
+  localStorage.setItem('rtc_user', JSON.stringify(user))
+}
+
 export function clearSession() {
   localStorage.removeItem('rtc_access_token')
   localStorage.removeItem('rtc_user')
@@ -93,11 +97,21 @@ export async function login(email, password) {
   return data
 }
 
-export async function register(name, email, password) {
+export async function register({ name, gender, age, current_residence, birthday, email, password }) {
   return apiRequest('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify({ name, gender, age, current_residence, birthday, email, password }),
   })
+}
+
+export async function updateProfile(profile) {
+  const data = await apiRequest('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(profile),
+  })
+
+  saveUser(data.user)
+  return data
 }
 
 export async function verifyEmail(email, code) {

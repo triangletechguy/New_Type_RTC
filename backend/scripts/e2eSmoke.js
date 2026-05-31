@@ -101,7 +101,15 @@ async function setKnownVerificationCode(email, code = TEST_VERIFICATION_CODE) {
 async function registerAndLogin({ name, email, password }) {
   await request('/auth/register', {
     method: 'POST',
-    body: { name, email, password },
+    body: {
+      name,
+      gender: 'prefer_not_to_say',
+      age: 30,
+      current_residence: 'United States',
+      birthday: '1996-01-01',
+      email,
+      password,
+    },
   })
 
   try {

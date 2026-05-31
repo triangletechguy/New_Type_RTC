@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS tenants (
     industry VARCHAR(120) NULL,
     company_email VARCHAR(180) NULL,
     phone VARCHAR(60) NULL,
+    website_url VARCHAR(255) NULL,
+    app_url VARCHAR(255) NULL,
+    telegram_contact VARCHAR(120) NULL,
+    whatsapp_contact VARCHAR(120) NULL,
+    discord_contact VARCHAR(120) NULL,
     address VARCHAR(255) NULL,
     country VARCHAR(100) NULL,
     timezone VARCHAR(80) NULL,
@@ -73,13 +78,15 @@ CREATE TABLE IF NOT EXISTS client_apps (
     platform ENUM('web', 'ios', 'android', 'web_mobile', 'server') DEFAULT 'web_mobile',
     app_key VARCHAR(150) NOT NULL,
     api_key VARCHAR(180) NOT NULL,
+    api_key_hash CHAR(64) NULL,
     sdk_token VARCHAR(180) NOT NULL,
+    last_key_rotated_at TIMESTAMP NULL,
     allowed_origins JSON NULL,
     status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_client_app_key (app_key),
-    UNIQUE KEY unique_client_api_key (api_key),
+    UNIQUE KEY unique_client_api_key_hash (api_key_hash),
     INDEX idx_client_apps_tenant_id (tenant_id),
     CONSTRAINT fk_client_apps_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_client_apps_plan FOREIGN KEY (plan_id) REFERENCES service_plans(id) ON DELETE SET NULL
@@ -98,6 +105,61 @@ CREATE TABLE IF NOT EXISTS client_feature_flags (
     INDEX idx_client_feature_app_id (app_id),
     CONSTRAINT fk_client_feature_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_client_feature_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NULL,
+    name VARCHAR(150) NOT NULL,
+    target_url VARCHAR(500) NOT NULL,
+    secret_hash CHAR(64) NULL,
+    event_types JSON NULL,
+    status ENUM('active', 'inactive') DEFAULT 'active',
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_webhooks_tenant_id (tenant_id),
+    INDEX idx_webhooks_app_id (app_id),
+    CONSTRAINT fk_webhooks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_webhooks_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NULL,
+    event_type VARCHAR(120) NOT NULL,
+    payload_json JSON NULL,
+    status ENUM('pending', 'processing', 'delivered', 'failed') DEFAULT 'pending',
+    attempts INT DEFAULT 0,
+    last_attempt_at TIMESTAMP NULL,
+    delivered_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_webhook_events_tenant_id (tenant_id),
+    INDEX idx_webhook_events_app_id (app_id),
+    INDEX idx_webhook_events_status (status),
+    INDEX idx_webhook_events_event_type (event_type),
+    CONSTRAINT fk_webhook_events_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_webhook_events_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS usage_daily (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NULL,
+    usage_date DATE NOT NULL,
+    participant_minutes DECIMAL(14,2) DEFAULT 0.00,
+    room_minutes DECIMAL(14,2) DEFAULT 0.00,
+    session_count INT DEFAULT 0,
+    token_count INT DEFAULT 0,
+    peak_concurrency INT DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_usage_daily_scope (tenant_id, app_id, usage_date),
+    INDEX idx_usage_daily_tenant_date (tenant_id, usage_date),
+    CONSTRAINT fk_usage_daily_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_usage_daily_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS company_admin_invites (
@@ -125,6 +187,10 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(50) NULL,
     password_hash VARCHAR(255) NOT NULL,
     avatar_url VARCHAR(255) NULL,
+    gender VARCHAR(30) NULL,
+    age INT UNSIGNED NULL,
+    birthday DATE NULL,
+    current_residence VARCHAR(120) NULL,
     status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active',
     last_login_at TIMESTAMP NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -132,6 +198,29 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY unique_tenant_email (tenant_id, email),
     INDEX idx_users_tenant_id (tenant_id),
     CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS client_external_users (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    external_user_id VARCHAR(190) NOT NULL,
+    display_name VARCHAR(150) NOT NULL,
+    avatar_url VARCHAR(255) NULL,
+    email VARCHAR(180) NULL,
+    phone VARCHAR(60) NULL,
+    metadata_json JSON NULL,
+    status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
+    last_synced_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_client_external_user (app_id, external_user_id),
+    INDEX idx_client_external_tenant_id (tenant_id),
+    INDEX idx_client_external_user_id (user_id),
+    CONSTRAINT fk_client_external_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_client_external_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE,
+    CONSTRAINT fk_client_external_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS email_verification_codes (
@@ -190,6 +279,31 @@ CREATE TABLE IF NOT EXISTS company_plan_requests (
     CONSTRAINT fk_company_plan_requests_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS billing_invoices (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    plan_id BIGINT UNSIGNED NULL,
+    invoice_month DATE NOT NULL,
+    status ENUM('draft', 'issued', 'paid', 'overdue', 'void') DEFAULT 'draft',
+    participant_minutes DECIMAL(14,2) DEFAULT 0.00,
+    included_minutes DECIMAL(14,2) DEFAULT 0.00,
+    overage_minutes DECIMAL(14,2) DEFAULT 0.00,
+    subtotal_amount DECIMAL(12,2) DEFAULT 0.00,
+    total_amount DECIMAL(12,2) DEFAULT 0.00,
+    currency CHAR(3) DEFAULT 'USD',
+    metadata_json JSON NULL,
+    issued_at TIMESTAMP NULL,
+    due_at TIMESTAMP NULL,
+    paid_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_billing_invoice_month (tenant_id, invoice_month),
+    INDEX idx_billing_invoices_tenant_id (tenant_id),
+    INDEX idx_billing_invoices_status (status),
+    CONSTRAINT fk_billing_invoices_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_billing_invoices_plan FOREIGN KEY (plan_id) REFERENCES service_plans(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,
@@ -213,6 +327,33 @@ CREATE TABLE IF NOT EXISTS rooms (
     INDEX idx_rooms_owner_id (owner_id),
     CONSTRAINT fk_rooms_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_rooms_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS rtc_tokens (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    app_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    external_user_id VARCHAR(190) NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    role VARCHAR(40) NOT NULL,
+    permissions_json JSON NULL,
+    claims_json JSON NULL,
+    issued_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NULL,
+    revoked_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_rtc_token_hash (token_hash),
+    INDEX idx_rtc_tokens_tenant_id (tenant_id),
+    INDEX idx_rtc_tokens_app_id (app_id),
+    INDEX idx_rtc_tokens_room_id (room_id),
+    INDEX idx_rtc_tokens_external_user_id (external_user_id),
+    INDEX idx_rtc_tokens_expires_at (expires_at),
+    CONSTRAINT fk_rtc_tokens_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_tokens_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_tokens_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS room_roles (
@@ -249,7 +390,7 @@ CREATE TABLE IF NOT EXISTS rtc_sessions (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,
     room_id BIGINT UNSIGNED NOT NULL,
-    rtc_provider ENUM('native_webrtc') NOT NULL DEFAULT 'native_webrtc',
+    rtc_provider ENUM('native_webrtc', 'mediasoup', 'janus', 'livekit_style') NOT NULL DEFAULT 'native_webrtc',
     signaling_room VARCHAR(150) NOT NULL,
     session_type ENUM('audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live') NOT NULL,
     started_by BIGINT UNSIGNED NOT NULL,
@@ -348,6 +489,25 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     CONSTRAINT fk_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NULL,
+    actor_user_id BIGINT UNSIGNED NULL,
+    actor_type ENUM('user', 'client_api', 'system') DEFAULT 'system',
+    action VARCHAR(120) NOT NULL,
+    entity_type VARCHAR(80) NULL,
+    entity_id VARCHAR(80) NULL,
+    ip_address VARCHAR(64) NULL,
+    metadata_json JSON NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_logs_tenant_id (tenant_id),
+    INDEX idx_audit_logs_actor_user_id (actor_user_id),
+    INDEX idx_audit_logs_action (action),
+    INDEX idx_audit_logs_created_at (created_at),
+    CONSTRAINT fk_audit_logs_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL,
+    CONSTRAINT fk_audit_logs_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 INSERT INTO tenants (id, name, status, billing_rate_per_minute)
 VALUES (1, 'Accenture', 'active', 0.0080)
 ON DUPLICATE KEY UPDATE
@@ -410,17 +570,7 @@ VALUES
     'active'
 )
 ON DUPLICATE KEY UPDATE
-    name = VALUES(name),
-    description = VALUES(description),
-    monthly_base_price = VALUES(monthly_base_price),
-    minute_rate = VALUES(minute_rate),
-    monthly_minute_allowance = VALUES(monthly_minute_allowance),
-    max_room_admins = VALUES(max_room_admins),
-    max_rooms = VALUES(max_rooms),
-    max_apps = VALUES(max_apps),
-    included_features = VALUES(included_features),
-    status = VALUES(status),
-    updated_at = NOW();
+    code = VALUES(code);
 
 SET @growth_plan_id := (
     SELECT id
@@ -446,7 +596,9 @@ INSERT INTO client_apps (
     platform,
     app_key,
     api_key,
+    api_key_hash,
     sdk_token,
+    last_key_rotated_at,
     allowed_origins,
     status,
     created_at,
@@ -458,8 +610,10 @@ VALUES (
     'Accenture Production App',
     'web_mobile',
     'teo_live_accenture',
-    'teo_api_accenture_demo',
+    'teo_ap...demo',
+    '8ec7afdda66983158994e5be7748299f28adc7fd496cf66daa9c3ae0a97ad03f',
     'teo_token_accenture_demo',
+    NOW(),
     JSON_ARRAY('https://152-228-135-87.sslip.io', 'https://funint.site'),
     'active',
     NOW(),
@@ -471,7 +625,9 @@ ON DUPLICATE KEY UPDATE
     name = VALUES(name),
     platform = VALUES(platform),
     api_key = VALUES(api_key),
+    api_key_hash = VALUES(api_key_hash),
     sdk_token = VALUES(sdk_token),
+    last_key_rotated_at = VALUES(last_key_rotated_at),
     allowed_origins = VALUES(allowed_origins),
     status = VALUES(status),
     updated_at = NOW();

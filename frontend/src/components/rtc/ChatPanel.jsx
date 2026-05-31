@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { chatAssets } from '../../assets/rtc/catalog'
+import { avatarForIndex, chatAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
-import { formatChatTime, getInitials } from '../../utils/formatters'
+import { formatChatTime } from '../../utils/formatters'
 
 function chatSenderName(message, currentUser) {
   if (isOwnMessage(message, currentUser)) return 'You'
@@ -400,6 +400,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
+          const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
           const giftMessage = message.message_type === 'gift'
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
@@ -410,7 +411,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
-              <div className="chat-avatar">{getInitials(senderName)}</div>
+              <div className="chat-avatar image-avatar">
+                <img src={senderAvatar} alt={senderName} loading="lazy" />
+              </div>
               <div className={giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'}>
                 <div className="chat-meta">
                   <strong>{senderName}</strong>
@@ -490,24 +493,20 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       {deleteTarget ? (
         <div className="chat-delete-backdrop" onMouseDown={closeDeleteModal}>
           <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-delete-title" onMouseDown={(event) => event.stopPropagation()}>
-            <h3 id="chat-delete-title">Delete message?</h3>
-            <p>
-              {isOwnMessage(deleteTarget, user)
-                ? 'This will delete your message for everyone in the room.'
-                : `This will delete ${chatSenderName(deleteTarget, user)}'s message for everyone in the room.`}
-            </p>
-            <div className="chat-delete-preview">
-              <strong>{chatSenderName(deleteTarget, user)}</strong>
-              <span>{deleteTarget.message_body}</span>
-            </div>
+            <h3 id="chat-delete-title">Delete message</h3>
+            <p>Are you sure you want to delete this message?</p>
             <label className="chat-delete-option">
               <input type="checkbox" checked readOnly />
-              <span>Delete for everyone</span>
+              <span>
+                {isOwnMessage(deleteTarget, user)
+                  ? 'Also delete for everyone'
+                  : `Also delete for ${chatSenderName(deleteTarget, user)}`}
+              </span>
             </label>
             <footer>
-              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>Cancel</button>
+              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>CANCEL</button>
               <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>
-                {deletingMessageIds[deleteTarget.id] ? 'Deleting...' : 'Delete'}
+                {deletingMessageIds[deleteTarget.id] ? 'DELETING...' : 'DELETE'}
               </button>
             </footer>
           </section>

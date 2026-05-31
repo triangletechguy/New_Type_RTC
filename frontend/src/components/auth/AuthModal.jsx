@@ -17,6 +17,10 @@ function titleForMode(mode) {
 export function AuthModal({ open, initialMode = 'login', initialEmail = '', reason = '', onClose, onAuthenticated }) {
   const [mode, setMode] = useState(initialMode)
   const [name, setName] = useState('')
+  const [gender, setGender] = useState('')
+  const [age, setAge] = useState('')
+  const [currentResidence, setCurrentResidence] = useState('')
+  const [birthday, setBirthday] = useState('')
   const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
@@ -29,7 +33,13 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
   useEffect(() => {
     if (!open) return
     setMode(initialMode)
+    setName('')
+    setGender('')
+    setAge('')
+    setCurrentResidence('')
+    setBirthday('')
     setEmail(initialEmail || '')
+    setPassword('')
     setCode('')
     setFieldErrors({})
     setStatus(reason || (initialMode === 'register'
@@ -50,6 +60,10 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
 
   function updateField(field, value) {
     if (field === 'name') setName(value)
+    if (field === 'gender') setGender(value)
+    if (field === 'age') setAge(value.replace(/\D/g, '').slice(0, 3))
+    if (field === 'current_residence') setCurrentResidence(value)
+    if (field === 'birthday') setBirthday(value)
     if (field === 'email') setEmail(value)
     if (field === 'password') setPassword(value)
     if (field === 'code') setCode(value.replace(/\D/g, '').slice(0, 6))
@@ -92,7 +106,16 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
   }
 
   async function handleRegister() {
-    const nextErrors = validateAuthFields({ mode: 'register', name, email, password })
+    const nextErrors = validateAuthFields({
+      mode: 'register',
+      name,
+      gender,
+      age,
+      current_residence: currentResidence,
+      birthday,
+      email,
+      password,
+    })
     setFieldErrors(nextErrors)
     if (Object.keys(nextErrors).length) {
       setStatus('Please fix the highlighted signup details.')
@@ -103,13 +126,19 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     try {
       const normalizedEmail = normalizeEmail(email)
       setStatus('Creating account and sending code...')
-      const data = await registerApi(name.trim(), normalizedEmail, password)
+      const data = await registerApi({
+        name: name.trim(),
+        gender,
+        age: Number(age),
+        current_residence: currentResidence.trim(),
+        birthday,
+        email: normalizedEmail,
+        password,
+      })
       setEmail(data.email || normalizedEmail)
       switchMode('verify')
-      setCode(data.dev_verification_code || '')
-      setStatus(data.dev_verification_code
-        ? `${data.message} Local code: ${data.dev_verification_code}`
-        : data.message || 'Verification code sent. Check your email.')
+      setCode('')
+      setStatus(data.message || 'Verification code sent. Check your email inbox.')
     } catch (error) {
       setStatus(error.message)
     } finally {
@@ -151,10 +180,8 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     try {
       setStatus('Sending a new code...')
       const data = await resendVerification(normalizedEmail)
-      if (data.dev_verification_code) setCode(data.dev_verification_code)
-      setStatus(data.dev_verification_code
-        ? `${data.message} Local code: ${data.dev_verification_code}`
-        : data.message || 'A new verification code was sent.')
+      setCode('')
+      setStatus(data.message || 'A new verification code was sent. Check your email inbox.')
     } catch (error) {
       setStatus(error.message)
     } finally {
@@ -202,6 +229,47 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
               <label>Name</label>
               <input value={name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" aria-invalid={Boolean(fieldErrors.name)} />
               {fieldErrors.name && <small className="form-error">{fieldErrors.name}</small>}
+              <div className="auth-inline-fields">
+                <div>
+                  <label>Gender</label>
+                  <select value={gender} onChange={(event) => updateField('gender', event.target.value)} aria-invalid={Boolean(fieldErrors.gender)}>
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="non_binary">Non-binary</option>
+                    <option value="prefer_not_to_say">Prefer not to say</option>
+                  </select>
+                  {fieldErrors.gender && <small className="form-error">{fieldErrors.gender}</small>}
+                </div>
+                <div>
+                  <label>Age</label>
+                  <input type="text" value={age} onChange={(event) => updateField('age', event.target.value)} inputMode="numeric" aria-invalid={Boolean(fieldErrors.age)} />
+                  {fieldErrors.age && <small className="form-error">{fieldErrors.age}</small>}
+                </div>
+              </div>
+              <div className="auth-inline-fields residence-fields">
+                <div>
+                  <label>Current Residence</label>
+                  <input
+                    value={currentResidence}
+                    onChange={(event) => updateField('current_residence', event.target.value)}
+                    autoComplete="country-name"
+                    placeholder="Country"
+                    aria-invalid={Boolean(fieldErrors.current_residence)}
+                  />
+                  {fieldErrors.current_residence && <small className="form-error">{fieldErrors.current_residence}</small>}
+                </div>
+                <div>
+                  <label>Birthday</label>
+                  <input
+                    type="date"
+                    value={birthday}
+                    onChange={(event) => updateField('birthday', event.target.value)}
+                    aria-invalid={Boolean(fieldErrors.birthday)}
+                  />
+                  {fieldErrors.birthday && <small className="form-error">{fieldErrors.birthday}</small>}
+                </div>
+              </div>
             </>
           )}
 

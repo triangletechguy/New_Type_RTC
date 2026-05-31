@@ -3,6 +3,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 
 const bcrypt = require('bcryptjs')
+const crypto = require('crypto')
 const mysql = require('mysql2/promise')
 
 const tenantId = 1
@@ -28,6 +29,18 @@ function addMinutes(date, minutes) {
 
 function durationSeconds(startedAt, endedAt) {
   return Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+}
+
+function hashSecret(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex')
+}
+
+function maskSecret(value) {
+  const text = String(value || '')
+  if (!text) return ''
+  if (text.includes('...')) return text
+  if (text.length <= 8) return `${text.slice(0, 2)}...${text.slice(-2)}`
+  return `${text.slice(0, 6)}...${text.slice(-4)}`
 }
 
 function billableMinutes(seconds) {
@@ -292,35 +305,6 @@ async function ensureServicePlans(connection) {
     )
 
     if (existing) {
-      await connection.execute(
-        `
-        UPDATE service_plans
-        SET name = ?,
-            description = ?,
-            monthly_base_price = ?,
-            minute_rate = ?,
-            monthly_minute_allowance = ?,
-            max_room_admins = ?,
-            max_rooms = ?,
-            max_apps = ?,
-            included_features = ?,
-            status = 'active',
-            updated_at = NOW()
-        WHERE id = ?
-        `,
-        [
-          plan.name,
-          plan.description,
-          plan.monthly_base_price,
-          plan.minute_rate,
-          plan.monthly_minute_allowance,
-          plan.max_room_admins,
-          plan.max_rooms,
-          plan.max_apps,
-          JSON.stringify(plan.included_features),
-          existing.id,
-        ]
-      )
       planIds[plan.code] = existing.id
       continue
     }
@@ -399,6 +383,7 @@ async function ensureClientApp(connection, planId) {
     platform: 'web_mobile',
     app_key: 'teo_live_accenture',
     api_key: 'teo_api_accenture_demo',
+    api_key_hash: hashSecret('teo_api_accenture_demo'),
     sdk_token: 'teo_token_accenture_demo',
     allowed_origins: ['https://152-228-135-87.sslip.io', 'https://funint.site'],
   }
@@ -422,7 +407,9 @@ async function ensureClientApp(connection, planId) {
           name = ?,
           platform = ?,
           api_key = ?,
+          api_key_hash = ?,
           sdk_token = ?,
+          last_key_rotated_at = COALESCE(last_key_rotated_at, NOW()),
           allowed_origins = ?,
           status = 'active',
           updated_at = NOW()
@@ -433,7 +420,8 @@ async function ensureClientApp(connection, planId) {
         planId,
         app.name,
         app.platform,
-        app.api_key,
+        maskSecret(app.api_key),
+        app.api_key_hash,
         app.sdk_token,
         JSON.stringify(app.allowed_origins),
         existing.id,
@@ -445,10 +433,10 @@ async function ensureClientApp(connection, planId) {
   const [result] = await connection.execute(
     `
     INSERT INTO client_apps (
-      tenant_id, plan_id, name, platform, app_key, api_key, sdk_token,
-      allowed_origins, status, created_at, updated_at
+      tenant_id, plan_id, name, platform, app_key, api_key, api_key_hash, sdk_token,
+      last_key_rotated_at, allowed_origins, status, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'active', NOW(), NOW())
     `,
     [
       tenantId,
@@ -456,7 +444,8 @@ async function ensureClientApp(connection, planId) {
       app.name,
       app.platform,
       app.app_key,
-      app.api_key,
+      maskSecret(app.api_key),
+      app.api_key_hash,
       app.sdk_token,
       JSON.stringify(app.allowed_origins),
     ]

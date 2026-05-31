@@ -9,6 +9,7 @@ const authRoutes = require('./routes/authRoutes')
 const roomRoutes = require('./routes/roomRoutes')
 const chatRoutes = require('./routes/chatRoutes')
 const adminRoutes = require('./routes/adminRoutes')
+const clientRoutes = require('./routes/clientRoutes')
 const { registerSignaling } = require('./sockets/signaling')
 
 const PORT = Number(process.env.PORT || 8000)
@@ -17,9 +18,21 @@ const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,h
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean)
+const isProduction = process.env.NODE_ENV === 'production'
+
+function isLocalDevOrigin(origin) {
+  if (isProduction) return false
+
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
 
 function corsOrigin(origin, callback) {
-  if (!origin || allowedOrigins.includes(origin)) {
+  if (!origin || allowedOrigins.includes(origin) || isLocalDevOrigin(origin)) {
     return callback(null, true)
   }
   return callback(new Error(`CORS blocked origin: ${origin}`), false)
@@ -142,6 +155,7 @@ app.get('/api/rtc/config', (req, res) => {
 })
 
 app.use('/api/auth', authRoutes)
+app.use('/api/client', clientRoutes)
 app.use('/api/rooms', roomRoutes)
 app.use('/api', chatRoutes)
 app.use('/api/admin', adminRoutes)

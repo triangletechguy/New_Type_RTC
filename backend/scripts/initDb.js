@@ -25,6 +25,22 @@ if (!fs.existsSync(schemaFile)) {
 
 const schema = fs.readFileSync(schemaFile, 'utf8')
 
+async function addColumnIfMissing(connection, tableName, columnName, alterSql) {
+  const [columns] = await connection.query(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = ?
+    AND COLUMN_NAME = ?
+    LIMIT 1
+    `,
+    [tableName, columnName]
+  )
+
+  if (!columns.length) await connection.query(alterSql)
+}
+
 async function initializeDatabase() {
   try {
     console.log(`📡 Connecting to database at ${DB_HOST}:${DB_PORT} as ${DB_USER}...`)
@@ -42,6 +58,11 @@ async function initializeDatabase() {
 
     // Execute the schema SQL file
     await connection.query(schema)
+    await addColumnIfMissing(connection, 'users', 'gender', 'ALTER TABLE users ADD COLUMN gender VARCHAR(30) NULL AFTER avatar_url')
+    await addColumnIfMissing(connection, 'users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
+    await addColumnIfMissing(connection, 'users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
+    await addColumnIfMissing(connection, 'users', 'current_residence', 'ALTER TABLE users ADD COLUMN current_residence VARCHAR(120) NULL AFTER birthday')
+    await connection.query("ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'")
     
     console.log('✅ Database initialized successfully')
     await connection.end()

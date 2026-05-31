@@ -3,6 +3,7 @@ const crypto = require('crypto')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, hasAnyRole, requireAnyRole } = require('../middleware/auth')
+const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 
 const router = express.Router()
 const ADMIN_ROLES = ['client_admin', 'super_admin']
@@ -11,6 +12,7 @@ const BILLING_TYPES = new Set(['monthly', 'prepaid', 'custom', 'enterprise'])
 const APP_PLATFORMS = new Set(['web', 'ios', 'android', 'web_mobile', 'server'])
 const APP_STATUSES = new Set(['active', 'inactive', 'suspended'])
 const PLAN_REVIEW_STATUSES = new Set(['approved', 'rejected'])
+const PLAN_STATUSES = new Set(['active', 'inactive'])
 const ADMIN_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
 const ADMIN_ROOM_PRIVACY = new Set(['public', 'private', 'password'])
 const ADMIN_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
@@ -181,8 +183,13 @@ function parseJsonArray(value) {
 function maskSecret(value) {
   const text = String(value || '')
   if (!text) return ''
+  if (text.includes('...')) return text
   if (text.length <= 8) return `${text.slice(0, 2)}...${text.slice(-2)}`
   return `${text.slice(0, 6)}...${text.slice(-4)}`
+}
+
+function hashSecret(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex')
 }
 
 function temporaryPassword() {
@@ -216,6 +223,11 @@ function normalizePlanReviewStatus(value) {
   return PLAN_REVIEW_STATUSES.has(status) ? status : ''
 }
 
+function normalizePlanStatus(value) {
+  const status = cleanString(value, 30).toLowerCase() || 'active'
+  return PLAN_STATUSES.has(status) ? status : 'active'
+}
+
 function normalizeAdminRoomStatus(value) {
   const status = cleanString(value, 30).toLowerCase() || 'active'
   return ADMIN_ROOM_STATUSES.has(status) ? status : 'active'
@@ -228,6 +240,12 @@ function userStatusForCompany(status) {
 function positiveInteger(value, fallback = 0) {
   const number = Number(value)
   return Number.isInteger(number) && number >= 0 ? number : fallback
+}
+
+function positiveDecimal(value, fallback = 0, decimals = 4) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) return fallback
+  return Number(number.toFixed(decimals))
 }
 
 function planDefaultLimits(plan = {}) {
@@ -304,7 +322,12 @@ async function ensureTenantCompanyColumns() {
         ['industry', 'ALTER TABLE tenants ADD COLUMN industry VARCHAR(120) NULL AFTER legal_name'],
         ['company_email', 'ALTER TABLE tenants ADD COLUMN company_email VARCHAR(180) NULL AFTER industry'],
         ['phone', 'ALTER TABLE tenants ADD COLUMN phone VARCHAR(60) NULL AFTER company_email'],
-        ['address', 'ALTER TABLE tenants ADD COLUMN address VARCHAR(255) NULL AFTER phone'],
+        ['website_url', 'ALTER TABLE tenants ADD COLUMN website_url VARCHAR(255) NULL AFTER phone'],
+        ['app_url', 'ALTER TABLE tenants ADD COLUMN app_url VARCHAR(255) NULL AFTER website_url'],
+        ['telegram_contact', 'ALTER TABLE tenants ADD COLUMN telegram_contact VARCHAR(120) NULL AFTER app_url'],
+        ['whatsapp_contact', 'ALTER TABLE tenants ADD COLUMN whatsapp_contact VARCHAR(120) NULL AFTER telegram_contact'],
+        ['discord_contact', 'ALTER TABLE tenants ADD COLUMN discord_contact VARCHAR(120) NULL AFTER whatsapp_contact'],
+        ['address', 'ALTER TABLE tenants ADD COLUMN address VARCHAR(255) NULL AFTER discord_contact'],
         ['country', 'ALTER TABLE tenants ADD COLUMN country VARCHAR(100) NULL AFTER address'],
         ['timezone', 'ALTER TABLE tenants ADD COLUMN timezone VARCHAR(80) NULL AFTER country'],
         ['primary_contact_name', 'ALTER TABLE tenants ADD COLUMN primary_contact_name VARCHAR(150) NULL AFTER timezone'],
@@ -340,6 +363,49 @@ async function ensureTenantCompanyColumns() {
       if (!servicePlanColumns.has('max_participants_per_room')) {
         await query('ALTER TABLE service_plans ADD COLUMN max_participants_per_room INT DEFAULT 0 AFTER max_apps')
       }
+
+      const appRows = await query(
+        `
+        SELECT COLUMN_NAME AS column_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'client_apps'
+        `
+      )
+      const appColumns = new Set(appRows.map((row) => row.column_name))
+      if (!appColumns.has('api_key_hash')) {
+        await query('ALTER TABLE client_apps ADD COLUMN api_key_hash CHAR(64) NULL AFTER api_key')
+      }
+      if (!appColumns.has('last_key_rotated_at')) {
+        await query('ALTER TABLE client_apps ADD COLUMN last_key_rotated_at TIMESTAMP NULL AFTER sdk_token')
+      }
+      const appIndexRows = await query(
+        `
+        SELECT INDEX_NAME AS index_name
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'client_apps'
+        AND INDEX_NAME = 'unique_client_api_key_hash'
+        LIMIT 1
+        `
+      )
+      if (!appIndexRows.length) {
+        await query('ALTER TABLE client_apps ADD UNIQUE KEY unique_client_api_key_hash (api_key_hash)')
+      }
+      const oldApiKeyIndexRows = await query(
+        `
+        SELECT INDEX_NAME AS index_name
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'client_apps'
+        AND INDEX_NAME = 'unique_client_api_key'
+        LIMIT 1
+        `
+      )
+      if (oldApiKeyIndexRows.length) {
+        await query('ALTER TABLE client_apps DROP INDEX unique_client_api_key')
+      }
+      await query("UPDATE client_apps SET api_key_hash = COALESCE(NULLIF(api_key_hash, ''), SHA2(api_key, 256)), api_key = CONCAT(LEFT(api_key, 6), '...', RIGHT(api_key, 4)) WHERE api_key NOT LIKE '%...%'")
 
       await query(
         `
@@ -403,18 +469,7 @@ async function ensureTenantCompanyColumns() {
             :maxParticipantsPerRoom, :includedFeatures, 'active', NOW(), NOW()
           )
           ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            description = VALUES(description),
-            monthly_base_price = VALUES(monthly_base_price),
-            minute_rate = VALUES(minute_rate),
-            monthly_minute_allowance = VALUES(monthly_minute_allowance),
-            max_room_admins = VALUES(max_room_admins),
-            max_rooms = VALUES(max_rooms),
-            max_apps = VALUES(max_apps),
-            max_participants_per_room = VALUES(max_participants_per_room),
-            included_features = VALUES(included_features),
-            status = 'active',
-            updated_at = NOW()
+            code = VALUES(code)
           `,
           {
             code: plan.code,
@@ -1017,15 +1072,16 @@ async function createClientAppForTenant(user, body = {}) {
 
     const appKey = await uniqueAppKey(connection, tenant)
     const apiKey = makeCredential('rtc_api')
+    const apiKeyHash = hashSecret(apiKey)
     const sdkToken = makeCredential('rtc_sdk')
     const appName = name || `${tenant.name} ${platform.replace(/_/g, ' ')} app`
     const [result] = await connection.execute(
       `
       INSERT INTO client_apps (
-        tenant_id, plan_id, name, platform, app_key, api_key,
-        sdk_token, allowed_origins, status, created_at, updated_at
+        tenant_id, plan_id, name, platform, app_key, api_key, api_key_hash,
+        sdk_token, last_key_rotated_at, allowed_origins, status, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'active', NOW(), NOW())
       `,
       [
         tenantId,
@@ -1033,7 +1089,8 @@ async function createClientAppForTenant(user, body = {}) {
         appName,
         platform,
         appKey,
-        apiKey,
+        maskSecret(apiKey),
+        apiKeyHash,
         sdkToken,
         allowedOrigins.length ? JSON.stringify(allowedOrigins) : null,
       ]
@@ -1062,10 +1119,15 @@ async function createClientAppForTenant(user, body = {}) {
       name: appName,
       platform,
       app_key: appKey,
-      api_key: apiKey,
-      sdk_token: sdkToken,
+      api_key_masked: maskSecret(apiKey),
+      sdk_token_masked: maskSecret(sdkToken),
       allowed_origins: allowedOrigins,
       status: 'active',
+      credentials: {
+        app_key: appKey,
+        api_key: apiKey,
+        sdk_token: sdkToken,
+      },
     }
   })
 }
@@ -1126,12 +1188,13 @@ async function createClientCompany(payload) {
       `
       INSERT INTO tenants (
         tenant_uid, name, company_slug, legal_name, industry, company_email,
-        phone, address, country, timezone, primary_contact_name, primary_contact_email,
+        phone, website_url, app_url, telegram_contact, whatsapp_contact, discord_contact,
+        address, country, timezone, primary_contact_name, primary_contact_email,
         billing_email, billing_type, status, billing_rate_per_minute,
         default_app_limit, default_room_limit, default_participant_limit,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `,
       [
         tenantUid,
@@ -1141,6 +1204,11 @@ async function createClientCompany(payload) {
         payload.industry,
         payload.companyEmail,
         payload.phone,
+        payload.websiteUrl,
+        payload.appUrl,
+        payload.telegramContact,
+        payload.whatsappContact,
+        payload.discordContact,
         payload.address,
         payload.country,
         payload.timezone,
@@ -1198,7 +1266,9 @@ async function getClientRows(tenantId = null) {
     `
     SELECT
       t.id, t.tenant_uid, t.name, t.company_slug, t.legal_name, t.industry,
-      t.company_email, t.phone, t.address, t.country, t.timezone,
+      t.company_email, t.phone, t.website_url, t.app_url,
+      t.telegram_contact, t.whatsapp_contact, t.discord_contact,
+      t.address, t.country, t.timezone,
       t.primary_contact_name, t.primary_contact_email,
       t.billing_email, t.billing_type, t.status, t.billing_rate_per_minute,
       t.default_app_limit, t.default_room_limit, t.default_participant_limit,
@@ -1293,6 +1363,11 @@ async function getClientRows(tenantId = null) {
       industry: client.industry,
       company_email: client.company_email,
       phone: client.phone,
+      website_url: client.website_url,
+      app_url: client.app_url,
+      telegram_contact: client.telegram_contact,
+      whatsapp_contact: client.whatsapp_contact,
+      discord_contact: client.discord_contact,
       address: client.address,
       country: client.country,
       timezone: client.timezone,
@@ -1631,6 +1706,51 @@ async function updateClientAppForTenant(user, appId, body = {}) {
       throw error
     }
 
+    if (status === 'active' && app.status !== 'active') {
+      const [limits] = await connection.execute(
+        `
+        SELECT
+          t.default_app_limit,
+          sp.name AS plan_name,
+          sp.max_apps
+        FROM tenants t
+        LEFT JOIN (
+          SELECT latest.tenant_id, latest.plan_id
+          FROM tenant_plan_assignments latest
+          INNER JOIN (
+            SELECT tenant_id, MAX(id) AS latest_id
+            FROM tenant_plan_assignments
+            WHERE status = 'active'
+            GROUP BY tenant_id
+          ) chosen ON chosen.latest_id = latest.id
+        ) active_plan ON active_plan.tenant_id = t.id
+        LEFT JOIN service_plans sp ON sp.id = active_plan.plan_id
+        WHERE t.id = ?
+        LIMIT 1
+        `,
+        [app.tenant_id]
+      )
+      const limit = limits[0]
+      const appLimit = positiveInteger(limit?.default_app_limit, positiveInteger(limit?.max_apps, 1))
+      const [counts] = await connection.execute(
+        `
+        SELECT COUNT(*) AS count
+        FROM client_apps
+        WHERE tenant_id = ?
+        AND id <> ?
+        AND status = 'active'
+        `,
+        [app.tenant_id, app.id]
+      )
+      const activeAppCount = Number(counts[0]?.count || 0)
+
+      if (appLimit > 0 && activeAppCount >= appLimit) {
+        const error = new Error(`${limit?.plan_name || 'Current package'} allows ${appLimit} active app${appLimit === 1 ? '' : 's'}. Upgrade the package or suspend another app first.`)
+        error.status = 422
+        throw error
+      }
+    }
+
     await connection.execute(
       `
       UPDATE client_apps
@@ -1651,6 +1771,99 @@ async function updateClientAppForTenant(user, appId, body = {}) {
     )
 
     return app.tenant_id
+  })
+}
+
+async function rotateClientAppCredentials(user, appId, body = {}) {
+  await ensureTenantCompanyColumns()
+
+  const scope = cleanString(readBodyValue(body, 'scope') || readBodyValue(body, 'credential'), 30).toLowerCase() || 'all'
+  const shouldRotateApiKey = ['all', 'both', 'api_key', 'api'].includes(scope)
+  const shouldRotateSdkToken = ['all', 'both', 'sdk_token', 'sdk'].includes(scope)
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+
+  if (!shouldRotateApiKey && !shouldRotateSdkToken) {
+    const error = new Error('Choose api_key, sdk_token, or all credentials to rotate.')
+    error.status = 422
+    throw error
+  }
+
+  return transaction(async (connection) => {
+    const [apps] = await connection.execute(
+      `
+      SELECT
+        ca.id, ca.tenant_id, ca.plan_id, ca.name, ca.platform, ca.app_key,
+        ca.api_key, ca.api_key_hash, ca.sdk_token, ca.allowed_origins, ca.status,
+        t.name AS tenant_name,
+        sp.name AS plan_name,
+        sp.code AS plan_code
+      FROM client_apps ca
+      INNER JOIN tenants t ON t.id = ca.tenant_id
+      LEFT JOIN service_plans sp ON sp.id = ca.plan_id
+      WHERE ca.id = ?
+      LIMIT 1
+      `,
+      [appId]
+    )
+    const app = apps[0]
+
+    if (!app) {
+      const error = new Error('Client app was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!isSuperAdmin && Number(app.tenant_id) !== Number(user.tenant_id)) {
+      const error = new Error('You can only manage apps for your company.')
+      error.status = 403
+      throw error
+    }
+
+    const apiKey = shouldRotateApiKey ? makeCredential('rtc_api') : app.api_key
+    const apiKeyHash = shouldRotateApiKey ? hashSecret(apiKey) : app.api_key_hash
+    const sdkToken = shouldRotateSdkToken ? makeCredential('rtc_sdk') : app.sdk_token
+
+    await connection.execute(
+      `
+      UPDATE client_apps
+      SET api_key = ?,
+          api_key_hash = ?,
+          sdk_token = ?,
+          last_key_rotated_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        shouldRotateApiKey ? maskSecret(apiKey) : app.api_key,
+        apiKeyHash,
+        sdkToken,
+        appId,
+      ]
+    )
+
+    return {
+      app: {
+        id: app.id,
+        tenant_id: app.tenant_id,
+        tenant_name: app.tenant_name,
+        plan_id: app.plan_id,
+        plan_name: app.plan_name,
+        plan_code: app.plan_code,
+        name: app.name,
+        platform: app.platform,
+        app_key: app.app_key,
+        api_key_masked: shouldRotateApiKey ? maskSecret(apiKey) : maskSecret(app.api_key),
+        sdk_token_masked: maskSecret(sdkToken),
+        allowed_origins: parseJsonArray(app.allowed_origins),
+        status: app.status,
+      },
+      credentials: {
+        app_key: app.app_key,
+        api_key: shouldRotateApiKey ? apiKey : null,
+        sdk_token: shouldRotateSdkToken ? sdkToken : null,
+      },
+      tenant_id: app.tenant_id,
+    }
   })
 }
 
@@ -1740,6 +1953,16 @@ async function createAdminRoom(user, payload) {
       error.status = 422
       throw error
     }
+
+    await assertTenantCanUseRoomConfig(connection, tenantId, {
+      room_type: payload.roomType,
+      privacy_type: payload.privacyType,
+      max_mic_count: payload.maxMicCount,
+      chat_enabled: payload.chatEnabled,
+      gift_enabled: payload.giftEnabled,
+      screen_share_enabled: payload.screenShareEnabled,
+      ai_security_enabled: payload.aiSecurityEnabled,
+    })
 
     const owner = await findRoomOwnerForTenant(
       connection,
@@ -1907,6 +2130,79 @@ async function getScopedRoomIds(adminId, tenantId = null) {
   )
 
   return rows.map((row) => Number(row.id))
+}
+
+async function getTenantRoomIds(tenantId) {
+  const rows = await query(
+    `
+    SELECT id
+    FROM rooms
+    WHERE tenant_id = :tenantId
+    ORDER BY updated_at DESC, id DESC
+    `,
+    { tenantId }
+  )
+
+  return rows.map((row) => Number(row.id))
+}
+
+async function getTenantUsers(tenantId) {
+  const rows = await query(
+    `
+    SELECT
+      u.id, u.tenant_id, u.name, u.email, u.phone, u.avatar_url, u.status,
+      u.last_login_at, u.created_at, u.updated_at,
+      GROUP_CONCAT(DISTINCT roles.name ORDER BY roles.name) AS roles,
+      COALESCE(activity.participant_records, 0) AS participant_records,
+      COALESCE(activity.active_rooms, 0) AS active_rooms,
+      COALESCE(activity.total_seconds, 0) AS total_seconds,
+      activity.last_joined_at
+    FROM users u
+    LEFT JOIN user_roles ur ON ur.user_id = u.id
+    LEFT JOIN roles ON roles.id = ur.role_id
+    LEFT JOIN (
+      SELECT
+        p.user_id,
+        COUNT(*) AS participant_records,
+        COALESCE(SUM(p.left_at IS NULL), 0) AS active_rooms,
+        COALESCE(SUM(p.duration_seconds), 0) AS total_seconds,
+        MAX(p.joined_at) AS last_joined_at
+      FROM rtc_session_participants p
+      INNER JOIN rooms r ON r.id = p.room_id
+      WHERE r.tenant_id = :tenantId
+      GROUP BY p.user_id
+    ) activity ON activity.user_id = u.id
+    WHERE u.tenant_id = :tenantId
+    GROUP BY
+      u.id, u.tenant_id, u.name, u.email, u.phone, u.avatar_url, u.status,
+      u.last_login_at, u.created_at, u.updated_at,
+      activity.participant_records, activity.active_rooms, activity.total_seconds, activity.last_joined_at
+    ORDER BY activity.active_rooms DESC, activity.last_joined_at DESC, u.created_at DESC, u.id DESC
+    LIMIT 200
+    `,
+    { tenantId }
+  )
+
+  return rows.map((user) => ({
+    id: user.id,
+    tenant_id: user.tenant_id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    avatar_url: user.avatar_url,
+    status: user.status,
+    roles: String(user.roles || '')
+      .split(',')
+      .map((role) => role.trim())
+      .filter(Boolean),
+    participant_records: Number(user.participant_records || 0),
+    active_rooms: Number(user.active_rooms || 0),
+    total_minutes: Number((Number(user.total_seconds || 0) / 60).toFixed(2)),
+    last_joined_at: user.last_joined_at,
+    last_login_at: user.last_login_at,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+  }))
 }
 
 async function getDashboard(roomIds) {
@@ -2820,6 +3116,11 @@ async function updateClientCompany(companyId, payload) {
           industry = ?,
           company_email = ?,
           phone = ?,
+          website_url = ?,
+          app_url = ?,
+          telegram_contact = ?,
+          whatsapp_contact = ?,
+          discord_contact = ?,
           address = ?,
           country = ?,
           timezone = ?,
@@ -2841,6 +3142,11 @@ async function updateClientCompany(companyId, payload) {
         payload.industry,
         payload.companyEmail,
         payload.phone,
+        payload.websiteUrl,
+        payload.appUrl,
+        payload.telegramContact,
+        payload.whatsappContact,
+        payload.discordContact,
         payload.address,
         payload.country,
         payload.timezone,
@@ -2961,6 +3267,8 @@ function parseCompanyPayload(body) {
   const primaryContactEmail = normalizeEmail(readBodyValue(body, 'primary_contact_email', 'primaryContactEmail'))
   const primaryContactName = cleanString(readBodyValue(body, 'primary_contact_name', 'primaryContactName'), 150)
   const primaryContactPassword = cleanString(readBodyValue(body, 'primary_contact_password', 'primaryContactPassword'), 120)
+  const websiteUrl = emptyToNull(readBodyValue(body, 'website_url', 'websiteUrl'), 255)
+  const appUrl = emptyToNull(readBodyValue(body, 'app_url', 'appUrl'), 255)
   const planId = Number(readBodyValue(body, 'plan_id', 'planId'))
   const status = normalizeCompanyStatus(readBodyValue(body, 'status'))
   const billingType = normalizeBillingType(readBodyValue(body, 'billing_type', 'billingType'))
@@ -2987,6 +3295,11 @@ function parseCompanyPayload(body) {
       legalName,
       companyEmail: companyEmail || null,
       phone: emptyToNull(readBodyValue(body, 'phone'), 60),
+      websiteUrl,
+      appUrl,
+      telegramContact: emptyToNull(readBodyValue(body, 'telegram_contact', 'telegramContact'), 120),
+      whatsappContact: emptyToNull(readBodyValue(body, 'whatsapp_contact', 'whatsappContact'), 120),
+      discordContact: emptyToNull(readBodyValue(body, 'discord_contact', 'discordContact'), 120),
       address: emptyToNull(readBodyValue(body, 'address'), 255),
       country: emptyToNull(readBodyValue(body, 'country'), 100),
       timezone: emptyToNull(readBodyValue(body, 'timezone'), 80),
@@ -3001,6 +3314,56 @@ function parseCompanyPayload(body) {
       primaryContactName,
       primaryContactEmail: primaryContactEmail || null,
       primaryContactPassword: primaryContactPassword || null,
+    },
+  }
+}
+
+function parseServicePlanPayload(body = {}) {
+  const name = cleanString(readBodyValue(body, 'name'), 150)
+  const description = emptyToNull(readBodyValue(body, 'description'), 1000)
+  const monthlyBasePrice = positiveDecimal(readBodyValue(body, 'monthly_base_price', 'monthlyBasePrice'), 0, 2)
+  const minuteRate = positiveDecimal(readBodyValue(body, 'minute_rate', 'minuteRate'), 0, 4)
+  const monthlyMinuteAllowance = positiveInteger(readBodyValue(body, 'monthly_minute_allowance', 'monthlyMinuteAllowance'), 0)
+  const maxRoomAdmins = positiveInteger(readBodyValue(body, 'max_room_admins', 'maxRoomAdmins'), 0)
+  const maxRooms = positiveInteger(readBodyValue(body, 'max_rooms', 'maxRooms'), 0)
+  const maxApps = positiveInteger(readBodyValue(body, 'max_apps', 'maxApps'), 1)
+  const maxParticipantsPerRoom = positiveInteger(readBodyValue(body, 'max_participants_per_room', 'maxParticipantsPerRoom'), 0)
+  const status = normalizePlanStatus(readBodyValue(body, 'status'))
+  const featureSource = readBodyValue(body, 'included_features', 'includedFeatures')
+  const requestedFeatures = Array.isArray(featureSource)
+    ? featureSource
+    : String(featureSource || '').split(/[\n,]+/g)
+  const validFeatureKeys = new Set(FEATURE_CATALOG.map((feature) => feature.key))
+  const featureKeys = [...new Set(
+    requestedFeatures
+      .map((feature) => cleanString(feature, 80))
+      .filter(Boolean)
+  )]
+  const invalidFeatures = featureKeys.filter((feature) => !validFeatureKeys.has(feature))
+  const errors = {}
+
+  if (!name) errors.name = 'Package name is required.'
+  if (name && name.length < 2) errors.name = 'Package name must be at least 2 characters.'
+  if (Number(readBodyValue(body, 'monthly_base_price', 'monthlyBasePrice')) < 0) errors.monthly_base_price = 'Base price cannot be negative.'
+  if (Number(readBodyValue(body, 'minute_rate', 'minuteRate')) < 0) errors.minute_rate = 'Minute rate cannot be negative.'
+  if (maxApps < 1) errors.max_apps = 'Package must allow at least one app.'
+  if (maxParticipantsPerRoom > 10000) errors.max_participants_per_room = 'Participant limit is too high.'
+  if (invalidFeatures.length) errors.included_features = `Unknown feature keys: ${invalidFeatures.join(', ')}`
+
+  return {
+    errors,
+    payload: {
+      name,
+      description,
+      monthlyBasePrice,
+      minuteRate,
+      monthlyMinuteAllowance,
+      maxRoomAdmins,
+      maxRooms,
+      maxApps,
+      maxParticipantsPerRoom,
+      includedFeatures: featureKeys.filter((feature) => validFeatureKeys.has(feature)),
+      status,
     },
   }
 }
@@ -3140,6 +3503,41 @@ router.get('/companies/:companyId', async (req, res, next) => {
   }
 })
 
+router.get('/companies/:companyId/detail', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can inspect client companies.' })
+    }
+
+    const companyId = Number(req.params.companyId)
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return res.status(400).json({ message: 'Invalid company id.' })
+    }
+
+    const [company] = await getClientRows(companyId)
+    if (!company) return res.status(404).json({ message: 'Company was not found.' })
+
+    const roomIds = await getTenantRoomIds(companyId)
+    const [payload, users] = await Promise.all([
+      buildScopePayload({
+        roomIds,
+        enterpriseScope: 'client_admin',
+        tenantId: companyId,
+      }),
+      getTenantUsers(companyId),
+    ])
+
+    return res.json({
+      scope: 'company_detail',
+      company,
+      users,
+      ...payload,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 router.patch('/companies/:companyId/status', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
@@ -3177,6 +3575,72 @@ router.get('/plan-requests', async (req, res, next) => {
   try {
     const tenantId = hasAnyRole(req.user, ['super_admin']) ? null : req.user.tenant_id
     return res.json({ plan_requests: await getPlanRequests(tenantId) })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.patch('/service-plans/:planId', async (req, res, next) => {
+  try {
+    if (!hasAnyRole(req.user, ['super_admin'])) {
+      return res.status(403).json({ message: 'Only the super admin can edit service packages.' })
+    }
+
+    await ensureTenantCompanyColumns()
+
+    const planId = Number(req.params.planId)
+    if (!Number.isInteger(planId) || planId <= 0) {
+      return res.status(400).json({ message: 'Invalid service package id.' })
+    }
+
+    const { errors, payload } = parseServicePlanPayload(req.body || {})
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Check service package fields.', errors })
+    }
+
+    const result = await query(
+      `
+      UPDATE service_plans
+      SET name = :name,
+          description = :description,
+          monthly_base_price = :monthlyBasePrice,
+          minute_rate = :minuteRate,
+          monthly_minute_allowance = :monthlyMinuteAllowance,
+          max_room_admins = :maxRoomAdmins,
+          max_rooms = :maxRooms,
+          max_apps = :maxApps,
+          max_participants_per_room = :maxParticipantsPerRoom,
+          included_features = :includedFeatures,
+          status = :status,
+          updated_at = NOW()
+      WHERE id = :planId
+      `,
+      {
+        planId,
+        name: payload.name,
+        description: payload.description,
+        monthlyBasePrice: payload.monthlyBasePrice,
+        minuteRate: payload.minuteRate,
+        monthlyMinuteAllowance: payload.monthlyMinuteAllowance,
+        maxRoomAdmins: payload.maxRoomAdmins,
+        maxRooms: payload.maxRooms,
+        maxApps: payload.maxApps,
+        maxParticipantsPerRoom: payload.maxParticipantsPerRoom,
+        includedFeatures: JSON.stringify(payload.includedFeatures),
+        status: payload.status,
+      }
+    )
+
+    if (!result.affectedRows) return res.status(404).json({ message: 'Service package was not found.' })
+
+    const plans = await getServicePlans()
+    const plan = plans.find((item) => Number(item.id) === Number(planId))
+
+    return res.json({
+      message: `${plan?.name || 'Service package'} updated.`,
+      plan,
+      plans,
+    })
   } catch (error) {
     return next(error)
   }
@@ -3228,15 +3692,33 @@ router.patch('/plan-requests/:requestId', async (req, res, next) => {
 router.post('/client-apps', async (req, res, next) => {
   try {
     const app = await createClientAppForTenant(req.user, req.body || {})
+    const { credentials, ...publicApp } = app
 
     return res.status(201).json({
       message: `${app.name} SDK access generated.`,
+      app: publicApp,
+      credentials,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.post('/client-apps/:appId/rotate-credentials', async (req, res, next) => {
+  try {
+    const appId = Number(req.params.appId)
+    if (!Number.isInteger(appId) || appId <= 0) {
+      return res.status(400).json({ message: 'Invalid client app id.' })
+    }
+
+    const result = await rotateClientAppCredentials(req.user, appId, req.body || {})
+    const apps = await getClientApps(result.tenant_id)
+    const app = apps.find((item) => Number(item.id) === Number(appId)) || result.app
+
+    return res.json({
+      message: `${app?.name || 'Client app'} credentials rotated. Update the client backend before using old keys again.`,
       app,
-      credentials: {
-        app_key: app.app_key,
-        api_key: app.api_key,
-        sdk_token: app.sdk_token,
-      },
+      credentials: result.credentials,
     })
   } catch (error) {
     return next(error)

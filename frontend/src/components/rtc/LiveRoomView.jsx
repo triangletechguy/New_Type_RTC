@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { avatarForIndex, coverForRoomType } from '../../assets/rtc/catalog'
+import { avatarForIndex, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -12,30 +12,37 @@ import {
   normalizeRtcMode,
   peerMediaFromSignal,
   peerMediaMapFromUsers,
-  roomSupportsVideo,
-  rtcConnectSteps,
-  rtcModeOptions,
-  stageLayoutOptions,
 } from '../../utils/roomConfig'
 import { ChatPanel } from './ChatPanel'
 import { OwnerControlsPanel } from './OwnerControlsPanel'
-import { RtcConnectionIndicator } from './RtcConnectionIndicator'
 import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
 const giftCatalog = [
   { id: 'rose', label: 'Rose', cost: 9 },
   { id: 'lipstick', label: 'Lipstick', cost: 99 },
+  { id: 'love-overflow', label: 'Love Overflow', cost: 399 },
   { id: 'melody', label: 'Sweet Melody', cost: 399 },
+  { id: 'expression', label: 'Expression', cost: 1 },
   { id: 'candy', label: 'Candy World', cost: 1000 },
+  { id: 'sweet-date', label: 'Sweet Date', cost: 5999 },
+  { id: 'paw-ice-cream', label: 'Paw Ice Cream', cost: 1 },
   { id: 'star', label: 'Star', cost: 5 },
-  { id: 'spark', label: 'Sparklers', cost: 99 },
+  { id: 'spark', label: 'Sparklers', cost: 9 },
+  { id: 'cola', label: 'Cola', cost: 99 },
   { id: 'racer', label: 'Racing Car', cost: 599 },
   { id: 'spray', label: 'Spray', cost: 1 },
 ]
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
-export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack }) {
+function compactNumber(value) {
+  const number = Number(value || 0)
+  if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
+  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`
+  return String(number)
+}
+
+export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack, onProfile }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
   const [joined, setJoined] = useState(false)
@@ -58,7 +65,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [cameraOn, setCameraOn] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom) === 'video')
   const [roomPasswordInput, setRoomPasswordInput] = useState(roomPassword)
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false)
-  const [stageLayout, setStageLayout] = useState('grid')
   const [rtcConfigState, setRtcConfigState] = useState(null)
   const [joinEffect, setJoinEffect] = useState(null)
   const [activeToolPanel, setActiveToolPanel] = useState(null)
@@ -106,25 +112,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       }
     })
   }, [peerMediaStates, peerStates, remoteStreams])
-  const remoteStreamCount = Object.keys(remoteStreams).length
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
-  const stageSeatCount = Math.min(16, Math.max(1, Number(room?.max_mic_count || 8)))
-  const liveRoomSupportsVideo = !room || roomSupportsVideo(room.room_type)
   const roomVisualIndex = Number(room?.id || roomId || 0)
   const roomAvatar = avatarForIndex(roomVisualIndex)
   const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
-
-  function setAndStoreMediaMode(value) {
-    setMediaMode(value)
-    localStorage.setItem('media_mode', value)
-  }
-
-  function updateRtcMode(value) {
-    const nextMode = normalizeRtcMode(value, room)
-    setRtcMode(nextMode)
-    if (nextMode === 'audio') setCameraOn(false)
-    if (nextMode === 'video' && !joined) setCameraOn(true)
-  }
+  const isRoomOwner = Number(room?.owner_id || initialRoom?.owner_id) === Number(user?.id)
 
   function resetRtcState({ clearState = true } = {}) {
     if (socketRef.current) {
@@ -999,6 +991,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
     window.clearTimeout(giftToastTimerRef.current)
+    if (activeRoomIdRef.current) {
+      const roomToLeave = activeRoomIdRef.current
+      activeRoomIdRef.current = null
+      apiRequest(`/rooms/${roomToLeave}/leave`, { method: 'POST', body: JSON.stringify({}) }).catch(() => {})
+    }
     resetRtcState({ clearState: false })
   }, [])
 
@@ -1029,79 +1026,63 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     })
     .filter(Boolean)
     .slice(-5)
+  const viewerCount = Math.max(Number(room?.active_participants || 0), remotePeerCount, joined ? 1 : 0)
+  const roomTitle = room?.name || `Room #${roomId}`
+  const hostName = room?.owner_name || user?.name || 'Room host'
+  const roomCountry = user?.current_residence || 'Australia'
 
   return (
-    <div className="live-page">
-      <header className="live-header glass-card">
-        <div className="room-identity">
-          <div className="room-avatar large image-avatar">
-            <img src={roomAvatar} alt="" />
+    <div className="buzzcast-shell buzzcast-live-shell">
+      <header className="buzzcast-topbar buzzcast-live-topbar">
+        <button type="button" className="buzzcast-logo buzzcast-live-logo" onClick={handleBack} aria-label="Back to rooms">
+          <div className="buzzcast-logo-mark image-mark">
+            <img src={brandAssets.appIcon} alt="TalkEachOther" />
           </div>
           <div>
-            <div className="live-badge"><span></span> Live RTC</div>
-            <h1>{room?.name || `Room #${roomId}`}</h1>
-            <p>{session?.signaling_room || 'Not connected'} - {room?.room_type || 'video'}</p>
+            <strong>TalkEachOther</strong>
+            <span>Video and music rooms</span>
           </div>
+        </button>
+        <div className="buzzcast-search-wrap buzzcast-live-search">
+          <input value={roomTitle} readOnly aria-label="Current room" />
+          <button type="button" onClick={openChatTool} aria-label="Focus chat">
+            <span className="buzzcast-search-icon" aria-hidden="true"></span>
+          </button>
         </div>
-        <div className="header-actions">
-          <div className="mode-selector compact" aria-label="RTC mode">
-            {rtcModeOptions.map((option) => {
-              const disabled = joined || joining || (option.value === 'video' && !liveRoomSupportsVideo)
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={rtcMode === option.value ? 'mode-option active' : 'mode-option'}
-                  onClick={() => updateRtcMode(option.value)}
-                  disabled={disabled}
-                >
-                  <strong>{option.label}</strong>
-                </button>
-              )
-            })}
-          </div>
-          <select value={mediaMode} onChange={(event) => setAndStoreMediaMode(event.target.value)} disabled={joined || joining}>
-            <option value="real">Real camera/mic</option>
-            <option value="auto">Auto fallback</option>
-            <option value="mock">Mock media</option>
-          </select>
-          <button onClick={handleBack} disabled={joining}>Back</button>
+        <div className="buzzcast-actions">
+          <button type="button" className="buzzcast-icon-button" onClick={toggleScreenShare} disabled={joining || mediaUpdating.screen} aria-label={screenSharing ? 'Stop screen share' : 'Screen share'} title={screenSharing ? 'Stop screen share' : 'Screen share'}>
+            <span className="control-glyph screen" aria-hidden="true"></span>
+          </button>
+          <button type="button" className="buzzcast-icon-button" onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
+            <span className="control-glyph guard" aria-hidden="true"></span>
+          </button>
+          <button type="button" className="buzzcast-icon-button accent" onClick={() => toggleToolPanel('gifts')} aria-label="Gifts" title="Gifts">+</button>
+          <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
+            <span className="image-avatar"><img src={avatarForIndex(user?.id || 0)} alt="" /></span>
+          </button>
         </div>
       </header>
 
-      <div className="status-bar glass-card"><strong>Status:</strong> {status}</div>
-      <div className={rtcConfigState?.turnConfigured ? 'status-bar glass-card turn-status ready' : 'status-bar glass-card turn-status'}>
-        <strong>TURN:</strong> {rtcConfigState
-          ? rtcConfigState.turnConfigured
-            ? `enabled (${rtcConfigState.iceTransportPolicy || 'all'} mode)`
-            : 'not configured on backend'
-          : 'not loaded yet'}
-      </div>
+      <aside className="buzzcast-left-rail buzzcast-live-rail">
+        <button type="button" className="active" onClick={handleBack}>
+          <span className="buzzcast-rail-icon rail-live" aria-hidden="true"></span>
+          <b>Live</b>
+        </button>
+        <button type="button" onClick={onProfile}>
+          <span className="buzzcast-rail-icon rail-me" aria-hidden="true"></span>
+          <b>Me</b>
+        </button>
+        <div className="buzzcast-rail-spacer"></div>
+        <button type="button" onClick={handleBack}>
+          <span className="buzzcast-rail-icon rail-help" aria-hidden="true"></span>
+          <b>Back</b>
+        </button>
+      </aside>
 
-      <RtcConnectionIndicator
-        steps={rtcConnectSteps}
-        connectStep={connectStep}
-        joined={joined}
-        joining={joining}
-        connectAttempted={connectAttempted}
-        session={session}
-        localStream={localStream}
-        mediaState={mediaState}
-        signalingState={signalingState}
-        signalingPeerCount={signalingPeerCount}
-        peerStates={peerStates}
-        remoteStreams={remoteStreams}
-        rtcMode={rtcMode}
-        mediaMode={mediaMode}
-        micOn={micOn}
-        cameraOn={cameraOn}
-        connectionIssue={connectionIssue}
-      />
-
-      <main className="live-layout">
-        <section className="stage glass-card">
-          <img className="stage-background-art" src={roomCover} alt="" />
+      <main className="buzzcast-live-main">
+        <section className="buzzcast-live-stage-panel">
+          <div className="buzzcast-stage buzzcast-rtc-stage">
+            <img className="buzzcast-stage-image" src={roomCover} alt="" />
           {joinEffect && (
             <div className="join-effect" key={joinEffect.key}>
               <span></span>
@@ -1114,195 +1095,169 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{user?.name || 'You'} sent {giftToast.label}</strong>
             </div>
           )}
-          <div className="stage-toolbar">
-            <div>
-              <span>{rtcMode === 'audio' ? 'Music room audio stage' : 'Live video stage'}</span>
-              <small>{remoteStreamCount} stream(s) - {remotePeerCount} remote peer(s)</small>
+
+            <div className="buzzcast-host-pill">
+              <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
+              <strong>{hostName}</strong>
+              <small>{compactNumber(viewerCount)}</small>
             </div>
-            <div className="stage-layout-controls" role="group" aria-label="Stage layout">
-              {stageLayoutOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={stageLayout === option.value ? 'stage-layout-button active' : 'stage-layout-button'}
-                  onClick={() => setStageLayout(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
+
+            <div className="buzzcast-room-metadata">
+              <span>ID:{room?.id || roomId}</span>
+              <strong>{roomTitle}</strong>
+              <small>{roomCountry}</small>
             </div>
-          </div>
-          <div className={`video-grid layout-${stageLayout}`}>
-            <VideoTile
-              stream={localStream}
-              muted
-              label={user?.name || 'Local User'}
-              badge={screenSharing ? 'screen' : mediaMode}
-              micOn={micOn}
-              cameraOn={cameraOn}
-              rtcMode={rtcMode}
-              showMediaState
-            />
-            {remoteTiles.length === 0 ? (
-              <VideoTile label="Waiting for remote users" />
-            ) : remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
-              return (
-                <VideoTile
-                  key={socketId}
-                  stream={stream}
-                  label={label}
-                  badge={badge}
-                  micOn={mediaState.micOn !== false}
-                  cameraOn={mediaState.cameraOn !== false}
-                  rtcMode={mediaState.rtcMode || 'video'}
-                  connectionState={peerState}
-                  showMediaState
-                />
-              )
-            })}
-          </div>
 
-          <div className="mic-seat-row">
-            {Array.from({ length: stageSeatCount }).map((_, index) => (
-              <div className="mic-seat" key={index}>
-                <div>{index + 1}</div><span>Seat {index + 1}</span>
-              </div>
-            ))}
-          </div>
+            <div className="buzzcast-join-ribbon">{Math.max(1, viewerCount || 21)} joined</div>
 
-            {showPasswordRecovery && (
-            <div className="join-recovery">
-              <div>
-                <strong>Room password required</strong>
-                <span>Enter the password and retry the RTC workflow.</span>
-              </div>
-              <input
-                type="password"
-                value={roomPasswordInput}
-                onChange={(event) => setRoomPasswordInput(event.target.value)}
-                placeholder="Room password"
-                autoComplete="current-password"
-              />
+            <div className="buzzcast-room-status" aria-live="polite">
+              <span className={joined ? 'online' : joining ? 'connecting' : ''}></span>
+              {joined ? 'Live' : joining ? 'Connecting' : connectAttempted ? 'Ready to rejoin' : 'Ready'}
+              {status ? <small>{status}</small> : null}
             </div>
-          )}
 
-          {activeToolPanel && (
-            <div className="live-tool-panel">
-              <header>
-                <strong>
-                  {activeToolPanel === 'gifts' ? 'Gifts'
-                    : activeToolPanel === 'screen' ? 'Screen share'
-                      : 'AI guard'}
-                </strong>
-                <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
-              </header>
-
-              {activeToolPanel === 'gifts' ? (
-                <div className="live-gift-grid">
-                  {giftCatalog.map((gift) => (
-                    <button
-                      key={gift.id}
-                      type="button"
-                      onClick={() => sendGift(gift)}
-                      disabled={sendingGiftId === gift.id}
-                    >
-                      <strong>{gift.label}</strong>
-                      <span>{gift.cost}</span>
-                    </button>
+            <div className="buzzcast-live-stage-streams">
+              {localStream || remoteTiles.length ? (
+                <>
+                  <VideoTile
+                    stream={localStream}
+                    muted
+                    label={user?.name || 'You'}
+                    badge={screenSharing ? 'screen' : mediaMode}
+                    micOn={micOn}
+                    cameraOn={cameraOn}
+                    rtcMode={rtcMode}
+                    showMediaState
+                  />
+                  {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => (
+                    <VideoTile
+                      key={socketId}
+                      stream={stream}
+                      label={label}
+                      badge={badge}
+                      micOn={mediaState.micOn !== false}
+                      cameraOn={mediaState.cameraOn !== false}
+                      rtcMode={mediaState.rtcMode || 'video'}
+                      connectionState={peerState}
+                      showMediaState
+                    />
                   ))}
-                </div>
-              ) : activeToolPanel === 'screen' ? (
-                <div className="tool-status-panel">
-                  <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
-                  <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
-                    {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
-                  </button>
-                  <small>{room?.screen_share_enabled === false ? 'Owner controls have Screen share turned off.' : 'Presenter tools are available for this room.'}</small>
-                </div>
+                </>
               ) : (
-                <div className="tool-status-panel ai-guard-panel">
-                  <p>Be polite and respectful. The guard watches current room text for risky phrases and keeps moderation visible for owners.</p>
-                  <div className="guard-summary">
-                    <span>{room?.ai_security_enabled ? 'Active' : 'Off'}</span>
-                    <strong>{guardFindings.length}</strong>
-                    <small>flagged message{guardFindings.length === 1 ? '' : 's'}</small>
-                  </div>
-                  {guardFindings.length ? (
-                    <div className="guard-findings">
-                      {guardFindings.map(({ message, matchedKeyword }) => (
-                        <span key={message.id}>{matchedKeyword}: {message.message_body}</span>
-                      ))}
-                    </div>
-                  ) : <small>No flagged chat messages in the visible room log.</small>}
+                <div className="buzzcast-waiting-card">
+                  <img src={roomAvatar} alt="" />
+                  <strong>{roomTitle}</strong>
+                  <span>Press Connect RTC to start</span>
                 </div>
               )}
             </div>
-          )}
 
-          <div className="rtc-controls">
-            {!joined ? (
-              <button className="primary-button" onClick={joinRoom} disabled={joining}>
-                {joining ? 'Connecting RTC...' : connectAttempted ? 'Retry RTC' : 'Connect RTC'}
+            {showPasswordRecovery && (
+              <div className="buzzcast-password-popover">
+                <strong>Room password required</strong>
+                <input
+                  type="password"
+                  value={roomPasswordInput}
+                  onChange={(event) => setRoomPasswordInput(event.target.value)}
+                  placeholder="Room password"
+                  autoComplete="current-password"
+                />
+              </div>
+            )}
+
+            {activeToolPanel && activeToolPanel !== 'gifts' ? (
+              <div className="live-tool-panel buzzcast-floating-tool">
+                <header>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : 'AI guard'}</strong>
+                  <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
+                </header>
+                {activeToolPanel === 'screen' ? (
+                  <div className="tool-status-panel">
+                    <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
+                    <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
+                      {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
+                    </button>
+                    <small>{room?.screen_share_enabled === false ? 'Owner controls have Screen share turned off.' : 'Presenter tools are available for this room.'}</small>
+                  </div>
+                ) : (
+                  <div className="tool-status-panel ai-guard-panel">
+                    <p>Be polite and respectful. AI guard watches the current room text for risky phrases.</p>
+                    <div className="guard-summary">
+                      <span>{room?.ai_security_enabled ? 'Active' : 'Off'}</span>
+                      <strong>{guardFindings.length}</strong>
+                      <small>flagged message{guardFindings.length === 1 ? '' : 's'}</small>
+                    </div>
+                    {guardFindings.length ? (
+                      <div className="guard-findings">
+                        {guardFindings.map(({ message, matchedKeyword }) => (
+                          <span key={message.id}>{matchedKeyword}: {message.message_body}</span>
+                        ))}
+                      </div>
+                    ) : <small>No flagged chat messages in the visible room log.</small>}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div className="buzzcast-room-controls">
+              {!joined ? (
+                <button className="primary-button buzzcast-connect-button" onClick={joinRoom} disabled={joining}>
+                  {joining ? 'Connecting...' : connectAttempted ? 'Rejoin' : 'Connect RTC'}
+                </button>
+              ) : <button className="danger-button buzzcast-connect-button" onClick={leaveRoom}>Leave</button>}
+              <button
+                className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+                onClick={toggleMic}
+                disabled={micButtonDisabled}
+                aria-label={micButtonTitle}
+                aria-pressed={micOn}
+                title={micButtonTitle}
+              >
+                <span className="control-glyph mic"></span>
               </button>
-            ) : <button className="danger-button" onClick={leaveRoom}>Leave Room</button>}
-            <button
-              className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
-              onClick={toggleMic}
-              disabled={micButtonDisabled}
-              aria-label={micButtonTitle}
-              aria-pressed={micOn}
-              title={micButtonTitle}
-            >
-              <span className="control-glyph mic"></span>
-            </button>
-            <button
-              className={cameraOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
-              onClick={toggleCamera}
-              disabled={cameraButtonDisabled}
-              aria-label={cameraButtonTitle}
-              aria-pressed={cameraOn}
-              title={cameraButtonTitle}
-            >
-              <span className="control-glyph camera"></span>
-            </button>
-            <button
-              className="media-control-button icon-only utility"
-              onClick={() => toggleToolPanel('chat')}
-              aria-label="Open chat"
-              title="Open chat"
-            >
-              <span className="control-glyph chat"></span>
-            </button>
-            <button
-              className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
-              onClick={toggleScreenShare}
-              disabled={joining || mediaUpdating.screen}
-              aria-label={screenSharing ? 'Stop screen share' : 'Screen share'}
-              aria-pressed={screenSharing}
-              title={screenSharing ? 'Stop screen share' : 'Screen share'}
-            >
-              <span className="control-glyph screen"></span>
-            </button>
-            <button
-              className={activeToolPanel === 'gifts' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
-              onClick={() => toggleToolPanel('gifts')}
-              aria-label="Gifts"
-              title="Gifts"
-            >
-              <span className="control-glyph gift"></span>
-            </button>
-            <button
-              className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
-              onClick={() => toggleToolPanel('guard')}
-              aria-label="AI guard"
-              title="AI guard"
-            >
-              <span className="control-glyph guard"></span>
-            </button>
+              <button
+                className={cameraOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+                onClick={toggleCamera}
+                disabled={cameraButtonDisabled}
+                aria-label={cameraButtonTitle}
+                aria-pressed={cameraOn}
+                title={cameraButtonTitle}
+              >
+                <span className="control-glyph camera"></span>
+              </button>
+              <button className="media-control-button icon-only utility" onClick={openChatTool} aria-label="Open chat" title="Open chat">
+                <span className="control-glyph chat"></span>
+              </button>
+              <button
+                className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+                onClick={toggleScreenShare}
+                disabled={joining || mediaUpdating.screen}
+                aria-label={screenSharing ? 'Stop screen share' : 'Screen share'}
+                aria-pressed={screenSharing}
+                title={screenSharing ? 'Stop screen share' : 'Screen share'}
+              >
+                <span className="control-glyph screen"></span>
+              </button>
+              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
+                <span className="control-glyph guard"></span>
+              </button>
+            </div>
+
+            <div className="buzzcast-gift-bar buzzcast-live-gift-bar">
+              {giftCatalog.slice(0, 11).map((gift) => (
+                <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id}>
+                  <span>{gift.label}</span>
+                  <small>{gift.cost}</small>
+                </button>
+              ))}
+              <button type="button" onClick={() => toggleToolPanel('gifts')}>More</button>
+              <button type="button" onClick={() => toggleToolPanel('gifts')}>0</button>
+            </div>
           </div>
         </section>
 
-        <div className="side-column">
+        <aside className="buzzcast-live-side">
+          <p className="buzzcast-guideline">Be polite and respectful. Any vulgar, violent, or private transaction behavior is strictly prohibited in TalkEachOther. Please speak in a civilized manner.</p>
           <ChatPanel
             roomId={roomId}
             signalingRoom={signalingRoomRef.current}
@@ -1313,16 +1268,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             externalMessage={externalChatMessage}
             onMessagesChange={setChatMessages}
           />
-          <OwnerControlsPanel
-            roomId={roomId}
-            room={room}
-            user={user}
-            joined={joined}
-            signalingRoom={signalingRoomRef.current}
-            socket={socketRef.current}
-            onRoomUpdate={setRoom}
-          />
-        </div>
+          {isRoomOwner ? (
+            <details className="buzzcast-owner-panel">
+              <summary>Owner controls</summary>
+              <OwnerControlsPanel
+                roomId={roomId}
+                room={room}
+                user={user}
+                joined={joined}
+                signalingRoom={signalingRoomRef.current}
+                socket={socketRef.current}
+                onRoomUpdate={setRoom}
+              />
+            </details>
+          ) : null}
+        </aside>
       </main>
     </div>
   )

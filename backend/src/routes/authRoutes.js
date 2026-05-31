@@ -10,6 +10,7 @@ const { authMiddleware } = require('../middleware/auth')
 const router = express.Router()
 const VERIFICATION_CODE_TTL_MINUTES = 15
 const MAX_VERIFICATION_ATTEMPTS = 5
+const validGenderValues = new Set(['male', 'female', 'non_binary', 'prefer_not_to_say'])
 let authSchemaPromise = null
 
 function normalizeEmail(value) {
@@ -31,6 +32,48 @@ function validateStrongPassword(value) {
     && /[^A-Za-z0-9]/.test(password)
 }
 
+function normalizeGender(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function normalizeAge(value) {
+  const age = Number(value)
+  return Number.isInteger(age) ? age : null
+}
+
+function normalizeDate(value) {
+  const date = String(value || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return ''
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) return ''
+  if (parsed.toISOString().slice(0, 10) !== date) return ''
+  return date
+}
+
+function normalizeResidence(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120)
+}
+
+function ageFromBirthday(value) {
+  const birthday = normalizeDate(value)
+  if (!birthday) return null
+
+  const date = new Date(`${birthday}T00:00:00.000Z`)
+  const today = new Date()
+  let age = today.getUTCFullYear() - date.getUTCFullYear()
+  const monthDiff = today.getUTCMonth() - date.getUTCMonth()
+  const dayDiff = today.getUTCDate() - date.getUTCDate()
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1
+  return age
+}
+
+function formatDateOnly(value) {
+  if (!value) return null
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10)
+  const text = String(value)
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text
+}
+
 function createHttpError(status, message) {
   const error = new Error(message)
   error.status = status
@@ -40,6 +83,11 @@ function createHttpError(status, message) {
 async function ensureAuthSchema() {
   if (!authSchemaPromise) {
     authSchemaPromise = (async () => {
+      await addColumnIfMissing('users', 'gender', 'ALTER TABLE users ADD COLUMN gender VARCHAR(30) NULL AFTER avatar_url')
+      await addColumnIfMissing('users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
+      await addColumnIfMissing('users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
+      await addColumnIfMissing('users', 'current_residence', 'ALTER TABLE users ADD COLUMN current_residence VARCHAR(120) NULL AFTER birthday')
+
       await query(
         "ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'"
       )
@@ -69,6 +117,22 @@ async function ensureAuthSchema() {
   }
 
   return authSchemaPromise
+}
+
+async function addColumnIfMissing(tableName, columnName, alterSql) {
+  const columns = await query(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = :tableName
+    AND COLUMN_NAME = :columnName
+    LIMIT 1
+    `,
+    { tableName, columnName }
+  )
+
+  if (!columns.length) await query(alterSql)
 }
 
 function generateVerificationCode() {
@@ -171,6 +235,10 @@ function formatUser(user, roles = []) {
     email: user.email,
     phone: user.phone,
     avatar_url: user.avatar_url,
+    gender: user.gender,
+    age: user.age === null || user.age === undefined ? null : Number(user.age),
+    birthday: formatDateOnly(user.birthday),
+    current_residence: user.current_residence,
     status: user.status,
     last_login_at: user.last_login_at,
     roles,
@@ -249,15 +317,38 @@ router.post('/register', async (req, res, next) => {
     await ensureAuthSchema()
 
     const name = String(req.body?.name || '').trim()
+    const gender = normalizeGender(req.body?.gender)
+    const age = normalizeAge(req.body?.age)
+    const birthday = normalizeDate(req.body?.birthday)
+    const currentResidence = normalizeResidence(req.body?.current_residence || req.body?.currentResidence)
     const email = normalizeEmail(req.body?.email)
     const password = String(req.body?.password || '')
 
-    if (!name || !email || !password) {
-      return res.status(422).json({ message: 'Name, email, and password are required.' })
+    if (!name || !gender || age === null || !currentResidence || !birthday || !email || !password) {
+      return res.status(422).json({
+        message: 'Name, gender, age, current residence, birthday, email, and password are required.',
+      })
     }
 
     if (name.length < 2) {
       return res.status(422).json({ message: 'Name must be at least 2 characters.' })
+    }
+
+    if (!validGenderValues.has(gender)) {
+      return res.status(422).json({ message: 'Choose a valid gender option.' })
+    }
+
+    if (age < 13 || age > 120) {
+      return res.status(422).json({ message: 'Age must be between 13 and 120.' })
+    }
+
+    if (currentResidence.length < 2) {
+      return res.status(422).json({ message: 'Current residence country is required.' })
+    }
+
+    const birthdayAge = ageFromBirthday(birthday)
+    if (birthdayAge === null || birthdayAge < 13 || birthdayAge > 120) {
+      return res.status(422).json({ message: 'Choose a valid birthday for a user age between 13 and 120.' })
     }
 
     if (!validateEmail(email)) {
@@ -294,12 +385,16 @@ router.post('/register', async (req, res, next) => {
           `
           UPDATE users
           SET name = ?,
+              gender = ?,
+              age = ?,
+              birthday = ?,
+              current_residence = ?,
               password_hash = ?,
               status = 'pending_verification',
               updated_at = NOW()
           WHERE id = ?
           `,
-          [name, passwordHash, userId]
+          [name, gender, age, birthday, currentResidence, passwordHash, userId]
         )
       } else {
         const [result] = await connection.execute(
@@ -308,6 +403,10 @@ router.post('/register', async (req, res, next) => {
             tenant_id,
             name,
             email,
+            gender,
+            age,
+            birthday,
+            current_residence,
             password_hash,
             status,
             created_at,
@@ -318,12 +417,16 @@ router.post('/register', async (req, res, next) => {
             ?,
             ?,
             ?,
+            ?,
+            ?,
+            ?,
+            ?,
             'pending_verification',
             NOW(),
             NOW()
           )
           `,
-          [name, email, passwordHash]
+          [name, email, gender, age, birthday, currentResidence, passwordHash]
         )
 
         userId = result.insertId
@@ -348,15 +451,12 @@ router.post('/register', async (req, res, next) => {
       return createVerificationCode(connection, userId, email)
     })
 
-    const emailResult = await sendVerificationEmail({ to: email, name, code })
+    await sendVerificationEmail({ to: email, name, code })
 
     return res.status(201).json({
-      message: emailResult.provider === 'local'
-        ? 'Verification code generated. Enter the code below to finish signup.'
-        : 'Verification code sent. Check your email to finish signup.',
+      message: 'Verification code sent. Check your email inbox to finish signup.',
       requires_verification: true,
       email,
-      ...(emailResult.devVerificationCode ? { dev_verification_code: emailResult.devVerificationCode } : {}),
     })
   } catch (error) {
     next(error)
@@ -470,15 +570,12 @@ router.post('/resend-verification', async (req, res, next) => {
     }
 
     const code = await transaction((connection) => createVerificationCode(connection, user.id, email))
-    const emailResult = await sendVerificationEmail({ to: email, name: user.name, code })
+    await sendVerificationEmail({ to: email, name: user.name, code })
 
     return res.json({
-      message: emailResult.provider === 'local'
-        ? 'New verification code generated. Enter the code below to finish signup.'
-        : 'A new verification code was sent.',
+      message: 'A new verification code was sent. Check your email inbox.',
       requires_verification: true,
       email,
-      ...(emailResult.devVerificationCode ? { dev_verification_code: emailResult.devVerificationCode } : {}),
     })
   } catch (error) {
     next(error)
@@ -487,8 +584,88 @@ router.post('/resend-verification', async (req, res, next) => {
 
 router.get('/me', authMiddleware, async (req, res, next) => {
   try {
+    await ensureAuthSchema()
+
     const roles = await getUserRoles(req.user.id)
     return res.json({ user: formatUser(req.user, roles) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/me', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const name = String(req.body?.name || '').trim()
+    const gender = normalizeGender(req.body?.gender)
+    const age = normalizeAge(req.body?.age)
+    const birthday = normalizeDate(req.body?.birthday)
+    const currentResidence = normalizeResidence(req.body?.current_residence || req.body?.currentResidence)
+
+    if (!name || !gender || age === null || !currentResidence || !birthday) {
+      return res.status(422).json({ message: 'Name, gender, age, current residence, and birthday are required.' })
+    }
+
+    if (name.length < 2) {
+      return res.status(422).json({ message: 'Name must be at least 2 characters.' })
+    }
+
+    if (!validGenderValues.has(gender)) {
+      return res.status(422).json({ message: 'Choose a valid gender option.' })
+    }
+
+    if (age < 13 || age > 120) {
+      return res.status(422).json({ message: 'Age must be between 13 and 120.' })
+    }
+
+    if (currentResidence.length < 2) {
+      return res.status(422).json({ message: 'Current residence country is required.' })
+    }
+
+    const birthdayAge = ageFromBirthday(birthday)
+    if (birthdayAge === null || birthdayAge < 13 || birthdayAge > 120) {
+      return res.status(422).json({ message: 'Choose a valid birthday for a user age between 13 and 120.' })
+    }
+
+    await query(
+      `
+      UPDATE users
+      SET name = :name,
+          gender = :gender,
+          age = :age,
+          birthday = :birthday,
+          current_residence = :currentResidence,
+          updated_at = NOW()
+      WHERE id = :id
+      AND tenant_id = :tenantId
+      `,
+      {
+        id: req.user.id,
+        tenantId: req.user.tenant_id,
+        name,
+        gender,
+        age,
+        birthday,
+        currentResidence,
+      }
+    )
+
+    const users = await query(
+      `
+      SELECT *
+      FROM users
+      WHERE id = :id
+      LIMIT 1
+      `,
+      { id: req.user.id }
+    )
+    const roles = await getUserRoles(req.user.id)
+
+    return res.json({
+      message: 'Profile updated successfully.',
+      user: formatUser(users[0] || req.user, roles),
+    })
   } catch (error) {
     next(error)
   }
