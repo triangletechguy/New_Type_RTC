@@ -1990,14 +1990,32 @@
 .buzzcast-gift-bar button {
   min-width: 0;
   display: grid;
+  grid-template-rows: 30px auto auto;
   place-items: center;
   gap: 3px;
+  padding: 6px 5px;
   border: 0;
   border-radius: 8px;
   background: rgba(76, 65, 67, .88);
   color: #c8c4dc;
   font-size: 12px;
   font-weight: 500;
+}
+
+.buzzcast-gift-bar button img {
+  width: 30px;
+  height: 30px;
+  display: block;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .2);
+}
+
+.buzzcast-gift-bar button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .buzzcast-gift-bar small {
@@ -4639,13 +4657,24 @@ pre {
 }
 
 .gift-toast span {
-  min-height: 22px;
-  padding: 4px 9px;
-  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  border-radius: 14px;
   background: rgba(251, 191, 36, .2);
   color: #fde68a;
   font-size: 11px;
   font-weight: 1000;
+}
+
+.gift-toast span img {
+  width: 32px;
+  height: 32px;
+  display: block;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .gift-toast strong {
@@ -5233,13 +5262,21 @@ pre {
 
 .live-gift-grid button {
   min-width: 0;
-  min-height: 58px;
+  min-height: 88px;
   display: grid;
   place-items: center;
   gap: 4px;
   padding: 9px;
   border-color: rgba(251, 191, 36, .18);
   background: rgba(251, 191, 36, .08);
+}
+
+.live-gift-grid button img {
+  width: 34px;
+  height: 34px;
+  display: block;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .live-gift-grid button strong,
@@ -5253,6 +5290,13 @@ pre {
 .live-gift-grid button span {
   color: #fde68a;
   font-size: 12px;
+}
+
+.live-gift-grid > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .tool-status-panel {
@@ -5547,17 +5591,28 @@ pre {
   overflow-wrap: anywhere;
 }
 
-.chat-gift-icon {
+.chat-gift-message {
   display: inline-flex;
   align-items: center;
-  min-height: 20px;
-  margin-right: 7px;
-  padding: 3px 7px;
-  border-radius: 999px;
+  gap: 7px;
+}
+
+.chat-gift-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
   background: rgba(251, 191, 36, .18);
-  color: #fde68a;
-  font-size: 11px;
-  font-weight: 1000;
+}
+
+.chat-gift-icon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .chat-bubble.unsent {
@@ -5705,6 +5760,23 @@ pre {
   width: 18px;
   height: 18px;
   accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+.chat-delete-option.disabled {
+  color: #6b7280;
+}
+
+.chat-delete-option.disabled input {
+  cursor: not-allowed;
+}
+
+.chat-delete-hint {
+  display: block;
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .chat-delete-modal footer {

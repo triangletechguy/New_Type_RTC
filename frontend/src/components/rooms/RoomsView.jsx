@@ -21,6 +21,7 @@ import {
   themeOptions,
   validateRoomForm,
 } from '../../utils/roomConfig'
+import { giftCatalog } from '../../utils/gifts'
 
 const feedTabs = [
   { value: 'following', label: 'Following', filter: 'all' },
@@ -94,20 +95,6 @@ const settingsNav = [
 
 const languages = ['English', 'Japanese', 'Korean', 'French', 'Italian', 'Russian', 'Spanish', 'German', 'Portuguese', 'Hindi']
 const regions = ['Afghanistan', 'Aland Islands', 'Albania', 'Algeria', 'American Samoa', 'Andorra', 'Angola', 'Anguilla', 'Antigua and Barbuda', 'Argentina', 'Australia', 'Brazil', 'Canada', 'United States']
-const giftItems = [
-  { label: 'Rose', cost: 9 },
-  { label: 'Lipstick', cost: 99 },
-  { label: 'Love Overflow', cost: 399 },
-  { label: 'Sweet Melody', cost: 399 },
-  { label: 'Expression', cost: 1 },
-  { label: 'Candy World', cost: 1000 },
-  { label: 'Sweet Date', cost: 5999 },
-  { label: 'Paw Ice Cream', cost: 1 },
-  { label: 'Star', cost: 5 },
-  { label: 'Sparklers', cost: 9 },
-  { label: 'Cola', cost: 99 },
-]
-
 const paymentMethods = ['Google Pay', 'PayPal', 'Apple Pay', 'Visa/ MasterCard/ JCB/ AMEX/ DINERS', 'Dpay(USDT & Bitcoin)', 'Razer Gold Wallet']
 
 const popularHelp = [
@@ -884,8 +871,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </div>
               <div className="buzzcast-join-ribbon">21 joined</div>
               <div className="buzzcast-gift-bar">
-                {giftItems.map((gift) => (
-                  <button key={gift.label} type="button">
+                {giftCatalog.slice(0, 11).map((gift) => (
+                  <button key={gift.id} type="button" title={`${gift.label} - ${gift.cost}`}>
+                    <img src={gift.icon} alt="" loading="lazy" />
                     <span>{gift.label}</span>
                     <small>{gift.cost}</small>
                   </button>

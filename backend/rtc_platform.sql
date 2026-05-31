@@ -452,6 +452,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     CONSTRAINT fk_chat_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS chat_message_hides (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    message_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    hidden_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_chat_message_hide (message_id, user_id),
+    INDEX idx_chat_message_hides_user_id (user_id),
+    CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS usage_logs (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,

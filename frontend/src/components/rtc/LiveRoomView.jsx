@@ -13,26 +13,12 @@ import {
   peerMediaFromSignal,
   peerMediaMapFromUsers,
 } from '../../utils/roomConfig'
+import { giftCatalog } from '../../utils/gifts'
 import { ChatPanel } from './ChatPanel'
 import { OwnerControlsPanel } from './OwnerControlsPanel'
 import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
-const giftCatalog = [
-  { id: 'rose', label: 'Rose', cost: 9 },
-  { id: 'lipstick', label: 'Lipstick', cost: 99 },
-  { id: 'love-overflow', label: 'Love Overflow', cost: 399 },
-  { id: 'melody', label: 'Sweet Melody', cost: 399 },
-  { id: 'expression', label: 'Expression', cost: 1 },
-  { id: 'candy', label: 'Candy World', cost: 1000 },
-  { id: 'sweet-date', label: 'Sweet Date', cost: 5999 },
-  { id: 'paw-ice-cream', label: 'Paw Ice Cream', cost: 1 },
-  { id: 'star', label: 'Star', cost: 5 },
-  { id: 'spark', label: 'Sparklers', cost: 9 },
-  { id: 'cola', label: 'Cola', cost: 99 },
-  { id: 'racer', label: 'Racing Car', cost: 599 },
-  { id: 'spray', label: 'Spray', cost: 1 },
-]
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function compactNumber(value) {
@@ -1091,7 +1077,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           )}
           {giftToast && (
             <div className="gift-toast" key={giftToast.key}>
-              <span>Gift</span>
+              <span><img src={giftToast.icon} alt="" /></span>
               <strong>{user?.name || 'You'} sent {giftToast.label}</strong>
             </div>
           )}
@@ -1165,13 +1151,24 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               </div>
             )}
 
-            {activeToolPanel && activeToolPanel !== 'gifts' ? (
+            {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : 'AI guard'}</strong>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'gifts' ? 'Send a gift' : 'AI guard'}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
                 </header>
-                {activeToolPanel === 'screen' ? (
+                {activeToolPanel === 'gifts' ? (
+                  <div className="live-gift-grid" aria-label="Room gifts">
+                    {giftCatalog.map((gift) => (
+                      <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id || !joined || room?.gift_enabled === false}>
+                        <img src={gift.icon} alt="" loading="lazy" />
+                        <strong>{gift.label}</strong>
+                        <span>{gift.cost}</span>
+                      </button>
+                    ))}
+                    <small>{room?.gift_enabled === false ? 'Gifts are disabled in this room.' : joined ? 'Gifts are sent into this room chat.' : 'Connect RTC before sending gifts.'}</small>
+                  </div>
+                ) : activeToolPanel === 'screen' ? (
                   <div className="tool-status-panel">
                     <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
                     <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
@@ -1245,7 +1242,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
             <div className="buzzcast-gift-bar buzzcast-live-gift-bar">
               {giftCatalog.slice(0, 11).map((gift) => (
-                <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id}>
+                <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id || room?.gift_enabled === false} title={`${gift.label} - ${gift.cost}`}>
+                  <img src={gift.icon} alt="" loading="lazy" />
                   <span>{gift.label}</span>
                   <small>{gift.cost}</small>
                 </button>

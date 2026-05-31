@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { avatarForIndex, chatAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { giftById, giftIconForId, giftLabelForId } from '../../utils/gifts'
 
 function chatSenderName(message, currentUser) {
   if (isOwnMessage(message, currentUser)) return 'You'
@@ -37,6 +38,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [editText, setEditText] = useState('')
   const [savingEditId, setSavingEditId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteForEveryone, setDeleteForEveryone] = useState(true)
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesEndRef = useRef(null)
@@ -234,12 +236,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   function canDeleteMessage(message) {
     if (!message?.id || message.is_deleted) return false
+    return Boolean(user?.id)
+  }
+
+  function canDeleteMessageForEveryone(message) {
+    if (!message?.id || message.is_deleted) return false
     return isOwnMessage(message, user) || canModerate
   }
 
   function requestDeleteMessage(message) {
     if (!canDeleteMessage(message)) return
     setDeleteTarget(message)
+    setDeleteForEveryone(canDeleteMessageForEveryone(message))
     setStatus('')
   }
 
@@ -252,15 +260,19 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     const message = deleteTarget
     if (!canDeleteMessage(message)) return
 
+    const shouldDeleteForEveryone = deleteForEveryone && canDeleteMessageForEveryone(message)
     const previousMessages = messages
     setDeletingMessageIds((previous) => ({ ...previous, [message.id]: true }))
     setStatus('')
     removeMessage(message.id)
 
     try {
-      await apiRequest(`/messages/${message.id}`, { method: 'DELETE' })
+      const data = await apiRequest(`/messages/${message.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ for_everyone: shouldDeleteForEveryone }),
+      })
 
-      if (socket && signalingRoom) {
+      if (data.deleted_for_everyone && socket && signalingRoom) {
         socket.timeout(3000).emit(
           'chat-message-deleted',
           {
@@ -400,10 +412,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
-          const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
-          const giftMessage = message.message_type === 'gift'
-          const systemMessage = message.message_type === 'system'
-          const canModify = mine && message.message_type === 'text'
+      const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
+      const giftMessage = message.message_type === 'gift'
+      const gift = giftMessage ? giftById(message.media_url) : null
+      const systemMessage = message.message_type === 'system'
+      const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
           const deleting = Boolean(deletingMessageIds[message.id])
           const editing = editingMessageId === message.id
@@ -439,7 +452,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                     </div>
                   </form>
                 ) : giftMessage ? (
-                  <p><span className="chat-gift-icon">Gift</span>{message.message_body}</p>
+                  <p className="chat-gift-message">
+                    <span className="chat-gift-icon"><img src={gift?.icon || giftIconForId(message.media_url)} alt="" /></span>
+                    <span>{message.message_body || `sent ${giftLabelForId(message.media_url)}`}</span>
+                  </p>
                 ) : (
                   <p>{message.message_body}</p>
                 )}
@@ -495,14 +511,22 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-delete-title" onMouseDown={(event) => event.stopPropagation()}>
             <h3 id="chat-delete-title">Delete message</h3>
             <p>Are you sure you want to delete this message?</p>
-            <label className="chat-delete-option">
-              <input type="checkbox" checked readOnly />
+            <label className={canDeleteMessageForEveryone(deleteTarget) ? 'chat-delete-option' : 'chat-delete-option disabled'}>
+              <input
+                type="checkbox"
+                checked={deleteForEveryone && canDeleteMessageForEveryone(deleteTarget)}
+                disabled={!canDeleteMessageForEveryone(deleteTarget) || Boolean(deletingMessageIds[deleteTarget.id])}
+                onChange={(event) => setDeleteForEveryone(event.target.checked)}
+              />
               <span>
-                {isOwnMessage(deleteTarget, user)
-                  ? 'Also delete for everyone'
-                  : `Also delete for ${chatSenderName(deleteTarget, user)}`}
+                {canDeleteMessageForEveryone(deleteTarget)
+                  ? 'Delete for everyone in this room'
+                  : 'Delete only for me'}
               </span>
             </label>
+            {canDeleteMessageForEveryone(deleteTarget) ? (
+              <small className="chat-delete-hint">{deleteForEveryone ? 'Everyone will lose this message.' : 'Only your chat will hide this message.'}</small>
+            ) : null}
             <footer>
               <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>CANCEL</button>
               <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>

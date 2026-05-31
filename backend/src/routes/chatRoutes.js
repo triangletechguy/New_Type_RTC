@@ -5,6 +5,31 @@ const { authMiddleware } = require('../middleware/auth')
 const router = express.Router()
 
 const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
+let chatSchemaPromise = null
+
+async function ensureChatSchema() {
+  if (!chatSchemaPromise) {
+    chatSchemaPromise = query(
+      `
+      CREATE TABLE IF NOT EXISTS chat_message_hides (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        hidden_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_chat_message_hide (message_id, user_id),
+        INDEX idx_chat_message_hides_user_id (user_id),
+        CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `
+    ).catch((error) => {
+      chatSchemaPromise = null
+      throw error
+    })
+  }
+
+  return chatSchemaPromise
+}
 
 function parsePositiveInteger(value, defaultValue = null) {
   if (value === undefined || value === null || value === '') return defaultValue
@@ -55,6 +80,8 @@ async function canDeleteMessageForEveryone(message, user) {
 
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   try {
+    await ensureChatSchema()
+
     const roomId = parsePositiveInteger(req.params.id)
     const limit = Math.min(100, parsePositiveInteger(req.query.limit, 50) || 50)
 
@@ -79,10 +106,16 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       WHERE cm.tenant_id = :tenantId
       AND cm.room_id = :roomId
       AND cm.is_deleted = 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM chat_message_hides hidden
+        WHERE hidden.message_id = cm.id
+        AND hidden.user_id = :userId
+      )
       ORDER BY cm.id DESC
       LIMIT ${limit}
       `,
-      { tenantId: req.user.tenant_id, roomId }
+      { tenantId: req.user.tenant_id, roomId, userId: req.user.id }
     )
 
     return res.json({
@@ -231,7 +264,10 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
 
 router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
   try {
+    await ensureChatSchema()
+
     const messageId = parsePositiveInteger(req.params.id)
+    const deleteForEveryone = req.body?.for_everyone !== false
     if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
 
     const messages = await query(
@@ -248,6 +284,23 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
     if (!messages.length) return res.status(404).json({ message: 'Message not found.' })
 
     const message = messages[0]
+
+    if (!deleteForEveryone) {
+      await query(
+        `
+        INSERT IGNORE INTO chat_message_hides (message_id, user_id, hidden_at)
+        VALUES (:messageId, :userId, NOW())
+        `,
+        { messageId, userId: req.user.id }
+      )
+
+      return res.json({
+        message: 'Message hidden from your chat.',
+        message_id: message.id,
+        room_id: message.room_id,
+        deleted_for_everyone: false,
+      })
+    }
 
     if (!(await canDeleteMessageForEveryone(message, req.user))) {
       return res.status(403).json({ message: 'You do not have permission to delete this message.' })
@@ -271,6 +324,7 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
       message: 'Message deleted successfully.',
       message_id: message.id,
       room_id: message.room_id,
+      deleted_for_everyone: true,
     })
   } catch (error) {
     next(error)
