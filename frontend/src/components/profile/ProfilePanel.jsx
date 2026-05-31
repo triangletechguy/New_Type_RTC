@@ -28,7 +28,7 @@ function normalizeProfileForm(user) {
   }
 }
 
-export function ProfilePanel({ user, onSaved, onLogout, onWallet, onClose }) {
+export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(() => normalizeProfileForm(user))
   const [status, setStatus] = useState('')
@@ -175,9 +175,6 @@ export function ProfilePanel({ user, onSaved, onLogout, onWallet, onClose }) {
           </div>
           <div className="buzzcast-profile-links">
             <button type="button" onClick={() => setEditing(true)}>Edit profile</button>
-            {onWallet ? <button type="button" onClick={onWallet}>Wallet</button> : null}
-            <button type="button">Backpack</button>
-            <button type="button">Supporters</button>
             {onLogout ? <button type="button" onClick={onLogout}>Sign out</button> : null}
           </div>
         </>

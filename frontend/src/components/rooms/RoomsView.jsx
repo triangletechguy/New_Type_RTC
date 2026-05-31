@@ -96,9 +96,11 @@ const settingsNav = [
 const languages = ['English', 'Japanese', 'Korean', 'French', 'Italian', 'Russian', 'Spanish', 'German', 'Portuguese', 'Hindi']
 const regions = ['Afghanistan', 'Aland Islands', 'Albania', 'Algeria', 'American Samoa', 'Andorra', 'Angola', 'Anguilla', 'Antigua and Barbuda', 'Argentina', 'Australia', 'Brazil', 'Canada', 'United States']
 const paymentMethods = ['Google Pay', 'PayPal', 'Apple Pay', 'Visa/ MasterCard/ JCB/ AMEX/ DINERS', 'Dpay(USDT & Bitcoin)', 'Razer Gold Wallet']
+const feedbackCategories = ['Account', 'Room / RTC', 'Payment', 'Chat', 'Safety']
+const feedbackTypes = ['Bug report', 'Feature request', 'Payment issue', 'Abuse report', 'Other']
 
 const popularHelp = [
-  { id: 'recharge', title: 'How to recharge', body: 'Please go to your profile page, click the Wallet button, click the recharge button or the Gift button in the live room, then choose a payment method to recharge diamonds.' },
+  { id: 'recharge', title: 'How to recharge', body: 'Open a live room, click More in the gift bar, choose a payment method, then use Recharge to add diamonds.' },
   { id: 'vip', title: 'How to become VIP/SVIP', body: 'Buy VIP through the personal center or use diamonds to buy VIP. VIP rewards and privileges are visible from the personal center.' },
   { id: 'bind', title: 'How do I bind my phone number and email address?', body: 'For account security, bind your mobile phone number and email address in Settings, Account Security.' },
   { id: 'mvp', title: 'How to become an MVP and its benefits', body: 'MVP status unlocks monthly rewards, profile progress, and room benefits after qualifying top-up milestones.' },
@@ -250,6 +252,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [showFeedback, setShowFeedback] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [activeSettings, setActiveSettings] = useState('account')
+  const [settingsStatus, setSettingsStatus] = useState('')
+  const [settingsDraft, setSettingsDraft] = useState({
+    phoneBound: false,
+    emailBound: Boolean(user?.email),
+    loginPasswordSet: true,
+    paymentPasswordSet: false,
+    deviceAlerts: true,
+    messagePrivacy: 'everyone',
+    privateInvite: true,
+    autoPrivateDeduction: false,
+    hideSensitive: true,
+    contentMode: 'warning',
+    language: 'English',
+    region: user?.current_residence || 'United States',
+  })
   const [helpMode, setHelpMode] = useState('popular')
   const [activeHelp, setActiveHelp] = useState('recharge')
   const [activeThread, setActiveThread] = useState(dmThreads[0].id)
@@ -257,6 +274,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [dmInput, setDmInput] = useState('')
   const [previewCard, setPreviewCard] = useState(null)
   const [acceptedWarnings, setAcceptedWarnings] = useState({})
+  const [feedbackForm, setFeedbackForm] = useState({
+    category: feedbackCategories[0],
+    type: feedbackTypes[0],
+    description: '',
+    contact: user?.email || '',
+    attachment: null,
+  })
+  const [feedbackStatus, setFeedbackStatus] = useState('')
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -267,12 +292,35 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
-  const roomSearchResults = useMemo(() => rooms.slice(0, 6).map((room) => ({
-    id: room.id,
-    name: room.name || `Room ${room.id}`,
-    detail: `${getRoomMeta(room.room_type).label} - ${room.privacy_type}`,
-    room,
-  })), [rooms])
+  const searchTerm = search.trim().toLowerCase()
+  const roomSearchResults = useMemo(() => {
+    const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
+    const liveResults = rooms
+      .filter((room) => !searchTerm || includesTerm(`${room.name} ${room.host_name} ${room.room_type} ${room.privacy_type}`))
+      .slice(0, 8)
+      .map((room) => ({
+        id: room.id,
+        type: 'room',
+        name: room.name || `Room ${room.id}`,
+        detail: `${getRoomMeta(room.room_type).label} - ${room.privacy_type || 'public'}`,
+        room,
+      }))
+    const demoResults = searchTerm
+      ? demoCards
+        .filter((card) => includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.privacy || 'public'}`))
+        .slice(0, 6)
+        .map((card) => ({
+          id: card.id,
+          type: 'demo',
+          name: card.title,
+          detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
+          avatarIndex: card.avatarIndex,
+          card,
+        }))
+      : []
+
+    return [...liveResults, ...demoResults].slice(0, 8)
+  }, [rooms, searchTerm])
   const visibleCards = useMemo(() => {
     const usingLiveRooms = roomCards.length > 0
     let cards = usingLiveRooms ? [...roomCards] : [...demoCards]
@@ -374,6 +422,35 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowRecharge(true)
   }
 
+  function updateSettings(field, value, message) {
+    setSettingsDraft((previous) => ({ ...previous, [field]: value }))
+    setSettingsStatus(message)
+  }
+
+  function updateFeedback(field, value) {
+    setFeedbackForm((previous) => ({ ...previous, [field]: value }))
+    setFeedbackStatus('')
+  }
+
+  function handleFeedbackAttachment(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 25 * 1024 * 1024) {
+      event.target.value = ''
+      setFeedbackStatus('Attachment must be 25 MB or smaller.')
+      return
+    }
+
+    updateFeedback('attachment', file)
+    setFeedbackStatus(`${file.name} attached.`)
+  }
+
+  function removeFeedbackAttachment() {
+    setFeedbackForm((previous) => ({ ...previous, attachment: null }))
+    setFeedbackStatus('Attachment removed.')
+  }
+
   function updateRoomForm(field, value) {
     setRoomForm((previous) => ({ ...previous, [field]: value }))
     setFormErrors((previous) => {
@@ -390,6 +467,39 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setJoinPassword('')
     setJoinRtcMode(defaultRtcModeForRoom(room))
     setStatus(room.privacy_type === 'password' ? `Room #${room.id} needs a password before joining.` : `Room #${room.id} selected.`)
+  }
+
+  function openSearchResult(item) {
+    if (item.room) {
+      selectRoom(item.room)
+      setActiveSection('live')
+      setPreviewCard(null)
+    } else if (item.card) {
+      openCard(item.card)
+    }
+
+    setShowSearchPanel(false)
+  }
+
+  function runSearch() {
+    setShowSearchPanel(true)
+    loadRooms({ page: 1, searchValue: search })
+  }
+
+  function handleSearchKeyDown(event) {
+    if (event.key === 'Escape') {
+      setShowSearchPanel(false)
+      return
+    }
+
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    if (roomSearchResults[0]) {
+      openSearchResult(roomSearchResults[0])
+      return
+    }
+
+    runSearch()
   }
 
   function clearSelectedRoomIfManual(value) {
@@ -591,6 +701,27 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setDmInput('')
   }
 
+  function submitFeedback(event) {
+    event.preventDefault()
+    if (feedbackForm.description.trim().length < 10) {
+      setFeedbackStatus('Please add at least 10 characters so support can understand the issue.')
+      return
+    }
+
+    setFeedbackStatus('Feedback submitted. Thank you for helping improve TalkEachOther.')
+    window.setTimeout(() => {
+      setShowFeedback(false)
+      setFeedbackStatus('')
+      setFeedbackForm({
+        category: feedbackCategories[0],
+        type: feedbackTypes[0],
+        description: '',
+        contact: user?.email || '',
+        attachment: null,
+      })
+    }, 900)
+  }
+
   async function handleInstallApp() {
     if (installPrompt) {
       installPrompt.prompt()
@@ -692,32 +823,70 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderProfile() {
-    return <ProfilePanel user={user} onSaved={onUserUpdated} onLogout={onLogout} onWallet={openRechargePanel} />
+    return <ProfilePanel user={user} onSaved={onUserUpdated} onLogout={onLogout} />
   }
 
   function renderSettingsContent() {
     if (activeSettings === 'privacy') {
       return (
         <div className="buzzcast-settings-list">
-          <button type="button"><span>Who can send me a message</span><b>&gt;</b></button>
-          <button type="button"><span>Private live invitation</span><b>&gt;</b></button>
+          <label className="buzzcast-select-row">
+            <span><strong>Who can send me a message</strong><small>Controls the personal inbox and room chat shortcuts.</small></span>
+            <select
+              value={settingsDraft.messagePrivacy}
+              onChange={(event) => updateSettings('messagePrivacy', event.target.value, 'Message privacy updated.')}
+            >
+              <option value="everyone">Everyone</option>
+              <option value="followers">Followers only</option>
+              <option value="nobody">Nobody</option>
+            </select>
+          </label>
+          <label className="buzzcast-switch-row">
+            <span><strong>Private live invitation</strong><small>Allow hosts to invite you into private live rooms.</small></span>
+            <input
+              type="checkbox"
+              checked={settingsDraft.privateInvite}
+              onChange={(event) => updateSettings('privateInvite', event.target.checked, 'Private live invitation setting updated.')}
+            />
+          </label>
           <label className="buzzcast-switch-row">
             <span><strong>Automatic deduction for entering the private live broadcast room</strong><small>After opening, private rooms can automatically deduct diamonds.</small></span>
-            <input type="checkbox" />
+            <input
+              type="checkbox"
+              checked={settingsDraft.autoPrivateDeduction}
+              onChange={(event) => updateSettings('autoPrivateDeduction', event.target.checked, 'Private-room deduction setting updated.')}
+            />
           </label>
-          <button type="button"><span>Blacklist</span><b>&gt;</b></button>
-          <button type="button"><span>Live broadcast you are not interested in</span><b>&gt;</b></button>
+          <button type="button" onClick={() => setSettingsStatus('Use Block in the chat panel to hide a user and remove their messages from your view.')}>
+            <span><strong>Blacklist</strong><small>Blocked users are controlled from the chat user menu.</small></span>
+            <b>&gt;</b>
+          </button>
+          <button type="button" onClick={() => updateSettings('hideSensitive', !settingsDraft.hideSensitive, 'Live preference updated.')}>
+            <span><strong>Live broadcast you are not interested in</strong><small>{settingsDraft.hideSensitive ? 'Filtered from your feed.' : 'Visible in your feed.'}</small></span>
+            <em>{settingsDraft.hideSensitive ? 'Filtered' : 'Show'}</em>
+          </button>
         </div>
       )
     }
 
     if (activeSettings === 'content') {
+      const modes = [
+        { value: 'restricted', label: 'Restricted Mode', helper: 'Hide potentially sensitive content.' },
+        { value: 'warning', label: 'Warning Mode', helper: 'Show a warning before sensitive rooms open.' },
+        { value: 'all', label: 'All Modes', helper: 'Show all room content that is available to your account.' },
+      ]
+
       return (
         <div className="buzzcast-settings-list">
-          {['Restricted Mode', 'Warning Mode', 'All Modes'].map((item, index) => (
-            <label key={item} className="buzzcast-radio-row">
-              <span><strong>{item}</strong><small>{index === 1 ? 'The content is hidden by default behind filters that require user actions.' : index === 0 ? 'Hide potentially sensitive content.' : 'You will see all the content.'}</small></span>
-              <input type="radio" name="content-mode" defaultChecked={index === 1} />
+          {modes.map((item) => (
+            <label key={item.value} className="buzzcast-radio-row">
+              <span><strong>{item.label}</strong><small>{item.helper}</small></span>
+              <input
+                type="radio"
+                name="content-mode"
+                checked={settingsDraft.contentMode === item.value}
+                onChange={() => updateSettings('contentMode', item.value, `${item.label} selected.`)}
+              />
             </label>
           ))}
         </div>
@@ -727,10 +896,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (activeSettings === 'language') {
       return (
         <div className="buzzcast-settings-list compact">
-          {languages.map((item, index) => (
+          {languages.map((item) => (
             <label key={item} className="buzzcast-radio-row">
               <span><strong>{item}</strong></span>
-              <input type="radio" name="language" defaultChecked={index === 0} />
+              <input
+                type="radio"
+                name="language"
+                checked={settingsDraft.language === item}
+                onChange={() => updateSettings('language', item, `Language changed to ${item}.`)}
+              />
             </label>
           ))}
         </div>
@@ -738,14 +912,29 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     if (activeSettings === 'region') {
+      const regionSearch = settingsDraft.regionSearch || ''
+      const visibleRegions = regions.filter((item) => !regionSearch.trim() || item.toLowerCase().includes(regionSearch.trim().toLowerCase()))
+
       return (
         <div className="buzzcast-region-panel">
-          <input placeholder="Search" />
+          <input
+            placeholder="Search region"
+            value={regionSearch}
+            onChange={(event) => setSettingsDraft((previous) => ({ ...previous, regionSearch: event.target.value }))}
+          />
           <div className="buzzcast-settings-list compact">
-            {regions.map((item, index) => (
+            {visibleRegions.map((item) => (
               <label key={item} className="buzzcast-radio-row">
                 <span><strong>{item}</strong></span>
-                <input type="radio" name="region" defaultChecked={index === regions.length - 1} />
+                <input
+                  type="radio"
+                  name="region"
+                  checked={settingsDraft.region === item}
+                  onChange={() => {
+                    setSettingsDraft((previous) => ({ ...previous, region: item, regionSearch: '' }))
+                    setSettingsStatus(`Region changed to ${item}.`)
+                  }}
+                />
               </label>
             ))}
           </div>
@@ -757,21 +946,69 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return (
         <div className="buzzcast-settings-list">
           {['Terms of Service', 'Privacy Policy', 'Child Safety Policy', 'Anti-Bullying Policy', 'Copyright'].map((item) => (
-            <button type="button" key={item}><span>{item}</span><b>&gt;</b></button>
+            <button type="button" key={item} onClick={() => setSettingsStatus(`${item} will open in the production policy page.`)}>
+              <span><strong>{item}</strong></span>
+              <b>&gt;</b>
+            </button>
           ))}
         </div>
       )
     }
 
+    const accountRows = [
+      {
+        field: 'phoneBound',
+        label: 'Binding cell phone',
+        helper: 'Recommended for account recovery and high-value payments.',
+        on: 'Bound',
+        off: 'Bind cell phone',
+      },
+      {
+        field: 'emailBound',
+        label: 'Binding email',
+        helper: 'Used for login recovery and security notices.',
+        on: 'Bound',
+        off: 'Bind email',
+      },
+      {
+        field: 'loginPasswordSet',
+        label: 'Set login password',
+        helper: 'Protect this account when signing in on a new device.',
+        on: 'Set',
+        off: 'Set password',
+      },
+      {
+        field: 'paymentPasswordSet',
+        label: 'Set payment password',
+        helper: 'Add a second check before diamond purchases.',
+        on: 'Set',
+        off: 'Set password',
+      },
+      {
+        field: 'deviceAlerts',
+        label: 'Devices Logged In',
+        helper: 'Show alerts when a new device logs in.',
+        on: 'Alerts on',
+        off: 'Alerts off',
+      },
+    ]
+
     return (
       <div className="buzzcast-security-panel">
         <div className="buzzcast-safety-card">
-          <strong>Very low level of safety</strong>
-          <span>OK</span>
+          <strong>{settingsDraft.emailBound && settingsDraft.loginPasswordSet ? 'Normal level of safety' : 'Improve account safety'}</strong>
+          <button type="button" onClick={() => setSettingsStatus('Account security checked.')}>OK</button>
         </div>
         <div className="buzzcast-settings-list">
-          {['Binding cell phone', 'Binding email', 'Binding Wallet', 'Set login password', 'Set payment password', 'Devices Logged In'].map((item) => (
-            <button type="button" key={item}><span>{item}</span><em>{item.includes('Binding') ? item : item === 'Devices Logged In' ? 'Device' : item}</em></button>
+          {accountRows.map((item) => (
+            <button
+              type="button"
+              key={item.field}
+              onClick={() => updateSettings(item.field, !settingsDraft[item.field], `${item.label} updated.`)}
+            >
+              <span><strong>{item.label}</strong><small>{item.helper}</small></span>
+              <em>{settingsDraft[item.field] ? item.on : item.off}</em>
+            </button>
           ))}
         </div>
       </div>
@@ -779,6 +1016,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderSettings() {
+    const activeSettingsItem = settingsNav.find((item) => item.value === activeSettings) || settingsNav[0]
+
     return (
       <section className="buzzcast-settings-shell">
         <aside className="buzzcast-settings-nav">
@@ -787,7 +1026,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               key={item.value}
               type="button"
               className={activeSettings === item.value ? 'active' : ''}
-              onClick={() => setActiveSettings(item.value)}
+              onClick={() => {
+                setActiveSettings(item.value)
+                setSettingsStatus('')
+              }}
             >
               <i>{item.icon}</i>
               <span>{item.label}</span>
@@ -796,6 +1038,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ))}
         </aside>
         <div className="buzzcast-settings-content">
+          <div className="buzzcast-settings-heading">
+            <h2>{activeSettingsItem.label}</h2>
+            <p>{settingsStatus || 'Changes are applied immediately for this session.'}</p>
+          </div>
           {renderSettingsContent()}
         </div>
       </section>
@@ -899,6 +1145,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   useEffect(() => {
+    setSettingsDraft((previous) => ({
+      ...previous,
+      emailBound: previous.emailBound || Boolean(user?.email),
+      region: user?.current_residence || previous.region || 'United States',
+    }))
+    setFeedbackForm((previous) => ({
+      ...previous,
+      contact: previous.contact || user?.email || '',
+    }))
+  }, [user?.email, user?.current_residence])
+
+  useEffect(() => {
     const timeout = setTimeout(() => {
       loadRooms({
         page: 1,
@@ -950,27 +1208,31 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             id="buzzcast-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
             onFocus={() => setShowSearchPanel(true)}
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
             placeholder="Search"
           />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => loadRooms({ page: 1 })} aria-label="Search rooms">
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label="Search rooms">
             <span className="buzzcast-search-icon" aria-hidden="true"></span>
           </button>
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
-              <span>{roomSearchResults.length ? 'Rooms' : 'No room matches yet'}</span>
+              <span>{loadingRooms ? 'Searching rooms...' : search.trim() ? `${roomSearchResults.length} result${roomSearchResults.length === 1 ? '' : 's'}` : 'Search live rooms'}</span>
               {roomSearchResults.map((item, index) => (
                 <button
-                  key={item.id}
+                  key={`${item.type}-${item.id}`}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectRoom(item.room)}
+                  onClick={() => openSearchResult(item)}
                 >
-                  <i className="image-avatar"><img src={avatarForIndex(item.id || index)} alt="" loading="lazy" /></i>
+                  <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                 </button>
               ))}
+              {!loadingRooms && roomSearchResults.length === 0 ? (
+                <em>{search.trim() ? 'Try another room name, host, or room type.' : 'Type a room name, host, or category.'}</em>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -979,7 +1241,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
           <IconButton label="Rankings"><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
-          <IconButton label="Messages" badge="5" onClick={openMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
           <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
@@ -1188,20 +1449,43 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
       {showFeedback ? (
         <div className="buzzcast-modal-backdrop dark">
-          <section className="buzzcast-feedback-modal">
+          <form className="buzzcast-feedback-modal" onSubmit={submitFeedback}>
             <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)}>x</button></header>
             <div className="buzzcast-feedback-row">
-              <select><option>Select question type</option></select>
-              <select><option>Select question type</option></select>
+              <select value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)}>
+                {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)}>
+                {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
             </div>
             <label>Problem description</label>
-            <textarea placeholder="Please provide as much detail as possible" maxLength={1000}></textarea>
+            <textarea
+              placeholder="Please provide as much detail as possible"
+              maxLength={1000}
+              value={feedbackForm.description}
+              onChange={(event) => updateFeedback('description', event.target.value)}
+            ></textarea>
             <label>Problem screenshot / screen recording <small>(optional)</small></label>
-            <div className="buzzcast-upload-box"></div>
+            <div className={`buzzcast-upload-box ${feedbackForm.attachment ? 'has-file' : ''}`}>
+              <input id="feedback-attachment" type="file" accept="image/*,video/*" onChange={handleFeedbackAttachment} />
+              <label htmlFor="feedback-attachment">
+                <strong>{feedbackForm.attachment ? feedbackForm.attachment.name : 'Add screenshot or screen recording'}</strong>
+                <small>PNG, JPG, GIF, MP4, or WebM up to 25 MB</small>
+              </label>
+              {feedbackForm.attachment ? (
+                <button type="button" onClick={removeFeedbackAttachment}>Remove</button>
+              ) : null}
+            </div>
             <label>Contact information <small>(optional)</small></label>
-            <input placeholder="Enter your email account" />
-            <button type="button" className="buzzcast-submit" onClick={() => setShowFeedback(false)}>Submit</button>
-          </section>
+            <input
+              placeholder="Enter your email account"
+              value={feedbackForm.contact}
+              onChange={(event) => updateFeedback('contact', event.target.value)}
+            />
+            {feedbackStatus ? <p className="buzzcast-feedback-status">{feedbackStatus}</p> : null}
+            <button type="submit" className="buzzcast-submit">Submit</button>
+          </form>
         </div>
       ) : null}
     </div>
