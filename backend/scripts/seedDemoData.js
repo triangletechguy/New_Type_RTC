@@ -9,6 +9,8 @@ const mysql = require('mysql2/promise')
 const tenantId = 1
 const adminPassword = '123!@#'
 const passwordRoomPassword = 'Room@1234'
+const superadminEmail = 'superadmin@chadnichok.com'
+const legacySuperadminEmail = 'superadmin@talkeachother.com'
 
 const connectionConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -247,6 +249,73 @@ async function upsertUser(connection, user, passwordHash, roleIds) {
   return userId
 }
 
+async function migrateLegacySuperadminEmail(connection) {
+  const legacy = await fetchOne(
+    connection,
+    `
+    SELECT id
+    FROM users
+    WHERE tenant_id = ?
+    AND email = ?
+    LIMIT 1
+    `,
+    [tenantId, legacySuperadminEmail]
+  )
+
+  if (!legacy) return
+
+  const current = await fetchOne(
+    connection,
+    `
+    SELECT id
+    FROM users
+    WHERE tenant_id = ?
+    AND email = ?
+    LIMIT 1
+    `,
+    [tenantId, superadminEmail]
+  )
+
+  if (!current) {
+    await connection.execute(
+      `
+      UPDATE users
+      SET name = 'TalkEachOther Super Admin',
+          email = ?,
+          status = 'active',
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [superadminEmail, legacy.id]
+    )
+    return
+  }
+
+  if (current.id === legacy.id) return
+
+  await connection.execute(
+    `
+    UPDATE users
+    SET email = ?,
+        status = 'inactive',
+        updated_at = NOW()
+    WHERE id = ?
+    `,
+    [`legacy-${legacy.id}-${legacySuperadminEmail}`, legacy.id]
+  )
+
+  await connection.execute(
+    `
+    DELETE user_roles
+    FROM user_roles
+    INNER JOIN roles ON roles.id = user_roles.role_id
+    WHERE user_roles.user_id = ?
+    AND roles.name IN ('client_admin', 'super_admin')
+    `,
+    [legacy.id]
+  )
+}
+
 async function deactivateKnownDemoUsers(connection) {
   await connection.execute(
     `
@@ -272,9 +341,9 @@ async function deactivateKnownDemoUsers(connection) {
     INNER JOIN users ON users.id = user_roles.user_id
     INNER JOIN roles ON roles.id = user_roles.role_id
     WHERE roles.name IN ('client_admin', 'super_admin')
-    AND users.email NOT IN ('superadmin@chadnichok.com', 'admin@accenture.com')
+    AND users.email NOT IN (?, 'admin@accenture.com')
     `,
-    []
+    [superadminEmail]
   )
 }
 
@@ -977,11 +1046,13 @@ async function main() {
       return map
     }, {})
 
+    await migrateLegacySuperadminEmail(connection)
+
     const superadmin = await upsertUser(
       connection,
       {
         name: 'TalkEachOther Super Admin',
-        email: 'superadmin@chadnichok.com',
+        email: superadminEmail,
         roles: ['end_user', 'client_admin', 'super_admin'],
         replaceRoles: true,
       },
@@ -1279,7 +1350,7 @@ async function main() {
     await connection.commit()
 
     console.log('TalkEachOther data seeded successfully.')
-    console.log(`Superadmin: superadmin@chadnichok.com / ${adminPassword}`)
+    console.log(`Superadmin: ${superadminEmail} / ${adminPassword}`)
     console.log(`Accenture admin: admin@accenture.com / ${adminPassword}`)
     console.log(`Rooms: ${Object.keys(rooms).length} rooms, room password ${passwordRoomPassword}`)
     console.log(`Active sessions: stage #${stageSessionId}, music #${musicSessionId}`)
