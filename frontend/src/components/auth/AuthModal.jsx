@@ -14,6 +14,14 @@ function titleForMode(mode) {
   return 'Welcome back'
 }
 
+function messageForAuthError(error) {
+  if (error?.data?.email_delivery?.setup_required || error?.data?.email_delivery?.provider === 'email_not_configured') {
+    return 'Email delivery is not connected on the server yet. Add Resend or SMTP settings, then click Resend code.'
+  }
+
+  return error?.message || 'Request failed. Please try again.'
+}
+
 export function AuthModal({ open, initialMode = 'login', initialEmail = '', reason = '', onClose, onAuthenticated }) {
   const [mode, setMode] = useState(initialMode)
   const [name, setName] = useState('')
@@ -99,7 +107,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
         setEmail(error.email || normalizeEmail(email))
         switchMode('verify')
       }
-      setStatus(error.message)
+      setStatus(messageForAuthError(error))
     } finally {
       setSubmitting(false)
     }
@@ -146,7 +154,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
         setEmail(error.email || normalizeEmail(email))
         switchMode('verify')
       }
-      setStatus(error.message)
+      setStatus(messageForAuthError(error))
     } finally {
       setSubmitting(false)
     }
@@ -169,7 +177,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       const data = await verifyEmail(normalizedEmail, code)
       finishAuth(data)
     } catch (error) {
-      setStatus(error.message)
+      setStatus(messageForAuthError(error))
     } finally {
       setSubmitting(false)
     }
@@ -189,7 +197,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       setCode('')
       setStatus(data.message || 'A new verification code was sent. Check your email inbox.')
     } catch (error) {
-      setStatus(error.message)
+      setStatus(messageForAuthError(error))
     } finally {
       setSubmitting(false)
     }

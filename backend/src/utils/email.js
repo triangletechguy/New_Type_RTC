@@ -123,6 +123,28 @@ function resendReady(config) {
   return Boolean(config.resendApiKey && config.from)
 }
 
+function emailDeliveryStatus() {
+  const config = emailConfig()
+  const resendConfigured = resendReady(config)
+  const smtpConfigured = smtpReady(config)
+
+  return {
+    configured: resendConfigured || smtpConfigured,
+    provider: resendConfigured ? 'resend' : smtpConfigured ? 'smtp' : null,
+    resend: {
+      api_key: Boolean(config.resendApiKey),
+      from: Boolean(config.from),
+    },
+    smtp: {
+      host: Boolean(config.host),
+      port: Boolean(config.port),
+      user: Boolean(config.user),
+      pass: Boolean(config.pass),
+      from: Boolean(config.from),
+    },
+  }
+}
+
 async function sendWithResend(config, message) {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -192,7 +214,7 @@ async function sendEmailMessage(message, { allowLocalFallback = false, localLog 
     return { provider: 'local', skipped: true }
   }
 
-  const error = new Error('Email service is not configured. Set RESEND_API_KEY with EMAIL_FROM, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.')
+  const error = new Error('Email delivery is not configured on this server. Add Resend or SMTP settings, then request a new code.')
   error.status = 503
   error.code = 'email_not_configured'
   throw error
@@ -219,7 +241,7 @@ async function sendVerificationEmail({ to, name, code }) {
     }
   }
 
-  const error = new Error('Email service is not configured. Set RESEND_API_KEY with EMAIL_FROM, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.')
+  const error = new Error('Email delivery is not configured on this server. Add Resend or SMTP settings, then request a new code.')
   error.status = 503
   error.code = 'email_not_configured'
   throw error
@@ -241,6 +263,7 @@ async function sendFeedbackEmail({ to, feedback }) {
 }
 
 module.exports = {
+  emailDeliveryStatus,
   sendFeedbackEmail,
   sendVerificationEmail,
 }

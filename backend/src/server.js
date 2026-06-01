@@ -12,6 +12,7 @@ const adminRoutes = require('./routes/adminRoutes')
 const clientRoutes = require('./routes/clientRoutes')
 const feedbackRoutes = require('./routes/feedbackRoutes')
 const { registerSignaling } = require('./sockets/signaling')
+const { emailDeliveryStatus } = require('./utils/email')
 
 const PORT = Number(process.env.PORT || 8000)
 
@@ -144,6 +145,7 @@ app.get('/api/health', async (req, res, next) => {
       status: 'ok',
       database: rows[0]?.db_name || null,
       total_tables: tableRows[0]?.total_tables || 0,
+      email_delivery: emailDeliveryStatus(),
       message: 'Node RTC backend connected successfully',
     })
   } catch (error) {

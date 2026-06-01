@@ -210,13 +210,18 @@ function verificationResponse({ message, email, delivery }) {
 
 function emailDeliveryFailureResponse(res, error, email) {
   const status = error.status || 502
+  const setupRequired = error.code === 'email_not_configured'
+
   return res.status(status).json({
-    message: `Verification code was created, but email delivery failed: ${error.message}`,
+    message: setupRequired
+      ? 'Verification code was created, but email delivery is not connected yet. Add email settings on the server, then request a new code.'
+      : `Verification code was created, but email delivery failed: ${error.message}`,
     requires_verification: true,
     email,
     email_delivery: {
       provider: error.code || 'failed',
       skipped: false,
+      setup_required: setupRequired,
     },
   })
 }

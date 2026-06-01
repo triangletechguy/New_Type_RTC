@@ -2017,13 +2017,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         offKey: 'Set password',
       },
       {
-        field: 'paymentPasswordSet',
-        labelKey: 'Set payment password',
-        helperKey: 'Add a second check before diamond purchases.',
-        onKey: 'Set',
-        offKey: 'Set password',
-      },
-      {
         field: 'deviceAlerts',
         labelKey: 'Devices Logged In',
         helperKey: 'Show alerts when a new device logs in.',

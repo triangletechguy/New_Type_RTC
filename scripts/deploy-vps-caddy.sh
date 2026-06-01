@@ -80,6 +80,14 @@ write_env_files() {
   jwt_secret="$(get_env JWT_SECRET backend/.env)"
   turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
   feedback_to_email="$(get_env FEEDBACK_TO_EMAIL backend/.env)"
+  resend_api_key="${RESEND_API_KEY:-$(get_env RESEND_API_KEY backend/.env)}"
+  email_from="${EMAIL_FROM:-$(get_env EMAIL_FROM backend/.env)}"
+  smtp_host="${SMTP_HOST:-$(get_env SMTP_HOST backend/.env)}"
+  smtp_port="${SMTP_PORT:-$(get_env SMTP_PORT backend/.env)}"
+  smtp_user="${SMTP_USER:-$(get_env SMTP_USER backend/.env)}"
+  smtp_pass="${SMTP_PASS:-$(get_env SMTP_PASS backend/.env)}"
+  smtp_from="${SMTP_FROM:-$(get_env SMTP_FROM backend/.env)}"
+  smtp_secure="${SMTP_SECURE:-$(get_env SMTP_SECURE backend/.env)}"
 
   if [ -z "$db_password" ]; then db_password="$(random_hex 24)"; fi
   if [ -z "$jwt_secret" ]; then jwt_secret="$(random_hex 32)"; fi
@@ -104,6 +112,14 @@ write_env_files() {
   set_env TURN_CREDENTIAL "$turn_credential"
   set_env RTC_ICE_TRANSPORT_POLICY all
   set_env FEEDBACK_TO_EMAIL "$feedback_to_email"
+  if [ -n "$resend_api_key" ]; then set_env RESEND_API_KEY "$resend_api_key"; fi
+  if [ -n "$email_from" ]; then set_env EMAIL_FROM "$email_from"; fi
+  if [ -n "$smtp_host" ]; then set_env SMTP_HOST "$smtp_host"; fi
+  if [ -n "$smtp_port" ]; then set_env SMTP_PORT "$smtp_port"; fi
+  if [ -n "$smtp_user" ]; then set_env SMTP_USER "$smtp_user"; fi
+  if [ -n "$smtp_pass" ]; then set_env SMTP_PASS "$smtp_pass"; fi
+  if [ -n "$smtp_from" ]; then set_env SMTP_FROM "$smtp_from"; fi
+  if [ -n "$smtp_secure" ]; then set_env SMTP_SECURE "$smtp_secure"; fi
 
   cat > frontend/.env <<EOF
 VITE_API_BASE_URL=$DOMAIN/api
