@@ -24,8 +24,8 @@ import {
 import { giftCatalog } from '../../utils/gifts'
 
 const feedTabs = [
-  { value: 'following', label: 'Following', filter: 'all' },
-  { value: 'for_you', label: 'For You', filter: 'all' },
+  { value: 'following', label: 'Following', mobileLabel: 'Mine', filter: 'all' },
+  { value: 'for_you', label: 'For You', mobileLabel: 'Popular', filter: 'all' },
   { value: 'explore', label: 'Explore', filter: 'all' },
   { value: 'party', label: 'Party', filter: 'pk' },
   { value: 'nearby', label: 'Nearby', filter: 'all' },
@@ -1746,7 +1746,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               className={activeFeed === tab.value ? 'active' : ''}
               onClick={() => switchFeed(tab.value)}
             >
-              {tab.label}
+              <span className="feed-label-full">{tab.label}</span>
+              <span className="feed-label-mobile">{tab.mobileLabel || tab.label}</span>
             </button>
           ))}
         </nav>
@@ -2219,9 +2220,76 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const previewAvatar = avatarForIndex(cardAvatarIndex(card))
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
+    const roomIdLabel = card.room?.id || 50741761
+    const memberCount = Math.max(1, Math.min(999, Math.round(Number(card.viewers || 0) / 18)))
+    const mobileComments = [
+      { id: 'c1', body: 'Hi', badges: ['Lv.37', 'Lv.30'] },
+      { id: 'c2', body: 'This is comment area for all users', badges: ['Lv.37', 'Lv.30'] },
+      { id: 'c3', body: 'Now I can show you. Tap a user to open profile.', badges: ['Lv.37'] },
+    ]
+    const mobileSeats = Array.from({ length: 8 }, (_, index) => index + 1)
 
     return (
       <section className="buzzcast-room-preview">
+        <section className="buzzcast-mobile-room-live-preview" aria-label={`${card.title} live room preview`}>
+          <header className="buzzcast-mobile-live-head">
+            <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
+            <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+            <div>
+              <strong>{card.title}</strong>
+              <small>ID:{roomIdLabel} · {memberCount}</small>
+            </div>
+            <button type="button" aria-label="Share">↗</button>
+            <button type="button" aria-label="More">...</button>
+          </header>
+
+          <div className="buzzcast-mobile-live-ad">
+            <span>Group {memberCount}</span>
+            <strong>{card.host} is on live</strong>
+            <button type="button">GO</button>
+          </div>
+
+          <div className="buzzcast-mobile-seat-grid">
+            {mobileSeats.map((seat) => (
+              <button key={seat} type="button" className={seat === 1 || seat === 8 ? 'active' : ''}>
+                <span>{seat === 1 || seat === 8 ? 'mic' : 'lock'}</span>
+                <small>No.{seat}</small>
+              </button>
+            ))}
+          </div>
+
+          <div className="buzzcast-mobile-pk-badge">PK</div>
+          <p className="buzzcast-mobile-live-guide">Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.</p>
+          <button type="button" className="buzzcast-mobile-mic-line">Come on mic and chat together~</button>
+
+          <div className="buzzcast-mobile-live-comments">
+            {mobileComments.map((message) => (
+              <article key={message.id}>
+                <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+                <div>
+                  <strong><i>Owner</i> {card.host}</strong>
+                  <small>{message.badges.map((badge) => <b key={badge}>{badge}</b>)}</small>
+                  <p>{message.body}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <aside className="buzzcast-mobile-gift-rail">
+            {giftCatalog.slice(0, 3).map((gift) => (
+              <button key={gift.id} type="button" title={gift.label}>
+                <img src={gift.icon} alt="" loading="lazy" />
+              </button>
+            ))}
+          </aside>
+
+          <form className="buzzcast-mobile-live-composer" onSubmit={sendDmMessage}>
+            <button type="button" aria-label="Voice">mic</button>
+            <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
+            <button type="button" aria-label="Gift">gift</button>
+            <button type="submit" aria-label="Send">send</button>
+          </form>
+        </section>
         <section className="buzzcast-mobile-room-settings" aria-label={`${card.title} room settings`}>
           <header>
             <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
