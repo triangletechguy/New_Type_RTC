@@ -9068,6 +9068,47 @@ pre {
   gap: 10px;
 }
 
+.admin-dashboard-view .admin-header-actions {
+  justify-content: flex-end;
+}
+
+.admin-dashboard-view .page-header {
+  align-items: flex-start;
+}
+
+.admin-dashboard-view .page-header > div:first-child {
+  min-width: 0;
+}
+
+.admin-profile-button {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, .22);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .28);
+}
+
+.admin-profile-button:hover,
+.admin-profile-button:focus-visible {
+  border-color: rgba(139, 92, 246, .86);
+  box-shadow:
+    0 0 0 4px rgba(139, 92, 246, .18),
+    0 12px 28px rgba(0, 0, 0, .3);
+}
+
+.admin-profile-button img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
 .admin-scope-summary {
   justify-content: space-between;
   gap: 16px;
@@ -10946,6 +10987,22 @@ pre {
   .admin-header-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .admin-dashboard-view .page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .admin-dashboard-view .admin-header-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .admin-profile-button {
+    width: 40px;
+    height: 40px;
   }
 
   .admin-dashboard-tabs {

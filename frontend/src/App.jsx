@@ -266,7 +266,7 @@ export default function App() {
         <section className="content-shell">
           {safeView === 'admin' && canAccessAdminDashboard && (
             <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
-              <AdminView onView={changeView} onOpenRoom={openRoom} />
+              <AdminView onView={changeView} onOpenRoom={openRoom} user={user} onProfile={openProfile} />
             </Suspense>
           )}
           {safeView === 'sdk' && (
@@ -276,9 +276,11 @@ export default function App() {
           )}
         </section>
       </main>
-      <div className="global-profile-anchor">
-        <AppProfileButton user={user} onClick={openProfile} />
-      </div>
+      {safeView === 'admin' && canAccessAdminDashboard ? null : (
+        <div className="global-profile-anchor">
+          <AppProfileButton user={user} onClick={openProfile} />
+        </div>
+      )}
       <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
       <AuthModal
         open={authModalOpen}

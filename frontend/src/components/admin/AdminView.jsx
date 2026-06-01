@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { adminAssets } from '../../assets/rtc/catalog'
+import { adminAssets, avatarForIndex } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -2864,7 +2864,7 @@ function ParticipantRecordsTable({ records }) {
   )
 }
 
-export default function AdminView({ onView, onOpenRoom }) {
+export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
   const [overview, setOverview] = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedAdminId, setSelectedAdminId] = useState(null)
@@ -2911,6 +2911,8 @@ export default function AdminView({ onView, onOpenRoom }) {
     if (isSuperAdmin) return 'Client Company Dashboard'
     return 'Admin Dashboard'
   }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
+  const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
+  const profileLabel = user ? 'Open profile' : 'Profile'
 
   async function load(options = {}) {
     try {
@@ -3101,7 +3103,15 @@ export default function AdminView({ onView, onOpenRoom }) {
               setStatus('Showing all admin data')
             }}>All admins</button>
           ) : null}
-          <button className="primary-button" onClick={load}>Refresh</button>
+          <button
+            type="button"
+            className="admin-profile-button"
+            onClick={() => onProfile?.()}
+            aria-label={profileLabel}
+            title={profileLabel}
+          >
+            <img src={profileAvatar} alt="" />
+          </button>
         </div>
       </header>
 
