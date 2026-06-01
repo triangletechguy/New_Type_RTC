@@ -1066,6 +1066,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
+  const profileAvatar = user?.avatar_url || avatarForIndex(displayId)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
@@ -2376,7 +2377,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
-              <img src={avatarForIndex(displayId)} alt={profileInitials} loading="lazy" />
+              <img src={profileAvatar} alt={profileInitials} loading="lazy" />
             </span>
           </button>
         </div>

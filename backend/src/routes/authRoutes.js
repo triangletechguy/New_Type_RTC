@@ -10,7 +10,9 @@ const { authMiddleware } = require('../middleware/auth')
 const router = express.Router()
 const VERIFICATION_CODE_TTL_MINUTES = 15
 const MAX_VERIFICATION_ATTEMPTS = 5
+const MAX_AVATAR_DATA_URL_LENGTH = 650000
 const validGenderValues = new Set(['male', 'female', 'non_binary', 'prefer_not_to_say'])
+const avatarDataUrlPattern = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i
 let authSchemaPromise = null
 
 function normalizeEmail(value) {
@@ -55,6 +57,30 @@ function normalizeResidence(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120)
 }
 
+function normalizeAvatarUrl(value) {
+  if (value === undefined) return { hasValue: false, value: null }
+
+  const text = String(value || '').trim()
+  if (!text) return { hasValue: true, value: null }
+
+  if (/^https?:\/\//i.test(text)) {
+    if (text.length > 2000) {
+      return { hasValue: true, error: 'Profile photo URL is too long.' }
+    }
+    return { hasValue: true, value: text }
+  }
+
+  const compactDataUrl = text.replace(/\s+/g, '')
+  if (!avatarDataUrlPattern.test(compactDataUrl)) {
+    return { hasValue: true, error: 'Choose a PNG, JPG, or WebP profile photo.' }
+  }
+  if (compactDataUrl.length > MAX_AVATAR_DATA_URL_LENGTH) {
+    return { hasValue: true, error: 'Profile photo is too large. Choose a smaller photo.' }
+  }
+
+  return { hasValue: true, value: compactDataUrl }
+}
+
 function ageFromBirthday(value) {
   const birthday = normalizeDate(value)
   if (!birthday) return null
@@ -84,10 +110,12 @@ function createHttpError(status, message) {
 async function ensureAuthSchema() {
   if (!authSchemaPromise) {
     authSchemaPromise = (async () => {
+      await addColumnIfMissing('users', 'avatar_url', 'ALTER TABLE users ADD COLUMN avatar_url MEDIUMTEXT NULL AFTER password_hash')
       await addColumnIfMissing('users', 'gender', 'ALTER TABLE users ADD COLUMN gender VARCHAR(30) NULL AFTER avatar_url')
       await addColumnIfMissing('users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
       await addColumnIfMissing('users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
       await addColumnIfMissing('users', 'current_residence', 'ALTER TABLE users ADD COLUMN current_residence VARCHAR(120) NULL AFTER birthday')
+      await query('ALTER TABLE users MODIFY COLUMN avatar_url MEDIUMTEXT NULL')
 
       await query(
         "ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'"
@@ -700,6 +728,9 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     const age = normalizeAge(req.body?.age)
     const birthday = normalizeDate(req.body?.birthday)
     const currentResidence = normalizeResidence(req.body?.current_residence || req.body?.currentResidence)
+    const hasAvatarUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'avatar_url')
+    const hasAvatarUrlCamel = Object.prototype.hasOwnProperty.call(req.body || {}, 'avatarUrl')
+    const avatar = normalizeAvatarUrl(hasAvatarUrl ? req.body.avatar_url : hasAvatarUrlCamel ? req.body.avatarUrl : undefined)
 
     if (!name || !gender || age === null || !currentResidence || !birthday) {
       return res.status(422).json({ message: 'Name, gender, age, current residence, and birthday are required.' })
@@ -726,6 +757,10 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       return res.status(422).json({ message: 'Choose a valid birthday for a user age between 13 and 120.' })
     }
 
+    if (avatar.error) {
+      return res.status(422).json({ message: avatar.error })
+    }
+
     await query(
       `
       UPDATE users
@@ -734,6 +769,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
           age = :age,
           birthday = :birthday,
           current_residence = :currentResidence,
+          avatar_url = :avatarUrl,
           updated_at = NOW()
       WHERE id = :id
       AND tenant_id = :tenantId
@@ -746,6 +782,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
         age,
         birthday,
         currentResidence,
+        avatarUrl: avatar.hasValue ? avatar.value : req.user.avatar_url || null,
       }
     )
 

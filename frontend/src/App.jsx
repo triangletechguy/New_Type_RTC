@@ -18,10 +18,11 @@ function ViewFallback({ label }) {
 
 function AppProfileButton({ user, onClick }) {
   const label = user ? 'Open profile' : 'Login or signup'
+  const avatar = user?.avatar_url || avatarForIndex(user?.id || 0)
 
   return (
     <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>
-      {user ? <img src={avatarForIndex(user.id || 0)} alt="" /> : <span></span>}
+      {user ? <img src={avatar} alt="" /> : <span></span>}
     </button>
   )
 }

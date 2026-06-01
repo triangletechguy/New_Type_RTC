@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(150) NULL,
     phone VARCHAR(50) NULL,
     password_hash VARCHAR(255) NOT NULL,
-    avatar_url VARCHAR(255) NULL,
+    avatar_url MEDIUMTEXT NULL,
     status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
     last_login_at TIMESTAMP NULL,
     created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,

@@ -1036,6 +1036,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const hostName = room?.owner_name || user?.name || 'Room host'
   const roomCountry = user?.current_residence || 'Australia'
+  const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">
@@ -1064,7 +1065,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           </button>
           <button type="button" className="buzzcast-icon-button accent" onClick={() => toggleToolPanel('gifts')} aria-label="Gifts" title="Gifts">+</button>
           <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
-            <span className="image-avatar"><img src={avatarForIndex(user?.id || 0)} alt="" /></span>
+            <span className="image-avatar"><img src={profileAvatar} alt="" /></span>
           </button>
         </div>
       </header>

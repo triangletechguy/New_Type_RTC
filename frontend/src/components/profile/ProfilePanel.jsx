@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { avatarForIndex } from '../../assets/rtc/catalog'
 import { updateProfile } from '../../services/api'
+
+const supportedAvatarTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const maxAvatarSourceBytes = 6 * 1024 * 1024
+const maxAvatarDataUrlLength = 560000
 
 const genderLabels = {
   male: 'Male',
@@ -25,16 +29,83 @@ function normalizeProfileForm(user) {
     age: user?.age ? String(user.age) : '',
     current_residence: user?.current_residence || '',
     birthday: dateOnly(user?.birthday),
+    avatar_url: user?.avatar_url || '',
   }
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Could not read this profile photo.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Choose a different profile photo.'))
+    image.src = dataUrl
+  })
+}
+
+function canvasToDataUrl(canvas) {
+  const attempts = [
+    ['image/jpeg', 0.88],
+    ['image/jpeg', 0.78],
+    ['image/jpeg', 0.68],
+  ]
+
+  for (const [type, quality] of attempts) {
+    const dataUrl = canvas.toDataURL(type, quality)
+    if (dataUrl.length <= maxAvatarDataUrlLength) return dataUrl
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.6)
+}
+
+async function createAvatarDataUrl(file) {
+  if (!file) return ''
+  if (!supportedAvatarTypes.has(file.type)) {
+    throw new Error('Choose a PNG, JPG, or WebP profile photo.')
+  }
+  if (file.size > maxAvatarSourceBytes) {
+    throw new Error('Profile photo must be 6 MB or smaller.')
+  }
+
+  const source = await readFileAsDataUrl(file)
+  const image = await loadImage(source)
+  const side = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height)
+  const size = Math.min(512, side)
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+  const offsetX = Math.max(0, ((image.naturalWidth || image.width) - side) / 2)
+  const offsetY = Math.max(0, ((image.naturalHeight || image.height) - side) / 2)
+
+  context.fillStyle = '#111827'
+  context.fillRect(0, 0, size, size)
+  context.drawImage(image, offsetX, offsetY, side, side, 0, 0, size, size)
+
+  const dataUrl = canvasToDataUrl(canvas)
+  if (dataUrl.length > maxAvatarDataUrlLength) {
+    throw new Error('Profile photo is too large after resizing. Choose a smaller photo.')
+  }
+  return dataUrl
+}
+
 export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
+  const avatarInputRef = useRef(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(() => normalizeProfileForm(user))
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
   const name = displayName(user)
-  const avatar = avatarForIndex(user?.id || 0)
+  const fallbackAvatar = avatarForIndex(user?.id || 0)
+  const avatar = form.avatar_url === null ? fallbackAvatar : form.avatar_url || user?.avatar_url || fallbackAvatar
   const residence = user?.current_residence || 'Not set'
   const birthday = dateOnly(user?.birthday) || 'Not set'
 
@@ -42,10 +113,40 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
     setForm(normalizeProfileForm(user))
     setEditing(false)
     setStatus('')
-  }, [user?.id, user?.name, user?.gender, user?.age, user?.current_residence, user?.birthday])
+  }, [user?.id, user?.name, user?.gender, user?.age, user?.current_residence, user?.birthday, user?.avatar_url])
 
   function change(field, value) {
     setForm((previous) => ({ ...previous, [field]: field === 'age' ? value.replace(/\D/g, '').slice(0, 3) : value }))
+    setStatus('')
+  }
+
+  function openAvatarPicker() {
+    avatarInputRef.current?.click()
+  }
+
+  async function changeAvatar(event) {
+    const file = event.target.files?.[0]
+    if (event.target) event.target.value = ''
+    if (!file) return
+
+    setStatus('')
+    try {
+      const avatarUrl = await createAvatarDataUrl(file)
+      setForm((previous) => ({ ...previous, avatar_url: avatarUrl }))
+      setStatus('Profile photo ready. Save profile to apply it.')
+    } catch (error) {
+      setStatus(error.message)
+    }
+  }
+
+  function removeAvatar() {
+    setForm((previous) => ({ ...previous, avatar_url: null }))
+    setStatus('Profile photo removed. Save profile to apply it.')
+  }
+
+  function cancelEdit() {
+    setForm(normalizeProfileForm(user))
+    setEditing(false)
     setStatus('')
   }
 
@@ -86,6 +187,7 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
         age,
         current_residence: form.current_residence.trim(),
         birthday: form.birthday,
+        avatar_url: form.avatar_url || null,
       })
       onSaved?.(data.user)
       setEditing(false)
@@ -100,9 +202,27 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
   return (
     <section className="buzzcast-profile-panel profile-panel-card">
       <div className="buzzcast-profile-hero">
-        <div className="buzzcast-profile-avatar image-avatar">
-          <img src={avatar} alt="" loading="lazy" />
-        </div>
+        {editing ? (
+          <div className="profile-photo-editor">
+            <button type="button" className="buzzcast-profile-avatar profile-photo-button image-avatar" onClick={openAvatarPicker} disabled={saving} aria-label="Change profile photo">
+              <img src={avatar} alt="" loading="lazy" />
+              <span>Change</span>
+            </button>
+            <input
+              ref={avatarInputRef}
+              className="profile-photo-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={changeAvatar}
+              disabled={saving}
+            />
+            {form.avatar_url ? <button type="button" className="profile-photo-remove" onClick={removeAvatar} disabled={saving}>Remove</button> : null}
+          </div>
+        ) : (
+          <div className="buzzcast-profile-avatar image-avatar">
+            <img src={avatar} alt="" loading="lazy" />
+          </div>
+        )}
         <div>
           <h1>{name}</h1>
           <span>ID:{user?.id || 0}</span>
@@ -156,7 +276,7 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
             </label>
           </div>
           <footer>
-            <button type="button" className="secondary-button" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+            <button type="button" className="secondary-button" onClick={cancelEdit} disabled={saving}>Cancel</button>
             <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving...' : 'Save profile'}</button>
           </footer>
         </form>

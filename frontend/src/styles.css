@@ -1434,6 +1434,77 @@
   font-weight: 1000;
 }
 
+.profile-photo-editor {
+  width: 112px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.profile-photo-button {
+  padding: 0;
+  border: 3px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .25);
+  cursor: pointer;
+}
+
+.profile-photo-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, transparent 48%, rgba(13, 18, 32, .82));
+  opacity: .9;
+  transition: opacity .16s ease, background .16s ease;
+}
+
+.profile-photo-button span {
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  right: 8px;
+  bottom: 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 1000;
+  text-align: center;
+}
+
+.profile-photo-button:hover:not(:disabled),
+.profile-photo-button:focus-visible {
+  border-color: #63c7ff;
+  box-shadow: 0 0 0 4px rgba(99, 199, 255, .18), 0 14px 30px rgba(0, 0, 0, .28);
+}
+
+.profile-photo-button:hover:not(:disabled)::after,
+.profile-photo-button:focus-visible::after {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(18, 24, 43, .08), rgba(60, 92, 255, .78));
+}
+
+.profile-photo-input {
+  display: none;
+}
+
+.profile-photo-remove {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .06);
+  color: #d8def4;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.profile-photo-remove:hover:not(:disabled),
+.profile-photo-remove:focus-visible {
+  border-color: rgba(255, 106, 142, .8);
+  background: rgba(255, 106, 142, .16);
+  color: #fff;
+}
+
 .buzzcast-profile-hero h1 {
   margin: 0 0 8px;
   font-size: 18px;
@@ -1443,6 +1514,10 @@
 .buzzcast-profile-hero p,
 .buzzcast-profile-hero small {
   color: #aaa6bb;
+}
+
+.buzzcast-profile-hero .profile-photo-button span {
+  color: #fff;
 }
 
 .buzzcast-profile-hero p {

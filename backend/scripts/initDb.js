@@ -130,10 +130,12 @@ async function initializeDatabase() {
     // Execute the schema SQL file
     await connection.query(schema)
     await runLegacyMigrations(connection)
+    await addColumnIfMissing(connection, 'users', 'avatar_url', 'ALTER TABLE users ADD COLUMN avatar_url MEDIUMTEXT NULL AFTER password_hash')
     await addColumnIfMissing(connection, 'users', 'gender', 'ALTER TABLE users ADD COLUMN gender VARCHAR(30) NULL AFTER avatar_url')
     await addColumnIfMissing(connection, 'users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
     await addColumnIfMissing(connection, 'users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
     await addColumnIfMissing(connection, 'users', 'current_residence', 'ALTER TABLE users ADD COLUMN current_residence VARCHAR(120) NULL AFTER birthday')
+    await connection.query('ALTER TABLE users MODIFY COLUMN avatar_url MEDIUMTEXT NULL')
     await connection.query("ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'")
     
     console.log('✅ Database initialized successfully')

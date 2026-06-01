@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(150) NULL,
     phone VARCHAR(50) NULL,
     password_hash VARCHAR(255) NOT NULL,
-    avatar_url VARCHAR(255) NULL,
+    avatar_url MEDIUMTEXT NULL,
     gender VARCHAR(30) NULL,
     age INT UNSIGNED NULL,
     birthday DATE NULL,
