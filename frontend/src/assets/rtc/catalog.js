@@ -134,6 +134,13 @@ export function avatarForIndex(index = 0) {
   return avatarAssets[safeIndex(index, avatarAssets.length)]
 }
 
+export function avatarForGender(gender, fallbackIndex = 0) {
+  const normalizedGender = String(gender || '').trim().toLowerCase()
+  if (normalizedGender === 'male') return avatarAssets[0]
+  if (normalizedGender === 'female') return avatarAssets[1]
+  return avatarForIndex(fallbackIndex)
+}
+
 export function coverForDemoTone(tone, index = 0) {
   return toneCovers[tone] || coverRotation[safeIndex(index, coverRotation.length)]
 }

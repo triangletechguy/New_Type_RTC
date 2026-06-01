@@ -12,8 +12,9 @@ const VERIFICATION_CODE_TTL_MINUTES = 15
 const MAX_VERIFICATION_ATTEMPTS = 5
 const MAX_AVATAR_DATA_URL_LENGTH = 650000
 const SUPERADMIN_TENANT_ID = 1
-const SUPERADMIN_EMAIL = 'superadmin@chadnichok.com'
-const LEGACY_SUPERADMIN_EMAIL = 'superadmin@talkeachother.com'
+const SUPERADMIN_EMAIL = 'admin@gmail.com'
+const SUPERADMIN_PASSWORD = 'admin@gmail.com'
+const LEGACY_SUPERADMIN_EMAILS = ['superadmin@talkeachother.com', 'superadmin@chadnichok.com']
 const validGenderValues = new Set(['male', 'female', 'non_binary', 'prefer_not_to_say'])
 const avatarDataUrlPattern = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i
 let authSchemaPromise = null
@@ -26,6 +27,11 @@ function validateEmail(value) {
   const email = normalizeEmail(value)
   const emailPattern = /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
   return emailPattern.test(email)
+}
+
+function normalizeLoginEmail(value) {
+  const email = normalizeEmail(value)
+  return LEGACY_SUPERADMIN_EMAILS.includes(email) ? SUPERADMIN_EMAIL : email
 }
 
 function validateStrongPassword(value) {
@@ -377,82 +383,105 @@ async function getUserRoles(userId) {
 }
 
 async function migrateLegacySuperadminEmail() {
-  const legacyUsers = await query(
-    `
-    SELECT id
-    FROM users
-    WHERE tenant_id = :tenantId
-    AND email = :legacyEmail
-    LIMIT 1
-    `,
-    { tenantId: SUPERADMIN_TENANT_ID, legacyEmail: LEGACY_SUPERADMIN_EMAIL }
-  )
-  const legacyUser = legacyUsers[0]
-  if (!legacyUser) return
+  const superadminPasswordHash = await bcrypt.hash(SUPERADMIN_PASSWORD, 10)
 
-  const currentUsers = await query(
-    `
-    SELECT id
-    FROM users
-    WHERE tenant_id = :tenantId
-    AND email = :currentEmail
-    LIMIT 1
-    `,
-    { tenantId: SUPERADMIN_TENANT_ID, currentEmail: SUPERADMIN_EMAIL }
-  )
-  const currentUser = currentUsers[0]
+  for (const legacyEmail of LEGACY_SUPERADMIN_EMAILS) {
+    const legacyUsers = await query(
+      `
+      SELECT id
+      FROM users
+      WHERE tenant_id = :tenantId
+      AND email = :legacyEmail
+      LIMIT 1
+      `,
+      { tenantId: SUPERADMIN_TENANT_ID, legacyEmail }
+    )
+    const legacyUser = legacyUsers[0]
+    if (!legacyUser) continue
 
-  if (!currentUser) {
+    const currentUsers = await query(
+      `
+      SELECT id
+      FROM users
+      WHERE tenant_id = :tenantId
+      AND email = :currentEmail
+      LIMIT 1
+      `,
+      { tenantId: SUPERADMIN_TENANT_ID, currentEmail: SUPERADMIN_EMAIL }
+    )
+    const currentUser = currentUsers[0]
+
+    if (!currentUser) {
+      await query(
+        `
+        UPDATE users
+        SET email = :currentEmail,
+            name = 'TalkEachOther Super Admin',
+            password_hash = :passwordHash,
+            status = 'active',
+            updated_at = NOW()
+        WHERE id = :legacyId
+        `,
+        { currentEmail: SUPERADMIN_EMAIL, passwordHash: superadminPasswordHash, legacyId: legacyUser.id }
+      )
+      continue
+    }
+
+    if (currentUser.id === legacyUser.id) continue
+
     await query(
       `
       UPDATE users
-      SET email = :currentEmail,
-          name = 'TalkEachOther Super Admin',
-          status = 'active',
+      SET email = :archivedEmail,
+          status = 'inactive',
           updated_at = NOW()
       WHERE id = :legacyId
       `,
-      { currentEmail: SUPERADMIN_EMAIL, legacyId: legacyUser.id }
+      {
+        archivedEmail: `legacy-${legacyUser.id}-${legacyEmail}`,
+        legacyId: legacyUser.id,
+      }
     )
-    return
+
+    await query(
+      `
+      DELETE user_roles
+      FROM user_roles
+      INNER JOIN roles ON roles.id = user_roles.role_id
+      WHERE user_roles.user_id = :legacyId
+      AND roles.name IN ('client_admin', 'super_admin')
+      `,
+      { legacyId: legacyUser.id }
+    )
+
+    await query(
+      `
+      UPDATE users
+      SET name = 'TalkEachOther Super Admin',
+          password_hash = :passwordHash,
+          status = 'active',
+          updated_at = NOW()
+      WHERE id = :currentId
+      `,
+      { passwordHash: superadminPasswordHash, currentId: currentUser.id }
+    )
   }
-
-  if (currentUser.id === legacyUser.id) return
-
-  await query(
-    `
-    UPDATE users
-    SET email = :archivedEmail,
-        status = 'inactive',
-        updated_at = NOW()
-    WHERE id = :legacyId
-    `,
-    {
-      archivedEmail: `legacy-${legacyUser.id}-${LEGACY_SUPERADMIN_EMAIL}`,
-      legacyId: legacyUser.id,
-    }
-  )
-
-  await query(
-    `
-    DELETE user_roles
-    FROM user_roles
-    INNER JOIN roles ON roles.id = user_roles.role_id
-    WHERE user_roles.user_id = :legacyId
-    AND roles.name IN ('client_admin', 'super_admin')
-    `,
-    { legacyId: legacyUser.id }
-  )
 
   await query(
     `
     UPDATE users
     SET name = 'TalkEachOther Super Admin',
+        password_hash = :passwordHash,
         status = 'active',
         updated_at = NOW()
-    WHERE id = :currentId
+    WHERE tenant_id = :tenantId
+    AND email = :currentEmail
     `,
-    { currentId: currentUser.id }
+    {
+      tenantId: SUPERADMIN_TENANT_ID,
+      currentEmail: SUPERADMIN_EMAIL,
+      passwordHash: superadminPasswordHash,
+    }
   )
 }
 
@@ -460,15 +489,20 @@ router.post('/login', async (req, res, next) => {
   try {
     await ensureAuthSchema()
 
-    const email = normalizeEmail(req.body?.email)
+    const rawEmail = normalizeEmail(req.body?.email)
+    const email = normalizeLoginEmail(rawEmail)
     const password = String(req.body?.password || '')
 
-    if (!email || !password) {
+    if (!rawEmail || !password) {
       return res.status(422).json({ message: 'Email and password are required.' })
     }
 
-    if (!validateEmail(email)) {
+    if (!validateEmail(rawEmail)) {
       return res.status(422).json({ message: 'Enter a valid email address.' })
+    }
+
+    if (email === SUPERADMIN_EMAIL) {
+      await migrateLegacySuperadminEmail()
     }
 
     const users = await query(

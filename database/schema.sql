@@ -699,9 +699,9 @@ INSERT INTO users (
 VALUES (
     1,
     'TalkEachOther Super Admin',
-    'superadmin@chadnichok.com',
+    'admin@gmail.com',
     NULL,
-    '$2b$10$vF8cp4MARLxJf8Y/t6Fz8.N4eMnjKHX5LNM393qVr7PJtiM9nakOG',
+    '$2b$10$oKTKn19/ZYmFFN4l4hGmy.PmxCbjKGlTbvrThSTvVeLU/zkVfTFim',
     'active',
     NOW(),
     NOW()
@@ -727,7 +727,7 @@ VALUES (
     'Accenture Admin',
     'admin@accenture.com',
     NULL,
-    '$2b$10$vF8cp4MARLxJf8Y/t6Fz8.N4eMnjKHX5LNM393qVr7PJtiM9nakOG',
+    '$2b$10$oKTKn19/ZYmFFN4l4hGmy.PmxCbjKGlTbvrThSTvVeLU/zkVfTFim',
     'active',
     NOW(),
     NOW()
@@ -755,20 +755,20 @@ FROM user_roles
 INNER JOIN users ON users.id = user_roles.user_id
 INNER JOIN roles ON roles.id = user_roles.role_id
 WHERE roles.name IN ('client_admin', 'super_admin')
-AND users.email NOT IN ('superadmin@chadnichok.com', 'admin@accenture.com');
+AND users.email NOT IN ('admin@gmail.com', 'admin@accenture.com');
 
 DELETE user_roles
 FROM user_roles
 INNER JOIN users ON users.id = user_roles.user_id
 INNER JOIN roles ON roles.id = user_roles.role_id
 WHERE roles.name IN ('end_user', 'client_admin', 'super_admin')
-AND users.email IN ('superadmin@chadnichok.com', 'admin@accenture.com');
+AND users.email IN ('admin@gmail.com', 'admin@accenture.com');
 
 SET @super_admin_user_id := (
     SELECT id
     FROM users
     WHERE tenant_id = 1
-    AND email = 'superadmin@chadnichok.com'
+    AND email = 'admin@gmail.com'
     LIMIT 1
 );
 

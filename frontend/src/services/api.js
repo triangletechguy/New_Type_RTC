@@ -13,14 +13,14 @@ function defaultApiBaseUrl() {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl()
 export const AUTH_EXPIRED_EVENT = 'rtc:auth-expired'
-const LEGACY_SUPERADMIN_EMAIL = 'superadmin@talkeachother.com'
-const SUPERADMIN_EMAIL = 'superadmin@chadnichok.com'
+const LEGACY_SUPERADMIN_EMAILS = new Set(['superadmin@talkeachother.com', 'superadmin@chadnichok.com'])
+const SUPERADMIN_EMAIL = 'admin@gmail.com'
 
 function normalizeUserForClient(user) {
   if (!user) return user
 
   const email = String(user.email || '').toLowerCase()
-  if (email !== LEGACY_SUPERADMIN_EMAIL) return user
+  if (!LEGACY_SUPERADMIN_EMAILS.has(email)) return user
 
   return {
     ...user,

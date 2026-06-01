@@ -48,8 +48,8 @@ http://localhost:5173
 ## Default account
 
 ```txt
-Superadmin: superadmin@chadnichok.com / 123!@#
-Accenture admin: admin@accenture.com / 123!@#
+Superadmin: admin@gmail.com / admin@gmail.com
+Accenture admin: admin@accenture.com / admin@gmail.com
 ```
 
 ## Demo seed data

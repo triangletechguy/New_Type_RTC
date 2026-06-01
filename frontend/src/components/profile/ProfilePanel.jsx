@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { avatarForIndex } from '../../assets/rtc/catalog'
+import { avatarForGender } from '../../assets/rtc/catalog'
 import { updateProfile } from '../../services/api'
 
 const supportedAvatarTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
@@ -104,7 +104,7 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
   const name = displayName(user)
-  const fallbackAvatar = avatarForIndex(user?.id || 0)
+  const fallbackAvatar = avatarForGender(form.gender || user?.gender, user?.id || 0)
   const avatar = form.avatar_url === null ? fallbackAvatar : form.avatar_url || user?.avatar_url || fallbackAvatar
   const residence = user?.current_residence || 'Not set'
   const birthday = dateOnly(user?.birthday) || 'Not set'

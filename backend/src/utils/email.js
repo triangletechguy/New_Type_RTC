@@ -261,7 +261,7 @@ async function sendVerificationEmail({ to, name, code }) {
 }
 
 async function sendFeedbackEmail({ to, feedback }) {
-  const recipient = to || process.env.FEEDBACK_TO_EMAIL || process.env.SUPERADMIN_EMAIL || 'superadmin@chadnichok.com'
+  const recipient = to || process.env.FEEDBACK_TO_EMAIL || process.env.SUPERADMIN_EMAIL || 'admin@gmail.com'
   return sendEmailMessage(
     feedbackMessage({
       to: recipient,

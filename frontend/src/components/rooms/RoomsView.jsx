@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { avatarForIndex, brandAssets, coverForDemoTone, coverForRoomType, roomAssets } from '../../assets/rtc/catalog'
+import { avatarForGender, avatarForIndex, brandAssets, coverForDemoTone, coverForRoomType, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { apiRequest } from '../../services/api'
 import { canUseAdminDashboard } from '../../utils/roles'
@@ -1077,7 +1077,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
-  const profileAvatar = user?.avatar_url || avatarForIndex(displayId)
+  const profileAvatar = user?.avatar_url || avatarForGender(user?.gender, displayId)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)

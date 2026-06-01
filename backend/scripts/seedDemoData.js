@@ -7,10 +7,10 @@ const crypto = require('crypto')
 const mysql = require('mysql2/promise')
 
 const tenantId = 1
-const adminPassword = '123!@#'
+const adminPassword = 'admin@gmail.com'
 const passwordRoomPassword = 'Room@1234'
-const superadminEmail = 'superadmin@chadnichok.com'
-const legacySuperadminEmail = 'superadmin@talkeachother.com'
+const superadminEmail = 'admin@gmail.com'
+const legacySuperadminEmails = ['superadmin@talkeachother.com', 'superadmin@chadnichok.com']
 
 const connectionConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -250,70 +250,72 @@ async function upsertUser(connection, user, passwordHash, roleIds) {
 }
 
 async function migrateLegacySuperadminEmail(connection) {
-  const legacy = await fetchOne(
-    connection,
-    `
-    SELECT id
-    FROM users
-    WHERE tenant_id = ?
-    AND email = ?
-    LIMIT 1
-    `,
-    [tenantId, legacySuperadminEmail]
-  )
+  for (const legacySuperadminEmail of legacySuperadminEmails) {
+    const legacy = await fetchOne(
+      connection,
+      `
+      SELECT id
+      FROM users
+      WHERE tenant_id = ?
+      AND email = ?
+      LIMIT 1
+      `,
+      [tenantId, legacySuperadminEmail]
+    )
 
-  if (!legacy) return
+    if (!legacy) continue
 
-  const current = await fetchOne(
-    connection,
-    `
-    SELECT id
-    FROM users
-    WHERE tenant_id = ?
-    AND email = ?
-    LIMIT 1
-    `,
-    [tenantId, superadminEmail]
-  )
+    const current = await fetchOne(
+      connection,
+      `
+      SELECT id
+      FROM users
+      WHERE tenant_id = ?
+      AND email = ?
+      LIMIT 1
+      `,
+      [tenantId, superadminEmail]
+    )
 
-  if (!current) {
+    if (!current) {
+      await connection.execute(
+        `
+        UPDATE users
+        SET name = 'TalkEachOther Super Admin',
+            email = ?,
+            status = 'active',
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [superadminEmail, legacy.id]
+      )
+      continue
+    }
+
+    if (current.id === legacy.id) continue
+
     await connection.execute(
       `
       UPDATE users
-      SET name = 'TalkEachOther Super Admin',
-          email = ?,
-          status = 'active',
+      SET email = ?,
+          status = 'inactive',
           updated_at = NOW()
       WHERE id = ?
       `,
-      [superadminEmail, legacy.id]
+      [`legacy-${legacy.id}-${legacySuperadminEmail}`, legacy.id]
     )
-    return
+
+    await connection.execute(
+      `
+      DELETE user_roles
+      FROM user_roles
+      INNER JOIN roles ON roles.id = user_roles.role_id
+      WHERE user_roles.user_id = ?
+      AND roles.name IN ('client_admin', 'super_admin')
+      `,
+      [legacy.id]
+    )
   }
-
-  if (current.id === legacy.id) return
-
-  await connection.execute(
-    `
-    UPDATE users
-    SET email = ?,
-        status = 'inactive',
-        updated_at = NOW()
-    WHERE id = ?
-    `,
-    [`legacy-${legacy.id}-${legacySuperadminEmail}`, legacy.id]
-  )
-
-  await connection.execute(
-    `
-    DELETE user_roles
-    FROM user_roles
-    INNER JOIN roles ON roles.id = user_roles.role_id
-    WHERE user_roles.user_id = ?
-    AND roles.name IN ('client_admin', 'super_admin')
-    `,
-    [legacy.id]
-  )
 }
 
 async function deactivateKnownDemoUsers(connection) {
