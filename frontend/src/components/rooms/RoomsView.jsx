@@ -2227,7 +2227,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       { id: 'c2', body: 'This is comment area for all users', badges: ['Lv.37', 'Lv.30'] },
       { id: 'c3', body: 'Now I can show you. Tap a user to open profile.', badges: ['Lv.37'] },
     ]
-    const mobileSeats = Array.from({ length: 8 }, (_, index) => index + 1)
+    const mobileSeats = Array.from({ length: 12 }, (_, index) => index + 1)
 
     return (
       <section className="buzzcast-room-preview">
@@ -2243,23 +2243,38 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" aria-label="More">...</button>
           </header>
 
-          <div className="buzzcast-mobile-live-ad">
-            <span>Group {memberCount}</span>
-            <strong>{card.host} is on live</strong>
-            <button type="button">GO</button>
+          <div className="buzzcast-mobile-live-actions">
+            <button type="button">Refresh</button>
+            <button type="button">Voice</button>
+            <button type="button">Play List</button>
+            <button type="button" aria-label="Power">⏻</button>
+          </div>
+
+          <div className="buzzcast-mobile-video-card">
+            <div>
+              <strong>AADAT (ROCK VERSION)</strong>
+              <small>{card.host} - Topic</small>
+            </div>
+            <img src={previewCover} alt="" loading="lazy" />
+            <button type="button" aria-label="Play video"></button>
+            <span className="start-time">00:03:35</span>
+            <span className="end-time">00:03:35</span>
+            <i></i>
           </div>
 
           <div className="buzzcast-mobile-seat-grid">
             {mobileSeats.map((seat) => (
-              <button key={seat} type="button" className={seat === 1 || seat === 8 ? 'active' : ''}>
-                <span>{seat === 1 || seat === 8 ? 'mic' : 'lock'}</span>
+              <button key={seat} type="button" className={seat === 1 || seat === 9 || seat === 10 || seat === 12 ? 'active' : ''}>
+                <span>{seat === 1 || seat === 9 || seat === 10 || seat === 12 ? 'mic' : 'lock'}</span>
                 <small>No.{seat}</small>
               </button>
             ))}
           </div>
 
-          <div className="buzzcast-mobile-pk-badge">PK</div>
-          <p className="buzzcast-mobile-live-guide">Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.</p>
+          <div className="buzzcast-mobile-live-guide-row">
+            <p className="buzzcast-mobile-live-guide">Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.</p>
+            <span><img src={giftCatalog[0]?.icon} alt="" loading="lazy" /></span>
+          </div>
           <button type="button" className="buzzcast-mobile-mic-line">Come on mic and chat together~</button>
 
           <div className="buzzcast-mobile-live-comments">
