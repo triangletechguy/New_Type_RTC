@@ -961,6 +961,8 @@ function BuzzLogo() {
 function FeedCard({ card, featured, onOpen }) {
   const cover = cardCover(card)
   const avatarIndex = cardAvatarIndex(card)
+  const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
+  const privacy = card.room?.privacy_type || card.privacy || 'public'
 
   return (
     <article className={`buzzcast-room-card ${featured ? 'featured' : ''}`}>
@@ -979,6 +981,10 @@ function FeedCard({ card, featured, onOpen }) {
         <div className="buzzcast-card-copy">
           <strong>{card.title}</strong>
           <span>{card.host}</span>
+          <small className="buzzcast-card-meta">
+            <b>{roomMeta.label}</b>
+            <em>{privacy === 'public' ? `${compactNumber(card.viewers)} watching` : privacy}</em>
+          </small>
         </div>
       </button>
     </article>
@@ -1727,6 +1733,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
+    const hintCard = visibleCards[0] || demoCards[0]
+    const hintMeta = getRoomMeta(hintCard.room?.room_type || hintCard.roomType)
+
     return (
       <section className="buzzcast-discover">
         <nav className="buzzcast-feed-nav" aria-label="Room feed">
@@ -1758,7 +1767,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ) : null}
 
         <div className="buzzcast-match-banner">
-          <strong>Live rooms built for video, music, chat, gifts, and enterprise RTC demos</strong>
+          <button type="button" className="buzzcast-hint-room" onClick={() => openCard(hintCard)}>
+            <span className="buzzcast-hint-avatar image-avatar">
+              <img src={avatarForIndex(cardAvatarIndex(hintCard))} alt="" loading="lazy" />
+            </span>
+            <span className="buzzcast-hint-copy">
+              <strong>{hintCard.title}</strong>
+              <small>{hintMeta.label} - {compactNumber(hintCard.viewers)} watching</small>
+            </span>
+            <span className="buzzcast-hint-ribbon">Mine</span>
+          </button>
           <button type="button" onClick={() => openHostPanel()}>Create room</button>
         </div>
 
