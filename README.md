@@ -48,7 +48,7 @@ http://localhost:5173
 ## Default account
 
 ```txt
-Superadmin: superadmin@talkeachother.com / 123!@#
+Superadmin: superadmin@chadnichok.com / 123!@#
 Accenture admin: admin@accenture.com / 123!@#
 ```
 

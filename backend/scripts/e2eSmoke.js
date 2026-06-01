@@ -6,7 +6,7 @@ const mysql = require('mysql2/promise')
 const bcrypt = require('bcryptjs')
 
 const API_BASE_URL = process.env.E2E_API_BASE_URL || `http://127.0.0.1:${process.env.PORT || 8000}/api`
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'superadmin@talkeachother.com'
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'superadmin@chadnichok.com'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || '123!@#'
 const TEST_VERIFICATION_CODE = process.env.E2E_VERIFICATION_CODE || '123456'
 

@@ -680,7 +680,7 @@ INSERT INTO users (
 VALUES (
     1,
     'TalkEachOther Super Admin',
-    'superadmin@talkeachother.com',
+    'superadmin@chadnichok.com',
     NULL,
     '$2b$10$vF8cp4MARLxJf8Y/t6Fz8.N4eMnjKHX5LNM393qVr7PJtiM9nakOG',
     'active',
@@ -736,20 +736,20 @@ FROM user_roles
 INNER JOIN users ON users.id = user_roles.user_id
 INNER JOIN roles ON roles.id = user_roles.role_id
 WHERE roles.name IN ('client_admin', 'super_admin')
-AND users.email NOT IN ('superadmin@talkeachother.com', 'admin@accenture.com');
+AND users.email NOT IN ('superadmin@chadnichok.com', 'admin@accenture.com');
 
 DELETE user_roles
 FROM user_roles
 INNER JOIN users ON users.id = user_roles.user_id
 INNER JOIN roles ON roles.id = user_roles.role_id
 WHERE roles.name IN ('end_user', 'client_admin', 'super_admin')
-AND users.email IN ('superadmin@talkeachother.com', 'admin@accenture.com');
+AND users.email IN ('superadmin@chadnichok.com', 'admin@accenture.com');
 
 SET @super_admin_user_id := (
     SELECT id
     FROM users
     WHERE tenant_id = 1
-    AND email = 'superadmin@talkeachother.com'
+    AND email = 'superadmin@chadnichok.com'
     LIMIT 1
 );
 

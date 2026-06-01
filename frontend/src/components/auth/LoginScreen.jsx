@@ -6,11 +6,11 @@ import { getPasswordError, normalizeEmail, validateAuthFields } from '../../util
 export function LoginScreen({ onLogin }) {
   const [mode, setMode] = useState('login')
   const [name, setName] = useState('Test User')
-  const [email, setEmail] = useState('superadmin@talkeachother.com')
+  const [email, setEmail] = useState('superadmin@chadnichok.com')
   const [password, setPassword] = useState('123!@#')
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
-  const [status, setStatus] = useState('Use superadmin@talkeachother.com or admin@accenture.com with password 123!@#.')
+  const [status, setStatus] = useState('Use superadmin@chadnichok.com or admin@accenture.com with password 123!@#.')
   const [submitting, setSubmitting] = useState(false)
   const passwordStrong = !getPasswordError(password, { strong: true })
 
@@ -18,7 +18,7 @@ export function LoginScreen({ onLogin }) {
     setMode(nextMode)
     setFieldErrors({})
     setStatus(nextMode === 'login'
-      ? 'Use superadmin@talkeachother.com or admin@accenture.com with password 123!@#.'
+      ? 'Use superadmin@chadnichok.com or admin@accenture.com with password 123!@#.'
       : 'Create a host profile for video rooms, music rooms, and live chat.')
   }
 

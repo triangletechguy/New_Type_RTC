@@ -272,7 +272,7 @@ async function deactivateKnownDemoUsers(connection) {
     INNER JOIN users ON users.id = user_roles.user_id
     INNER JOIN roles ON roles.id = user_roles.role_id
     WHERE roles.name IN ('client_admin', 'super_admin')
-    AND users.email NOT IN ('superadmin@talkeachother.com', 'admin@accenture.com')
+    AND users.email NOT IN ('superadmin@chadnichok.com', 'admin@accenture.com')
     `,
     []
   )
@@ -981,7 +981,7 @@ async function main() {
       connection,
       {
         name: 'TalkEachOther Super Admin',
-        email: 'superadmin@talkeachother.com',
+        email: 'superadmin@chadnichok.com',
         roles: ['end_user', 'client_admin', 'super_admin'],
         replaceRoles: true,
       },
@@ -1279,7 +1279,7 @@ async function main() {
     await connection.commit()
 
     console.log('TalkEachOther data seeded successfully.')
-    console.log(`Superadmin: superadmin@talkeachother.com / ${adminPassword}`)
+    console.log(`Superadmin: superadmin@chadnichok.com / ${adminPassword}`)
     console.log(`Accenture admin: admin@accenture.com / ${adminPassword}`)
     console.log(`Rooms: ${Object.keys(rooms).length} rooms, room password ${passwordRoomPassword}`)
     console.log(`Active sessions: stage #${stageSessionId}, music #${musicSessionId}`)

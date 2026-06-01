@@ -91,7 +91,7 @@ write_env_files() {
 
   if [ -z "$db_password" ]; then db_password="$(random_hex 24)"; fi
   if [ -z "$jwt_secret" ]; then jwt_secret="$(random_hex 32)"; fi
-  if [ -z "$feedback_to_email" ]; then feedback_to_email="${FEEDBACK_TO_EMAIL:-triangletechguy993@outlook.com}"; fi
+  if [ -z "$feedback_to_email" ]; then feedback_to_email="${FEEDBACK_TO_EMAIL:-superadmin@chadnichok.com}"; fi
   if [ -z "$turn_credential" ] || [ "$turn_credential" = "YOUR_TURN_PASSWORD" ]; then
     turn_credential="$(random_hex 20)"
   fi
