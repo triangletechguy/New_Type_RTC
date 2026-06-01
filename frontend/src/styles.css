@@ -6483,11 +6483,52 @@ pre {
   .buzzcast-live-side {
     height: min(620px, calc(100svh - 82px));
     min-height: 460px;
+    margin: -1px 0 0;
+    padding: 12px;
     overflow: hidden;
+    border-radius: 18px 18px 0 0;
+    background:
+      linear-gradient(180deg, rgba(47, 45, 63, .98), rgba(31, 31, 43, .98)),
+      #262536;
   }
 
   .buzzcast-live-side .chat-panel {
     min-height: 0;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  }
+
+  .buzzcast-live-side .chat-panel-header {
+    display: flex;
+    min-height: 42px;
+    padding: 0 2px 8px;
+    border-bottom: 0;
+  }
+
+  .buzzcast-live-side .chat-panel-header h3 {
+    margin-top: 1px;
+    font-size: 16px;
+  }
+
+  .buzzcast-live-side .chat-panel-header .eyebrow {
+    font-size: 10px;
+  }
+
+  .buzzcast-live-side .chat-connection {
+    min-height: 28px;
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  .buzzcast-live-side .chat-mode-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding: 0 0 8px;
+    background: linear-gradient(180deg, rgba(47, 45, 63, .98), rgba(47, 45, 63, .88));
+  }
+
+  .buzzcast-live-side .chat-mode-tabs button {
+    min-height: 38px;
   }
 
   .buzzcast-live-side .messages,
@@ -6496,11 +6537,124 @@ pre {
     min-height: 0;
   }
 
+  .buzzcast-live-side .messages {
+    gap: 10px;
+    padding: 8px 0 10px;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .buzzcast-live-side .empty-chat {
+    min-height: 260px;
+  }
+
+  .buzzcast-live-side .empty-chat-art {
+    width: min(150px, 70%);
+  }
+
+  .buzzcast-live-side .chat-row {
+    gap: 8px;
+  }
+
+  .buzzcast-live-side .chat-avatar {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .buzzcast-live-side .chat-bubble {
+    max-width: calc(100% - 44px);
+    padding: 9px 10px;
+    border-radius: 10px;
+  }
+
+  .buzzcast-live-side .chat-bubble.image-message {
+    width: min(84%, 300px);
+  }
+
+  .buzzcast-live-side .chat-meta {
+    gap: 8px;
+  }
+
+  .buzzcast-live-side .chat-photo {
+    max-height: 220px;
+  }
+
+  .buzzcast-live-side .chat-voice-message audio {
+    max-width: 100%;
+  }
+
+  .buzzcast-live-side .chat-actions {
+    opacity: 1;
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .buzzcast-live-side .chat-row.mine .chat-actions {
+    justify-content: flex-end;
+  }
+
+  .buzzcast-live-side .chat-actions button {
+    min-height: 32px;
+    padding: 6px 9px;
+  }
+
   .buzzcast-live-side .chat-form textarea {
     height: 64px;
     min-height: 64px;
     max-height: 64px;
     font-size: 16px;
+  }
+
+  .buzzcast-live-side .chat-form {
+    gap: 8px;
+    padding: 10px 0 0;
+  }
+
+  .buzzcast-live-side .chat-form-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .buzzcast-live-side .chat-form-footer > span {
+    justify-self: end;
+    line-height: 1;
+  }
+
+  .buzzcast-live-side .chat-form-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+    gap: 8px;
+  }
+
+  .buzzcast-live-side .chat-form-actions button,
+  .buzzcast-live-side .chat-form-footer button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 9px 8px;
+  }
+
+  .buzzcast-live-side .chat-photo-draft,
+  .buzzcast-live-side .chat-audio-draft {
+    border-radius: 10px;
+  }
+
+  .buzzcast-live-side .personal-inbox {
+    gap: 10px;
+  }
+
+  .buzzcast-live-side .inbox-thread-strip {
+    min-height: 58px;
+    padding-bottom: 6px;
+  }
+
+  .buzzcast-live-side .inbox-thread-strip button {
+    min-width: 148px;
+    border-radius: 10px;
   }
 
   .buzzcast-live-stage-streams {
@@ -9955,6 +10109,54 @@ pre {
 
   .preview-live-card {
     min-height: 330px;
+  }
+
+  .chat-delete-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .chat-delete-modal {
+    width: 100%;
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .chat-delete-modal h3 {
+    margin-bottom: 12px;
+    font-size: 18px;
+  }
+
+  .chat-delete-modal p {
+    margin-bottom: 16px;
+    font-size: 15px;
+  }
+
+  .chat-delete-option {
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 14px;
+  }
+
+  .chat-delete-option input {
+    flex: 0 0 auto;
+    margin-top: 2px;
+  }
+
+  .chat-delete-modal footer {
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  .chat-delete-modal footer button {
+    flex: 1;
+    min-height: 44px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, .08);
+  }
+
+  .chat-delete-modal footer .danger-button {
+    background: rgba(220, 38, 38, .08);
   }
 
   .auth-modal-backdrop {
