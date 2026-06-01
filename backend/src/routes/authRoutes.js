@@ -11,6 +11,9 @@ const router = express.Router()
 const VERIFICATION_CODE_TTL_MINUTES = 15
 const MAX_VERIFICATION_ATTEMPTS = 5
 const MAX_AVATAR_DATA_URL_LENGTH = 650000
+const SUPERADMIN_TENANT_ID = 1
+const SUPERADMIN_EMAIL = 'superadmin@chadnichok.com'
+const LEGACY_SUPERADMIN_EMAIL = 'superadmin@talkeachother.com'
 const validGenderValues = new Set(['male', 'female', 'non_binary', 'prefer_not_to_say'])
 const avatarDataUrlPattern = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i
 let authSchemaPromise = null
@@ -120,6 +123,8 @@ async function ensureAuthSchema() {
       await query(
         "ALTER TABLE users MODIFY COLUMN status ENUM('pending_verification', 'active', 'inactive', 'banned') DEFAULT 'active'"
       )
+
+      await migrateLegacySuperadminEmail()
 
       await query(
         `
@@ -368,6 +373,86 @@ async function getUserRoles(userId) {
     WHERE user_roles.user_id = :userId
     `,
     { userId }
+  )
+}
+
+async function migrateLegacySuperadminEmail() {
+  const legacyUsers = await query(
+    `
+    SELECT id
+    FROM users
+    WHERE tenant_id = :tenantId
+    AND email = :legacyEmail
+    LIMIT 1
+    `,
+    { tenantId: SUPERADMIN_TENANT_ID, legacyEmail: LEGACY_SUPERADMIN_EMAIL }
+  )
+  const legacyUser = legacyUsers[0]
+  if (!legacyUser) return
+
+  const currentUsers = await query(
+    `
+    SELECT id
+    FROM users
+    WHERE tenant_id = :tenantId
+    AND email = :currentEmail
+    LIMIT 1
+    `,
+    { tenantId: SUPERADMIN_TENANT_ID, currentEmail: SUPERADMIN_EMAIL }
+  )
+  const currentUser = currentUsers[0]
+
+  if (!currentUser) {
+    await query(
+      `
+      UPDATE users
+      SET email = :currentEmail,
+          name = 'TalkEachOther Super Admin',
+          status = 'active',
+          updated_at = NOW()
+      WHERE id = :legacyId
+      `,
+      { currentEmail: SUPERADMIN_EMAIL, legacyId: legacyUser.id }
+    )
+    return
+  }
+
+  if (currentUser.id === legacyUser.id) return
+
+  await query(
+    `
+    UPDATE users
+    SET email = :archivedEmail,
+        status = 'inactive',
+        updated_at = NOW()
+    WHERE id = :legacyId
+    `,
+    {
+      archivedEmail: `legacy-${legacyUser.id}-${LEGACY_SUPERADMIN_EMAIL}`,
+      legacyId: legacyUser.id,
+    }
+  )
+
+  await query(
+    `
+    DELETE user_roles
+    FROM user_roles
+    INNER JOIN roles ON roles.id = user_roles.role_id
+    WHERE user_roles.user_id = :legacyId
+    AND roles.name IN ('client_admin', 'super_admin')
+    `,
+    { legacyId: legacyUser.id }
+  )
+
+  await query(
+    `
+    UPDATE users
+    SET name = 'TalkEachOther Super Admin',
+        status = 'active',
+        updated_at = NOW()
+    WHERE id = :currentId
+    `,
+    { currentId: currentUser.id }
   )
 }
 
@@ -712,8 +797,18 @@ router.get('/me', authMiddleware, async (req, res, next) => {
   try {
     await ensureAuthSchema()
 
-    const roles = await getUserRoles(req.user.id)
-    return res.json({ user: formatUser(req.user, roles) })
+    const users = await query(
+      `
+      SELECT *
+      FROM users
+      WHERE id = :id
+      LIMIT 1
+      `,
+      { id: req.user.id }
+    )
+    const currentUser = users[0] || req.user
+    const roles = await getUserRoles(currentUser.id)
+    return res.json({ user: formatUser(currentUser, roles) })
   } catch (error) {
     next(error)
   }

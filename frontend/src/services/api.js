@@ -13,6 +13,20 @@ function defaultApiBaseUrl() {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl()
 export const AUTH_EXPIRED_EVENT = 'rtc:auth-expired'
+const LEGACY_SUPERADMIN_EMAIL = 'superadmin@talkeachother.com'
+const SUPERADMIN_EMAIL = 'superadmin@chadnichok.com'
+
+function normalizeUserForClient(user) {
+  if (!user) return user
+
+  const email = String(user.email || '').toLowerCase()
+  if (email !== LEGACY_SUPERADMIN_EMAIL) return user
+
+  return {
+    ...user,
+    email: SUPERADMIN_EMAIL,
+  }
+}
 
 function notifyAuthExpired() {
   clearSession()
@@ -45,19 +59,20 @@ export function getUser() {
   if (!saved) return null
 
   try {
-    return JSON.parse(saved)
+    return normalizeUserForClient(JSON.parse(saved))
   } catch {
     return null
   }
 }
 
 export function saveSession(token, user) {
+  const normalizedUser = normalizeUserForClient(user)
   localStorage.setItem('rtc_access_token', token)
-  localStorage.setItem('rtc_user', JSON.stringify(user))
+  localStorage.setItem('rtc_user', JSON.stringify(normalizedUser))
 }
 
 export function saveUser(user) {
-  localStorage.setItem('rtc_user', JSON.stringify(user))
+  localStorage.setItem('rtc_user', JSON.stringify(normalizeUserForClient(user)))
 }
 
 export function clearSession() {
@@ -110,6 +125,15 @@ export async function login(email, password) {
   })
 
   saveSession(data.access_token, data.user)
+  data.user = normalizeUserForClient(data.user)
+  return data
+}
+
+export async function refreshCurrentUser() {
+  const data = await apiRequest('/auth/me')
+
+  saveUser(data.user)
+  data.user = normalizeUserForClient(data.user)
   return data
 }
 
@@ -127,6 +151,7 @@ export async function updateProfile(profile) {
   })
 
   saveUser(data.user)
+  data.user = normalizeUserForClient(data.user)
   return data
 }
 
@@ -137,6 +162,7 @@ export async function verifyEmail(email, code) {
   })
 
   saveSession(data.access_token, data.user)
+  data.user = normalizeUserForClient(data.user)
   return data
 }
 

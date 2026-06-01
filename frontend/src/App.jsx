@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { avatarForIndex } from './assets/rtc/catalog'
-import { AUTH_EXPIRED_EVENT, clearSession, getUser, saveUser } from './services/api'
+import { AUTH_EXPIRED_EVENT, clearSession, getUser, getToken, refreshCurrentUser, saveUser } from './services/api'
 import { AuthModal } from './components/auth/AuthModal'
 import { Sidebar } from './components/layout/Sidebar'
 import { ProfileModal } from './components/profile/ProfilePanel'
@@ -126,6 +126,28 @@ export default function App() {
 
     window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired)
+  }, [])
+
+  useEffect(() => {
+    if (!getToken()) return undefined
+
+    let cancelled = false
+    refreshCurrentUser()
+      .then((data) => {
+        if (!cancelled) setUser(data.user)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        if (error.status === 401 || error.status === 403) {
+          clearSession()
+          setUser(null)
+          setProfileOpen(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   function handleLogin(currentUser) {

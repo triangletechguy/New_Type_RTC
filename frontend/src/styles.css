@@ -10838,3 +10838,387 @@ pre {
     grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
   }
 }
+
+@media (max-width: 620px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-shell,
+  .content-shell,
+  .view-stack,
+  .sidebar,
+  .page-header,
+  .glass-card,
+  .admin-dashboard-view,
+  .enterprise-panel,
+  .admin-list-panel,
+  .admin-data-card,
+  .company-directory-panel,
+  .company-directory-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-shell {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .sidebar {
+    padding: 12px;
+    gap: 8px;
+    border-radius: 8px;
+  }
+
+  .logo-row {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .logo-row .logo-mark,
+  .sidebar-user .avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+
+  .logo-row strong {
+    font-size: 12px;
+  }
+
+  .logo-row span,
+  .sidebar-user span {
+    font-size: 10px;
+  }
+
+  .nav-item {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  .sidebar-user {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+    padding: 8px;
+  }
+
+  .sidebar-user > div:last-child,
+  .sidebar-user strong,
+  .sidebar-user span {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .sidebar-user strong,
+  .sidebar-user span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar-user strong {
+    font-size: 12px;
+  }
+
+  .page-header {
+    gap: 10px;
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+    line-height: 1.08;
+  }
+
+  .page-header p {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .admin-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .admin-dashboard-tabs {
+    gap: 4px;
+    padding: 5px;
+    margin-inline: 0;
+  }
+
+  .admin-dashboard-tabs button {
+    min-height: 34px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+
+  .admin-status-bar {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .enterprise-panel,
+  .admin-list-panel,
+  .admin-data-card {
+    padding: 12px;
+  }
+
+  .admin-panel-header,
+  .company-directory-header,
+  .company-detail-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-panel-header h2,
+  .admin-scope-summary h2,
+  .enterprise-service-copy h2 {
+    font-size: 19px;
+    line-height: 1.14;
+  }
+
+  .admin-panel-header > span,
+  .admin-panel-header button,
+  .admin-table-controls select,
+  .company-directory-tools input,
+  .company-directory-tools select {
+    font-size: 11px;
+  }
+
+  .company-directory-tools,
+  .company-directory-grid,
+  .company-directory-stats,
+  .company-detail-strip,
+  .admin-account-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-directory-tools {
+    min-width: 0;
+  }
+
+  .company-directory-card {
+    padding: 12px;
+  }
+
+  .company-directory-main,
+  .company-detail-title {
+    align-items: flex-start;
+  }
+
+  .company-directory-main strong,
+  .company-directory-main small,
+  .company-directory-contact span,
+  .company-detail-title h2,
+  .company-detail-title p {
+    white-space: normal;
+  }
+
+  .company-logo-mark,
+  .admin-account-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+
+  .company-directory-kpis div,
+  .enterprise-kpi-grid div,
+  .billing-summary-grid div {
+    min-height: 66px;
+    padding: 11px;
+  }
+
+  .company-directory-kpis strong,
+  .enterprise-kpi-grid strong,
+  .billing-summary-grid strong {
+    font-size: 18px;
+  }
+
+  .admin-data-table {
+    min-width: 640px;
+  }
+
+  .buzzcast-shell {
+    overflow-x: hidden;
+    font-size: 13px;
+  }
+
+  .buzzcast-topbar {
+    min-height: 0;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .buzzcast-logo {
+    width: 100%;
+    gap: 7px;
+  }
+
+  .buzzcast-logo-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .buzzcast-logo strong {
+    max-width: 150px;
+    font-size: 11px;
+  }
+
+  .buzzcast-logo span {
+    max-width: 150px;
+    font-size: 7px;
+  }
+
+  .buzzcast-search-wrap {
+    grid-template-columns: minmax(0, 1fr) 46px;
+    height: 34px;
+    max-width: none;
+  }
+
+  .buzzcast-search-wrap input,
+  .buzzcast-search-wrap button {
+    height: 34px;
+  }
+
+  .buzzcast-search-wrap input {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .buzzcast-search-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  .buzzcast-search-icon::before {
+    border-width: 2px;
+  }
+
+  .buzzcast-search-icon::after {
+    width: 7px;
+    height: 2px;
+  }
+
+  .buzzcast-search-panel {
+    top: 38px;
+    width: calc(100vw - 16px);
+    max-height: min(320px, calc(100vh - 110px));
+  }
+
+  .buzzcast-actions {
+    gap: 7px;
+  }
+
+  .buzzcast-icon-button,
+  .buzzcast-avatar-button {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .buzzcast-avatar-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .buzzcast-left-rail {
+    gap: 6px;
+    padding: 6px 8px;
+    scrollbar-width: none;
+  }
+
+  .buzzcast-left-rail::-webkit-scrollbar,
+  .buzzcast-feed-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .buzzcast-left-rail button {
+    min-width: 86px;
+    min-height: 34px;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 6px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .buzzcast-rail-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .buzzcast-main {
+    min-height: auto;
+    padding: 10px 8px 22px;
+  }
+
+  .buzzcast-feed-nav {
+    height: 34px;
+    gap: 18px;
+    margin-bottom: 8px;
+    padding-bottom: 2px;
+  }
+
+  .buzzcast-feed-nav button {
+    flex: 0 0 auto;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .buzzcast-feed-nav button.active::after {
+    width: 32px;
+    height: 3px;
+  }
+
+  .buzzcast-match-banner {
+    min-height: 0;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+  }
+
+  .buzzcast-match-banner strong {
+    overflow: visible;
+    font-size: 12px;
+    line-height: 1.25;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .buzzcast-match-banner button {
+    width: 100%;
+    min-height: 34px;
+    font-size: 12px;
+  }
+
+  .buzzcast-feed-controls {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .buzzcast-feed-controls span {
+    font-size: 11px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .buzzcast-feed-controls > div {
+    gap: 6px;
+  }
+
+  .buzzcast-feed-controls select {
+    height: 32px;
+    min-width: 0;
+    font-size: 12px;
+  }
+}

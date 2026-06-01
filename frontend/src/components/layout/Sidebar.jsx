@@ -1,8 +1,9 @@
-import { brandAssets } from '../../assets/rtc/catalog'
+import { avatarForIndex, brandAssets } from '../../assets/rtc/catalog'
 import { canUseAdminDashboard } from '../../utils/roles'
 
 export function Sidebar({ user, currentView, onView, onLogout }) {
   const showAdminDashboard = canUseAdminDashboard(user) === true
+  const avatar = user?.avatar_url || avatarForIndex(user?.id || 0)
 
   return (
     <aside className="sidebar glass-card">
@@ -23,7 +24,7 @@ export function Sidebar({ user, currentView, onView, onLogout }) {
       <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>Developer Docs</button>
 
       <div className="sidebar-user">
-        <div className="avatar">{user?.name?.slice(0, 1)?.toUpperCase() || 'U'}</div>
+        <div className="avatar image-avatar"><img src={avatar} alt="" /></div>
         <div>
           <strong>{user?.name || 'User'}</strong>
           <span>{user?.email}</span>
