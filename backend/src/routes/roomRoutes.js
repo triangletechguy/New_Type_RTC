@@ -91,6 +91,7 @@ function serializeRoom(row) {
   return {
     id: Number(row.id),
     tenant_id: Number(row.tenant_id),
+    tenant_name: row.tenant_name || null,
     owner_id: Number(row.owner_id),
     owner_name: row.owner_name || null,
     name: row.name,
@@ -119,9 +120,11 @@ function roomSelectSql() {
       r.room_type, r.privacy_type, r.max_mic_count, r.theme,
       r.chat_enabled, r.gift_enabled, r.screen_share_enabled, r.ai_security_enabled,
       r.status, r.created_at, r.updated_at,
+      tenant.name AS tenant_name,
       owner.name AS owner_name,
       COALESCE(active_counts.active_participants, 0) AS active_participants
     FROM rooms r
+    LEFT JOIN tenants tenant ON tenant.id = r.tenant_id
     LEFT JOIN users owner ON owner.id = r.owner_id
     LEFT JOIN (
       SELECT active_sessions.room_id, COUNT(active_participants.id) AS active_participants
@@ -187,9 +190,15 @@ function getRoomListOptions(req) {
   return { page, perPage, search, status, type, privacy, sort }
 }
 
-function buildRoomListWhere(options, tenantId, userId) {
-  const conditions = ['r.tenant_id = :tenantId']
+function buildRoomListWhere(options, tenantId, userId, user) {
+  const roles = Array.isArray(user?.roles) ? user.roles : []
+  const isPlatformAdmin = roles.includes('super_admin')
+  const conditions = []
   const params = { tenantId }
+
+  if (!isPlatformAdmin) {
+    conditions.push('r.tenant_id = :tenantId')
+  }
 
   if (!userId) {
     conditions.push("r.status = 'active'")
@@ -242,11 +251,23 @@ function buildRoomListWhere(options, tenantId, userId) {
   }
 
   if (options.search) {
-    conditions.push('(r.name LIKE :search OR r.description LIKE :search OR CAST(r.id AS CHAR) LIKE :search)')
+    conditions.push(`
+      (
+        r.name LIKE :search
+        OR r.description LIKE :search
+        OR CAST(r.id AS CHAR) LIKE :search
+        OR EXISTS (
+          SELECT 1
+          FROM tenants search_tenant
+          WHERE search_tenant.id = r.tenant_id
+          AND search_tenant.name LIKE :search
+        )
+      )
+    `)
     params.search = `%${options.search}%`
   }
 
-  return { whereSql: conditions.join(' AND '), params }
+  return { whereSql: conditions.length ? conditions.join(' AND ') : '1 = 1', params }
 }
 
 function canSeeAllTenantRooms(user) {
@@ -573,7 +594,7 @@ router.get('/', optionalAuthMiddleware, async (req, res, next) => {
     const { whereSql, params } = buildRoomListWhere({
       ...options,
       canSeePrivateRooms: canSeeAllTenantRooms(req.user),
-    }, tenantId, req.user?.id || null)
+    }, tenantId, req.user?.id || null, req.user)
     const offset = (options.page - 1) * options.perPage
     const limitSql = Number(options.perPage)
     const offsetSql = Number(offset)
