@@ -129,17 +129,23 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       const data = await registerApi({
         name: name.trim(),
         gender,
-        age: Number(age),
-        current_residence: currentResidence.trim(),
-        birthday,
+        age: age ? Number(age) : null,
+        current_residence: currentResidence.trim() || null,
+        birthday: birthday || null,
         email: normalizedEmail,
         password,
       })
       setEmail(data.email || normalizedEmail)
       switchMode('verify')
       setCode('')
-      setStatus(data.message || 'Verification code sent. Check your email inbox.')
+      setStatus(data.verification_code
+        ? `Email delivery is not configured. Use code ${data.verification_code} to verify this test account.`
+        : data.message || 'Verification code sent. Check your email inbox.')
     } catch (error) {
+      if (error.requires_verification) {
+        setEmail(error.email || normalizeEmail(email))
+        switchMode('verify')
+      }
       setStatus(error.message)
     } finally {
       setSubmitting(false)

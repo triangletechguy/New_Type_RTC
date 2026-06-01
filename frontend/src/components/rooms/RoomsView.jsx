@@ -71,33 +71,621 @@ const demoCards = [
 ]
 
 const dmThreads = [
-  { id: 'donna', peerId: 32165333, name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: '[Stickers]', unread: 1, followed: false },
-  { id: 'jennifer', peerId: 32165334, name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: '[Stickers]', unread: 1, followed: false },
-  { id: 'friend', peerId: 32165335, name: 'Friend...', time: 'Wednesday 01:27', preview: '@Jessica An3215971...', unread: 4, followed: true },
-  { id: 'buzz', peerId: 32165336, name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to TalkEachOther...', unread: 1, followed: true },
+  { id: 'donna', peerId: 32165333, name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: 'Hi, are you joining the live room today?', unread: 1, followed: false },
+  { id: 'jennifer', peerId: 32165334, name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: 'Can you check the room invite I sent?', unread: 1, followed: false },
+  { id: 'friend', peerId: 32165335, name: 'Friend...', time: 'Wednesday 01:27', preview: 'Following up on the private room link.', unread: 4, followed: true },
+  { id: 'buzz', peerId: 32165336, name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to the TalkEachOther lobby.', unread: 1, followed: true },
 ]
 
 const initialDmMessages = {
-  donna: [],
-  jennifer: [],
-  friend: [],
+  donna: [{ id: 'donna-1', author: 'Donna Walk3...', body: 'Hi, are you joining the live room today?', mine: false }],
+  jennifer: [{ id: 'jennifer-1', author: 'Jennifer Ortiz...', body: 'Can you check the room invite I sent?', mine: false }],
+  friend: [
+    { id: 'friend-1', author: 'Friend...', body: 'Following up on the private room link.', mine: false },
+    { id: 'friend-2', author: 'You', body: 'Yes, send it again and I will join.', mine: true },
+  ],
   buzz: [{ id: 'welcome', author: 'TalkEachOther', body: 'Welcome to the TalkEachOther lobby.', mine: false }],
 }
 
 const settingsNav = [
-  { value: 'account', label: 'Account Security', icon: 'U' },
-  { value: 'privacy', label: 'Privacy Settings', icon: 'S' },
-  { value: 'content', label: 'Content Preferences', icon: 'F' },
-  { value: 'language', label: 'Multi-Language', icon: 'A' },
-  { value: 'region', label: 'Region', icon: 'P' },
-  { value: 'terms', label: 'Terms and Policies', icon: 'D' },
+  { value: 'account', labelKey: 'Account Security', icon: 'U' },
+  { value: 'privacy', labelKey: 'Privacy Settings', icon: 'S' },
+  { value: 'content', labelKey: 'Content Preferences', icon: 'F' },
+  { value: 'region', labelKey: 'Region', icon: 'P' },
+  { value: 'terms', labelKey: 'Terms and Policies', icon: 'D' },
 ]
 
 const languages = ['English', 'Japanese', 'Korean', 'French', 'Italian', 'Russian', 'Spanish', 'German', 'Portuguese', 'Hindi']
-const regions = ['Afghanistan', 'Aland Islands', 'Albania', 'Algeria', 'American Samoa', 'Andorra', 'Angola', 'Anguilla', 'Antigua and Barbuda', 'Argentina', 'Australia', 'Brazil', 'Canada', 'United States']
+const languageLocales = {
+  English: 'en',
+  Japanese: 'ja',
+  Korean: 'ko',
+  French: 'fr',
+  Italian: 'it',
+  Russian: 'ru',
+  Spanish: 'es',
+  German: 'de',
+  Portuguese: 'pt',
+  Hindi: 'hi',
+}
+const languageNativeNames = {
+  English: 'English',
+  Japanese: '日本語',
+  Korean: '한국어',
+  French: 'Français',
+  Italian: 'Italiano',
+  Russian: 'Русский',
+  Spanish: 'Español',
+  German: 'Deutsch',
+  Portuguese: 'Português',
+  Hindi: 'हिन्दी',
+}
+const settingsCopy = {
+  English: {
+    'Account Security': 'Account Security',
+    'Privacy Settings': 'Privacy Settings',
+    'Content Preferences': 'Content Preferences',
+    'Multi-Language': 'Multi-Language',
+    Region: 'Region',
+    'Terms and Policies': 'Terms and Policies',
+    'Changes are applied immediately for this session.': 'Changes are applied immediately for this session.',
+    'Binding cell phone': 'Binding cell phone',
+    'Recommended for account recovery and high-value payments.': 'Recommended for account recovery and high-value payments.',
+    'Binding email': 'Binding email',
+    'Used for login recovery and security notices.': 'Used for login recovery and security notices.',
+    'Set login password': 'Set login password',
+    'Protect this account when signing in on a new device.': 'Protect this account when signing in on a new device.',
+    'Set payment password': 'Set payment password',
+    'Add a second check before diamond purchases.': 'Add a second check before diamond purchases.',
+    'Devices Logged In': 'Devices Logged In',
+    'Show alerts when a new device logs in.': 'Show alerts when a new device logs in.',
+    Bound: 'Bound',
+    Set: 'Set',
+    'Bind cell phone': 'Bind cell phone',
+    'Bind email': 'Bind email',
+    'Set password': 'Set password',
+    'Alerts on': 'Alerts on',
+    'Alerts off': 'Alerts off',
+    'Cell phone bound.': 'Cell phone bound.',
+    'Email bound.': 'Email bound.',
+    'Login password set.': 'Login password set.',
+    'Payment password set.': 'Payment password set.',
+    'Device login alerts updated.': 'Device login alerts updated.',
+    Cancel: 'Cancel',
+    Save: 'Save',
+    'Cell phone number': 'Cell phone number',
+    'Email address': 'Email address',
+    'New password': 'New password',
+    'Confirm password': 'Confirm password',
+    'Payment PIN': 'Payment PIN',
+    'Confirm PIN': 'Confirm PIN',
+    'Enter a valid phone number.': 'Enter a valid phone number.',
+    'Enter a valid email address.': 'Enter a valid email address.',
+    'Use at least 10 characters for the password.': 'Use at least 10 characters for the password.',
+    'Passwords do not match.': 'Passwords do not match.',
+    'Use a 6 digit payment PIN.': 'Use a 6 digit payment PIN.',
+    'Payment PINs do not match.': 'Payment PINs do not match.',
+    'Who can send me a message': 'Who can send me a message',
+    'Controls the personal inbox and room chat shortcuts.': 'Controls the personal inbox and room chat shortcuts.',
+    Everyone: 'Everyone',
+    'Followers only': 'Followers only',
+    Nobody: 'Nobody',
+    'Private live invitation': 'Private live invitation',
+    'Allow hosts to invite you into private live rooms.': 'Allow hosts to invite you into private live rooms.',
+    'Automatic deduction for entering the private live broadcast room': 'Automatic deduction for entering the private live broadcast room',
+    'After opening, private rooms can automatically deduct diamonds.': 'After opening, private rooms can automatically deduct diamonds.',
+    Blacklist: 'Blacklist',
+    'Blocked users are controlled from the chat user menu.': 'Blocked users are controlled from the chat user menu.',
+    'Live broadcast you are not interested in': 'Live broadcast you are not interested in',
+    'Filtered from your feed.': 'Filtered from your feed.',
+    'Visible in your feed.': 'Visible in your feed.',
+    Filtered: 'Filtered',
+    Show: 'Show',
+    'Message privacy updated.': 'Message privacy updated.',
+    'Private live invitation setting updated.': 'Private live invitation setting updated.',
+    'Private-room deduction setting updated.': 'Private-room deduction setting updated.',
+    'Live preference updated.': 'Live preference updated.',
+    'Restricted Mode': 'Restricted Mode',
+    'Hide potentially sensitive content.': 'Hide potentially sensitive content.',
+    'Warning Mode': 'Warning Mode',
+    'Show a warning before sensitive rooms open.': 'Show a warning before sensitive rooms open.',
+    'All Modes': 'All Modes',
+    'Show all room content that is available to your account.': 'Show all room content that is available to your account.',
+    'selected.': 'selected.',
+    'Language changed to {language}.': 'Language changed to {language}.',
+    'Search region': 'Search region',
+    'Region changed to {region}.': 'Region changed to {region}.',
+    'Terms of Service': 'Terms of Service',
+    'Privacy Policy': 'Privacy Policy',
+    'Child Safety Policy': 'Child Safety Policy',
+    'Anti-Bullying Policy': 'Anti-Bullying Policy',
+    Copyright: 'Copyright',
+    '{policy} will open in the production policy page.': '{policy} will open in the production policy page.',
+  },
+  Japanese: {
+    'Account Security': 'アカウントセキュリティ',
+    'Privacy Settings': 'プライバシー設定',
+    'Content Preferences': 'コンテンツ設定',
+    'Multi-Language': '多言語',
+    Region: '地域',
+    'Terms and Policies': '利用規約とポリシー',
+    'Changes are applied immediately for this session.': '変更はこのセッションにすぐ反映されます。',
+    'Binding cell phone': '携帯電話を連携',
+    'Recommended for account recovery and high-value payments.': 'アカウント復旧と高額決済におすすめです。',
+    'Binding email': 'メールを連携',
+    'Used for login recovery and security notices.': 'ログイン復旧とセキュリティ通知に使用します。',
+    'Set login password': 'ログインパスワードを設定',
+    'Protect this account when signing in on a new device.': '新しい端末でサインインするときに保護します。',
+    'Set payment password': '支払いパスワードを設定',
+    'Add a second check before diamond purchases.': 'ダイヤ購入前に追加確認します。',
+    'Devices Logged In': 'ログイン中の端末',
+    'Show alerts when a new device logs in.': '新しい端末のログイン時に通知します。',
+    Bound: '連携済み',
+    Set: '設定済み',
+    'Bind cell phone': '携帯電話を連携',
+    'Bind email': 'メールを連携',
+    'Set password': 'パスワード設定',
+    'Alerts on': '通知オン',
+    'Alerts off': '通知オフ',
+    'Cell phone bound.': '携帯電話を連携しました。',
+    'Email bound.': 'メールを連携しました。',
+    'Login password set.': 'ログインパスワードを設定しました。',
+    'Payment password set.': '支払いパスワードを設定しました。',
+    'Device login alerts updated.': '端末ログイン通知を更新しました。',
+    Cancel: 'キャンセル',
+    Save: '保存',
+    'Cell phone number': '携帯電話番号',
+    'Email address': 'メールアドレス',
+    'New password': '新しいパスワード',
+    'Confirm password': 'パスワード確認',
+    'Payment PIN': '支払いPIN',
+    'Confirm PIN': 'PIN確認',
+    'Enter a valid phone number.': '有効な電話番号を入力してください。',
+    'Enter a valid email address.': '有効なメールアドレスを入力してください。',
+    'Use at least 10 characters for the password.': 'パスワードは10文字以上にしてください。',
+    'Passwords do not match.': 'パスワードが一致しません。',
+    'Use a 6 digit payment PIN.': '6桁の支払いPINを使用してください。',
+    'Payment PINs do not match.': '支払いPINが一致しません。',
+    'Language changed to {language}.': '言語を{language}に変更しました。',
+  },
+  Korean: {
+    'Account Security': '계정 보안',
+    'Privacy Settings': '개인정보 설정',
+    'Content Preferences': '콘텐츠 설정',
+    'Multi-Language': '다국어',
+    Region: '지역',
+    'Terms and Policies': '약관 및 정책',
+    'Changes are applied immediately for this session.': '변경 사항은 이 세션에 즉시 적용됩니다.',
+    'Binding cell phone': '휴대폰 연결',
+    'Recommended for account recovery and high-value payments.': '계정 복구와 고액 결제에 권장됩니다.',
+    'Binding email': '이메일 연결',
+    'Used for login recovery and security notices.': '로그인 복구와 보안 알림에 사용됩니다.',
+    'Set login password': '로그인 비밀번호 설정',
+    'Protect this account when signing in on a new device.': '새 기기 로그인 시 계정을 보호합니다.',
+    'Set payment password': '결제 비밀번호 설정',
+    'Add a second check before diamond purchases.': '다이아몬드 구매 전에 추가 확인을 합니다.',
+    'Devices Logged In': '로그인된 기기',
+    'Show alerts when a new device logs in.': '새 기기 로그인 시 알림을 표시합니다.',
+    Bound: '연결됨',
+    Set: '설정됨',
+    'Bind cell phone': '휴대폰 연결',
+    'Bind email': '이메일 연결',
+    'Set password': '비밀번호 설정',
+    'Alerts on': '알림 켜짐',
+    'Alerts off': '알림 꺼짐',
+    'Cell phone bound.': '휴대폰이 연결되었습니다.',
+    'Email bound.': '이메일이 연결되었습니다.',
+    'Login password set.': '로그인 비밀번호가 설정되었습니다.',
+    'Payment password set.': '결제 비밀번호가 설정되었습니다.',
+    'Device login alerts updated.': '기기 로그인 알림이 업데이트되었습니다.',
+    Cancel: '취소',
+    Save: '저장',
+    'Cell phone number': '휴대폰 번호',
+    'Email address': '이메일 주소',
+    'New password': '새 비밀번호',
+    'Confirm password': '비밀번호 확인',
+    'Payment PIN': '결제 PIN',
+    'Confirm PIN': 'PIN 확인',
+    'Enter a valid phone number.': '올바른 전화번호를 입력하세요.',
+    'Enter a valid email address.': '올바른 이메일 주소를 입력하세요.',
+    'Use at least 10 characters for the password.': '비밀번호는 10자 이상이어야 합니다.',
+    'Passwords do not match.': '비밀번호가 일치하지 않습니다.',
+    'Use a 6 digit payment PIN.': '6자리 결제 PIN을 사용하세요.',
+    'Payment PINs do not match.': '결제 PIN이 일치하지 않습니다.',
+    'Who can send me a message': '나에게 메시지를 보낼 수 있는 사람',
+    'Controls the personal inbox and room chat shortcuts.': '개인 받은편지함과 방 채팅 바로가기를 제어합니다.',
+    Everyone: '모두',
+    'Followers only': '팔로워만',
+    Nobody: '아무도 없음',
+    'Private live invitation': '비공개 라이브 초대',
+    'Allow hosts to invite you into private live rooms.': '호스트가 비공개 라이브룸에 초대할 수 있게 합니다.',
+    'Automatic deduction for entering the private live broadcast room': '비공개 라이브룸 입장 자동 차감',
+    'After opening, private rooms can automatically deduct diamonds.': '활성화하면 비공개 룸에서 다이아몬드가 자동 차감됩니다.',
+    Blacklist: '차단 목록',
+    'Blocked users are controlled from the chat user menu.': '차단 사용자는 채팅 사용자 메뉴에서 관리합니다.',
+    'Live broadcast you are not interested in': '관심 없는 라이브 방송',
+    'Filtered from your feed.': '피드에서 필터링됩니다.',
+    'Visible in your feed.': '피드에 표시됩니다.',
+    Filtered: '필터됨',
+    Show: '표시',
+    'Message privacy updated.': '메시지 개인정보 설정이 업데이트되었습니다.',
+    'Private live invitation setting updated.': '비공개 라이브 초대 설정이 업데이트되었습니다.',
+    'Private-room deduction setting updated.': '비공개 룸 차감 설정이 업데이트되었습니다.',
+    'Live preference updated.': '라이브 선호 설정이 업데이트되었습니다.',
+    'Restricted Mode': '제한 모드',
+    'Hide potentially sensitive content.': '민감할 수 있는 콘텐츠를 숨깁니다.',
+    'Warning Mode': '경고 모드',
+    'Show a warning before sensitive rooms open.': '민감한 방을 열기 전에 경고를 표시합니다.',
+    'All Modes': '모든 모드',
+    'Show all room content that is available to your account.': '계정에서 이용 가능한 모든 방 콘텐츠를 표시합니다.',
+    'selected.': '선택됨.',
+    'Language changed to {language}.': '언어가 {language}(으)로 변경되었습니다.',
+    'Search region': '지역 검색',
+    'Region changed to {region}.': '지역이 {region}(으)로 변경되었습니다.',
+    'Terms of Service': '서비스 약관',
+    'Privacy Policy': '개인정보 처리방침',
+    'Child Safety Policy': '아동 안전 정책',
+    'Anti-Bullying Policy': '괴롭힘 방지 정책',
+    Copyright: '저작권',
+    '{policy} will open in the production policy page.': '{policy} 페이지가 프로덕션 정책 페이지에서 열립니다.',
+  },
+}
+const shortLanguageCopy = {
+  French: {
+    'Account Security': 'Sécurité du compte',
+    'Privacy Settings': 'Confidentialité',
+    'Content Preferences': 'Préférences de contenu',
+    'Multi-Language': 'Langues',
+    Region: 'Région',
+    'Terms and Policies': 'Conditions et politiques',
+    'Changes are applied immediately for this session.': 'Les changements sont appliqués immédiatement.',
+    'Language changed to {language}.': 'Langue changée en {language}.',
+  },
+  Italian: {
+    'Account Security': 'Sicurezza account',
+    'Privacy Settings': 'Privacy',
+    'Content Preferences': 'Preferenze contenuti',
+    'Multi-Language': 'Multilingua',
+    Region: 'Regione',
+    'Terms and Policies': 'Termini e norme',
+    'Changes are applied immediately for this session.': 'Le modifiche vengono applicate subito.',
+    'Language changed to {language}.': 'Lingua cambiata in {language}.',
+  },
+  Russian: {
+    'Account Security': 'Безопасность аккаунта',
+    'Privacy Settings': 'Конфиденциальность',
+    'Content Preferences': 'Настройки контента',
+    'Multi-Language': 'Языки',
+    Region: 'Регион',
+    'Terms and Policies': 'Условия и политики',
+    'Changes are applied immediately for this session.': 'Изменения применяются сразу.',
+    'Language changed to {language}.': 'Язык изменен на {language}.',
+  },
+  Spanish: {
+    'Account Security': 'Seguridad de la cuenta',
+    'Privacy Settings': 'Privacidad',
+    'Content Preferences': 'Preferencias de contenido',
+    'Multi-Language': 'Varios idiomas',
+    Region: 'Región',
+    'Terms and Policies': 'Términos y políticas',
+    'Changes are applied immediately for this session.': 'Los cambios se aplican inmediatamente.',
+    'Language changed to {language}.': 'Idioma cambiado a {language}.',
+  },
+  German: {
+    'Account Security': 'Kontosicherheit',
+    'Privacy Settings': 'Datenschutz',
+    'Content Preferences': 'Inhaltseinstellungen',
+    'Multi-Language': 'Mehrsprachig',
+    Region: 'Region',
+    'Terms and Policies': 'Bedingungen und Richtlinien',
+    'Changes are applied immediately for this session.': 'Änderungen werden sofort angewendet.',
+    'Language changed to {language}.': 'Sprache zu {language} geändert.',
+  },
+  Portuguese: {
+    'Account Security': 'Segurança da conta',
+    'Privacy Settings': 'Privacidade',
+    'Content Preferences': 'Preferências de conteúdo',
+    'Multi-Language': 'Multi-idioma',
+    Region: 'Região',
+    'Terms and Policies': 'Termos e políticas',
+    'Changes are applied immediately for this session.': 'As alterações são aplicadas imediatamente.',
+    'Language changed to {language}.': 'Idioma alterado para {language}.',
+  },
+  Hindi: {
+    'Account Security': 'खाता सुरक्षा',
+    'Privacy Settings': 'गोपनीयता सेटिंग',
+    'Content Preferences': 'सामग्री पसंद',
+    'Multi-Language': 'बहु-भाषा',
+    Region: 'क्षेत्र',
+    'Terms and Policies': 'नियम और नीतियां',
+    'Changes are applied immediately for this session.': 'बदलाव तुरंत लागू होते हैं।',
+    'Language changed to {language}.': 'भाषा {language} में बदल गई।',
+  },
+}
+Object.entries(shortLanguageCopy).forEach(([language, copy]) => {
+  settingsCopy[language] = { ...settingsCopy.English, ...copy }
+})
+const regions = [
+  'Afghanistan',
+  'Aland Islands',
+  'Albania',
+  'Algeria',
+  'American Samoa',
+  'Andorra',
+  'Angola',
+  'Anguilla',
+  'Antarctica',
+  'Antigua and Barbuda',
+  'Argentina',
+  'Armenia',
+  'Aruba',
+  'Australia',
+  'Austria',
+  'Azerbaijan',
+  'Bahamas',
+  'Bahrain',
+  'Bangladesh',
+  'Barbados',
+  'Belarus',
+  'Belgium',
+  'Belize',
+  'Benin',
+  'Bermuda',
+  'Bhutan',
+  'Bolivia',
+  'Bonaire, Sint Eustatius and Saba',
+  'Bosnia and Herzegovina',
+  'Botswana',
+  'Bouvet Island',
+  'Brazil',
+  'British Indian Ocean Territory',
+  'Brunei',
+  'Bulgaria',
+  'Burkina Faso',
+  'Burundi',
+  'Cabo Verde',
+  'Cambodia',
+  'Cameroon',
+  'Canada',
+  'Cayman Islands',
+  'Central African Republic',
+  'Chad',
+  'Chile',
+  'China',
+  'Christmas Island',
+  'Cocos Islands',
+  'Colombia',
+  'Comoros',
+  'Congo',
+  'Congo, Democratic Republic of the',
+  'Cook Islands',
+  'Costa Rica',
+  "Cote d'Ivoire",
+  'Croatia',
+  'Cuba',
+  'Curacao',
+  'Cyprus',
+  'Czechia',
+  'Denmark',
+  'Djibouti',
+  'Dominica',
+  'Dominican Republic',
+  'Ecuador',
+  'Egypt',
+  'El Salvador',
+  'Equatorial Guinea',
+  'Eritrea',
+  'Estonia',
+  'Eswatini',
+  'Ethiopia',
+  'Falkland Islands',
+  'Faroe Islands',
+  'Fiji',
+  'Finland',
+  'France',
+  'French Guiana',
+  'French Polynesia',
+  'French Southern Territories',
+  'Gabon',
+  'Gambia',
+  'Georgia',
+  'Germany',
+  'Ghana',
+  'Gibraltar',
+  'Greece',
+  'Greenland',
+  'Grenada',
+  'Guadeloupe',
+  'Guam',
+  'Guatemala',
+  'Guernsey',
+  'Guinea',
+  'Guinea-Bissau',
+  'Guyana',
+  'Haiti',
+  'Heard Island and McDonald Islands',
+  'Holy See',
+  'Honduras',
+  'Hong Kong',
+  'Hungary',
+  'Iceland',
+  'India',
+  'Indonesia',
+  'Iran',
+  'Iraq',
+  'Ireland',
+  'Isle of Man',
+  'Israel',
+  'Italy',
+  'Jamaica',
+  'Japan',
+  'Jersey',
+  'Jordan',
+  'Kazakhstan',
+  'Kenya',
+  'Kiribati',
+  'Kosovo',
+  'Kuwait',
+  'Kyrgyzstan',
+  'Laos',
+  'Latvia',
+  'Lebanon',
+  'Lesotho',
+  'Liberia',
+  'Libya',
+  'Liechtenstein',
+  'Lithuania',
+  'Luxembourg',
+  'Macao',
+  'Madagascar',
+  'Malawi',
+  'Malaysia',
+  'Maldives',
+  'Mali',
+  'Malta',
+  'Marshall Islands',
+  'Martinique',
+  'Mauritania',
+  'Mauritius',
+  'Mayotte',
+  'Mexico',
+  'Micronesia',
+  'Moldova',
+  'Monaco',
+  'Mongolia',
+  'Montenegro',
+  'Montserrat',
+  'Morocco',
+  'Mozambique',
+  'Myanmar',
+  'Namibia',
+  'Nauru',
+  'Nepal',
+  'Netherlands',
+  'New Caledonia',
+  'New Zealand',
+  'Nicaragua',
+  'Niger',
+  'Nigeria',
+  'Niue',
+  'Norfolk Island',
+  'North Korea',
+  'North Macedonia',
+  'Northern Mariana Islands',
+  'Norway',
+  'Oman',
+  'Pakistan',
+  'Palau',
+  'Palestine',
+  'Panama',
+  'Papua New Guinea',
+  'Paraguay',
+  'Peru',
+  'Philippines',
+  'Pitcairn',
+  'Poland',
+  'Portugal',
+  'Puerto Rico',
+  'Qatar',
+  'Reunion',
+  'Romania',
+  'Russia',
+  'Rwanda',
+  'Saint Barthelemy',
+  'Saint Helena, Ascension and Tristan da Cunha',
+  'Saint Kitts and Nevis',
+  'Saint Lucia',
+  'Saint Martin',
+  'Saint Pierre and Miquelon',
+  'Saint Vincent and the Grenadines',
+  'Samoa',
+  'San Marino',
+  'Sao Tome and Principe',
+  'Saudi Arabia',
+  'Senegal',
+  'Serbia',
+  'Seychelles',
+  'Sierra Leone',
+  'Singapore',
+  'Sint Maarten',
+  'Slovakia',
+  'Slovenia',
+  'Solomon Islands',
+  'Somalia',
+  'South Africa',
+  'South Georgia and the South Sandwich Islands',
+  'South Korea',
+  'South Sudan',
+  'Spain',
+  'Sri Lanka',
+  'Sudan',
+  'Suriname',
+  'Svalbard and Jan Mayen',
+  'Sweden',
+  'Switzerland',
+  'Syria',
+  'Taiwan',
+  'Tajikistan',
+  'Tanzania',
+  'Thailand',
+  'Timor-Leste',
+  'Togo',
+  'Tokelau',
+  'Tonga',
+  'Trinidad and Tobago',
+  'Tunisia',
+  'Turkey',
+  'Turkmenistan',
+  'Turks and Caicos Islands',
+  'Tuvalu',
+  'Uganda',
+  'Ukraine',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States',
+  'United States Minor Outlying Islands',
+  'Uruguay',
+  'Uzbekistan',
+  'Vanuatu',
+  'Venezuela',
+  'Vietnam',
+  'Virgin Islands, British',
+  'Virgin Islands, U.S.',
+  'Wallis and Futuna',
+  'Western Sahara',
+  'Yemen',
+  'Zambia',
+  'Zimbabwe',
+]
+const regionAliases = {
+  'Cote d\'Ivoire': ['Ivory Coast'],
+  'Czechia': ['Czech Republic'],
+  'Congo': ['Republic of the Congo'],
+  'Congo, Democratic Republic of the': ['DR Congo', 'Democratic Republic of Congo'],
+  'Eswatini': ['Swaziland'],
+  'Holy See': ['Vatican City', 'Vatican'],
+  'Iran': ['Islamic Republic of Iran'],
+  'Laos': ['Lao PDR'],
+  'Macao': ['Macau'],
+  'Myanmar': ['Burma'],
+  'North Korea': ['Korea DPR'],
+  'Palestine': ['Palestinian Territory'],
+  'Russia': ['Russian Federation'],
+  'South Korea': ['Korea', 'Republic of Korea'],
+  'Syria': ['Syrian Arab Republic'],
+  'Taiwan': ['Taiwan, Province of China'],
+  'Tanzania': ['United Republic of Tanzania'],
+  'Turkey': ['Turkiye'],
+  'United Arab Emirates': ['UAE'],
+  'United Kingdom': ['UK', 'Great Britain', 'Britain', 'England', 'Scotland', 'Wales', 'Northern Ireland'],
+  'United States': ['USA', 'US', 'United States of America', 'America'],
+  'Venezuela': ['Bolivarian Republic of Venezuela'],
+  'Vietnam': ['Viet Nam'],
+}
 const paymentMethods = ['Google Pay', 'PayPal', 'Apple Pay', 'Visa/ MasterCard/ JCB/ AMEX/ DINERS', 'Dpay(USDT & Bitcoin)', 'Razer Gold Wallet']
 const feedbackCategories = ['Account', 'Room / RTC', 'Payment', 'Chat', 'Safety']
 const feedbackTypes = ['Bug report', 'Feature request', 'Payment issue', 'Abuse report', 'Other']
+const maxFeedbackAttachmentSize = 25 * 1024 * 1024
 
 const popularHelp = [
   { id: 'recharge', title: 'How to recharge', body: 'Open a live room, click More in the gift bar, choose a payment method, then use Recharge to add diamonds.' },
@@ -124,6 +712,76 @@ const faqTopics = [
   'Turn off my location',
   'Delete video',
 ]
+const faqAnswers = {
+  'Modify personal information': 'Open your profile, edit the fields you want to change, then save. Some account security fields are managed from Settings.',
+  'Unfollow accounts that are frozen or deactivated': 'Open the account page from your following list and use Unfollow. Frozen or deactivated accounts may take a short time to disappear from lists.',
+  'How to create a voice chat room': 'Use the create room panel, choose an audio room type, complete the room details, and create the room.',
+  'How do I bind my phone number and email address?': 'Go to Settings, Account Security, then use Binding cell phone or Binding email.',
+  'How to upgrade the TalkEachOther app': 'Refresh the web app or install the latest app version from your browser install prompt when it is available.',
+  "Delete the other people's comments on your post or private message with others": 'Use the message or comment menu. Room owners and moderators can remove disruptive room messages.',
+  'The live streaming page cannot be opened or is not smooth': 'Check your network, close other heavy apps, refresh the room, and try a different room. If it continues, submit feedback with your device and network details.',
+  'How to do a live/private live broadcast': 'Create a room, choose a live room type, then select public, private, or password privacy before publishing.',
+  'Block others': 'Open the user menu from chat, profile, or room participants, then choose block or report when needed.',
+  'What can crystals be used for': 'Crystals can be used for platform rewards and room interactions where enabled.',
+  'How to upgrade my account level': 'Account level grows through activity, room participation, and supported platform reward actions.',
+  "Join other people's private broadcast": 'Open the private room invitation or room card. If a password or permission is required, enter it before joining.',
+  'Hide profile': 'Use privacy settings to limit who can message you and reduce discoverability where supported.',
+  'Turn off my location': 'Disable browser location permission and choose a different region from Settings if needed.',
+  'Delete video': 'Open your video or room media controls and choose delete. Moderation tools may also remove unsafe videos.',
+}
+
+const policyDocuments = [
+  {
+    id: 'terms',
+    title: 'Terms of Service',
+    summary: 'The basic rules for using TalkEachOther rooms, chat, profiles, gifts, and RTC features.',
+    sections: [
+      ['Account responsibility', 'You are responsible for activity from your account, keeping your login details private, and using accurate profile information.'],
+      ['Room behavior', 'Do not harass people, impersonate others, share illegal content, or use live rooms for scams, private transactions, or harmful activity.'],
+      ['Service changes', 'Features, rooms, moderation tools, gifts, and availability may change as the service improves or to protect the community.'],
+    ],
+  },
+  {
+    id: 'privacy',
+    title: 'Privacy Policy',
+    summary: 'How account, room, chat, device, and usage information is handled inside the platform.',
+    sections: [
+      ['Information we use', 'We use account details, room activity, messages, device signals, and usage records to run the service and keep rooms safe.'],
+      ['Security and moderation', 'Safety teams and automated systems may review reports, moderation events, and abuse signals to protect users.'],
+      ['Your choices', 'You can update profile details, manage privacy settings, and control room or message preferences from settings.'],
+    ],
+  },
+  {
+    id: 'child-safety',
+    title: 'Child Safety Policy',
+    summary: 'Rules that protect minors and remove unsafe content or behavior quickly.',
+    sections: [
+      ['Minimum age', 'Users must meet the required age for their region. Accounts that do not meet age requirements may be restricted or removed.'],
+      ['Zero tolerance', 'Sexualized, exploitative, grooming, or predatory behavior involving minors is prohibited and may be reported to authorities.'],
+      ['Reporting', 'Use Feedback and Help or moderation controls to report suspicious behavior, unsafe rooms, or child safety concerns immediately.'],
+    ],
+  },
+  {
+    id: 'anti-bullying',
+    title: 'Anti-Bullying Policy',
+    summary: 'Community rules for respectful live rooms, chat, direct messages, and profiles.',
+    sections: [
+      ['Harassment', 'Threats, targeted insults, hate speech, stalking, doxxing, and repeated unwanted contact are not allowed.'],
+      ['Moderation tools', 'Room owners and moderators can mute, remove, block, or report users who disrupt rooms or attack others.'],
+      ['Enforcement', 'Violations may lead to removed content, disabled rooms, account restrictions, or bans.'],
+    ],
+  },
+  {
+    id: 'copyright',
+    title: 'Copyright',
+    summary: 'Rules for sharing music, images, video, branding, and other protected content.',
+    sections: [
+      ['Your content', 'Only upload or stream content you own, created, licensed, or have permission to use.'],
+      ['Claims', 'Copyright owners can report content that they believe infringes their rights. Valid reports may result in removal or account action.'],
+      ['Repeat violations', 'Repeated copyright abuse can lead to room restrictions or account suspension.'],
+    ],
+  },
+]
 
 function initialsFromName(name) {
   return String(name || 'User')
@@ -139,6 +797,88 @@ function compactNumber(value) {
   if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`
   return String(number)
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Attachment could not be read. Please try another file.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function savedRoomSettings() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('rtc_room_settings') || '{}')
+    return saved && typeof saved === 'object' ? saved : {}
+  } catch {
+    return {}
+  }
+}
+
+function savedFeedbackRecords() {
+  if (typeof window === 'undefined') return []
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('rtc_feedback_records') || '[]')
+    return Array.isArray(saved) ? saved.slice(0, 20) : []
+  } catch {
+    return []
+  }
+}
+
+function savedFollowedThreadIds(defaultIds) {
+  if (typeof window === 'undefined') return defaultIds
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('rtc_followed_thread_ids') || 'null')
+    return Array.isArray(saved) ? saved.filter(Boolean) : defaultIds
+  } catch {
+    return defaultIds
+  }
+}
+
+function formatFeedbackRecordDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Just now'
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function compactText(value, maxLength = 56) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ')
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1)}...`
+}
+
+function threadPreview(thread, messages) {
+  const lastMessage = messages[messages.length - 1]
+  if (!lastMessage) return compactText(thread.preview || 'No messages yet')
+  const prefix = lastMessage.mine ? 'You: ' : ''
+  return compactText(`${prefix}${lastMessage.body}`)
+}
+
+function copyForLanguage(language, key, replacements = {}) {
+  const template = settingsCopy[language]?.[key] || settingsCopy.English[key] || key
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+    template
+  )
+}
+
+function validEmail(value) {
+  return /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(String(value || '').trim())
+}
+
+function regionMatchesSearch(region, search) {
+  const normalizedSearch = search.trim().toLowerCase()
+  if (!normalizedSearch) return true
+  return [region, ...(regionAliases[region] || [])]
+    .some((value) => value.toLowerCase().includes(normalizedSearch))
 }
 
 function cardAvatarIndex(card, fallback = 0) {
@@ -297,27 +1037,42 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [installPrompt, setInstallPrompt] = useState(null)
   const [activeSettings, setActiveSettings] = useState('account')
   const [settingsStatus, setSettingsStatus] = useState('')
-  const [settingsDraft, setSettingsDraft] = useState({
-    phoneBound: false,
-    emailBound: Boolean(user?.email),
-    loginPasswordSet: true,
-    paymentPasswordSet: false,
-    deviceAlerts: true,
-    messagePrivacy: 'everyone',
-    privateInvite: true,
-    autoPrivateDeduction: false,
-    hideSensitive: true,
-    contentMode: 'warning',
-    language: 'English',
-    region: user?.current_residence || 'United States',
+  const [selectedPolicyId, setSelectedPolicyId] = useState('')
+  const [settingsDraft, setSettingsDraft] = useState(() => {
+    const saved = savedRoomSettings()
+    return {
+      phoneBound: Boolean(saved.phoneBound),
+      emailBound: Boolean(saved.emailBound || user?.email),
+      loginPasswordSet: saved.loginPasswordSet !== false,
+      paymentPasswordSet: Boolean(saved.paymentPasswordSet),
+      deviceAlerts: saved.deviceAlerts !== false,
+      messagePrivacy: saved.messagePrivacy || 'everyone',
+      privateInvite: saved.privateInvite !== false,
+      autoPrivateDeduction: Boolean(saved.autoPrivateDeduction),
+      hideSensitive: saved.hideSensitive !== false,
+      contentMode: saved.contentMode || 'warning',
+      region: user?.current_residence || saved.region || 'United States',
+    }
   })
+  const [securityAction, setSecurityAction] = useState(null)
+  const [securityForm, setSecurityForm] = useState({
+    phone: '',
+    email: user?.email || '',
+    password: '',
+    passwordConfirm: '',
+    paymentPin: '',
+    paymentPinConfirm: '',
+  })
+  const [securityError, setSecurityError] = useState('')
   const [helpMode, setHelpMode] = useState('popular')
   const [activeHelp, setActiveHelp] = useState('recharge')
+  const [activeFaq, setActiveFaq] = useState(faqTopics[0])
   const [activeThread, setActiveThread] = useState(dmThreads[0].id)
   const [dmMessages, setDmMessages] = useState(initialDmMessages)
   const [dmInput, setDmInput] = useState('')
   const [dmStatus, setDmStatus] = useState('')
-  const [followedThreadIds, setFollowedThreadIds] = useState(() => dmThreads.filter((thread) => thread.followed).map((thread) => thread.id))
+  const [readThreadIds, setReadThreadIds] = useState([])
+  const [followedThreadIds, setFollowedThreadIds] = useState(() => savedFollowedThreadIds(dmThreads.filter((thread) => thread.followed).map((thread) => thread.id)))
   const [activeRanking, setActiveRanking] = useState('rooms')
   const [previewCard, setPreviewCard] = useState(null)
   const [acceptedWarnings, setAcceptedWarnings] = useState({})
@@ -328,7 +1083,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     contact: user?.email || '',
     attachment: null,
   })
+  const [feedbackRecords, setFeedbackRecords] = useState(savedFeedbackRecords)
   const [feedbackStatus, setFeedbackStatus] = useState('')
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -337,6 +1094,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
+  const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
   const visibleCards = useMemo(() => {
@@ -387,7 +1145,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
-  const activeThreadData = dmThreads.find((thread) => thread.id === activeThread) || dmThreads[0]
+  const messageThreads = useMemo(() => dmThreads.map((thread, index) => {
+    const messages = dmMessages[thread.id] || []
+    const unread = readThreadIds.includes(thread.id) ? 0 : Number(thread.unread || 0)
+    return {
+      ...thread,
+      avatarIndex: index,
+      previewText: threadPreview(thread, messages),
+      unread,
+    }
+  }), [dmMessages, readThreadIds])
+  const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0]
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
   const searchPanelTitle = loadingRooms
     ? 'Searching rooms...'
@@ -395,7 +1163,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
       : `${activeFilterLabel} rooms`
   const activeThreadFollowed = followedThreadIds.includes(activeThread)
-  const unreadThreadCount = dmThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
+  const unreadThreadCount = messageThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
   const sentBeforeFollowCount = (dmMessages[activeThread] || []).filter((message) => message.mine).length
   const dmNotice = activeThreadFollowed
     ? 'You follow each other. Private messages are open.'
@@ -511,6 +1279,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openMessagesDrawer() {
     if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
     setShowRankings(false)
+    setReadThreadIds((previous) => previous.includes(activeThread) ? previous : [...previous, activeThread])
     setShowMessages(true)
   }
 
@@ -530,6 +1299,76 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSettingsStatus(message)
   }
 
+  function openSecurityAction(field) {
+    setSecurityAction(field)
+    setSecurityError('')
+    setSecurityForm((previous) => ({
+      ...previous,
+      email: previous.email || user?.email || '',
+      password: '',
+      passwordConfirm: '',
+      paymentPin: '',
+      paymentPinConfirm: '',
+    }))
+  }
+
+  function updateSecurityForm(field, value) {
+    setSecurityForm((previous) => ({ ...previous, [field]: value }))
+    setSecurityError('')
+  }
+
+  function submitSecurityAction(event) {
+    event.preventDefault()
+
+    if (securityAction === 'phoneBound') {
+      const digits = securityForm.phone.replace(/\D/g, '')
+      if (digits.length < 7) {
+        setSecurityError(t('Enter a valid phone number.'))
+        return
+      }
+      setSecurityAction(null)
+      updateSettings('phoneBound', true, t('Cell phone bound.'))
+      return
+    }
+
+    if (securityAction === 'emailBound') {
+      if (!validEmail(securityForm.email)) {
+        setSecurityError(t('Enter a valid email address.'))
+        return
+      }
+      setSecurityAction(null)
+      updateSettings('emailBound', true, t('Email bound.'))
+      return
+    }
+
+    if (securityAction === 'loginPasswordSet') {
+      if (securityForm.password.length < 10) {
+        setSecurityError(t('Use at least 10 characters for the password.'))
+        return
+      }
+      if (securityForm.password !== securityForm.passwordConfirm) {
+        setSecurityError(t('Passwords do not match.'))
+        return
+      }
+      setSecurityAction(null)
+      updateSettings('loginPasswordSet', true, t('Login password set.'))
+      return
+    }
+
+    if (securityAction === 'paymentPasswordSet') {
+      if (!/^\d{6}$/.test(securityForm.paymentPin)) {
+        setSecurityError(t('Use a 6 digit payment PIN.'))
+        return
+      }
+      if (securityForm.paymentPin !== securityForm.paymentPinConfirm) {
+        setSecurityError(t('Payment PINs do not match.'))
+        return
+      }
+      setSecurityAction(null)
+      updateSettings('paymentPasswordSet', true, t('Payment password set.'))
+    }
+  }
+
   function updateFeedback(field, value) {
     setFeedbackForm((previous) => ({ ...previous, [field]: value }))
     setFeedbackStatus('')
@@ -539,7 +1378,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (file.size > 25 * 1024 * 1024) {
+    if (file.size > maxFeedbackAttachmentSize) {
       event.target.value = ''
       setFeedbackStatus('Attachment must be 25 MB or smaller.')
       return
@@ -554,11 +1393,27 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setFeedbackStatus('Attachment removed.')
   }
 
+  function saveFeedbackRecord(record) {
+    setFeedbackRecords((previous) => {
+      const next = [record, ...previous].slice(0, 20)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('rtc_feedback_records', JSON.stringify(next))
+      }
+      return next
+    })
+  }
+
   function toggleThreadFollow(threadId = activeThread) {
     setFollowedThreadIds((previous) => {
       const following = previous.includes(threadId)
       const next = following ? previous.filter((id) => id !== threadId) : [...previous, threadId]
-      setDmStatus(following ? 'Follow removed. Message sending returns to first-contact limits.' : 'Following. You can now send and receive private messages normally.')
+      const thread = dmThreads.find((item) => item.id === threadId)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('rtc_followed_thread_ids', JSON.stringify(next))
+      }
+      setDmStatus(following
+        ? `${thread?.name || 'User'} unfollowed. Message sending returns to first-contact limits.`
+        : `You are now following ${thread?.name || 'this user'}. You can send and receive private messages normally.`)
       return next
     })
   }
@@ -819,32 +1674,80 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ...previous,
       [activeThread]: [
         ...(previous[activeThread] || []),
-        { id: `${activeThread}-${Date.now()}`, author: displayName, body, mine: true },
+        { id: `${activeThread}-${Date.now()}`, author: displayName, body, mine: true, createdAt: new Date().toISOString() },
       ],
     }))
     setDmInput('')
-    setDmStatus(activeThreadFollowed ? 'Message sent.' : `${Math.max(0, 1 - sentBeforeFollowCount)} first-contact message remaining before follow is required.`)
+    setReadThreadIds((previous) => previous.includes(activeThread) ? previous : [...previous, activeThread])
+    setDmStatus(activeThreadFollowed
+      ? `Sent to ${activeThreadData.name}: "${compactText(body, 44)}"`
+      : `${Math.max(0, 1 - sentBeforeFollowCount)} first-contact message remaining before follow is required.`)
   }
 
-  function submitFeedback(event) {
+  async function submitFeedback(event) {
     event.preventDefault()
+    if (submittingFeedback) return
+
     if (feedbackForm.description.trim().length < 10) {
       setFeedbackStatus('Please add at least 10 characters so support can understand the issue.')
       return
     }
 
-    setFeedbackStatus('Feedback submitted. Thank you for helping improve TalkEachOther.')
-    window.setTimeout(() => {
-      setShowFeedback(false)
-      setFeedbackStatus('')
-      setFeedbackForm({
-        category: feedbackCategories[0],
-        type: feedbackTypes[0],
-        description: '',
-        contact: user?.email || '',
-        attachment: null,
+    try {
+      setSubmittingFeedback(true)
+      setFeedbackStatus(feedbackForm.attachment ? 'Preparing attachment...' : 'Sending feedback...')
+
+      const attachmentMeta = feedbackForm.attachment ? {
+        name: feedbackForm.attachment.name,
+        type: feedbackForm.attachment.type,
+        size: feedbackForm.attachment.size,
+      } : null
+      const attachment = attachmentMeta ? {
+        ...attachmentMeta,
+        data_url: await fileToDataUrl(feedbackForm.attachment),
+      } : null
+
+      setFeedbackStatus('Sending feedback...')
+      await apiRequest('/feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          category: feedbackForm.category,
+          type: feedbackForm.type,
+          description: feedbackForm.description.trim(),
+          contact: feedbackForm.contact.trim(),
+          attachment,
+          page_url: typeof window !== 'undefined' ? window.location.href : '',
+          user_agent: typeof window !== 'undefined' ? window.navigator.userAgent : '',
+        }),
       })
-    }, 900)
+
+      saveFeedbackRecord({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        category: feedbackForm.category,
+        type: feedbackForm.type,
+        description: feedbackForm.description.trim(),
+        contact: feedbackForm.contact.trim(),
+        attachment: attachmentMeta,
+        created_at: new Date().toISOString(),
+      })
+      setHelpMode('records')
+      setFeedbackStatus('Feedback sent to support.')
+      window.setTimeout(() => {
+        setShowFeedback(false)
+        setFeedbackStatus('')
+        setFeedbackForm({
+          category: feedbackCategories[0],
+          type: feedbackTypes[0],
+          description: '',
+          contact: user?.email || '',
+          attachment: null,
+        })
+      }, 900)
+    } catch (error) {
+      setFeedbackStatus(error.message || 'Feedback could not be sent. Please try again.')
+    } finally {
+      setSubmittingFeedback(false)
+    }
   }
 
   async function handleInstallApp() {
@@ -956,39 +1859,39 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return (
         <div className="buzzcast-settings-list">
           <label className="buzzcast-select-row">
-            <span><strong>Who can send me a message</strong><small>Controls the personal inbox and room chat shortcuts.</small></span>
+            <span><strong>{t('Who can send me a message')}</strong><small>{t('Controls the personal inbox and room chat shortcuts.')}</small></span>
             <select
               value={settingsDraft.messagePrivacy}
-              onChange={(event) => updateSettings('messagePrivacy', event.target.value, 'Message privacy updated.')}
+              onChange={(event) => updateSettings('messagePrivacy', event.target.value, t('Message privacy updated.'))}
             >
-              <option value="everyone">Everyone</option>
-              <option value="followers">Followers only</option>
-              <option value="nobody">Nobody</option>
+              <option value="everyone">{t('Everyone')}</option>
+              <option value="followers">{t('Followers only')}</option>
+              <option value="nobody">{t('Nobody')}</option>
             </select>
           </label>
           <label className="buzzcast-switch-row">
-            <span><strong>Private live invitation</strong><small>Allow hosts to invite you into private live rooms.</small></span>
+            <span><strong>{t('Private live invitation')}</strong><small>{t('Allow hosts to invite you into private live rooms.')}</small></span>
             <input
               type="checkbox"
               checked={settingsDraft.privateInvite}
-              onChange={(event) => updateSettings('privateInvite', event.target.checked, 'Private live invitation setting updated.')}
+              onChange={(event) => updateSettings('privateInvite', event.target.checked, t('Private live invitation setting updated.'))}
             />
           </label>
           <label className="buzzcast-switch-row">
-            <span><strong>Automatic deduction for entering the private live broadcast room</strong><small>After opening, private rooms can automatically deduct diamonds.</small></span>
+            <span><strong>{t('Automatic deduction for entering the private live broadcast room')}</strong><small>{t('After opening, private rooms can automatically deduct diamonds.')}</small></span>
             <input
               type="checkbox"
               checked={settingsDraft.autoPrivateDeduction}
-              onChange={(event) => updateSettings('autoPrivateDeduction', event.target.checked, 'Private-room deduction setting updated.')}
+              onChange={(event) => updateSettings('autoPrivateDeduction', event.target.checked, t('Private-room deduction setting updated.'))}
             />
           </label>
           <button type="button" onClick={() => setSettingsStatus('Use Block in the chat panel to hide a user and remove their messages from your view.')}>
-            <span><strong>Blacklist</strong><small>Blocked users are controlled from the chat user menu.</small></span>
+            <span><strong>{t('Blacklist')}</strong><small>{t('Blocked users are controlled from the chat user menu.')}</small></span>
             <b>&gt;</b>
           </button>
-          <button type="button" onClick={() => updateSettings('hideSensitive', !settingsDraft.hideSensitive, 'Live preference updated.')}>
-            <span><strong>Live broadcast you are not interested in</strong><small>{settingsDraft.hideSensitive ? 'Filtered from your feed.' : 'Visible in your feed.'}</small></span>
-            <em>{settingsDraft.hideSensitive ? 'Filtered' : 'Show'}</em>
+          <button type="button" onClick={() => updateSettings('hideSensitive', !settingsDraft.hideSensitive, t('Live preference updated.'))}>
+            <span><strong>{t('Live broadcast you are not interested in')}</strong><small>{settingsDraft.hideSensitive ? t('Filtered from your feed.') : t('Visible in your feed.')}</small></span>
+            <em>{settingsDraft.hideSensitive ? t('Filtered') : t('Show')}</em>
           </button>
         </div>
       )
@@ -996,39 +1899,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
     if (activeSettings === 'content') {
       const modes = [
-        { value: 'restricted', label: 'Restricted Mode', helper: 'Hide potentially sensitive content.' },
-        { value: 'warning', label: 'Warning Mode', helper: 'Show a warning before sensitive rooms open.' },
-        { value: 'all', label: 'All Modes', helper: 'Show all room content that is available to your account.' },
+        { value: 'restricted', labelKey: 'Restricted Mode', helperKey: 'Hide potentially sensitive content.' },
+        { value: 'warning', labelKey: 'Warning Mode', helperKey: 'Show a warning before sensitive rooms open.' },
+        { value: 'all', labelKey: 'All Modes', helperKey: 'Show all room content that is available to your account.' },
       ]
 
       return (
         <div className="buzzcast-settings-list">
           {modes.map((item) => (
-            <label key={item.value} className="buzzcast-radio-row">
-              <span><strong>{item.label}</strong><small>{item.helper}</small></span>
+            <label key={item.value} className={settingsDraft.contentMode === item.value ? 'buzzcast-radio-row selected' : 'buzzcast-radio-row'}>
+              <span><strong>{t(item.labelKey)}</strong><small>{t(item.helperKey)}</small></span>
               <input
                 type="radio"
                 name="content-mode"
                 checked={settingsDraft.contentMode === item.value}
-                onChange={() => updateSettings('contentMode', item.value, `${item.label} selected.`)}
-              />
-            </label>
-          ))}
-        </div>
-      )
-    }
-
-    if (activeSettings === 'language') {
-      return (
-        <div className="buzzcast-settings-list compact">
-          {languages.map((item) => (
-            <label key={item} className="buzzcast-radio-row">
-              <span><strong>{item}</strong></span>
-              <input
-                type="radio"
-                name="language"
-                checked={settingsDraft.language === item}
-                onChange={() => updateSettings('language', item, `Language changed to ${item}.`)}
+                onChange={() => updateSettings('contentMode', item.value, `${t(item.labelKey)} ${t('selected.')}`)}
               />
             </label>
           ))}
@@ -1038,18 +1923,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
     if (activeSettings === 'region') {
       const regionSearch = settingsDraft.regionSearch || ''
-      const visibleRegions = regions.filter((item) => !regionSearch.trim() || item.toLowerCase().includes(regionSearch.trim().toLowerCase()))
+      const visibleRegions = regions.filter((item) => regionMatchesSearch(item, regionSearch))
 
       return (
         <div className="buzzcast-region-panel">
           <input
-            placeholder="Search region"
+            placeholder={t('Search region')}
             value={regionSearch}
             onChange={(event) => setSettingsDraft((previous) => ({ ...previous, regionSearch: event.target.value }))}
           />
           <div className="buzzcast-settings-list compact">
             {visibleRegions.map((item) => (
-              <label key={item} className="buzzcast-radio-row">
+              <label key={item} className={settingsDraft.region === item ? 'buzzcast-radio-row selected' : 'buzzcast-radio-row'}>
                 <span><strong>{item}</strong></span>
                 <input
                   type="radio"
@@ -1057,22 +1942,51 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   checked={settingsDraft.region === item}
                   onChange={() => {
                     setSettingsDraft((previous) => ({ ...previous, region: item, regionSearch: '' }))
-                    setSettingsStatus(`Region changed to ${item}.`)
+                    setSettingsStatus(t('Region changed to {region}.', { region: item }))
                   }}
                 />
               </label>
             ))}
+            {visibleRegions.length === 0 ? (
+              <div className="buzzcast-region-empty">No region matches this search.</div>
+            ) : null}
           </div>
         </div>
       )
     }
 
     if (activeSettings === 'terms') {
+      const selectedPolicy = policyDocuments.find((item) => item.id === selectedPolicyId)
+
+      if (selectedPolicy) {
+        return (
+          <article className="buzzcast-policy-detail">
+            <button type="button" className="buzzcast-policy-back" onClick={() => {
+              setSelectedPolicyId('')
+              setSettingsStatus('')
+            }}>
+              &lt; Back
+            </button>
+            <h3>{selectedPolicy.title}</h3>
+            <p>{selectedPolicy.summary}</p>
+            {selectedPolicy.sections.map(([title, body]) => (
+              <section key={title}>
+                <h4>{title}</h4>
+                <p>{body}</p>
+              </section>
+            ))}
+          </article>
+        )
+      }
+
       return (
         <div className="buzzcast-settings-list">
-          {['Terms of Service', 'Privacy Policy', 'Child Safety Policy', 'Anti-Bullying Policy', 'Copyright'].map((item) => (
-            <button type="button" key={item} onClick={() => setSettingsStatus(`${item} will open in the production policy page.`)}>
-              <span><strong>{item}</strong></span>
+          {policyDocuments.map((item) => (
+            <button type="button" key={item.id} onClick={() => {
+              setSelectedPolicyId(item.id)
+              setSettingsStatus(item.summary)
+            }}>
+              <span><strong>{item.title}</strong><small>{item.summary}</small></span>
               <b>&gt;</b>
             </button>
           ))}
@@ -1083,56 +1997,58 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const accountRows = [
       {
         field: 'phoneBound',
-        label: 'Binding cell phone',
-        helper: 'Recommended for account recovery and high-value payments.',
-        on: 'Bound',
-        off: 'Bind cell phone',
+        labelKey: 'Binding cell phone',
+        helperKey: 'Recommended for account recovery and high-value payments.',
+        onKey: 'Bound',
+        offKey: 'Bind cell phone',
       },
       {
         field: 'emailBound',
-        label: 'Binding email',
-        helper: 'Used for login recovery and security notices.',
-        on: 'Bound',
-        off: 'Bind email',
+        labelKey: 'Binding email',
+        helperKey: 'Used for login recovery and security notices.',
+        onKey: 'Bound',
+        offKey: 'Bind email',
       },
       {
         field: 'loginPasswordSet',
-        label: 'Set login password',
-        helper: 'Protect this account when signing in on a new device.',
-        on: 'Set',
-        off: 'Set password',
+        labelKey: 'Set login password',
+        helperKey: 'Protect this account when signing in on a new device.',
+        onKey: 'Set',
+        offKey: 'Set password',
       },
       {
         field: 'paymentPasswordSet',
-        label: 'Set payment password',
-        helper: 'Add a second check before diamond purchases.',
-        on: 'Set',
-        off: 'Set password',
+        labelKey: 'Set payment password',
+        helperKey: 'Add a second check before diamond purchases.',
+        onKey: 'Set',
+        offKey: 'Set password',
       },
       {
         field: 'deviceAlerts',
-        label: 'Devices Logged In',
-        helper: 'Show alerts when a new device logs in.',
-        on: 'Alerts on',
-        off: 'Alerts off',
+        labelKey: 'Devices Logged In',
+        helperKey: 'Show alerts when a new device logs in.',
+        onKey: 'Alerts on',
+        offKey: 'Alerts off',
       },
     ]
 
     return (
       <div className="buzzcast-security-panel">
-        <div className="buzzcast-safety-card">
-          <strong>{settingsDraft.emailBound && settingsDraft.loginPasswordSet ? 'Normal level of safety' : 'Improve account safety'}</strong>
-          <button type="button" onClick={() => setSettingsStatus('Account security checked.')}>OK</button>
-        </div>
         <div className="buzzcast-settings-list">
           {accountRows.map((item) => (
             <button
               type="button"
               key={item.field}
-              onClick={() => updateSettings(item.field, !settingsDraft[item.field], `${item.label} updated.`)}
+              onClick={() => {
+                if (item.field === 'deviceAlerts') {
+                  updateSettings(item.field, !settingsDraft[item.field], t('Device login alerts updated.'))
+                  return
+                }
+                openSecurityAction(item.field)
+              }}
             >
-              <span><strong>{item.label}</strong><small>{item.helper}</small></span>
-              <em>{settingsDraft[item.field] ? item.on : item.off}</em>
+              <span><strong>{t(item.labelKey)}</strong><small>{t(item.helperKey)}</small></span>
+              <em>{settingsDraft[item.field] ? t(item.onKey) : t(item.offKey)}</em>
             </button>
           ))}
         </div>
@@ -1154,22 +2070,121 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               onClick={() => {
                 setActiveSettings(item.value)
                 setSettingsStatus('')
+                setSelectedPolicyId('')
               }}
             >
               <i>{item.icon}</i>
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
               <b>&gt;</b>
             </button>
           ))}
         </aside>
         <div className="buzzcast-settings-content">
           <div className="buzzcast-settings-heading">
-            <h2>{activeSettingsItem.label}</h2>
-            <p>{settingsStatus || 'Changes are applied immediately for this session.'}</p>
+            <h2>{t(activeSettingsItem.labelKey)}</h2>
+            <p>{settingsStatus || t('Changes are applied immediately for this session.')}</p>
           </div>
           {renderSettingsContent()}
         </div>
       </section>
+    )
+  }
+
+  function renderSecurityActionModal() {
+    if (!securityAction) return null
+
+    const titleByAction = {
+      phoneBound: 'Binding cell phone',
+      emailBound: 'Binding email',
+      loginPasswordSet: 'Set login password',
+      paymentPasswordSet: 'Set payment password',
+    }
+
+    return (
+      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setSecurityAction(null)}>
+        <form className="buzzcast-security-modal" onSubmit={submitSecurityAction} onMouseDown={(event) => event.stopPropagation()}>
+          <header>
+            <h2>{t(titleByAction[securityAction])}</h2>
+            <button type="button" onClick={() => setSecurityAction(null)}>x</button>
+          </header>
+
+          {securityAction === 'phoneBound' ? (
+            <label>
+              <span>{t('Cell phone number')}</span>
+              <input
+                value={securityForm.phone}
+                onChange={(event) => updateSecurityForm('phone', event.target.value)}
+                inputMode="tel"
+                placeholder="+1 555 010 2020"
+              />
+            </label>
+          ) : null}
+
+          {securityAction === 'emailBound' ? (
+            <label>
+              <span>{t('Email address')}</span>
+              <input
+                type="email"
+                value={securityForm.email}
+                onChange={(event) => updateSecurityForm('email', event.target.value)}
+                placeholder="name@example.com"
+              />
+            </label>
+          ) : null}
+
+          {securityAction === 'loginPasswordSet' ? (
+            <>
+              <label>
+                <span>{t('New password')}</span>
+                <input
+                  type="password"
+                  value={securityForm.password}
+                  onChange={(event) => updateSecurityForm('password', event.target.value)}
+                  placeholder="10+ characters"
+                />
+              </label>
+              <label>
+                <span>{t('Confirm password')}</span>
+                <input
+                  type="password"
+                  value={securityForm.passwordConfirm}
+                  onChange={(event) => updateSecurityForm('passwordConfirm', event.target.value)}
+                />
+              </label>
+            </>
+          ) : null}
+
+          {securityAction === 'paymentPasswordSet' ? (
+            <>
+              <label>
+                <span>{t('Payment PIN')}</span>
+                <input
+                  value={securityForm.paymentPin}
+                  onChange={(event) => updateSecurityForm('paymentPin', event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="123456"
+                />
+              </label>
+              <label>
+                <span>{t('Confirm PIN')}</span>
+                <input
+                  value={securityForm.paymentPinConfirm}
+                  onChange={(event) => updateSecurityForm('paymentPinConfirm', event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  maxLength={6}
+                />
+              </label>
+            </>
+          ) : null}
+
+          {securityError ? <p className="buzzcast-security-error">{securityError}</p> : null}
+          <div className="buzzcast-security-actions">
+            <button type="button" onClick={() => setSecurityAction(null)}>{t('Cancel')}</button>
+            <button type="submit" className="buzzcast-submit">{t('Save')}</button>
+          </div>
+        </form>
+      </div>
     )
   }
 
@@ -1178,7 +2193,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       <section className="buzzcast-help-shell">
         <header>
           <h1>Feedback and Help</h1>
-          <button type="button" onClick={() => setShowFeedback(true)}>Feedback record</button>
+          <div className="buzzcast-help-actions">
+            <button type="button" className={helpMode === 'records' ? 'active' : ''} onClick={() => setHelpMode('records')}>Feedback record</button>
+            <button type="button" className="primary" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+          </div>
         </header>
         <div className="buzzcast-help-layout">
           <aside className="buzzcast-help-menu">
@@ -1199,12 +2217,45 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" className={helpMode === 'faq' ? 'active' : ''} onClick={() => setHelpMode('faq')}>Frequently Asked Question</button>
           </aside>
           <main className="buzzcast-help-content">
-            {helpMode === 'faq' ? (
+            {helpMode === 'records' ? (
+              <div className="buzzcast-feedback-record-list">
+                {feedbackRecords.length ? feedbackRecords.map((record) => (
+                  <article key={record.id} className="buzzcast-feedback-record">
+                    <div>
+                      <strong>{record.category} - {record.type}</strong>
+                      <time>{formatFeedbackRecordDate(record.created_at)}</time>
+                    </div>
+                    <p>{record.description}</p>
+                    <small>
+                      {record.contact || 'No contact provided'}
+                      {record.attachment ? ` - ${record.attachment.name}` : ''}
+                    </small>
+                  </article>
+                )) : (
+                  <div className="buzzcast-feedback-empty">
+                    <strong>No feedback records yet</strong>
+                    <p>Submitted feedback will appear here after it is sent to support.</p>
+                    <button type="button" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+                  </div>
+                )}
+              </div>
+            ) : helpMode === 'faq' ? (
               <div className="buzzcast-faq-list">
-                {faqTopics.map((item) => <button type="button" key={item}>{item}<span>v</span></button>)}
+                {faqTopics.map((item) => (
+                  <article key={item} className={activeFaq === item ? 'buzzcast-faq-item open' : 'buzzcast-faq-item'}>
+                    <button type="button" onClick={() => setActiveFaq(activeFaq === item ? '' : item)}>
+                      {item}
+                      <span>{activeFaq === item ? '^' : 'v'}</span>
+                    </button>
+                    {activeFaq === item ? <p>{faqAnswers[item]}</p> : null}
+                  </article>
+                ))}
               </div>
             ) : (
-              <p>{activeHelpItem.body}</p>
+              <article className="buzzcast-help-answer">
+                <h2>{activeHelpItem.title}</h2>
+                <p>{activeHelpItem.body}</p>
+              </article>
             )}
           </main>
         </div>
@@ -1279,7 +2330,32 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ...previous,
       contact: previous.contact || user?.email || '',
     }))
+    setSecurityForm((previous) => ({
+      ...previous,
+      email: previous.email || user?.email || '',
+    }))
   }, [user?.email, user?.current_residence])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('rtc_room_settings', JSON.stringify({
+        phoneBound: settingsDraft.phoneBound,
+        emailBound: settingsDraft.emailBound,
+        loginPasswordSet: settingsDraft.loginPasswordSet,
+        paymentPasswordSet: settingsDraft.paymentPasswordSet,
+        deviceAlerts: settingsDraft.deviceAlerts,
+        messagePrivacy: settingsDraft.messagePrivacy,
+        privateInvite: settingsDraft.privateInvite,
+        autoPrivateDeduction: settingsDraft.autoPrivateDeduction,
+        hideSensitive: settingsDraft.hideSensitive,
+        contentMode: settingsDraft.contentMode,
+        region: settingsDraft.region,
+      }))
+    }
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = 'en'
+    }
+  }, [settingsDraft])
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -1413,18 +2489,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <section className="buzzcast-messages-drawer">
           <aside>
             <input placeholder="Search" />
-            {dmThreads.map((thread, index) => (
+            {messageThreads.map((thread) => (
               <button
                 key={thread.id}
                 type="button"
                 className={activeThread === thread.id ? 'active' : ''}
                 onClick={() => {
                   setActiveThread(thread.id)
+                  setReadThreadIds((previous) => previous.includes(thread.id) ? previous : [...previous, thread.id])
                   setDmStatus('')
                 }}
               >
-                <i className="image-avatar"><img src={avatarForIndex(index)} alt="" loading="lazy" /></i>
-                <span><strong>{thread.name}</strong><small>{followedThreadIds.includes(thread.id) ? 'Following - ' : ''}{thread.preview}</small></span>
+                <i className="image-avatar"><img src={avatarForIndex(thread.avatarIndex)} alt="" loading="lazy" /></i>
+                <span><strong>{thread.name}</strong><small>{followedThreadIds.includes(thread.id) ? 'Following - ' : ''}{thread.previewText}</small></span>
                 <time>{thread.time}</time>
                 {thread.unread ? <em>{thread.unread}</em> : null}
               </button>
@@ -1617,6 +2694,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </div>
       ) : null}
 
+      {renderSecurityActionModal()}
+
       {showRecharge ? (
         <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowRecharge(false)}>
           <section className="buzzcast-recharge-panel" onMouseDown={(event) => event.stopPropagation()}>
@@ -1634,12 +2713,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       {showFeedback ? (
         <div className="buzzcast-modal-backdrop dark">
           <form className="buzzcast-feedback-modal" onSubmit={submitFeedback}>
-            <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)}>x</button></header>
+            <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)} disabled={submittingFeedback}>x</button></header>
             <div className="buzzcast-feedback-row">
-              <select value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)}>
+              <select value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)} disabled={submittingFeedback}>
                 {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
-              <select value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)}>
+              <select value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)} disabled={submittingFeedback}>
                 {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </div>
@@ -1649,16 +2728,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               maxLength={1000}
               value={feedbackForm.description}
               onChange={(event) => updateFeedback('description', event.target.value)}
+              disabled={submittingFeedback}
             ></textarea>
             <label>Problem screenshot / screen recording <small>(optional)</small></label>
             <div className={`buzzcast-upload-box ${feedbackForm.attachment ? 'has-file' : ''}`}>
-              <input id="feedback-attachment" type="file" accept="image/*,video/*" onChange={handleFeedbackAttachment} />
+              <input id="feedback-attachment" type="file" accept="image/*,video/*" onChange={handleFeedbackAttachment} disabled={submittingFeedback} />
               <label htmlFor="feedback-attachment">
                 <strong>{feedbackForm.attachment ? feedbackForm.attachment.name : 'Add screenshot or screen recording'}</strong>
                 <small>PNG, JPG, GIF, MP4, or WebM up to 25 MB</small>
               </label>
               {feedbackForm.attachment ? (
-                <button type="button" onClick={removeFeedbackAttachment}>Remove</button>
+                <button type="button" onClick={removeFeedbackAttachment} disabled={submittingFeedback}>Remove</button>
               ) : null}
             </div>
             <label>Contact information <small>(optional)</small></label>
@@ -1666,9 +2746,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               placeholder="Enter your email account"
               value={feedbackForm.contact}
               onChange={(event) => updateFeedback('contact', event.target.value)}
+              disabled={submittingFeedback}
             />
             {feedbackStatus ? <p className="buzzcast-feedback-status">{feedbackStatus}</p> : null}
-            <button type="submit" className="buzzcast-submit">Submit</button>
+            <button type="submit" className="buzzcast-submit" disabled={submittingFeedback}>
+              {submittingFeedback ? 'Sending...' : 'Submit'}
+            </button>
           </form>
         </div>
       ) : null}

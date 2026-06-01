@@ -79,9 +79,11 @@ write_env_files() {
   db_password="$(get_env DB_PASSWORD backend/.env)"
   jwt_secret="$(get_env JWT_SECRET backend/.env)"
   turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
+  feedback_to_email="$(get_env FEEDBACK_TO_EMAIL backend/.env)"
 
   if [ -z "$db_password" ]; then db_password="$(random_hex 24)"; fi
   if [ -z "$jwt_secret" ]; then jwt_secret="$(random_hex 32)"; fi
+  if [ -z "$feedback_to_email" ]; then feedback_to_email="${FEEDBACK_TO_EMAIL:-triangletechguy993@outlook.com}"; fi
   if [ -z "$turn_credential" ] || [ "$turn_credential" = "YOUR_TURN_PASSWORD" ]; then
     turn_credential="$(random_hex 20)"
   fi
@@ -101,6 +103,7 @@ write_env_files() {
   set_env TURN_USERNAME rtcuser
   set_env TURN_CREDENTIAL "$turn_credential"
   set_env RTC_ICE_TRANSPORT_POLICY all
+  set_env FEEDBACK_TO_EMAIL "$feedback_to_email"
 
   cat > frontend/.env <<EOF
 VITE_API_BASE_URL=$DOMAIN/api

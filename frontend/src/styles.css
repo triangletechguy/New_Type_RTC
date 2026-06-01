@@ -18,6 +18,11 @@
   --amber: #f59e0b;
   --red: #ef4444;
   --shadow: 0 18px 60px rgba(0, 0, 0, .34);
+  --select-bg: #171827;
+  --select-menu-bg: #111827;
+  --select-menu-hover: #24314f;
+  --select-menu-active: #2563eb;
+  --select-menu-muted: #94a3b8;
 }
 
 .buzzcast-shell {
@@ -1690,6 +1695,7 @@
 
 .buzzcast-settings-list {
   display: grid;
+  gap: 2px;
 }
 
 .buzzcast-settings-list > button,
@@ -1698,17 +1704,18 @@
 .buzzcast-switch-row {
   min-height: 76px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 34px;
   align-items: center;
   gap: 18px;
   margin: 0;
+  padding: 0 12px;
   border: 0;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   color: #fff;
   text-align: left;
   font-weight: 500;
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  box-shadow: inset 0 -1px rgba(255, 255, 255, .055);
 }
 
 .buzzcast-settings-list > button span,
@@ -1722,7 +1729,18 @@
 
 .buzzcast-settings-list > button:hover,
 .buzzcast-settings-list label:hover {
-  background: #464559;
+  background: rgba(255, 255, 255, .055);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .045),
+    inset 0 -1px rgba(255, 255, 255, .045);
+}
+
+.buzzcast-radio-row.selected {
+  background: rgba(118, 88, 255, .12);
+  box-shadow:
+    inset 3px 0 #7658ff,
+    inset 0 0 0 1px rgba(118, 88, 255, .18),
+    inset 0 -1px rgba(255, 255, 255, .045);
 }
 
 .buzzcast-settings-list em,
@@ -1752,9 +1770,54 @@
 }
 
 .buzzcast-radio-row input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  justify-self: end;
+  margin: 0;
   accent-color: #7658ff;
+  filter: drop-shadow(0 0 6px rgba(118, 88, 255, .28));
+}
+
+.buzzcast-policy-detail {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+  color: #f8fafc;
+}
+
+.buzzcast-policy-back {
+  width: fit-content;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-color: rgba(255, 255, 255, .14);
+  background: #464559;
+}
+
+.buzzcast-policy-detail h3 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.buzzcast-policy-detail > p {
+  margin: 0;
+  color: #c9c4dc;
+  line-height: 1.6;
+}
+
+.buzzcast-policy-detail section {
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.buzzcast-policy-detail h4 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.buzzcast-policy-detail section p {
+  margin: 0;
+  color: #b9b5ca;
+  line-height: 1.6;
 }
 
 .buzzcast-safety-card {
@@ -1793,6 +1856,15 @@
   background: #292839;
 }
 
+.buzzcast-region-empty {
+  min-height: 72px;
+  display: grid;
+  place-items: center start;
+  color: #aaa6bb;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+
 .buzzcast-help-shell {
   max-width: 980px;
   margin: 14px auto 0;
@@ -1815,6 +1887,30 @@
   background: transparent;
   color: #c8c4dc;
   font-weight: 500;
+}
+
+.buzzcast-help-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.buzzcast-help-shell > header .buzzcast-help-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.buzzcast-help-shell > header .buzzcast-help-actions button.active {
+  border-color: #675f82;
+  background: #3c3a50;
+  color: #fff;
+}
+
+.buzzcast-help-shell > header .buzzcast-help-actions button.primary {
+  background: #7756ff;
+  color: #fff;
 }
 
 .buzzcast-help-layout {
@@ -1854,10 +1950,20 @@
 
 .buzzcast-faq-list {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
-.buzzcast-faq-list button {
+.buzzcast-faq-item {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 8px;
+  background: #292838;
+}
+
+.buzzcast-faq-item button {
+  width: 100%;
+  min-height: 58px;
+  padding: 0 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1866,6 +1972,78 @@
   color: #fff;
   text-align: left;
   font-weight: 500;
+}
+
+.buzzcast-faq-item.open {
+  border-color: rgba(132, 101, 255, .42);
+  background: #343247;
+}
+
+.buzzcast-faq-item p,
+.buzzcast-help-answer p,
+.buzzcast-feedback-record p,
+.buzzcast-feedback-empty p {
+  margin: 0;
+  color: #c8c4dc;
+  line-height: 1.6;
+}
+
+.buzzcast-faq-item p {
+  padding: 0 18px 18px;
+  font-size: 14px;
+}
+
+.buzzcast-help-answer h2 {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.buzzcast-feedback-record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.buzzcast-feedback-record,
+.buzzcast-feedback-empty {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 8px;
+  background: #292838;
+}
+
+.buzzcast-feedback-record div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.buzzcast-feedback-record strong,
+.buzzcast-feedback-empty strong {
+  color: #fff;
+}
+
+.buzzcast-feedback-record time,
+.buzzcast-feedback-record small {
+  color: #aaa6bb;
+  font-size: 12px;
+}
+
+.buzzcast-feedback-record small {
+  display: block;
+  margin-top: 10px;
+}
+
+.buzzcast-feedback-empty button {
+  min-height: 38px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #7756ff;
+  color: #fff;
+  font-weight: 800;
 }
 
 .buzzcast-room-preview {
@@ -2406,6 +2584,72 @@
 .buzzcast-install-modal h2 {
   margin: 0;
   font-size: 16px;
+}
+
+.buzzcast-security-modal {
+  width: min(430px, calc(100vw - 28px));
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 8px;
+  background: #302f3d;
+  color: #fff;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .42);
+}
+
+.buzzcast-security-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.buzzcast-security-modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.buzzcast-security-modal header button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.buzzcast-security-modal label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  color: #dcd8ee;
+  font-size: 13px;
+}
+
+.buzzcast-security-modal input {
+  min-height: 44px;
+  border-color: #565469;
+  background: #242334;
+}
+
+.buzzcast-security-error {
+  margin: 0;
+  color: #fecaca;
+  font-size: 13px;
+}
+
+.buzzcast-security-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.buzzcast-security-actions button {
+  min-width: 92px;
+}
+
+.buzzcast-security-actions .buzzcast-submit {
+  width: auto;
+  margin-top: 0;
 }
 
 .buzzcast-install-modal > div {
@@ -2949,6 +3193,12 @@ textarea {
   outline: none;
 }
 
+select {
+  color-scheme: dark;
+  background-color: var(--select-bg);
+  border-color: rgba(148, 163, 184, .26);
+}
+
 textarea {
   min-height: 94px;
   resize: vertical;
@@ -2967,8 +3217,27 @@ textarea[aria-invalid="true"] {
   box-shadow: 0 0 0 3px rgba(239, 68, 68, .12);
 }
 
+select optgroup,
 select option {
-  color: #111827;
+  background-color: var(--select-menu-bg);
+  color: #f8fafc;
+}
+
+select option:hover,
+select option:focus {
+  background-color: var(--select-menu-hover);
+  color: #ffffff;
+}
+
+select option:checked {
+  background-color: var(--select-menu-active);
+  color: #ffffff;
+}
+
+select option:disabled,
+select option[disabled] {
+  background-color: var(--select-menu-bg);
+  color: var(--select-menu-muted);
 }
 
 label {
@@ -3468,7 +3737,8 @@ pre {
 }
 
 .auth-modal select option {
-  color: #0f172a;
+  background-color: var(--select-menu-bg);
+  color: #f8fafc;
 }
 
 .auth-inline-fields {

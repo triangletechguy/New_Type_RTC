@@ -80,6 +80,8 @@ export async function apiRequest(path, options = {}) {
     requestError.data = data
     requestError.email = data.email
     requestError.requires_verification = Boolean(data.requires_verification)
+    requestError.verification_code = data.verification_code
+    requestError.email_delivery = data.email_delivery
     if (response.status === 401) notifyAuthExpired()
     throw requestError
   }

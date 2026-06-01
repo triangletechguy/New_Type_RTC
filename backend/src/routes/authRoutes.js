@@ -37,6 +37,7 @@ function normalizeGender(value) {
 }
 
 function normalizeAge(value) {
+  if (value === undefined || value === null || value === '') return null
   const age = Number(value)
   return Number.isInteger(age) ? age : null
 }
@@ -184,6 +185,42 @@ async function createVerificationCode(connection, userId, email) {
   return code
 }
 
+function verificationDeliveryPayload(delivery) {
+  if (!delivery) return null
+
+  return {
+    provider: delivery.provider || 'unknown',
+    skipped: Boolean(delivery.skipped),
+  }
+}
+
+function verificationResponse({ message, email, delivery }) {
+  const response = {
+    message,
+    requires_verification: true,
+    email,
+  }
+  const emailDelivery = verificationDeliveryPayload(delivery)
+
+  if (emailDelivery) response.email_delivery = emailDelivery
+  if (delivery?.verification_code) response.verification_code = delivery.verification_code
+
+  return response
+}
+
+function emailDeliveryFailureResponse(res, error, email) {
+  const status = error.status || 502
+  return res.status(status).json({
+    message: `Verification code was created, but email delivery failed: ${error.message}`,
+    requires_verification: true,
+    email,
+    email_delivery: {
+      provider: error.code || 'failed',
+      skipped: false,
+    },
+  })
+}
+
 function signAccessToken(user) {
   return jwt.sign(
     {
@@ -324,9 +361,9 @@ router.post('/register', async (req, res, next) => {
     const email = normalizeEmail(req.body?.email)
     const password = String(req.body?.password || '')
 
-    if (!name || !gender || age === null || !currentResidence || !birthday || !email || !password) {
+    if (!name || !email || !password) {
       return res.status(422).json({
-        message: 'Name, gender, age, current residence, birthday, email, and password are required.',
+        message: 'Name, email, and password are required.',
       })
     }
 
@@ -334,21 +371,23 @@ router.post('/register', async (req, res, next) => {
       return res.status(422).json({ message: 'Name must be at least 2 characters.' })
     }
 
-    if (!validGenderValues.has(gender)) {
+    if (gender && !validGenderValues.has(gender)) {
       return res.status(422).json({ message: 'Choose a valid gender option.' })
     }
 
-    if (age < 13 || age > 120) {
+    if (age !== null && (age < 13 || age > 120)) {
       return res.status(422).json({ message: 'Age must be between 13 and 120.' })
     }
 
-    if (currentResidence.length < 2) {
+    if (currentResidence && currentResidence.length < 2) {
       return res.status(422).json({ message: 'Current residence country is required.' })
     }
 
-    const birthdayAge = ageFromBirthday(birthday)
-    if (birthdayAge === null || birthdayAge < 13 || birthdayAge > 120) {
-      return res.status(422).json({ message: 'Choose a valid birthday for a user age between 13 and 120.' })
+    if (birthday) {
+      const birthdayAge = ageFromBirthday(birthday)
+      if (birthdayAge === null || birthdayAge < 13 || birthdayAge > 120) {
+        return res.status(422).json({ message: 'Choose a valid birthday for a user age between 13 and 120.' })
+      }
     }
 
     if (!validateEmail(email)) {
@@ -394,7 +433,7 @@ router.post('/register', async (req, res, next) => {
               updated_at = NOW()
           WHERE id = ?
           `,
-          [name, gender, age, birthday, currentResidence, passwordHash, userId]
+          [name, gender || null, age, birthday || null, currentResidence || null, passwordHash, userId]
         )
       } else {
         const [result] = await connection.execute(
@@ -426,7 +465,7 @@ router.post('/register', async (req, res, next) => {
             NOW()
           )
           `,
-          [name, email, gender, age, birthday, currentResidence, passwordHash]
+          [name, email, gender || null, age, birthday || null, currentResidence || null, passwordHash]
         )
 
         userId = result.insertId
@@ -451,13 +490,18 @@ router.post('/register', async (req, res, next) => {
       return createVerificationCode(connection, userId, email)
     })
 
-    await sendVerificationEmail({ to: email, name, code })
+    let delivery
+    try {
+      delivery = await sendVerificationEmail({ to: email, name, code })
+    } catch (error) {
+      return emailDeliveryFailureResponse(res, error, email)
+    }
 
-    return res.status(201).json({
+    return res.status(201).json(verificationResponse({
       message: 'Verification code sent. Check your email inbox to finish signup.',
-      requires_verification: true,
       email,
-    })
+      delivery,
+    }))
   } catch (error) {
     next(error)
   }
@@ -570,13 +614,18 @@ router.post('/resend-verification', async (req, res, next) => {
     }
 
     const code = await transaction((connection) => createVerificationCode(connection, user.id, email))
-    await sendVerificationEmail({ to: email, name: user.name, code })
+    let delivery
+    try {
+      delivery = await sendVerificationEmail({ to: email, name: user.name, code })
+    } catch (error) {
+      return emailDeliveryFailureResponse(res, error, email)
+    }
 
-    return res.json({
+    return res.json(verificationResponse({
       message: 'A new verification code was sent. Check your email inbox.',
-      requires_verification: true,
       email,
-    })
+      delivery,
+    }))
   } catch (error) {
     next(error)
   }

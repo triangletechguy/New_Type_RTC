@@ -2,6 +2,8 @@ const nodemailer = require('nodemailer')
 
 function emailConfig() {
   const port = Number(process.env.SMTP_PORT || 0)
+  const allowLocalVerificationCode = process.env.NODE_ENV !== 'production'
+    || ['1', 'true', 'yes', 'on'].includes(String(process.env.ALLOW_LOCAL_VERIFICATION_CODES || '').toLowerCase())
 
   return {
     resendApiKey: process.env.RESEND_API_KEY || '',
@@ -11,6 +13,7 @@ function emailConfig() {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '',
     secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+    allowLocalVerificationCode,
   }
 }
 
@@ -52,6 +55,66 @@ function verificationMessage({ to, name, code, from }) {
   }
 }
 
+function attachmentSummary(attachment) {
+  if (!attachment) return 'No attachment provided.'
+
+  return [
+    `File: ${attachment.filename}`,
+    `Type: ${attachment.contentType || 'unknown'}`,
+    `Size: ${Math.round((Number(attachment.size) || 0) / 1024)} KB`,
+  ].join('\n')
+}
+
+function feedbackMessage({ to, feedback, from }) {
+  const reporter = feedback.user
+    ? `${feedback.user.name || 'Unknown'} <${feedback.user.email || 'no email'}> (ID ${feedback.user.id})`
+    : 'Guest or unauthenticated user'
+  const contact = feedback.contact || feedback.user?.email || 'Not provided'
+  const attachment = feedback.attachment || null
+  const attachmentText = attachmentSummary(attachment)
+  const safeDescription = escapeHtml(feedback.description).replace(/\n/g, '<br>')
+
+  return {
+    from,
+    to,
+    subject: `[TalkEachOther Feedback] ${feedback.category} - ${feedback.type}`,
+    text: [
+      'New TalkEachOther feedback submitted.',
+      '',
+      `Category: ${feedback.category}`,
+      `Type: ${feedback.type}`,
+      `Contact: ${contact}`,
+      `Reporter: ${reporter}`,
+      `Page: ${feedback.page_url || 'Not provided'}`,
+      `User agent: ${feedback.user_agent || 'Not provided'}`,
+      `Submitted: ${feedback.created_at}`,
+      '',
+      'Description:',
+      feedback.description,
+      '',
+      'Attachment:',
+      attachmentText,
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#101827">
+        <h2>New TalkEachOther feedback</h2>
+        <p><strong>Category:</strong> ${escapeHtml(feedback.category)}</p>
+        <p><strong>Type:</strong> ${escapeHtml(feedback.type)}</p>
+        <p><strong>Contact:</strong> ${escapeHtml(contact)}</p>
+        <p><strong>Reporter:</strong> ${escapeHtml(reporter)}</p>
+        <p><strong>Page:</strong> ${escapeHtml(feedback.page_url || 'Not provided')}</p>
+        <p><strong>User agent:</strong> ${escapeHtml(feedback.user_agent || 'Not provided')}</p>
+        <p><strong>Submitted:</strong> ${escapeHtml(feedback.created_at)}</p>
+        <h3>Description</h3>
+        <p>${safeDescription}</p>
+        <h3>Attachment</h3>
+        <pre style="white-space:pre-wrap;background:#f3f4f6;padding:12px;border-radius:8px">${escapeHtml(attachmentText)}</pre>
+      </div>
+    `,
+    attachments: attachment ? [attachment] : [],
+  }
+}
+
 function smtpReady(config) {
   return Boolean(config.host && config.port && config.user && config.pass && config.from)
 }
@@ -73,6 +136,12 @@ async function sendWithResend(config, message) {
       subject: message.subject,
       text: message.text,
       html: message.html,
+      ...(message.attachments?.length ? {
+        attachments: message.attachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.encodedContent || attachment.content.toString('base64'),
+        })),
+      } : {}),
     }),
   })
 
@@ -97,8 +166,36 @@ async function sendWithSmtp(config, message) {
     },
   })
 
-  await transporter.sendMail(message)
+  await transporter.sendMail({
+    ...message,
+    attachments: message.attachments?.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      contentType: attachment.contentType,
+    })),
+  })
   return { provider: 'smtp' }
+}
+
+async function sendEmailMessage(message, { allowLocalFallback = false, localLog = '' } = {}) {
+  const config = emailConfig()
+  const prepared = {
+    ...message,
+    from: config.from,
+  }
+
+  if (resendReady(config)) return sendWithResend(config, prepared)
+  if (smtpReady(config)) return sendWithSmtp(config, prepared)
+
+  if (allowLocalFallback && config.allowLocalVerificationCode) {
+    console.warn(localLog || `[email] Local email fallback: ${prepared.subject}`)
+    return { provider: 'local', skipped: true }
+  }
+
+  const error = new Error('Email service is not configured. Set RESEND_API_KEY with EMAIL_FROM, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.')
+  error.status = 503
+  error.code = 'email_not_configured'
+  throw error
 }
 
 async function sendVerificationEmail({ to, name, code }) {
@@ -113,11 +210,37 @@ async function sendVerificationEmail({ to, name, code }) {
   if (resendReady(config)) return sendWithResend(config, message)
   if (smtpReady(config)) return sendWithSmtp(config, message)
 
+  if (config.allowLocalVerificationCode) {
+    console.warn(`[email] Verification code for ${to}: ${code}`)
+    return {
+      provider: 'local',
+      skipped: true,
+      verification_code: code,
+    }
+  }
+
   const error = new Error('Email service is not configured. Set RESEND_API_KEY with EMAIL_FROM, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.')
   error.status = 503
+  error.code = 'email_not_configured'
   throw error
 }
 
+async function sendFeedbackEmail({ to, feedback }) {
+  const recipient = to || process.env.FEEDBACK_TO_EMAIL || process.env.SUPERADMIN_EMAIL || 'triangletechguy993@outlook.com'
+  return sendEmailMessage(
+    feedbackMessage({
+      to: recipient,
+      feedback,
+      from: '',
+    }),
+    {
+      allowLocalFallback: true,
+      localLog: `[email] Feedback for ${recipient}: ${feedback.category} / ${feedback.type}`,
+    },
+  )
+}
+
 module.exports = {
+  sendFeedbackEmail,
   sendVerificationEmail,
 }

@@ -27,8 +27,9 @@ export function getPasswordError(value, { strong = false } = {}) {
   return ''
 }
 
-function getBirthdayError(value) {
+function getBirthdayError(value, { required = true } = {}) {
   const birthday = String(value || '').trim()
+  if (!birthday && !required) return ''
   if (!birthday) return 'Birthday is required.'
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return 'Choose a valid birthday.'
 
@@ -56,18 +57,21 @@ export function validateAuthFields({ mode, name, gender, age, current_residence,
   }
 
   if (mode === 'register') {
-    if (!String(gender || '').trim()) errors.gender = 'Gender is required.'
+    if (String(gender || '').trim() && !['male', 'female', 'non_binary', 'prefer_not_to_say'].includes(String(gender).trim())) {
+      errors.gender = 'Choose a valid gender option.'
+    }
 
+    const hasAge = String(age || '').trim() !== ''
     const numericAge = Number(age)
-    if (!Number.isInteger(numericAge) || numericAge < 13 || numericAge > 120) {
+    if (hasAge && (!Number.isInteger(numericAge) || numericAge < 13 || numericAge > 120)) {
       errors.age = 'Age must be between 13 and 120.'
     }
 
-    if (String(current_residence || '').trim().length < 2) {
+    if (String(current_residence || '').trim() && String(current_residence || '').trim().length < 2) {
       errors.current_residence = 'Current residence country is required.'
     }
 
-    const birthdayError = getBirthdayError(birthday)
+    const birthdayError = getBirthdayError(birthday, { required: false })
     if (birthdayError) errors.birthday = birthdayError
   }
 

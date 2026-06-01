@@ -10,6 +10,7 @@ const roomRoutes = require('./routes/roomRoutes')
 const chatRoutes = require('./routes/chatRoutes')
 const adminRoutes = require('./routes/adminRoutes')
 const clientRoutes = require('./routes/clientRoutes')
+const feedbackRoutes = require('./routes/feedbackRoutes')
 const { registerSignaling } = require('./sockets/signaling')
 
 const PORT = Number(process.env.PORT || 8000)
@@ -109,7 +110,7 @@ app.use(cors({
   credentials: false,
 }))
 
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '40mb' }))
 
 app.get('/', (req, res) => {
   res.json({
@@ -158,6 +159,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/client', clientRoutes)
 app.use('/api/rooms', roomRoutes)
 app.use('/api', chatRoutes)
+app.use('/api/feedback', feedbackRoutes)
 app.use('/api/admin', adminRoutes)
 
 app.use((req, res) => {
