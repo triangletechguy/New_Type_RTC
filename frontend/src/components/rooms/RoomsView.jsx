@@ -1014,6 +1014,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [activeExplore, setActiveExplore] = useState('all')
   const [showSearchPanel, setShowSearchPanel] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
+  const [showMobileRoomProfile, setShowMobileRoomProfile] = useState(false)
+  const [showMobileRoomTools, setShowMobileRoomTools] = useState(false)
+  const [showMobileRoomLock, setShowMobileRoomLock] = useState(false)
+  const [showMobileRoomSettings, setShowMobileRoomSettings] = useState(false)
   const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
@@ -1053,6 +1057,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [dmMessages, setDmMessages] = useState(initialDmMessages)
   const [dmInput, setDmInput] = useState('')
   const [dmStatus, setDmStatus] = useState('')
+  const [mobileRoomLockCode, setMobileRoomLockCode] = useState('199')
   const [readThreadIds, setReadThreadIds] = useState([])
   const [followedThreadIds, setFollowedThreadIds] = useState(() => savedFollowedThreadIds(dmThreads.filter((thread) => thread.followed).map((thread) => thread.id)))
   const [activeRanking, setActiveRanking] = useState('rooms')
@@ -1462,6 +1467,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     pushSectionHistory('live')
     setActiveSection('live')
     setPreviewCard(null)
+    setShowMobileRoomProfile(false)
+    setShowMobileRoomTools(false)
+    setShowMobileRoomLock(false)
+    setShowMobileRoomSettings(false)
   }
 
   function switchFeed(nextFeed) {
@@ -1625,6 +1634,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     pushSectionHistory('room', { previewCardId: card.id })
+    setShowMobileRoomProfile(false)
+    setShowMobileRoomTools(false)
+    setShowMobileRoomLock(false)
+    setShowMobileRoomSettings(false)
     setPreviewCard(card)
     setActiveSection('room')
   }
@@ -2227,49 +2240,53 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       { id: 'c2', body: 'This is comment area for all users', badges: ['Lv.37', 'Lv.30'] },
       { id: 'c3', body: 'Now I can show you. Tap a user to open profile.', badges: ['Lv.37'] },
     ]
-    const mobileSeats = Array.from({ length: 12 }, (_, index) => index + 1)
+    const mobileSeats = Array.from({ length: 8 }, (_, index) => index + 1)
+    const mobileLockDigits = mobileRoomLockCode.padEnd(4, ' ').slice(0, 4).split('')
 
     return (
       <section className="buzzcast-room-preview">
-        <section className="buzzcast-mobile-room-live-preview" aria-label={`${card.title} live room preview`}>
+        <section className={showMobileRoomSettings ? 'buzzcast-mobile-room-live-preview is-hidden' : 'buzzcast-mobile-room-live-preview'} aria-label={`${card.title} live room preview`}>
           <header className="buzzcast-mobile-live-head">
             <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
-            <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
-            <div>
+            <button type="button" className="buzzcast-mobile-profile-avatar-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
+              <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+            </button>
+            <button type="button" className="buzzcast-mobile-title-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
               <strong>{card.title}</strong>
               <small>ID:{roomIdLabel} · {memberCount}</small>
-            </div>
+            </button>
             <button type="button" aria-label="Share">↗</button>
-            <button type="button" aria-label="More">...</button>
+            <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="More room tools">...</button>
+            <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="Room power">⏻</button>
           </header>
 
-          <div className="buzzcast-mobile-live-actions">
-            <button type="button">Refresh</button>
-            <button type="button">Voice</button>
-            <button type="button">Play List</button>
-            <button type="button" aria-label="Power">⏻</button>
-          </div>
-
-          <div className="buzzcast-mobile-video-card">
+          <div className="buzzcast-mobile-room-badges">
             <div>
-              <strong>AADAT (ROCK VERSION)</strong>
-              <small>{card.host} - Topic</small>
+              <span>Group 309</span>
+              <span>NILOY</span>
             </div>
-            <img src={previewCover} alt="" loading="lazy" />
-            <button type="button" aria-label="Play video"></button>
-            <span className="start-time">00:03:35</span>
-            <span className="end-time">00:03:35</span>
-            <i></i>
+            <button type="button" className="buzzcast-mobile-member-strip" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room members">
+              {[0, 1, 2].map((index) => (
+                <i key={index} className="image-avatar"><img src={avatarForIndex(index + 1)} alt="" loading="lazy" /></i>
+              ))}
+              <b>›</b>
+            </button>
           </div>
 
           <div className="buzzcast-mobile-seat-grid">
             {mobileSeats.map((seat) => (
-              <button key={seat} type="button" className={seat === 1 || seat === 9 || seat === 10 || seat === 12 ? 'active' : ''}>
-                <span>{seat === 1 || seat === 9 || seat === 10 || seat === 12 ? 'mic' : 'lock'}</span>
+              <button
+                key={seat}
+                type="button"
+                className={seat === 1 ? 'active' : ''}
+                onClick={() => seat === 1 ? setShowMobileRoomTools(true) : setShowMobileRoomLock(true)}
+              >
+                <span>{seat === 1 ? 'mic' : 'lock'}</span>
                 <small>No.{seat}</small>
               </button>
             ))}
           </div>
+          <div className="buzzcast-mobile-pk-badge">PK</div>
 
           <div className="buzzcast-mobile-live-guide-row">
             <p className="buzzcast-mobile-live-guide">Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.</p>
@@ -2304,15 +2321,152 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" aria-label="Gift">gift</button>
             <button type="submit" aria-label="Send">send</button>
           </form>
+
+          {showMobileRoomProfile ? (
+            <div className="buzzcast-mobile-room-profile-backdrop" role="dialog" aria-modal="true" aria-labelledby="buzzcast-mobile-room-profile-title">
+              <section className="buzzcast-mobile-room-profile-sheet">
+                <header>
+                  <span></span>
+                  <strong id="buzzcast-mobile-room-profile-title">Room Profile</strong>
+                  <button type="button" onClick={() => setShowMobileRoomProfile(false)} aria-label="Close room profile">×</button>
+                </header>
+                <button
+                  type="button"
+                  className="buzzcast-mobile-room-profile-settings"
+                  onClick={() => {
+                    setShowMobileRoomProfile(false)
+                    setShowMobileRoomSettings(true)
+                  }}
+                  aria-label="Room settings"
+                >
+                  <span></span>
+                  <small>Settings</small>
+                </button>
+                <span className="buzzcast-mobile-room-profile-avatar image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+                <strong className="buzzcast-mobile-room-profile-name">{card.title}</strong>
+                <span className="buzzcast-mobile-room-profile-id">ID:{roomIdLabel}</span>
+                <div className="buzzcast-mobile-room-profile-stats" aria-label="Room stats">
+                  <span><b>49.4M</b><small>Total Diamonds</small></span>
+                  <span><b>{memberCount}</b><small>Members</small></span>
+                </div>
+                <dl className="buzzcast-mobile-room-profile-details">
+                  <div>
+                    <dt>Language:</dt>
+                    <dd>Bengali(বাংলা)</dd>
+                  </div>
+                  <div>
+                    <dt>Country:</dt>
+                    <dd>{card.country || 'গণপ্রজাতন্ত্রী বাংলাদেশ'}</dd>
+                  </div>
+                  <div>
+                    <dt>Announcement:</dt>
+                    <dd>{card.description || 'Please respect each other and chat in a friendly manner.'}</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+          ) : null}
+
+          {showMobileRoomTools ? (
+            <div className="buzzcast-mobile-room-tools-backdrop" role="dialog" aria-modal="true" aria-label="Room tools">
+              <section className="buzzcast-mobile-room-tools-sheet">
+                <button type="button" onClick={() => setShowMobileRoomTools(false)}>
+                  <i className="mic"></i>
+                  <span>Number of Mic</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileRoomTools(false)
+                    setShowMobileRoomLock(true)
+                  }}
+                >
+                  <i className="unlock"></i>
+                  <span>Unlock</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileRoomTools(false)
+                    setShowMobileRoomLock(true)
+                  }}
+                >
+                  <i className="password"></i>
+                  <span>Password</span>
+                </button>
+                <button type="button">
+                  <i className="theme"></i>
+                  <span>Theme</span>
+                </button>
+                <button type="button">
+                  <i className="share"></i>
+                  <span>Share</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileRoomTools(false)
+                    setShowMobileRoomSettings(true)
+                  }}
+                >
+                  <i className="admin"></i>
+                  <span>Admin</span>
+                </button>
+                <button type="button">
+                  <i className="clear"></i>
+                  <span>Clear comments history</span>
+                </button>
+                <button type="button" onClick={() => setShowMobileRoomTools(false)}>
+                  <i className="gather"></i>
+                  <span>Gather</span>
+                </button>
+                <button type="button" className="cancel" onClick={() => setShowMobileRoomTools(false)}>Cancel</button>
+              </section>
+            </div>
+          ) : null}
+
+          {showMobileRoomLock ? (
+            <div className="buzzcast-mobile-room-lock-backdrop" role="dialog" aria-modal="true" aria-labelledby="buzzcast-mobile-room-lock-title">
+              <section className="buzzcast-mobile-room-lock-modal">
+                <button type="button" className="close" onClick={() => setShowMobileRoomLock(false)} aria-label="Close room lock">×</button>
+                <strong id="buzzcast-mobile-room-lock-title">Room lock</strong>
+                <label>
+                  <span>Room lock code</span>
+                  <input
+                    value={mobileRoomLockCode}
+                    onChange={(event) => setMobileRoomLockCode(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                    autoFocus
+                    inputMode="numeric"
+                    maxLength={4}
+                    aria-label="Room lock code"
+                  />
+                </label>
+                <div className="buzzcast-mobile-room-lock-digits" aria-hidden="true">
+                  {mobileLockDigits.map((digit, index) => (
+                    <span key={index}>{digit.trim()}</span>
+                  ))}
+                </div>
+                <p>Please set 4 digits password</p>
+                <button type="button" className="confirm" onClick={() => setShowMobileRoomLock(false)}>Confirm</button>
+                <button type="button" className="cancel" onClick={() => setShowMobileRoomLock(false)}>Cancel</button>
+              </section>
+            </div>
+          ) : null}
         </section>
-        <section className="buzzcast-mobile-room-settings" aria-label={`${card.title} room settings`}>
+        <section className={showMobileRoomSettings ? 'buzzcast-mobile-room-settings is-visible' : 'buzzcast-mobile-room-settings'} aria-label={`${card.title} room settings`}>
           <header>
-            <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
+            <button type="button" onClick={() => setShowMobileRoomSettings(false)} aria-label="Back to room">‹</button>
             <strong>Settings</strong>
             <span></span>
           </header>
           <div className="buzzcast-mobile-room-group">
-            <button type="button">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMobileRoomSettings(false)
+                setShowMobileRoomProfile(true)
+              }}
+            >
               <span>Profile</span>
               <span className="buzzcast-mobile-room-value with-avatar">
                 <i className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></i>
@@ -2607,28 +2761,63 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             ))}
           </aside>
           <main>
-            <header>
+            <header className="buzzcast-dm-header">
+              <button type="button" className="buzzcast-dm-back" onClick={() => setShowMessages(false)} aria-label="Back to rooms">‹</button>
+              <span className="buzzcast-dm-peer-avatar image-avatar">
+                <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+              </span>
               <strong>{activeThreadData.name}</strong>
-              <span>( ID: {activeThreadData.peerId})</span>
+              <span className="buzzcast-dm-peer-id">( ID: {activeThreadData.peerId})</span>
               <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
                 {activeThreadFollowed ? 'Following' : 'Follow'}
               </button>
-              <button type="button" onClick={() => setShowMessages(false)}>End session</button>
+              <button type="button" className="buzzcast-dm-more" aria-label="More options">...</button>
             </header>
+            <section className="buzzcast-dm-moment-card">
+              <div>
+                <strong>Moment</strong>
+                <span>More ›</span>
+              </div>
+              <div className="buzzcast-dm-moment-grid">
+                {giftCatalog.slice(0, 4).map((gift) => (
+                  <span key={gift.id}>
+                    <img src={gift.icon} alt="" loading="lazy" />
+                  </span>
+                ))}
+              </div>
+            </section>
+            <p className="buzzcast-dm-intro">You can meet more friends and chat with them on TalkEachOther. I hope you can find interesting souls!</p>
             <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
               {dmStatus || dmNotice}
             </div>
             <div className="buzzcast-dm-body">
-              {(dmMessages[activeThread] || []).map((message) => (
-                <p key={message.id} className={message.mine ? 'mine' : ''}>{message.body}</p>
+              {(dmMessages[activeThread] || []).map((message, index) => (
+                <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
+                  <time>{index === 0 ? '2026-5-23 17:17' : '2026-5-23 18:13'}</time>
+                  {!message.mine ? (
+                    <span className="image-avatar">
+                      <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+                    </span>
+                  ) : null}
+                  <p>{message.body}</p>
+                </div>
               ))}
             </div>
-            <form onSubmit={sendDmMessage}>
+            <div className="buzzcast-dm-quick-replies">
+              <button type="button" onClick={() => setDmInput('হাই')}>হাই</button>
+              <button type="button" onClick={() => setDmInput('হ্যালো')}>হ্যালো</button>
+              <button type="button" onClick={() => setDmInput('হে! আমি আপনার সাথে বন্ধু হতে চাই।')}>হে! আমি আপনার সাথে বন্ধু হতে চাই।</button>
+            </div>
+            <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
+              <button type="button" aria-label="Voice message">mic</button>
               <input
                 value={dmInput}
                 onChange={(event) => setDmInput(event.target.value)}
-                placeholder={activeThreadFollowed ? 'Send a chat' : 'Send up to 2 messages, or follow first'}
+                placeholder={activeThreadFollowed ? 'Type a message...' : 'Type a message...'}
               />
+              <button type="button" aria-label="Photo">photo</button>
+              <button type="button" aria-label="Gift">gift</button>
+              <button type="submit" aria-label="Send message">send</button>
             </form>
           </main>
         </section>
