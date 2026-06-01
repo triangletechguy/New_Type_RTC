@@ -2217,9 +2217,77 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const isWarning = card.sensitive && !acceptedWarnings[card.id]
     const previewCover = cardCover(card)
     const previewAvatar = avatarForIndex(cardAvatarIndex(card))
+    const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
+    const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
 
     return (
       <section className="buzzcast-room-preview">
+        <section className="buzzcast-mobile-room-settings" aria-label={`${card.title} room settings`}>
+          <header>
+            <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
+            <strong>Settings</strong>
+            <span></span>
+          </header>
+          <div className="buzzcast-mobile-room-group">
+            <button type="button">
+              <span>Profile</span>
+              <span className="buzzcast-mobile-room-value with-avatar">
+                <i className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></i>
+                <b>›</b>
+              </span>
+            </button>
+          </div>
+          <div className="buzzcast-mobile-room-group">
+            <button type="button">
+              <span>Room Name</span>
+              <span className="buzzcast-mobile-room-value"><em>{card.title}</em><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Announcement</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+          </div>
+          <div className="buzzcast-mobile-room-group">
+            <button type="button">
+              <span>Room Title</span>
+              <span className="buzzcast-mobile-room-value"><em>{roomMeta.label}</em><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Blocked List</span>
+              <span className="buzzcast-mobile-room-value"><em>{blockedCount}</em><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Kick History</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Remove History</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Operate History</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+          </div>
+          <div className="buzzcast-mobile-room-group">
+            <button type="button">
+              <span>Live Record and Balance</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+            <button type="button">
+              <span>Live Guidance</span>
+              <span className="buzzcast-mobile-room-value"><b>›</b></span>
+            </button>
+          </div>
+          <div className="buzzcast-mobile-room-live">
+            <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+            <strong>LIVE</strong>
+          </div>
+          <div className="buzzcast-mobile-room-follow">
+            <span></span>
+            <div><strong>0 Follow</strong><small>On Live</small></div>
+          </div>
+        </section>
         <div className={`buzzcast-stage media-${card.tone || 'sensitive'}`}>
           <img className="buzzcast-stage-image" src={previewCover} alt="" />
           {isWarning ? (
@@ -2349,7 +2417,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [activeSection, user])
 
   return (
-    <div className="buzzcast-shell">
+    <div className={`buzzcast-shell section-${activeSection}`}>
       <header className="buzzcast-topbar">
         <BuzzLogo />
         <div className="buzzcast-search-wrap">

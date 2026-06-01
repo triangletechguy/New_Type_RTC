@@ -2226,6 +2226,10 @@
   gap: 12px;
 }
 
+.buzzcast-mobile-room-settings {
+  display: none;
+}
+
 .buzzcast-stage {
   position: relative;
   min-height: calc(100vh - 92px);
@@ -12478,6 +12482,225 @@ pre {
     width: 18px !important;
     height: 18px !important;
     margin-left: -5px !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-topbar,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-main {
+    min-height: 100svh !important;
+    padding: 0 !important;
+    background: #e7e7e7 !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-room-preview {
+    display: block !important;
+    width: 100% !important;
+    min-height: 100svh !important;
+    background: #e7e7e7 !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-stage,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-live-chat {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-room-settings {
+    position: relative !important;
+    display: block !important;
+    min-height: 100svh !important;
+    padding-bottom: 96px !important;
+    background: #e7e7e7 !important;
+    color: #101010 !important;
+    font-size: 15px !important;
+  }
+
+  .buzzcast-mobile-room-settings header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 8 !important;
+    height: 62px !important;
+    display: grid !important;
+    grid-template-columns: 48px minmax(0, 1fr) 48px !important;
+    align-items: center !important;
+    background: #ffc400 !important;
+    color: #fff !important;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .04) !important;
+  }
+
+  .buzzcast-mobile-room-settings header button {
+    width: 48px !important;
+    height: 62px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #fff !important;
+    font-size: 36px !important;
+    font-weight: 300 !important;
+    line-height: 1 !important;
+  }
+
+  .buzzcast-mobile-room-settings header strong {
+    justify-self: center !important;
+    color: #fff !important;
+    font-size: 16px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-mobile-room-group {
+    margin-top: 8px !important;
+    background: #fff !important;
+    border-top: 1px solid rgba(15, 23, 42, .04) !important;
+    border-bottom: 1px solid rgba(15, 23, 42, .04) !important;
+  }
+
+  .buzzcast-mobile-room-group:first-of-type {
+    margin-top: 0 !important;
+  }
+
+  .buzzcast-mobile-room-group button {
+    width: 100% !important;
+    min-height: 51px !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 0 16px !important;
+    border: 0 !important;
+    border-bottom: 1px solid #eeeeee !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    text-align: left !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+  }
+
+  .buzzcast-mobile-room-group button:last-child {
+    border-bottom: 0 !important;
+  }
+
+  .buzzcast-mobile-room-value {
+    min-width: 0 !important;
+    display: inline-grid !important;
+    grid-auto-flow: column !important;
+    align-items: center !important;
+    justify-content: end !important;
+    gap: 8px !important;
+    color: #9b9b9b !important;
+  }
+
+  .buzzcast-mobile-room-value.with-avatar {
+    gap: 11px !important;
+  }
+
+  .buzzcast-mobile-room-value i {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+  }
+
+  .buzzcast-mobile-room-value em {
+    max-width: 150px !important;
+    overflow: hidden !important;
+    color: #9b9b9b !important;
+    font-style: normal !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-mobile-room-value b {
+    color: #c9c9c9 !important;
+    font-size: 23px !important;
+    font-weight: 400 !important;
+    line-height: 1 !important;
+  }
+
+  .buzzcast-mobile-room-live {
+    position: fixed !important;
+    right: 18px !important;
+    bottom: 58px !important;
+    z-index: 9 !important;
+    display: grid !important;
+    justify-items: center !important;
+    gap: 2px !important;
+  }
+
+  .buzzcast-mobile-room-live span {
+    width: 54px !important;
+    height: 54px !important;
+    border: 2px solid #ffc400 !important;
+    border-radius: 50% !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .16) !important;
+  }
+
+  .buzzcast-mobile-room-live strong {
+    margin-top: -12px !important;
+    padding: 2px 6px !important;
+    border-radius: 999px !important;
+    background: #ff9f0a !important;
+    color: #fff !important;
+    font-size: 10px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-mobile-room-follow {
+    position: fixed !important;
+    right: 12px !important;
+    bottom: 10px !important;
+    z-index: 9 !important;
+    min-width: 126px !important;
+    height: 42px !important;
+    display: grid !important;
+    grid-template-columns: 38px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 4px 9px 4px 4px !important;
+    border-radius: 999px !important;
+    background: rgba(35, 35, 35, .88) !important;
+    color: #fff !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .18) !important;
+  }
+
+  .buzzcast-mobile-room-follow > span {
+    width: 34px !important;
+    height: 34px !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 50% !important;
+    background: #f4f4f4 !important;
+  }
+
+  .buzzcast-mobile-room-follow > span::before {
+    content: "" !important;
+    width: 14px !important;
+    height: 18px !important;
+    border: 2px solid #9b9b9b !important;
+    border-radius: 4px !important;
+    box-shadow: inset 0 -4px 0 #d7d7d7 !important;
+  }
+
+  .buzzcast-mobile-room-follow strong,
+  .buzzcast-mobile-room-follow small {
+    display: block !important;
+    line-height: 1.05 !important;
+  }
+
+  .buzzcast-mobile-room-follow strong {
+    color: #fff !important;
+    font-size: 12px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-mobile-room-follow small {
+    margin-top: 2px !important;
+    color: #ff9f0a !important;
+    font-size: 11px !important;
+    font-weight: 1000 !important;
   }
 }
 
