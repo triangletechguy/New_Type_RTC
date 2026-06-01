@@ -138,6 +138,27 @@ EOF
     exit 1
   fi
 
+  if [ -n "$resend_api_key" ]; then
+    case "$resend_api_key" in
+      YOUR_REAL_RESEND_KEY|re_xxxxxxxxx|re_xxxxxxxx*|example*|placeholder*)
+        echo "ERROR: RESEND_API_KEY is still a placeholder. Use a real key from Resend." >&2
+        exit 1
+        ;;
+    esac
+
+    resend_status="$(curl -sS -o /tmp/resend-deploy-check.json -w "%{http_code}" \
+      -H "Authorization: Bearer $resend_api_key" \
+      https://api.resend.com/domains || true)"
+    if [ "$resend_status" = "401" ]; then
+      echo "ERROR: RESEND_API_KEY is invalid. Create a valid Resend API key and deploy again." >&2
+      exit 1
+    fi
+    if [ "$resend_status" -lt 200 ] || [ "$resend_status" -ge 500 ]; then
+      echo "ERROR: Could not validate Resend API key right now. Resend API returned HTTP $resend_status." >&2
+      exit 1
+    fi
+  fi
+
   cat > frontend/.env <<EOF
 VITE_API_BASE_URL=$DOMAIN/api
 VITE_SIGNALING_SERVER_URL=$DOMAIN

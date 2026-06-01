@@ -211,17 +211,21 @@ function verificationResponse({ message, email, delivery }) {
 function emailDeliveryFailureResponse(res, error, email) {
   const status = error.status || 502
   const setupRequired = error.code === 'email_not_configured'
+  const providerRejected = ['email_provider_invalid_key', 'email_provider_rejected'].includes(error.code)
 
   return res.status(status).json({
     message: setupRequired
       ? 'Verification code was created, but email delivery is not connected yet. Add email settings on the server, then request a new code.'
-      : `Verification code was created, but email delivery failed: ${error.message}`,
+      : providerRejected
+        ? `Verification code was created, but ${error.message}`
+        : 'Verification code was created, but email delivery failed. Check the email provider settings, then request a new code.',
     requires_verification: true,
     email,
     email_delivery: {
       provider: error.code || 'failed',
       skipped: false,
       setup_required: setupRequired,
+      provider_rejected: providerRejected,
     },
   })
 }

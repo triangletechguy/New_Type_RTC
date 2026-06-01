@@ -19,6 +19,14 @@ function messageForAuthError(error) {
     return 'Email delivery is not connected on the server yet. Add Resend or SMTP settings, then click Resend code.'
   }
 
+  if (error?.data?.email_delivery?.provider === 'email_provider_invalid_key') {
+    return 'Email delivery is connected, but the Resend API key is invalid. Add a valid key on the server, then click Resend code.'
+  }
+
+  if (error?.data?.email_delivery?.provider_rejected || error?.data?.email_delivery?.provider === 'email_provider_rejected') {
+    return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings, then click Resend code.'
+  }
+
   return error?.message || 'Request failed. Please try again.'
 }
 

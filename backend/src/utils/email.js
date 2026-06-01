@@ -123,6 +123,18 @@ function resendReady(config) {
   return Boolean(config.resendApiKey && config.from)
 }
 
+function resendErrorMessage(status, body) {
+  if (status === 401 || /api key is invalid/i.test(body)) {
+    return 'Email provider rejected the API key. Add a valid Resend API key on the server, then request a new code.'
+  }
+
+  if (/domain|from/i.test(body)) {
+    return 'Email provider rejected the sender address. Verify EMAIL_FROM and the sending domain, then request a new code.'
+  }
+
+  return 'Email provider rejected the verification email. Check the email provider settings, then request a new code.'
+}
+
 function emailDeliveryStatus() {
   const config = emailConfig()
   const resendConfigured = resendReady(config)
@@ -169,8 +181,9 @@ async function sendWithResend(config, message) {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '')
-    const error = new Error(errorText || `Resend email failed with status ${response.status}.`)
+    const error = new Error(resendErrorMessage(response.status, errorText))
     error.status = 502
+    error.code = response.status === 401 ? 'email_provider_invalid_key' : 'email_provider_rejected'
     throw error
   }
 
