@@ -1672,6 +1672,7 @@
 .buzzcast-settings-content {
   min-height: 640px;
   padding: 26px 36px 34px;
+  overflow: hidden;
 }
 
 .buzzcast-settings-heading {
@@ -1723,6 +1724,15 @@
   box-shadow: inset 0 -1px rgba(255, 255, 255, .055);
 }
 
+.buzzcast-settings-list > .buzzcast-select-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 230px);
+  gap: 20px;
+}
+
+.buzzcast-settings-list > .buzzcast-switch-row {
+  grid-template-columns: minmax(0, 1fr) 56px;
+}
+
 .buzzcast-settings-list > button span,
 .buzzcast-settings-list label span {
   min-width: 0;
@@ -1753,6 +1763,7 @@
   color: #6e5fff;
   font-style: normal;
   font-weight: 500;
+  justify-self: end;
 }
 
 .buzzcast-settings-list small {
@@ -1763,15 +1774,50 @@
 }
 
 .buzzcast-switch-row input {
-  width: 44px;
-  height: 24px;
-  accent-color: #7658ff;
+  appearance: none;
+  width: 48px;
+  height: 26px;
+  justify-self: end;
+  position: relative;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 999px;
+  background: #232233;
+  cursor: pointer;
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.buzzcast-switch-row input::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #c8c4dc;
+  transition: transform .16s ease, background-color .16s ease;
+}
+
+.buzzcast-switch-row input:checked {
+  border-color: rgba(118, 88, 255, .7);
+  background: #7658ff;
+  box-shadow: 0 0 0 3px rgba(118, 88, 255, .16);
+}
+
+.buzzcast-switch-row input:checked::before {
+  transform: translateX(22px);
+  background: #fff;
 }
 
 .buzzcast-select-row select {
-  width: 210px;
+  width: 100%;
+  max-width: 230px;
+  justify-self: end;
+  min-height: 50px;
   border-color: #565469;
   background: #292839;
+  color: #fff;
+  font-weight: 800;
 }
 
 .buzzcast-radio-row input {
@@ -3074,12 +3120,19 @@
     text-align: left;
   }
 
-  .buzzcast-select-row {
+  .buzzcast-settings-list > .buzzcast-select-row,
+  .buzzcast-settings-list > .buzzcast-switch-row {
     grid-template-columns: 1fr;
   }
 
   .buzzcast-select-row select {
     width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  .buzzcast-switch-row input {
+    justify-self: start;
   }
 
   .buzzcast-profile-grid dl {
