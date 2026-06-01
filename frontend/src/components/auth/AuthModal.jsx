@@ -15,19 +15,29 @@ function titleForMode(mode) {
 }
 
 function messageForAuthError(error) {
+  const rawMessage = String(error?.message || error?.data?.message || '')
+
   if (error?.data?.email_delivery?.setup_required || error?.data?.email_delivery?.provider === 'email_not_configured') {
     return 'Email delivery is not connected on the server yet. Add Resend or SMTP settings, then click Resend code.'
   }
 
-  if (error?.data?.email_delivery?.provider === 'email_provider_invalid_key') {
+  if (
+    error?.data?.email_delivery?.provider === 'email_provider_invalid_key'
+    || /api key is invalid/i.test(rawMessage)
+    || /"statusCode"\s*:\s*401/i.test(rawMessage)
+  ) {
     return 'Email delivery is connected, but the Resend API key is invalid. Add a valid key on the server, then click Resend code.'
   }
 
-  if (error?.data?.email_delivery?.provider_rejected || error?.data?.email_delivery?.provider === 'email_provider_rejected') {
+  if (
+    error?.data?.email_delivery?.provider_rejected
+    || error?.data?.email_delivery?.provider === 'email_provider_rejected'
+    || /validation_error|resend email failed|email provider rejected/i.test(rawMessage)
+  ) {
     return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings, then click Resend code.'
   }
 
-  return error?.message || 'Request failed. Please try again.'
+  return rawMessage || 'Request failed. Please try again.'
 }
 
 export function AuthModal({ open, initialMode = 'login', initialEmail = '', reason = '', onClose, onAuthenticated }) {
