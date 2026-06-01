@@ -208,24 +208,64 @@ function verificationResponse({ message, email, delivery }) {
   return response
 }
 
+function classifyEmailDeliveryError(error) {
+  const rawMessage = String(error?.message || '')
+  const invalidKey = error.code === 'email_provider_invalid_key'
+    || /api key is invalid/i.test(rawMessage)
+    || /"statusCode"\s*:\s*401/i.test(rawMessage)
+  const setupRequired = error.code === 'email_not_configured'
+  const providerRejected = invalidKey
+    || error.code === 'email_provider_rejected'
+    || /validation_error|resend email failed|provider rejected/i.test(rawMessage)
+
+  if (setupRequired) {
+    return {
+      code: 'email_not_configured',
+      message: 'Verification code was created, but email delivery is not connected yet. Add email settings on the server, then request a new code.',
+      providerRejected: false,
+      setupRequired: true,
+    }
+  }
+
+  if (invalidKey) {
+    return {
+      code: 'email_provider_invalid_key',
+      message: 'Verification code was created, but the email provider rejected the API key. Add a valid email API key on the server, then request a new code.',
+      providerRejected: true,
+      setupRequired: false,
+    }
+  }
+
+  if (providerRejected) {
+    return {
+      code: 'email_provider_rejected',
+      message: 'Verification code was created, but the email provider rejected the request. Check the sender domain/settings, then request a new code.',
+      providerRejected: true,
+      setupRequired: false,
+    }
+  }
+
+  return {
+    code: error.code || 'failed',
+    message: 'Verification code was created, but email delivery failed. Check the email provider settings, then request a new code.',
+    providerRejected: false,
+    setupRequired: false,
+  }
+}
+
 function emailDeliveryFailureResponse(res, error, email) {
   const status = error.status || 502
-  const setupRequired = error.code === 'email_not_configured'
-  const providerRejected = ['email_provider_invalid_key', 'email_provider_rejected'].includes(error.code)
+  const deliveryError = classifyEmailDeliveryError(error)
 
   return res.status(status).json({
-    message: setupRequired
-      ? 'Verification code was created, but email delivery is not connected yet. Add email settings on the server, then request a new code.'
-      : providerRejected
-        ? `Verification code was created, but ${error.message}`
-        : 'Verification code was created, but email delivery failed. Check the email provider settings, then request a new code.',
+    message: deliveryError.message,
     requires_verification: true,
     email,
     email_delivery: {
-      provider: error.code || 'failed',
+      provider: deliveryError.code,
       skipped: false,
-      setup_required: setupRequired,
-      provider_rejected: providerRejected,
+      setup_required: deliveryError.setupRequired,
+      provider_rejected: deliveryError.providerRejected,
     },
   })
 }
