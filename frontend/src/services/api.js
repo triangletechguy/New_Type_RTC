@@ -22,6 +22,20 @@ function notifyAuthExpired() {
   }
 }
 
+function cleanApiErrorMessage(data, status) {
+  const message = String(data?.message || `Request failed with status ${status}`)
+
+  if (/api key is invalid/i.test(message) || /"statusCode"\s*:\s*401/i.test(message)) {
+    return 'Email delivery is connected, but the email API key is invalid. Add a valid key on the server, then request a new code.'
+  }
+
+  if (/validation_error|email provider rejected|resend email failed/i.test(message)) {
+    return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings, then request a new code.'
+  }
+
+  return message
+}
+
 export function getToken() {
   return localStorage.getItem('rtc_access_token') || ''
 }
@@ -74,7 +88,7 @@ export async function apiRequest(path, options = {}) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    const requestError = new Error(data.message || `Request failed with status ${response.status}`)
+    const requestError = new Error(cleanApiErrorMessage(data, response.status))
     requestError.status = response.status
     requestError.errors = data.errors || {}
     requestError.data = data
