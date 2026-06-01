@@ -135,8 +135,6 @@ const settingsCopy = {
     'Used for login recovery and security notices.': 'Used for login recovery and security notices.',
     'Set login password': 'Set login password',
     'Protect this account when signing in on a new device.': 'Protect this account when signing in on a new device.',
-    'Set payment password': 'Set payment password',
-    'Add a second check before diamond purchases.': 'Add a second check before diamond purchases.',
     'Devices Logged In': 'Devices Logged In',
     'Show alerts when a new device logs in.': 'Show alerts when a new device logs in.',
     Bound: 'Bound',
@@ -149,7 +147,6 @@ const settingsCopy = {
     'Cell phone bound.': 'Cell phone bound.',
     'Email bound.': 'Email bound.',
     'Login password set.': 'Login password set.',
-    'Payment password set.': 'Payment password set.',
     'Device login alerts updated.': 'Device login alerts updated.',
     Cancel: 'Cancel',
     Save: 'Save',
@@ -157,14 +154,10 @@ const settingsCopy = {
     'Email address': 'Email address',
     'New password': 'New password',
     'Confirm password': 'Confirm password',
-    'Payment PIN': 'Payment PIN',
-    'Confirm PIN': 'Confirm PIN',
     'Enter a valid phone number.': 'Enter a valid phone number.',
     'Enter a valid email address.': 'Enter a valid email address.',
     'Use at least 10 characters for the password.': 'Use at least 10 characters for the password.',
     'Passwords do not match.': 'Passwords do not match.',
-    'Use a 6 digit payment PIN.': 'Use a 6 digit payment PIN.',
-    'Payment PINs do not match.': 'Payment PINs do not match.',
     'Who can send me a message': 'Who can send me a message',
     'Controls the personal inbox and room chat shortcuts.': 'Controls the personal inbox and room chat shortcuts.',
     Everyone: 'Everyone',
@@ -216,8 +209,6 @@ const settingsCopy = {
     'Used for login recovery and security notices.': 'ログイン復旧とセキュリティ通知に使用します。',
     'Set login password': 'ログインパスワードを設定',
     'Protect this account when signing in on a new device.': '新しい端末でサインインするときに保護します。',
-    'Set payment password': '支払いパスワードを設定',
-    'Add a second check before diamond purchases.': 'ダイヤ購入前に追加確認します。',
     'Devices Logged In': 'ログイン中の端末',
     'Show alerts when a new device logs in.': '新しい端末のログイン時に通知します。',
     Bound: '連携済み',
@@ -230,7 +221,6 @@ const settingsCopy = {
     'Cell phone bound.': '携帯電話を連携しました。',
     'Email bound.': 'メールを連携しました。',
     'Login password set.': 'ログインパスワードを設定しました。',
-    'Payment password set.': '支払いパスワードを設定しました。',
     'Device login alerts updated.': '端末ログイン通知を更新しました。',
     Cancel: 'キャンセル',
     Save: '保存',
@@ -238,14 +228,10 @@ const settingsCopy = {
     'Email address': 'メールアドレス',
     'New password': '新しいパスワード',
     'Confirm password': 'パスワード確認',
-    'Payment PIN': '支払いPIN',
-    'Confirm PIN': 'PIN確認',
     'Enter a valid phone number.': '有効な電話番号を入力してください。',
     'Enter a valid email address.': '有効なメールアドレスを入力してください。',
     'Use at least 10 characters for the password.': 'パスワードは10文字以上にしてください。',
     'Passwords do not match.': 'パスワードが一致しません。',
-    'Use a 6 digit payment PIN.': '6桁の支払いPINを使用してください。',
-    'Payment PINs do not match.': '支払いPINが一致しません。',
     'Language changed to {language}.': '言語を{language}に変更しました。',
   },
   Korean: {
@@ -262,8 +248,6 @@ const settingsCopy = {
     'Used for login recovery and security notices.': '로그인 복구와 보안 알림에 사용됩니다.',
     'Set login password': '로그인 비밀번호 설정',
     'Protect this account when signing in on a new device.': '새 기기 로그인 시 계정을 보호합니다.',
-    'Set payment password': '결제 비밀번호 설정',
-    'Add a second check before diamond purchases.': '다이아몬드 구매 전에 추가 확인을 합니다.',
     'Devices Logged In': '로그인된 기기',
     'Show alerts when a new device logs in.': '새 기기 로그인 시 알림을 표시합니다.',
     Bound: '연결됨',
@@ -276,7 +260,6 @@ const settingsCopy = {
     'Cell phone bound.': '휴대폰이 연결되었습니다.',
     'Email bound.': '이메일이 연결되었습니다.',
     'Login password set.': '로그인 비밀번호가 설정되었습니다.',
-    'Payment password set.': '결제 비밀번호가 설정되었습니다.',
     'Device login alerts updated.': '기기 로그인 알림이 업데이트되었습니다.',
     Cancel: '취소',
     Save: '저장',
@@ -284,14 +267,10 @@ const settingsCopy = {
     'Email address': '이메일 주소',
     'New password': '새 비밀번호',
     'Confirm password': '비밀번호 확인',
-    'Payment PIN': '결제 PIN',
-    'Confirm PIN': 'PIN 확인',
     'Enter a valid phone number.': '올바른 전화번호를 입력하세요.',
     'Enter a valid email address.': '올바른 이메일 주소를 입력하세요.',
     'Use at least 10 characters for the password.': '비밀번호는 10자 이상이어야 합니다.',
     'Passwords do not match.': '비밀번호가 일치하지 않습니다.',
-    'Use a 6 digit payment PIN.': '6자리 결제 PIN을 사용하세요.',
-    'Payment PINs do not match.': '결제 PIN이 일치하지 않습니다.',
     'Who can send me a message': '나에게 메시지를 보낼 수 있는 사람',
     'Controls the personal inbox and room chat shortcuts.': '개인 받은편지함과 방 채팅 바로가기를 제어합니다.',
     Everyone: '모두',
@@ -1044,7 +1023,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       phoneBound: Boolean(saved.phoneBound),
       emailBound: Boolean(saved.emailBound || user?.email),
       loginPasswordSet: saved.loginPasswordSet !== false,
-      paymentPasswordSet: Boolean(saved.paymentPasswordSet),
       deviceAlerts: saved.deviceAlerts !== false,
       messagePrivacy: saved.messagePrivacy || 'everyone',
       privateInvite: saved.privateInvite !== false,
@@ -1060,8 +1038,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     email: user?.email || '',
     password: '',
     passwordConfirm: '',
-    paymentPin: '',
-    paymentPinConfirm: '',
   })
   const [securityError, setSecurityError] = useState('')
   const [helpMode, setHelpMode] = useState('popular')
@@ -1307,8 +1283,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       email: previous.email || user?.email || '',
       password: '',
       passwordConfirm: '',
-      paymentPin: '',
-      paymentPinConfirm: '',
     }))
   }
 
@@ -1355,18 +1329,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return
     }
 
-    if (securityAction === 'paymentPasswordSet') {
-      if (!/^\d{6}$/.test(securityForm.paymentPin)) {
-        setSecurityError(t('Use a 6 digit payment PIN.'))
-        return
-      }
-      if (securityForm.paymentPin !== securityForm.paymentPinConfirm) {
-        setSecurityError(t('Payment PINs do not match.'))
-        return
-      }
-      setSecurityAction(null)
-      updateSettings('paymentPasswordSet', true, t('Payment password set.'))
-    }
   }
 
   function updateFeedback(field, value) {
@@ -2090,7 +2052,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       phoneBound: 'Binding cell phone',
       emailBound: 'Binding email',
       loginPasswordSet: 'Set login password',
-      paymentPasswordSet: 'Set payment password',
     }
 
     return (
@@ -2142,30 +2103,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   type="password"
                   value={securityForm.passwordConfirm}
                   onChange={(event) => updateSecurityForm('passwordConfirm', event.target.value)}
-                />
-              </label>
-            </>
-          ) : null}
-
-          {securityAction === 'paymentPasswordSet' ? (
-            <>
-              <label>
-                <span>{t('Payment PIN')}</span>
-                <input
-                  value={securityForm.paymentPin}
-                  onChange={(event) => updateSecurityForm('paymentPin', event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  maxLength={6}
-                  placeholder="123456"
-                />
-              </label>
-              <label>
-                <span>{t('Confirm PIN')}</span>
-                <input
-                  value={securityForm.paymentPinConfirm}
-                  onChange={(event) => updateSecurityForm('paymentPinConfirm', event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  maxLength={6}
                 />
               </label>
             </>
@@ -2335,7 +2272,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         phoneBound: settingsDraft.phoneBound,
         emailBound: settingsDraft.emailBound,
         loginPasswordSet: settingsDraft.loginPasswordSet,
-        paymentPasswordSet: settingsDraft.paymentPasswordSet,
         deviceAlerts: settingsDraft.deviceAlerts,
         messagePrivacy: settingsDraft.messagePrivacy,
         privateInvite: settingsDraft.privateInvite,
