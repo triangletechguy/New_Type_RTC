@@ -121,6 +121,23 @@ write_env_files() {
   if [ -n "$smtp_from" ]; then set_env SMTP_FROM "$smtp_from"; fi
   if [ -n "$smtp_secure" ]; then set_env SMTP_SECURE "$smtp_secure"; fi
 
+  email_ready=0
+  if [ -n "$resend_api_key" ] && [ -n "$email_from" ]; then email_ready=1; fi
+  if [ -n "$smtp_host" ] && [ -n "$smtp_port" ] && [ -n "$smtp_user" ] && [ -n "$smtp_pass" ] && [ -n "$smtp_from" ]; then email_ready=1; fi
+
+  if [ "${REQUIRE_EMAIL_DELIVERY:-true}" != "false" ] && [ "$email_ready" -ne 1 ]; then
+    cat >&2 <<EOF
+ERROR: Email delivery is required for production signup verification.
+
+Deploy with Resend:
+  RESEND_API_KEY='re_xxxxxxxxx' EMAIL_FROM='TalkEachOther <verify@chadnichok.com>' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
+
+Or deploy with SMTP:
+  SMTP_HOST='smtp.example.com' SMTP_PORT='587' SMTP_USER='user@example.com' SMTP_PASS='password' SMTP_FROM='TalkEachOther <user@example.com>' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
+EOF
+    exit 1
+  fi
+
   cat > frontend/.env <<EOF
 VITE_API_BASE_URL=$DOMAIN/api
 VITE_SIGNALING_SERVER_URL=$DOMAIN
