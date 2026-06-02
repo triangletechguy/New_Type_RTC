@@ -85,6 +85,7 @@ write_env_files() {
   turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
   feedback_to_email="$(get_env FEEDBACK_TO_EMAIL backend/.env)"
   resend_api_key="${RESEND_API_KEY:-$(get_env RESEND_API_KEY backend/.env)}"
+  email_provider="${EMAIL_PROVIDER:-${MAIL_MAILER:-$(get_env EMAIL_PROVIDER backend/.env)}}"
   email_from="${EMAIL_FROM:-${SMTP_FROM:-$(get_env EMAIL_FROM backend/.env)}}"
   if [ -z "$email_from" ]; then email_from="$(get_env SMTP_FROM backend/.env)"; fi
   mail_from_address="${MAIL_FROM_ADDRESS:-$(get_env MAIL_FROM_ADDRESS backend/.env)}"
@@ -127,6 +128,7 @@ write_env_files() {
   set_env TURN_CREDENTIAL "$turn_credential"
   set_env RTC_ICE_TRANSPORT_POLICY all
   set_env FEEDBACK_TO_EMAIL "$feedback_to_email"
+  if [ -n "$email_provider" ]; then set_env EMAIL_PROVIDER "$email_provider"; fi
   if [ -n "$resend_api_key" ]; then set_env RESEND_API_KEY "$resend_api_key"; fi
   if [ -n "$email_from" ]; then set_env EMAIL_FROM "$email_from"; fi
   if [ -n "$smtp_host" ]; then set_env SMTP_HOST "$smtp_host"; fi
@@ -141,6 +143,10 @@ write_env_files() {
   email_ready=0
   if [ -n "$resend_api_key" ] && [ -n "$email_from" ]; then email_ready=1; fi
   if [ -n "$smtp_host" ] && [ -n "$smtp_port" ] && [ -n "$smtp_user" ] && [ -n "$smtp_pass" ] && [ -n "$smtp_from" ]; then email_ready=1; fi
+  smtp_ready=0
+  if [ -n "$smtp_host" ] && [ -n "$smtp_port" ] && [ -n "$smtp_user" ] && [ -n "$smtp_pass" ] && [ -n "$smtp_from" ]; then smtp_ready=1; fi
+  resend_ready=0
+  if [ -n "$resend_api_key" ] && [ -n "$email_from" ]; then resend_ready=1; fi
 
   if [ "${REQUIRE_EMAIL_DELIVERY:-true}" != "false" ] && [ "$email_ready" -ne 1 ]; then
     cat >&2 <<EOF
@@ -152,6 +158,10 @@ Deploy with Resend:
 Or deploy with SMTP:
   SMTP_HOST='smtp.example.com' SMTP_PORT='587' SMTP_USER='user@example.com' SMTP_PASS='password' SMTP_FROM='TalkEachOther <user@example.com>' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
 
+Prefer provider explicitly if both are set:
+  EMAIL_PROVIDER=smtp
+  SMTP_HOST='smtp.example.com' SMTP_PORT='587' SMTP_USER='user@example.com' SMTP_PASS='password' SMTP_FROM='TalkEachOther <user@example.com>' RESEND_API_KEY='re_xxxxxxxxx' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
+
 Laravel-style MAIL_* variables are also accepted:
   MAIL_HOST='smtp.example.com' MAIL_PORT='587' MAIL_USERNAME='user@example.com' MAIL_PASSWORD='password' MAIL_FROM_ADDRESS='user@example.com' MAIL_FROM_NAME='TalkEachOther' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
 EOF
@@ -159,23 +169,48 @@ EOF
   fi
 
   if [ -n "$resend_api_key" ]; then
-    case "$resend_api_key" in
+    provider_preference="${email_provider,,}"
+    validate_resend=0
+
+    case "$provider_preference" in
+      resend)
+        validate_resend=1
+        ;;
+      smtp|mail|nodemailer)
+        if [ "$smtp_ready" -eq 1 ]; then
+          validate_resend=0
+        else
+          validate_resend=1
+        fi
+        ;;
+      *)
+        if [ "$smtp_ready" -eq 0 ]; then
+          validate_resend=1
+        fi
+        ;;
+    esac
+
+    if [ "$validate_resend" -eq 0 ]; then
+      log "Skipping Resend key validation because EMAIL_PROVIDER=$email_provider and SMTP looks ready"
+    else
+      case "$resend_api_key" in
       YOUR_REAL_RESEND_KEY|re_xxxxxxxxx|re_xxxxxxxx*|example*|placeholder*)
         echo "ERROR: RESEND_API_KEY is still a placeholder. Use a real key from Resend." >&2
         exit 1
         ;;
-    esac
+      esac
 
-    resend_status="$(curl -sS -o /tmp/resend-deploy-check.json -w "%{http_code}" \
-      -H "Authorization: Bearer $resend_api_key" \
-      https://api.resend.com/domains || true)"
-    if [ "$resend_status" = "401" ]; then
-      echo "ERROR: RESEND_API_KEY is invalid. Create a valid Resend API key and deploy again." >&2
-      exit 1
-    fi
-    if [ "$resend_status" -lt 200 ] || [ "$resend_status" -ge 500 ]; then
-      echo "ERROR: Could not validate Resend API key right now. Resend API returned HTTP $resend_status." >&2
-      exit 1
+      resend_status="$(curl -sS -o /tmp/resend-deploy-check.json -w "%{http_code}" \
+        -H "Authorization: Bearer $resend_api_key" \
+        https://api.resend.com/domains || true)"
+      if [ "$resend_status" = "401" ]; then
+        echo "ERROR: RESEND_API_KEY is invalid. Create a valid Resend API key and deploy again." >&2
+        exit 1
+      fi
+      if [ "$resend_status" -lt 200 ] || [ "$resend_status" -ge 500 ]; then
+        echo "ERROR: Could not validate Resend API key right now. Resend API returned HTTP $resend_status." >&2
+        exit 1
+      fi
     fi
   fi
 

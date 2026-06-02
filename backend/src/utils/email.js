@@ -144,6 +144,38 @@ function resendReady(config) {
   return Boolean(config.resendApiKey && config.from)
 }
 
+function normalizeEmailProvider(value) {
+  if (!value) return ''
+
+  const normalized = String(value).trim().toLowerCase()
+  if (['smtp', 'mail', 'nodemailer'].includes(normalized)) return 'smtp'
+  if (['resend'].includes(normalized)) return 'resend'
+
+  return normalized
+}
+
+function preferredProvider(config) {
+  return normalizeEmailProvider(process.env.EMAIL_PROVIDER || process.env.MAIL_MAILER || process.env.MAILER || '')
+}
+
+function providerOrder(config) {
+  const hasResend = resendReady(config)
+  const hasSmtp = smtpReady(config)
+  const preferred = preferredProvider(config)
+
+  if (!hasResend && !hasSmtp) return []
+
+  if (preferred === 'resend') {
+    return hasResend ? ['resend', ...(hasSmtp ? ['smtp'] : [])] : (hasSmtp ? ['smtp'] : [])
+  }
+
+  if (preferred === 'smtp') {
+    return hasSmtp ? ['smtp', ...(hasResend ? ['resend'] : [])] : (hasResend ? ['resend'] : [])
+  }
+
+  return hasSmtp ? ['smtp', ...(hasResend ? ['resend'] : [])] : ['resend']
+}
+
 function resendErrorMessage(status, body) {
   if (status === 401 || /api key is invalid/i.test(body)) {
     return 'Email provider rejected the API key. Add a valid Resend API key on the server, then request a new code.'
@@ -160,10 +192,11 @@ function emailDeliveryStatus() {
   const config = emailConfig()
   const resendConfigured = resendReady(config)
   const smtpConfigured = smtpReady(config)
+  const providers = providerOrder(config)
 
   return {
     configured: resendConfigured || smtpConfigured,
-    provider: resendConfigured ? 'resend' : smtpConfigured ? 'smtp' : null,
+    provider: providers[0] || null,
     resend: {
       api_key: Boolean(config.resendApiKey),
       from: Boolean(config.from),
@@ -240,8 +273,20 @@ async function sendEmailMessage(message, { allowLocalFallback = false, localLog 
     from: config.from,
   }
 
-  if (resendReady(config)) return sendWithResend(config, prepared)
-  if (smtpReady(config)) return sendWithSmtp(config, prepared)
+  const providers = providerOrder(config)
+
+  for (const provider of providers) {
+    try {
+      if (provider === 'resend') return await sendWithResend(config, prepared)
+      if (provider === 'smtp') return await sendWithSmtp(config, prepared)
+    } catch (error) {
+      if (provider === providers[providers.length - 1]) {
+        throw error
+      }
+
+      console.error(`[email] ${provider} failed, trying alternative provider`, error)
+    }
+  }
 
   if (allowLocalFallback && config.allowLocalVerificationCode) {
     console.warn(localLog || `[email] Local email fallback: ${prepared.subject}`)
@@ -263,22 +308,13 @@ async function sendVerificationEmail({ to, name, code }) {
     from: config.from,
   })
 
-  if (resendReady(config)) return sendWithResend(config, message)
-  if (smtpReady(config)) return sendWithSmtp(config, message)
-
-  if (config.allowLocalVerificationCode) {
-    console.warn(`[email] Verification code for ${to}: ${code}`)
-    return {
-      provider: 'local',
-      skipped: true,
-      verification_code: code,
-    }
-  }
-
-  const error = new Error('Email delivery is not configured on this server. Add Resend or SMTP settings, then request a new code.')
-  error.status = 503
-  error.code = 'email_not_configured'
-  throw error
+  return sendEmailMessage(message, {
+    allowLocalFallback: config.allowLocalVerificationCode,
+    localLog: `[email] Verification code for ${to}: ${code}`,
+  }).then((result) => ({
+    ...result,
+    ...(result.provider === 'local' ? { verification_code: code } : {}),
+  }))
 }
 
 async function sendFeedbackEmail({ to, feedback }) {
