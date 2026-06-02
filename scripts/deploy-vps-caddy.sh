@@ -31,6 +31,10 @@ get_env() {
   }' "$file" 2>/dev/null || true
 }
 
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
 set_env() {
   key="$1"
   value="$2"
@@ -170,20 +174,23 @@ EOF
 configure_mysql() {
   log "Configuring MySQL"
 
-  set -a
-  . backend/.env
-  set +a
+  db_database="$(get_env DB_DATABASE)"
+  db_user="$(get_env DB_USER)"
+  db_password="$(get_env DB_PASSWORD)"
+  db_database_sql="$(sql_escape "$db_database")"
+  db_user_sql="$(sql_escape "$db_user")"
+  db_password_sql="$(sql_escape "$db_password")"
 
   sudo systemctl enable --now mysql >/dev/null 2>&1 || sudo systemctl start mysql
 
   sudo mysql <<SQL
-CREATE DATABASE IF NOT EXISTS \`${DB_DATABASE}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
-ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
-GRANT ALL PRIVILEGES ON \`${DB_DATABASE}\`.* TO '${DB_USER}'@'localhost';
-GRANT ALL PRIVILEGES ON \`${DB_DATABASE}\`.* TO '${DB_USER}'@'127.0.0.1';
+CREATE DATABASE IF NOT EXISTS \`${db_database_sql}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${db_user_sql}'@'localhost' IDENTIFIED BY '${db_password_sql}';
+ALTER USER '${db_user_sql}'@'localhost' IDENTIFIED BY '${db_password_sql}';
+CREATE USER IF NOT EXISTS '${db_user_sql}'@'127.0.0.1' IDENTIFIED BY '${db_password_sql}';
+ALTER USER '${db_user_sql}'@'127.0.0.1' IDENTIFIED BY '${db_password_sql}';
+GRANT ALL PRIVILEGES ON \`${db_database_sql}\`.* TO '${db_user_sql}'@'localhost';
+GRANT ALL PRIVILEGES ON \`${db_database_sql}\`.* TO '${db_user_sql}'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
 }
@@ -191,9 +198,8 @@ SQL
 configure_turn() {
   log "Configuring TURN relay"
 
-  set -a
-  . backend/.env
-  set +a
+  turn_username="$(get_env TURN_USERNAME)"
+  turn_credential="$(get_env TURN_CREDENTIAL)"
 
   if [ -f /etc/turnserver.conf ]; then
     sudo cp /etc/turnserver.conf "/etc/turnserver.conf.bak.$(date +%Y%m%d%H%M%S)"
@@ -203,7 +209,7 @@ configure_turn() {
 listening-port=3478
 fingerprint
 lt-cred-mech
-user=${TURN_USERNAME}:${TURN_CREDENTIAL}
+user=${turn_username}:${turn_credential}
 realm=${DOMAIN_HOST}
 server-name=${DOMAIN_HOST}
 external-ip=${PUBLIC_IP}
