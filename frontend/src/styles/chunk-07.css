@@ -267,8 +267,25 @@
   font-weight: 900;
 }
 
+.buzzcast-media-permission-card button.primary {
+  border-color: rgba(253, 224, 71, .55);
+  background: linear-gradient(135deg, #fb7185, #f59e0b);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(251, 113, 133, .26);
+}
+
+.buzzcast-media-permission-card button.ghost {
+  border-color: rgba(226, 232, 240, .22);
+  background: rgba(15, 23, 42, .42);
+  color: rgba(226, 232, 240, .88);
+}
+
 .buzzcast-media-permission-card button:not(:disabled):hover {
   background: rgba(96, 165, 250, .34);
+}
+
+.buzzcast-media-permission-card button.primary:not(:disabled):hover {
+  background: linear-gradient(135deg, #f43f5e, #f97316);
 }
 
 .buzzcast-media-permission-card button:disabled {

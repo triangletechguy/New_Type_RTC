@@ -107,6 +107,46 @@ export async function getLocalMediaPermissionStates(rtcMode = 'video') {
   return { audio, video }
 }
 
+export async function watchLocalMediaPermissions(rtcMode = 'video', onChange = () => {}) {
+  const mediaKinds = rtcMode === 'video' ? ['audio', 'video'] : ['audio']
+  const watchers = []
+  let active = true
+
+  if (!navigator.permissions?.query) return () => {}
+
+  const notify = async () => {
+    if (!active) return
+    onChange(await getLocalMediaPermissionStates(rtcMode))
+  }
+
+  for (const kind of mediaKinds) {
+    const permissionName = permissionNames[kind]
+    if (!permissionName) continue
+
+    try {
+      const status = await navigator.permissions.query({ name: permissionName })
+      const handler = () => notify().catch(() => {})
+
+      if (typeof status.addEventListener === 'function') {
+        status.addEventListener('change', handler)
+        watchers.push(() => status.removeEventListener('change', handler))
+      } else {
+        status.onchange = handler
+        watchers.push(() => { status.onchange = null })
+      }
+    } catch {
+      // Some browsers expose getUserMedia but not camera/microphone permission queries.
+    }
+  }
+
+  await notify()
+
+  return () => {
+    active = false
+    watchers.forEach((cleanup) => cleanup())
+  }
+}
+
 async function captureAvailableMedia(rtcMode, options = {}) {
   const stream = createEmptyMediaStream()
   const failures = {}
