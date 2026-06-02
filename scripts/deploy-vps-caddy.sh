@@ -257,6 +257,9 @@ configure_caddy() {
   sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
 $DOMAIN_HOST {
     encode gzip
+    header {
+        Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+    }
     root * $WEB_ROOT
 
     handle /api/* {

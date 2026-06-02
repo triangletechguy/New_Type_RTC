@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { avatarForIndex, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
-import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
+import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
 import {
@@ -45,6 +45,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [signalingPeerCount, setSignalingPeerCount] = useState(0)
   const [signalingState, setSignalingState] = useState(autoConnect ? 'connecting' : 'idle')
   const [mediaState, setMediaState] = useState('idle')
+  const [mediaPermissions, setMediaPermissions] = useState({ audio: 'unknown', video: 'unknown' })
   const [mediaUpdating, setMediaUpdating] = useState({ mic: false, camera: false })
   const [mediaMode, setMediaMode] = useState(getInitialMediaMode)
   const [rtcMode, setRtcMode] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom))
@@ -158,6 +159,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     rtcRef.current?.setVideoEnabled(nextCameraOn)
     streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = nextMicOn })
     streamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextCameraOn })
+  }
+
+  async function syncMediaPermissions(mode = rtcModeRef.current) {
+    const states = await getLocalMediaPermissionStates(mode)
+    setMediaPermissions(states)
+    return states
   }
 
   async function attachCapturedLocalTrack(kind, track, { publish = true } = {}) {
@@ -587,6 +594,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setConnectStep('media')
       setMediaState('starting')
       setStatus('Starting fast media path...')
+      await syncMediaPermissions(joinedRtcMode)
       const rtcConfigPromise = getRtcConfig().catch((error) => {
         setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
         return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
@@ -612,6 +620,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       streamRef.current = media.stream
       setLocalStream(media.stream)
       setMediaState(media.warning ? 'warning' : 'ready')
+      await syncMediaPermissions(joinedRtcMode)
 
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
@@ -937,6 +946,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     } catch (error) {
       setMicOn(previous)
       applyLocalMediaState(previous, cameraOn)
+      await syncMediaPermissions().catch(() => {})
       setStatus(`Mic update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, mic: false }))
@@ -965,6 +975,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     } catch (error) {
       setCameraOn(previous)
       applyLocalMediaState(micOn, previous)
+      await syncMediaPermissions().catch(() => {})
       setStatus(`Camera update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, camera: false }))
@@ -993,6 +1004,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     rtcModeRef.current = rtcMode
   }, [rtcMode])
+
+  useEffect(() => {
+    syncMediaPermissions(rtcMode).catch(() => {})
+  }, [rtcMode, joined])
 
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
@@ -1024,7 +1039,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     ? 'Start camera'
     : screenSharing ? 'Stop screen share before changing camera' : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
   const mediaStatusText = String(status || '')
-  const mediaPermissionBlocked = /permission denied|notallowed|camera permission|microphone permission|allow camera|allow microphone/i.test(mediaStatusText)
+  const cameraPermissionDenied = mediaPermissions.video === 'denied'
+  const microphonePermissionDenied = mediaPermissions.audio === 'denied'
+  const blockedMediaLabels = [
+    cameraPermissionDenied && rtcMode === 'video' ? 'Camera' : '',
+    microphonePermissionDenied ? 'Microphone' : '',
+  ].filter(Boolean)
+  const mediaPermissionBlocked = /permission denied|notallowed|camera permission|microphone permission|allow camera|allow microphone|browser permission is blocked/i.test(mediaStatusText)
+    || blockedMediaLabels.length > 0
   const showMediaPermissionRecovery = joined && (mediaPermissionBlocked || micCanRetry || cameraCanRetry)
   const canRequestCamera = joined && rtcMode === 'video' && !cameraOn && !screenSharing && !mediaUpdating.camera
   const canRequestMicrophone = joined && !micOn && !mediaUpdating.mic
@@ -1130,14 +1152,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
             {showMediaPermissionRecovery ? (
               <div className="buzzcast-media-permission-card" role="alert">
-                <strong>Camera or microphone permission is blocked</strong>
-                <p>{mediaStatusText || 'Allow this site to use your camera and microphone, then retry.'}</p>
+                <strong>{blockedMediaLabels.length ? `${blockedMediaLabels.join(' and ')} permission is blocked` : 'Camera or microphone permission needs attention'}</strong>
+                <p>{blockedMediaLabels.length ? `Your browser currently has ${blockedMediaLabels.join(' and ')} set to Block for this site. Change it to Allow, then retry.` : mediaStatusText || 'Allow this site to use your camera and microphone, then retry.'}</p>
                 <div>
                   <button type="button" onClick={toggleCamera} disabled={!canRequestCamera}>
                     {cameraOn ? 'Camera live' : 'Retry camera'}
                   </button>
                   <button type="button" onClick={toggleMic} disabled={!canRequestMicrophone}>
                     {micOn ? 'Mic live' : 'Retry microphone'}
+                  </button>
+                  <button type="button" onClick={() => syncMediaPermissions().catch(() => {})}>
+                    Check permissions
                   </button>
                 </div>
                 <small>Click the lock/camera icon in the browser address bar, set Camera and Microphone to Allow for this site, then press the retry button.</small>

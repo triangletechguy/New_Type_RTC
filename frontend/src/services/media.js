@@ -10,6 +10,11 @@ const videoConstraints = {
   frameRate: { ideal: 24, max: 30 },
 }
 
+const permissionNames = {
+  audio: 'microphone',
+  video: 'camera',
+}
+
 export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'video', options = {}) {
   const requestedMediaMode = normalizeMediaMode(mediaMode || import.meta.env.VITE_MEDIA_MODE || 'real')
   const requestedRtcMode = rtcMode === 'audio' ? 'audio' : 'video'
@@ -58,6 +63,9 @@ export async function requestLocalMediaTrack(kind) {
   }
 
   try {
+    const permissionState = await getLocalMediaPermissionState(mediaKind)
+    if (permissionState === 'denied') throw createPermissionBlockedError(mediaKind)
+
     const stream = await navigator.mediaDevices.getUserMedia(
       mediaKind === 'audio'
         ? { audio: audioConstraints, video: false }
@@ -74,6 +82,29 @@ export async function requestLocalMediaTrack(kind) {
     if (error?.message?.startsWith('No ')) throw error
     throw new Error(formatSingleMediaError(error, mediaKind))
   }
+}
+
+export async function getLocalMediaPermissionState(kind) {
+  const mediaKind = kind === 'audio' ? 'audio' : 'video'
+  const permissionName = permissionNames[mediaKind]
+
+  if (!navigator.permissions?.query || !permissionName) return 'unknown'
+
+  try {
+    const status = await navigator.permissions.query({ name: permissionName })
+    return status?.state || 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+export async function getLocalMediaPermissionStates(rtcMode = 'video') {
+  const [audio, video] = await Promise.all([
+    getLocalMediaPermissionState('audio'),
+    rtcMode === 'video' ? getLocalMediaPermissionState('video') : Promise.resolve('not-needed'),
+  ])
+
+  return { audio, video }
 }
 
 async function captureAvailableMedia(rtcMode, options = {}) {
@@ -126,8 +157,17 @@ async function captureAvailableMedia(rtcMode, options = {}) {
 }
 
 function startMediaCapture(kind, constraints) {
-  const promise = navigator.mediaDevices.getUserMedia(constraints)
+  const promise = getLocalMediaPermissionState(kind)
+    .then((permissionState) => {
+      if (permissionState === 'denied') {
+        return { kind, error: createPermissionBlockedError(kind) }
+      }
+
+      return navigator.mediaDevices.getUserMedia(constraints)
+    })
     .then((stream) => {
+      if (stream?.error) return stream
+
       const [track] = kind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
 
       if (!track) {
@@ -181,6 +221,8 @@ function getMediaApiUnavailableMessage() {
 function formatMediaError(error, rtcMode) {
   const mediaLabel = rtcMode === 'audio' ? 'microphone' : 'camera/microphone'
 
+  if (error?.permissionState === 'denied') return error.message
+
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
     return `Permission denied for ${mediaLabel}. Allow camera and microphone in the browser address-bar permissions, then try again.`
   }
@@ -199,6 +241,8 @@ function formatMediaError(error, rtcMode) {
 function formatSingleMediaError(error, kind) {
   const mediaLabel = kind === 'audio' ? 'microphone' : 'camera'
 
+  if (error?.permissionState === 'denied') return error.message
+
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
     return `Permission denied for ${mediaLabel}. Allow it in browser permissions, then try again.`
   }
@@ -212,6 +256,15 @@ function formatSingleMediaError(error, kind) {
   }
 
   return `${error?.name || 'MediaError'}: ${error?.message || `Unable to start ${mediaLabel}.`}`
+}
+
+function createPermissionBlockedError(kind) {
+  const mediaLabel = kind === 'audio' ? 'microphone' : 'camera'
+  const browserLabel = kind === 'audio' ? 'Microphone' : 'Camera'
+  const error = new Error(`Browser permission is blocked for ${mediaLabel}. Click the lock/camera icon in the address bar for this site, set ${browserLabel} to Allow, then retry.`)
+  error.name = 'NotAllowedError'
+  error.permissionState = 'denied'
+  return error
 }
 
 function buildMediaWarning(stream, failures, combinedError, rtcMode, pendingKinds = []) {
