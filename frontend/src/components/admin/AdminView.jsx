@@ -254,7 +254,7 @@ function PlanRequestsPanel({ requests, mode, onRefresh }) {
   )
 }
 
-function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, onRefresh }) {
+function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, onRefresh, section = 'request' }) {
   const plans = (enterprise?.plans || []).filter((plan) => plan.status === 'active')
   const currentPlan = enterprise?.current_plan || getPrimaryClient(enterprise)?.plan
   const pendingRequest = getPendingPlanRequest(enterprise)
@@ -299,25 +299,32 @@ function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, 
   if (mode === 'super_admin') {
     return (
       <div className="dashboard-tab-panel">
-        <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
-        <ServicePlansPanel
-          plans={enterprise?.plans || []}
-          currentPlan={currentPlan}
-          selectedPlanId={selectedPlanId}
-          onSelectPlan={onSelectPlan}
-          mode={mode}
-        />
-        <ServicePlanEditorPanel
-          plan={(enterprise?.plans || []).find((plan) => String(plan.id) === String(selectedPlanId))}
-          onSaved={onRefresh}
-          onSelectPlan={onSelectPlan}
-        />
+        {section === 'requests' ? (
+          <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
+        ) : null}
+        {section === 'plans' ? (
+          <ServicePlansPanel
+            plans={enterprise?.plans || []}
+            currentPlan={currentPlan}
+            selectedPlanId={selectedPlanId}
+            onSelectPlan={onSelectPlan}
+            mode={mode}
+          />
+        ) : null}
+        {section === 'editor' ? (
+          <ServicePlanEditorPanel
+            plan={(enterprise?.plans || []).find((plan) => String(plan.id) === String(selectedPlanId))}
+            onSaved={onRefresh}
+            onSelectPlan={onSelectPlan}
+          />
+        ) : null}
       </div>
     )
   }
 
   return (
     <div className="dashboard-tab-panel">
+      {section === 'request' ? (
       <section className="enterprise-panel purchase-panel glass-card">
         <div className="admin-panel-header">
           <div>
@@ -383,12 +390,15 @@ function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, 
 
         {message ? <div className="company-edit-message">{message}</div> : null}
       </section>
-      <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
+      ) : null}
+      {section === 'history' ? (
+        <PlanRequestsPanel requests={enterprise?.plan_requests || []} mode={mode} onRefresh={onRefresh} />
+      ) : null}
     </div>
   )
 }
 
-function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
+function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = 'create' }) {
   const clients = enterprise?.clients || []
   const apps = enterprise?.apps || []
   const [tenantId, setTenantId] = useState('')
@@ -457,6 +467,7 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
 
   return (
     <div className="dashboard-tab-panel">
+      {section === 'create' ? (
       <section className="enterprise-panel sdk-access-panel glass-card">
         <div className="admin-panel-header">
           <div>
@@ -514,13 +525,17 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
 
         {message ? <div className="company-edit-message">{message}</div> : null}
       </section>
+      ) : null}
 
+      {section === 'apps' ? (
       <ClientAppsPanel
         apps={apps}
         mode={mode}
         onRefresh={onRefresh}
         onCredentialsRotated={handleCredentialsResult}
       />
+      ) : null}
+      {section === 'docs' ? (
       <ClientApiDocsPanel
         app={docsApp}
         apps={apps}
@@ -528,7 +543,8 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh }) {
         selectedAppId={selectedDocsAppId}
         onSelectApp={setSelectedDocsAppId}
       />
-      {apps.length ? null : <AdminEmptyState title="No SDK apps found" detail="Generate SDK access to connect a client app." />}
+      ) : null}
+      {section !== 'create' && !apps.length ? <AdminEmptyState title="No SDK apps found" detail="Generate SDK access to connect a client app." /> : null}
     </div>
   )
 }
@@ -850,6 +866,27 @@ function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
         <button type="button" className="secondary-button" onClick={() => onTabChange('sdk')}>Check SDK access</button>
       </div>
     </section>
+  )
+}
+
+function AdminSectionTabs({ sections, activeSection, onChange }) {
+  if (!sections?.length) return null
+
+  return (
+    <nav className="admin-section-tabs glass-card" aria-label="Admin section tasks">
+      {sections.map((section) => (
+        <button
+          type="button"
+          className={activeSection === section.key ? 'active' : ''}
+          key={section.key}
+          onClick={() => onChange?.(section.key)}
+        >
+          <span>{section.label}</span>
+          {section.detail ? <small>{section.detail}</small> : null}
+          {section.badge ? <b>{section.badge}</b> : null}
+        </button>
+      ))}
+    </nav>
   )
 }
 
@@ -2574,7 +2611,8 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
   const [status, setStatus] = useState('Loading dashboard...')
   const [loadingAdminId, setLoadingAdminId] = useState(null)
   const [loadingCompanyId, setLoadingCompanyId] = useState(null)
-  const [activeTab, setActiveTab] = useState('companies')
+  const [activeTab, setActiveTab] = useState('command')
+  const [activeSubsections, setActiveSubsections] = useState({})
   const [selectedPackageId, setSelectedPackageId] = useState('')
 
   const activePayload = selectedCompanyDetail || selectedDetail || overview
@@ -2608,6 +2646,52 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
   }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
   const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
   const profileLabel = user ? 'Open profile' : 'Profile'
+  const companySections = [
+    { key: 'directory', label: 'Directory', detail: `${formatNumber(enterprise?.clients?.length)} companies` },
+    { key: 'create', label: 'Create', detail: 'New company' },
+    { key: 'manage', label: 'Edit', detail: 'Status and limits' },
+    { key: 'billing', label: 'Billing', detail: 'Invoices and plans' },
+  ]
+  const packageSections = enterpriseMode === 'super_admin' ? [
+    { key: 'requests', label: 'Requests', detail: `${formatNumber((enterprise?.plan_requests || []).filter((request) => request.status === 'pending').length)} pending` },
+    { key: 'plans', label: 'Plans', detail: `${formatNumber(enterprise?.plans?.length)} packages` },
+    { key: 'editor', label: 'Plan Editor', detail: selectedPackage?.name || 'Choose package' },
+    { key: 'features', label: 'Features', detail: 'Package controls' },
+  ] : enterpriseMode === 'company_detail' ? [
+    { key: 'company', label: 'Company Plan', detail: activeCompany?.name || 'Selected company' },
+    { key: 'features', label: 'Features', detail: 'Included tools' },
+  ] : [
+    { key: 'request', label: 'Request', detail: selectedPackage?.name || 'Choose package' },
+    { key: 'history', label: 'History', detail: `${formatNumber(enterprise?.plan_requests?.length)} requests` },
+    { key: 'features', label: 'Features', detail: 'Included tools' },
+  ]
+  const sdkSections = [
+    { key: 'create', label: 'Create Access', detail: 'App key and API key' },
+    { key: 'apps', label: 'Apps', detail: `${formatNumber(enterprise?.apps?.length)} configured` },
+    { key: 'docs', label: 'API Guide', detail: 'Integration tests' },
+  ]
+  const usageSections = [
+    { key: 'billing', label: 'Billing', detail: formatCurrency(enterprise?.billing?.estimated_invoice || enterprise?.platform_totals?.estimated_invoice) },
+    { key: 'records', label: 'Records', detail: `${formatNumber(participantRecords.length)} joins` },
+    { key: 'verification', label: 'Verification', detail: usageStatus.label },
+  ]
+  const activeCompanySection = activeSectionFor('companies', companySections)
+  const activePackageSection = activeSectionFor(activeTab === 'purchase' ? 'purchase' : 'packages', packageSections)
+  const activeSdkSection = activeSectionFor('sdk', sdkSections)
+  const activeUsageSection = activeSectionFor('usage', usageSections)
+
+  function subsectionKey(tab) {
+    return `${enterpriseMode}:${tab}`
+  }
+
+  function activeSectionFor(tab, sections) {
+    const key = activeSubsections[subsectionKey(tab)]
+    return sections.some((section) => section.key === key) ? key : sections[0]?.key
+  }
+
+  function setSectionFor(tab, section) {
+    setActiveSubsections((current) => ({ ...current, [subsectionKey(tab)]: section }))
+  }
 
   async function load(options = {}) {
     try {
@@ -2829,30 +2913,43 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
       {activeTab === 'companies' && enterpriseMode === 'super_admin' ? (
         <div className="dashboard-tab-panel">
-          <CompanyDirectoryPanel
-            clients={enterprise?.clients || []}
-            selectedCompanyId={selectedCompanyId}
-            loadingCompanyId={loadingCompanyId}
-            onSelectCompany={loadCompany}
+          <AdminSectionTabs
+            sections={companySections}
+            activeSection={activeCompanySection}
+            onChange={(section) => setSectionFor('companies', section)}
           />
-          <CompanySetupPanel
-            plans={enterprise?.plans || []}
-            form={companyForm}
-            errors={companyFormErrors}
-            creating={companyCreating}
-            generatingTenantId={companyGeneratingTenantId}
-            result={createdCompany}
-            message={companySubmitMessage}
-            onChange={updateCompanyForm}
-            onGenerateTenantId={generateTenantId}
-            onSubmit={createCompany}
-          />
-          <CompanyManagementPanel
-            clients={enterprise?.clients || []}
-            plans={enterprise?.plans || []}
-            onSaved={() => load({ silent: true })}
-          />
-          <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+          {activeCompanySection === 'directory' ? (
+            <CompanyDirectoryPanel
+              clients={enterprise?.clients || []}
+              selectedCompanyId={selectedCompanyId}
+              loadingCompanyId={loadingCompanyId}
+              onSelectCompany={loadCompany}
+            />
+          ) : null}
+          {activeCompanySection === 'create' ? (
+            <CompanySetupPanel
+              plans={enterprise?.plans || []}
+              form={companyForm}
+              errors={companyFormErrors}
+              creating={companyCreating}
+              generatingTenantId={companyGeneratingTenantId}
+              result={createdCompany}
+              message={companySubmitMessage}
+              onChange={updateCompanyForm}
+              onGenerateTenantId={generateTenantId}
+              onSubmit={createCompany}
+            />
+          ) : null}
+          {activeCompanySection === 'manage' ? (
+            <CompanyManagementPanel
+              clients={enterprise?.clients || []}
+              plans={enterprise?.plans || []}
+              onSaved={() => load({ silent: true })}
+            />
+          ) : null}
+          {activeCompanySection === 'billing' ? (
+            <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+          ) : null}
         </div>
       ) : null}
 
@@ -2870,62 +2967,100 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
       {activeTab === 'packages' ? (
         <div className="dashboard-tab-panel">
-          {enterpriseMode === 'company_detail' ? (
+          <AdminSectionTabs
+            sections={packageSections}
+            activeSection={activePackageSection}
+            onChange={(section) => setSectionFor('packages', section)}
+          />
+          {enterpriseMode === 'company_detail' && activePackageSection === 'company' ? (
             <CompanyManagementPanel
               clients={enterprise?.clients || []}
               plans={enterprise?.plans || []}
               onSaved={() => loadCompanyById(activeCompany?.id, { silent: true, keepTab: true })}
             />
-          ) : (
+          ) : null}
+          {enterpriseMode !== 'company_detail' && activePackageSection !== 'features' ? (
             <PackagePurchasePanel
               enterprise={enterprise}
               mode={enterpriseMode}
               selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
               onSelectPlan={setSelectedPackageId}
               onRefresh={() => load({ silent: true })}
+              section={activePackageSection}
             />
-          )}
-          <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
+          ) : null}
+          {activePackageSection === 'features' ? (
+            <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
+          ) : null}
         </div>
       ) : null}
 
       {activeTab === 'purchase' ? (
         <div className="dashboard-tab-panel">
-          <PackagePurchasePanel
-            enterprise={enterprise}
-            mode={enterpriseMode}
-            selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
-            onSelectPlan={setSelectedPackageId}
-            onRefresh={() => load({ silent: true })}
+          <AdminSectionTabs
+            sections={packageSections}
+            activeSection={activePackageSection}
+            onChange={(section) => setSectionFor('purchase', section)}
           />
-          <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
+          {activePackageSection !== 'features' ? (
+            <PackagePurchasePanel
+              enterprise={enterprise}
+              mode={enterpriseMode}
+              selectedPlanId={selectedPackage?.id ? String(selectedPackage.id) : selectedPackageId}
+              onSelectPlan={setSelectedPackageId}
+              onRefresh={() => load({ silent: true })}
+              section={activePackageSection}
+            />
+          ) : null}
+          {activePackageSection === 'features' ? (
+            <FeatureControlsPanel features={enterprise?.feature_controls || []} selectedPlan={selectedPackage} />
+          ) : null}
         </div>
       ) : null}
 
       {activeTab === 'sdk' ? (
-        <SdkAccessPanel
-          enterprise={enterprise}
-          mode={enterpriseMode}
-          isSuperAdmin={isSuperAdmin}
-          onRefresh={() => load({ silent: true })}
-        />
+        <div className="dashboard-tab-panel">
+          <AdminSectionTabs
+            sections={sdkSections}
+            activeSection={activeSdkSection}
+            onChange={(section) => setSectionFor('sdk', section)}
+          />
+          <SdkAccessPanel
+            enterprise={enterprise}
+            mode={enterpriseMode}
+            isSuperAdmin={isSuperAdmin}
+            onRefresh={() => load({ silent: true })}
+            section={activeSdkSection}
+          />
+        </div>
       ) : null}
 
       {activeTab === 'usage' ? (
         <div className="dashboard-tab-panel">
-          <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
-          <div className="admin-detail-grid">
-            <DailyUsageTable usage={dailyUsage} />
-            <ParticipantRecordsTable records={participantRecords} />
-          </div>
-          <section className="usage-dashboard-grid">
-            <UsageVerificationCard
-              dashboard={dashboard}
-              verification={usageVerification}
-              status={usageStatus}
-            />
-            <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
-          </section>
+          <AdminSectionTabs
+            sections={usageSections}
+            activeSection={activeUsageSection}
+            onChange={(section) => setSectionFor('usage', section)}
+          />
+          {activeUsageSection === 'billing' ? (
+            <ClientsBillingPanel clients={enterprise?.clients || []} billing={enterprise?.billing} mode={enterpriseMode} />
+          ) : null}
+          {activeUsageSection === 'records' ? (
+            <div className="admin-detail-grid">
+              <DailyUsageTable usage={dailyUsage} />
+              <ParticipantRecordsTable records={participantRecords} />
+            </div>
+          ) : null}
+          {activeUsageSection === 'verification' ? (
+            <section className="usage-dashboard-grid">
+              <UsageVerificationCard
+                dashboard={dashboard}
+                verification={usageVerification}
+                status={usageStatus}
+              />
+              <UsageLogCard billingMode={dashboard?.billing_mode} logs={recentUsageLogs} />
+            </section>
+          ) : null}
         </div>
       ) : null}
 

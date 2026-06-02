@@ -170,6 +170,7 @@ export const CLIENT_API_WEBHOOK_EVENTS = [
 export function buildDashboardTabs(mode) {
   if (mode === 'super_admin') {
     return [
+      { key: 'command', label: 'Start' },
       { key: 'companies', label: 'Companies' },
       { key: 'packages', label: 'Packages' },
       { key: 'sdk', label: 'SDK Access' },

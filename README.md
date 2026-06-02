@@ -96,6 +96,34 @@ verification screen and prints/returns a local verification code for testing.
   `TURN_USERNAME`, and `TURN_CREDENTIAL` in `backend/.env` or PM2 env, then
   restart the backend.
 
+## WebRTC Architecture
+
+This is a browser-based RTC platform. It is organized into:
+
+- React RTC room UI
+- browser media capture
+- native `RTCPeerConnection` logic
+- Socket.IO signaling
+- Express room/session APIs
+- MySQL persistence
+- STUN/TURN configuration for production RTC reliability
+- client-company API for external app integration
+
+Read:
+
+- [`docs/webrtc-architecture.md`](docs/webrtc-architecture.md)
+- [`docs/client-rtc-integration.md`](docs/client-rtc-integration.md)
+- [`docs/client-handoff-response.md`](docs/client-handoff-response.md)
+
+Client-facing summary:
+
+```txt
+This is a web RTC platform. Users can use it from the deployed domain in a browser.
+Flutter is not required for the current delivery. If a native Android/iOS app is
+needed later, Flutter can be built as a separate mobile frontend connected to
+this backend and RTC API.
+```
+
 ## WSL Ubuntu run order
 
 Use a Linux Node.js/npm install inside WSL. Do not use the Windows `npm` from

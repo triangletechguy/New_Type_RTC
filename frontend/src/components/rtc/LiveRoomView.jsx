@@ -1430,7 +1430,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         </section>
 
         <aside className="buzzcast-live-side">
-          <p className="buzzcast-guideline">Be polite and respectful. Any vulgar, violent, or private transaction behavior is strictly prohibited in TalkEachOther. Please speak in a civilized manner.</p>
           <ChatPanel
             roomId={roomId}
             signalingRoom={signalingRoomRef.current}

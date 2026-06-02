@@ -246,6 +246,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       WHERE cm.tenant_id = :tenantId
       AND cm.room_id = :roomId
       AND cm.is_deleted = 0
+      AND cm.message_type <> 'gift'
       AND NOT EXISTS (
         SELECT 1
         FROM chat_message_hides hidden

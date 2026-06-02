@@ -3,6 +3,22 @@ import appScreenshots from './brand/app-screenshots.png'
 import brandGuide from './brand/brand-guide.png'
 import logoWordmark from './brand/logo-wordmark.png'
 
+import assetImage2Bars from './asset-image2/smart-bars.png'
+import assetImage2CreatorCard from './asset-image2/smart-creator-avatar.png'
+import assetImage2Goat from './asset-image2/smart-goat-header.png'
+import assetImage2GroupIcon from './asset-image2/smart-group-icon.png'
+import assetImage2HomeIcon from './asset-image2/smart-home-icon.png'
+import assetImage2LockIcon from './asset-image2/smart-lock-icon.png'
+import assetImage2SearchIcon from './asset-image2/smart-search-icon.png'
+
+import liveComposerGift from './live-ui/composer-gift.svg'
+import liveComposerMic from './live-ui/composer-mic.svg'
+import liveRailLive from './live-ui/rail-live.svg'
+import liveRailMoments from './live-ui/rail-moments.svg'
+import liveSeatLock from './live-ui/seat-lock.svg'
+import liveSeatMic from './live-ui/seat-mic.svg'
+import liveSend from './live-ui/send.svg'
+
 import avatar01 from './avatars/avatar-01.png'
 import avatar02 from './avatars/avatar-02.png'
 import avatar03 from './avatars/avatar-03.png'
@@ -41,6 +57,26 @@ export const brandAssets = {
   appScreenshots,
   brandGuide,
   logoWordmark,
+}
+
+export const assetImage2Assets = {
+  bars: assetImage2Bars,
+  creatorCard: assetImage2CreatorCard,
+  goat: assetImage2Goat,
+  groupIcon: assetImage2GroupIcon,
+  homeIcon: assetImage2HomeIcon,
+  lockIcon: assetImage2LockIcon,
+  searchIcon: assetImage2SearchIcon,
+}
+
+export const liveRoomAssets = {
+  composerGift: liveComposerGift,
+  composerMic: liveComposerMic,
+  railLive: liveRailLive,
+  railMoments: liveRailMoments,
+  seatLock: liveSeatLock,
+  seatMic: liveSeatMic,
+  send: liveSend,
 }
 
 export const avatarAssets = [
