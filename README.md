@@ -81,6 +81,20 @@ SMTP_PASS=your-smtp-password
 SMTP_FROM="TalkEachOther <verify@yourdomain.com>"
 ```
 
+The backend also accepts Laravel-style aliases, which are normalized to the same
+SMTP config:
+
+```bash
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=your-smtp-user
+MAIL_PASSWORD=your-smtp-password
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=verify@yourdomain.com
+MAIL_FROM_NAME="TalkEachOther"
+```
+
 If no email provider is configured, local development still enters the code
 verification screen and prints/returns a local verification code for testing.
 

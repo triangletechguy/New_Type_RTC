@@ -85,17 +85,28 @@ write_env_files() {
   turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
   feedback_to_email="$(get_env FEEDBACK_TO_EMAIL backend/.env)"
   resend_api_key="${RESEND_API_KEY:-$(get_env RESEND_API_KEY backend/.env)}"
-  email_from="${EMAIL_FROM:-$(get_env EMAIL_FROM backend/.env)}"
-  smtp_host="${SMTP_HOST:-$(get_env SMTP_HOST backend/.env)}"
-  smtp_port="${SMTP_PORT:-$(get_env SMTP_PORT backend/.env)}"
-  smtp_user="${SMTP_USER:-$(get_env SMTP_USER backend/.env)}"
-  smtp_pass="${SMTP_PASS:-$(get_env SMTP_PASS backend/.env)}"
-  smtp_from="${SMTP_FROM:-$(get_env SMTP_FROM backend/.env)}"
-  smtp_secure="${SMTP_SECURE:-$(get_env SMTP_SECURE backend/.env)}"
+  email_from="${EMAIL_FROM:-${SMTP_FROM:-$(get_env EMAIL_FROM backend/.env)}}"
+  if [ -z "$email_from" ]; then email_from="$(get_env SMTP_FROM backend/.env)"; fi
+  mail_from_address="${MAIL_FROM_ADDRESS:-$(get_env MAIL_FROM_ADDRESS backend/.env)}"
+  mail_from_name="${MAIL_FROM_NAME:-$(get_env MAIL_FROM_NAME backend/.env)}"
+  smtp_host="${SMTP_HOST:-${MAIL_HOST:-$(get_env SMTP_HOST backend/.env)}}"
+  smtp_port="${SMTP_PORT:-${MAIL_PORT:-$(get_env SMTP_PORT backend/.env)}}"
+  smtp_user="${SMTP_USER:-${MAIL_USERNAME:-$(get_env SMTP_USER backend/.env)}}"
+  smtp_pass="${SMTP_PASS:-${MAIL_PASSWORD:-$(get_env SMTP_PASS backend/.env)}}"
+  smtp_from="${SMTP_FROM:-${EMAIL_FROM:-$(get_env SMTP_FROM backend/.env)}}"
+  smtp_secure="${SMTP_SECURE:-${MAIL_ENCRYPTION:-$(get_env SMTP_SECURE backend/.env)}}"
 
   if [ -z "$db_password" ]; then db_password="$(random_hex 24)"; fi
   if [ -z "$jwt_secret" ]; then jwt_secret="$(random_hex 32)"; fi
   if [ -z "$feedback_to_email" ]; then feedback_to_email="${FEEDBACK_TO_EMAIL:-admin@gmail.com}"; fi
+  if [ -z "$email_from" ] && [ -n "$mail_from_address" ]; then
+    if [ -n "$mail_from_name" ]; then
+      email_from="$mail_from_name <$mail_from_address>"
+    else
+      email_from="$mail_from_address"
+    fi
+  fi
+  if [ -z "$smtp_from" ]; then smtp_from="$email_from"; fi
   if [ -z "$turn_credential" ] || [ "$turn_credential" = "YOUR_TURN_PASSWORD" ]; then
     turn_credential="$(random_hex 20)"
   fi
@@ -124,6 +135,8 @@ write_env_files() {
   if [ -n "$smtp_pass" ]; then set_env SMTP_PASS "$smtp_pass"; fi
   if [ -n "$smtp_from" ]; then set_env SMTP_FROM "$smtp_from"; fi
   if [ -n "$smtp_secure" ]; then set_env SMTP_SECURE "$smtp_secure"; fi
+  if [ -n "$mail_from_address" ]; then set_env MAIL_FROM_ADDRESS "$mail_from_address"; fi
+  if [ -n "$mail_from_name" ]; then set_env MAIL_FROM_NAME "$mail_from_name"; fi
 
   email_ready=0
   if [ -n "$resend_api_key" ] && [ -n "$email_from" ]; then email_ready=1; fi
@@ -138,6 +151,9 @@ Deploy with Resend:
 
 Or deploy with SMTP:
   SMTP_HOST='smtp.example.com' SMTP_PORT='587' SMTP_USER='user@example.com' SMTP_PASS='password' SMTP_FROM='TalkEachOther <user@example.com>' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
+
+Laravel-style MAIL_* variables are also accepted:
+  MAIL_HOST='smtp.example.com' MAIL_PORT='587' MAIL_USERNAME='user@example.com' MAIL_PASSWORD='password' MAIL_FROM_ADDRESS='user@example.com' MAIL_FROM_NAME='TalkEachOther' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
 EOF
     exit 1
   fi

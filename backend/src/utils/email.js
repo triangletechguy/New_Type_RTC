@@ -1,18 +1,39 @@
 const nodemailer = require('nodemailer')
 
+function firstEnv(...keys) {
+  for (const key of keys) {
+    const value = process.env[key]
+    if (value !== undefined && value !== '') return value
+  }
+
+  return ''
+}
+
+function emailFromAddress() {
+  const smtpFrom = firstEnv('SMTP_FROM', 'EMAIL_FROM')
+  if (smtpFrom) return smtpFrom
+
+  const mailAddress = firstEnv('MAIL_FROM_ADDRESS')
+  if (!mailAddress) return ''
+
+  const mailName = firstEnv('MAIL_FROM_NAME')
+  return mailName ? `${mailName} <${mailAddress}>` : mailAddress
+}
+
 function emailConfig() {
-  const port = Number(process.env.SMTP_PORT || 0)
+  const port = Number(firstEnv('SMTP_PORT', 'MAIL_PORT') || 0)
+  const encryption = firstEnv('SMTP_SECURE', 'MAIL_ENCRYPTION').toLowerCase()
   const allowLocalVerificationCode = process.env.NODE_ENV !== 'production'
     || ['1', 'true', 'yes', 'on'].includes(String(process.env.ALLOW_LOCAL_VERIFICATION_CODES || '').toLowerCase())
 
   return {
     resendApiKey: process.env.RESEND_API_KEY || '',
-    host: process.env.SMTP_HOST || '',
+    host: firstEnv('SMTP_HOST', 'MAIL_HOST'),
     port,
-    user: process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS || '',
-    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '',
-    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+    user: firstEnv('SMTP_USER', 'MAIL_USERNAME'),
+    pass: firstEnv('SMTP_PASS', 'MAIL_PASSWORD'),
+    from: emailFromAddress(),
+    secure: ['true', '1', 'yes', 'on', 'ssl', 'smtps'].includes(encryption) || port === 465,
     allowLocalVerificationCode,
   }
 }
@@ -129,7 +150,7 @@ function resendErrorMessage(status, body) {
   }
 
   if (/domain|from/i.test(body)) {
-    return 'Email provider rejected the sender address. Verify EMAIL_FROM and the sending domain, then request a new code.'
+    return 'Email provider rejected the sender address. Verify EMAIL_FROM or MAIL_FROM_ADDRESS and the sending domain, then request a new code.'
   }
 
   return 'Email provider rejected the verification email. Check the email provider settings, then request a new code.'
