@@ -85,7 +85,6 @@ export const INITIAL_ROOM_FORM = {
   password: '',
   max_mic_count: '8',
   chat_enabled: true,
-  gift_enabled: true,
   screen_share_enabled: false,
   ai_security_enabled: false,
 }
@@ -122,7 +121,7 @@ export const FEATURE_CATALOG = [
   { key: 'solo_video_live', group: 'Video SDK', label: 'Solo video live' },
   { key: 'screen_share', group: 'Video SDK', label: 'Screen share' },
   { key: 'video_filter_beauty', group: 'Video SDK', label: 'Filters, stickers, face detect, beauty' },
-  { key: 'message_chat', group: 'Common', label: 'Messages, replies, media, gifts' },
+  { key: 'message_chat', group: 'Common', label: 'Messages, replies, and media' },
   { key: 'room_roles', group: 'Common', label: 'Room owner, admin, moderator limits' },
   { key: 'private_room_password', group: 'Common', label: 'Private and password rooms' },
   { key: 'room_theme', group: 'Common', label: 'Room theme and profile settings' },

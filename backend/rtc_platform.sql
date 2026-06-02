@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS rooms (
     max_mic_count INT DEFAULT 8,
     theme VARCHAR(100) NULL,
     chat_enabled BOOLEAN DEFAULT TRUE,
-    gift_enabled BOOLEAN DEFAULT TRUE,
+    gift_enabled BOOLEAN DEFAULT FALSE,
     screen_share_enabled BOOLEAN DEFAULT FALSE,
     ai_security_enabled BOOLEAN DEFAULT FALSE,
     status ENUM('active', 'inactive', 'ended') DEFAULT 'active',
@@ -573,7 +573,7 @@ VALUES
 (
     'growth',
     'Growth RTC',
-    'High package for production apps with advanced live video, screen share, gifts, filters, and more room admins.',
+    'High package for production apps with advanced live video, screen share, filters, and more room admins.',
     799.00,
     0.0080,
     100000,

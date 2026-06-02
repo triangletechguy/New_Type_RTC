@@ -183,7 +183,6 @@ async function main() {
       max_mic_count: 8,
       theme: 'neon',
       chat_enabled: true,
-      gift_enabled: true,
       screen_share_enabled: true,
       ai_security_enabled: true,
     },
@@ -251,7 +250,7 @@ async function main() {
   const updatedControls = await request(`/rooms/${state.roomId}/controls`, {
     token: owner.access_token,
     method: 'PATCH',
-    body: { theme: 'studio', max_mic_count: 10, gift_enabled: false },
+    body: { theme: 'studio', max_mic_count: 10 },
   })
   assert(updatedControls.controls.room.theme === 'studio', 'room theme control did not update')
   assert(Number(updatedControls.controls.room.max_mic_count) === 10, 'max mic count did not update')

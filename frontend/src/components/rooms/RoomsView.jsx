@@ -21,7 +21,6 @@ import {
   themeOptions,
   validateRoomForm,
 } from '../../utils/roomConfig'
-import { giftCatalog } from '../../utils/gifts'
 import {
   defaultClientCompanies,
   demoCards,
@@ -34,7 +33,6 @@ import {
   feedbackTypes,
   initialDmMessages,
   maxFeedbackAttachmentSize,
-  paymentMethods,
   policyDocuments,
   popularHelp,
   regionAliases,
@@ -368,7 +366,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
-  const [showRecharge, setShowRecharge] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [activeSettings, setActiveSettings] = useState('account')
@@ -383,7 +380,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       deviceAlerts: saved.deviceAlerts !== false,
       messagePrivacy: saved.messagePrivacy || 'everyone',
       privateInvite: saved.privateInvite !== false,
-      autoPrivateDeduction: Boolean(saved.autoPrivateDeduction),
       hideSensitive: saved.hideSensitive !== false,
       contentMode: saved.contentMode || 'warning',
       region: user?.current_residence || saved.region || 'United States',
@@ -398,7 +394,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   })
   const [securityError, setSecurityError] = useState('')
   const [helpMode, setHelpMode] = useState('popular')
-  const [activeHelp, setActiveHelp] = useState('recharge')
+  const [activeHelp, setActiveHelp] = useState(popularHelp[0]?.id || '')
   const [activeFaq, setActiveFaq] = useState(faqTopics[0])
   const [activeThread, setActiveThread] = useState(dmThreads[0].id)
   const [dmMessages, setDmMessages] = useState(initialDmMessages)
@@ -581,20 +577,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return Array.from(hosts.values()).sort((a, b) => b.score - a.score).slice(0, 10)
     }
 
-    if (activeRanking === 'gifts') {
-      return giftCatalog
-        .slice()
-        .sort((a, b) => Number(b.cost || 0) - Number(a.cost || 0))
-        .slice(0, 10)
-        .map((gift, index) => ({
-          key: gift.id,
-          name: gift.label,
-          detail: `${gift.cost} diamonds`,
-          score: Number(gift.cost || 0) * (10 - index),
-          icon: gift.icon,
-        }))
-    }
-
     return cards
       .map((card) => ({
         key: card.id,
@@ -691,11 +673,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (!requireAuth('Log in to view live rankings.', 'login')) return
     setShowMessages(false)
     setShowRankings(true)
-  }
-
-  function openRechargePanel() {
-    if (!requireAuth('Log in to use wallet and room gifts.', 'login')) return
-    setShowRecharge(true)
   }
 
   function openMobileMomentsSection() {
@@ -1442,14 +1419,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               onChange={(event) => updateSettings('privateInvite', event.target.checked, t('Private live invitation setting updated.'))}
             />
           </label>
-          <label className="buzzcast-switch-row">
-            <span><strong>{t('Automatic deduction for entering the private live broadcast room')}</strong><small>{t('After opening, private rooms can automatically deduct diamonds.')}</small></span>
-            <input
-              type="checkbox"
-              checked={settingsDraft.autoPrivateDeduction}
-              onChange={(event) => updateSettings('autoPrivateDeduction', event.target.checked, t('Private-room deduction setting updated.'))}
-            />
-          </label>
           <button type="button" onClick={() => setSettingsStatus('Use Block in the chat panel to hide a user and remove their messages from your view.')}>
             <span><strong>{t('Blacklist')}</strong><small>{t('Blocked users are controlled from the chat user menu.')}</small></span>
             <b>&gt;</b>
@@ -1911,7 +1880,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <form className="buzzcast-mobile-live-composer" onSubmit={sendLiveRoomMessage}>
             <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice"><img src={liveRoomAssets.composerMic} alt="" loading="lazy" /></button>
             <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
-            <button type="button" onClick={openRechargePanel} aria-label="Gift"><img src={liveRoomAssets.composerGift} alt="" loading="lazy" /></button>
             <button type="submit" aria-label="Send"><img src={liveRoomAssets.send} alt="" loading="lazy" /></button>
           </form>
 
@@ -1966,7 +1934,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <strong className="buzzcast-mobile-room-profile-name">{card.title}</strong>
                 <span className="buzzcast-mobile-room-profile-id">ID:{roomIdLabel}</span>
                 <div className="buzzcast-mobile-room-profile-stats" aria-label="Room stats">
-                  <span><b>49.4M</b><small>Total Diamonds</small></span>
+                  <span><b>49.4M</b><small>Total Views</small></span>
                   <button type="button" onClick={() => { setShowMobileRoomProfile(false); setShowMobileMembers(true) }}><b>{memberCount}</b><small>Members</small></button>
                 </div>
                 <dl className="buzzcast-mobile-room-profile-details">
@@ -2166,17 +2134,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <small>{card.country || 'Australia'}</small>
               </div>
               <div className="buzzcast-join-ribbon">21 joined</div>
-              <div className="buzzcast-gift-bar">
-                {giftCatalog.slice(0, 11).map((gift) => (
-                  <button key={gift.id} type="button" title={`${gift.label} - ${gift.cost}`}>
-                    <img src={gift.icon} alt="" loading="lazy" />
-                    <span>{gift.label}</span>
-                    <small>{gift.cost}</small>
-                  </button>
-                ))}
-                <button type="button" onClick={openRechargePanel}>More</button>
-                <button type="button" onClick={openRechargePanel}>0</button>
-              </div>
             </>
           )}
         </div>
@@ -2219,7 +2176,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         deviceAlerts: settingsDraft.deviceAlerts,
         messagePrivacy: settingsDraft.messagePrivacy,
         privateInvite: settingsDraft.privateInvite,
-        autoPrivateDeduction: settingsDraft.autoPrivateDeduction,
         hideSensitive: settingsDraft.hideSensitive,
         contentMode: settingsDraft.contentMode,
         region: settingsDraft.region,
@@ -2270,7 +2226,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowMessages(false)
     setShowRankings(false)
     setShowHostPanel(false)
-    setShowRecharge(false)
   }, [activeSection, user])
 
   return (
@@ -2415,19 +2370,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </button>
               <button type="button" className="buzzcast-dm-more" aria-label="More options">...</button>
             </header>
-            <section className="buzzcast-dm-moment-card">
-              <div>
-                <strong>Moment</strong>
-                <span>More ›</span>
-              </div>
-              <div className="buzzcast-dm-moment-grid">
-                {giftCatalog.slice(0, 4).map((gift) => (
-                  <span key={gift.id}>
-                    <img src={gift.icon} alt="" loading="lazy" />
-                  </span>
-                ))}
-              </div>
-            </section>
             <p className="buzzcast-dm-intro">You can meet more friends and chat with them on TalkEachOther. I hope you can find interesting souls!</p>
             <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
               {dmStatus || dmNotice}
@@ -2458,7 +2400,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 placeholder={activeThreadFollowed ? 'Type a message...' : 'Type a message...'}
               />
               <button type="button" aria-label="Photo">photo</button>
-              <button type="button" aria-label="Gift">gift</button>
               <button type="submit" aria-label="Send message">send</button>
             </form>
           </main>
@@ -2471,7 +2412,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <header>
               <div>
                 <h2>Rankings</h2>
-                <p>Calculated from room viewers, active participants, host activity, and gift value.</p>
+                <p>Calculated from room viewers, active participants, and host activity.</p>
               </div>
               <button type="button" onClick={() => setShowRankings(false)}>x</button>
             </header>
@@ -2479,7 +2420,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               {[
                 { value: 'rooms', label: 'Rooms' },
                 { value: 'hosts', label: 'Hosts' },
-                { value: 'gifts', label: 'Gifts' },
               ].map((item) => (
                 <button
                   key={item.value}
@@ -2625,20 +2565,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ) : null}
 
       {renderSecurityActionModal()}
-
-      {showRecharge ? (
-        <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowRecharge(false)}>
-          <section className="buzzcast-recharge-panel" onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <h2>Balance <span>0</span></h2>
-              <button type="button" onClick={() => setShowRecharge(false)}>x</button>
-            </header>
-            <div className="buzzcast-recharge-tabs"><button type="button" className="active">Top-up</button><button type="button">Reseller</button></div>
-            {paymentMethods.map((method) => <button type="button" key={method}>{method}<span>v</span></button>)}
-            <button type="button" className="buzzcast-recharge-button">Recharge</button>
-          </section>
-        </div>
-      ) : null}
 
       {showFeedback ? (
         <div className="buzzcast-modal-backdrop dark">

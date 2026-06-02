@@ -717,7 +717,7 @@ function parseClientRoomPayload(body = {}) {
       maxMicCount,
       theme,
       chatEnabled: parseBoolean(readBodyValue(body, 'chat_enabled', 'chatEnabled'), true),
-      giftEnabled: parseBoolean(readBodyValue(body, 'gift_enabled', 'giftEnabled'), true),
+      giftEnabled: parseBoolean(readBodyValue(body, 'gift_enabled', 'giftEnabled'), false),
       screenShareEnabled: parseBoolean(readBodyValue(body, 'screen_share_enabled', 'screenShareEnabled'), false),
       aiSecurityEnabled: parseBoolean(readBodyValue(body, 'ai_security_enabled', 'aiSecurityEnabled'), false),
     },

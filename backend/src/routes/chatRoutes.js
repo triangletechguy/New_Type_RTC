@@ -4,7 +4,7 @@ const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 
-const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
+const validMessageTypes = new Set(['text', 'image', 'voice', 'system'])
 const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
 const audioDataUrlPattern = /^data:audio\/(webm|ogg|mpeg|mp3|mp4|wav|x-m4a)(;codecs=[^;]+)?;base64,[a-z0-9+/=\s]+$/i
 const maxImageDataUrlLength = 7 * 1024 * 1024
@@ -228,7 +228,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     const rooms = await query(
       `
-      SELECT id, chat_enabled, gift_enabled
+      SELECT id, chat_enabled
       FROM rooms
       WHERE id = :roomId
       AND tenant_id = :tenantId
@@ -271,7 +271,6 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       meta: {
         limit,
         chat_enabled: Boolean(Number(rooms[0].chat_enabled)),
-        gift_enabled: Boolean(Number(rooms[0].gift_enabled)),
         blocked_user_ids: blockedUserIds,
       },
     })
@@ -309,12 +308,8 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     if (!room) return res.status(404).json({ message: 'Room not found.' })
 
-    if (messageType !== 'gift' && !room.chat_enabled) {
+    if (!room.chat_enabled) {
       return res.status(403).json({ message: 'Chat is disabled in this room.' })
-    }
-
-    if (messageType === 'gift' && !room.gift_enabled) {
-      return res.status(403).json({ message: 'Gifts are disabled in this room.' })
     }
 
     const result = await query(

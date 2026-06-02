@@ -30,7 +30,7 @@ export const demoCards = [
   { id: 'demo-6', title: 'Acoustic Session', host: 'Matt M.', viewers: 589, tone: 'amber', roomType: 'group_audio', avatarIndex: 5 },
   { id: 'demo-7', title: 'Night Studio', host: 'Natalie', viewers: 5689, tone: 'night', roomType: 'video', avatarIndex: 6 },
   { id: 'demo-8', title: 'Global Music Room', host: 'Lyss', viewers: 1418, tone: 'plum', country: 'Canada', roomType: 'audio', avatarIndex: 7 },
-  { id: 'demo-9', title: 'Supporter Lounge', host: 'Community Ops', viewers: 2032, tone: 'copper', badge: 'Gifts', roomType: 'group_audio', avatarIndex: 1 },
+  { id: 'demo-9', title: 'Supporter Lounge', host: 'Community Ops', viewers: 2032, tone: 'copper', badge: 'Community', roomType: 'group_audio', avatarIndex: 1 },
   { id: 'demo-10', title: 'Morning Sync', host: 'Sarah', viewers: 7489, tone: 'cloud', roomType: 'group_video', avatarIndex: 2 },
   { id: 'demo-11', title: 'Private Client Demo', host: 'Enterprise Desk', viewers: 1853, tone: 'wine', privacy: 'private', badge: 'Private', roomType: 'video', avatarIndex: 3 },
   { id: 'demo-12', title: 'Password Beta Room', host: 'QA Studio', viewers: 928, tone: 'silver', privacy: 'password', badge: 'Locked', roomType: 'video', avatarIndex: 4 },
@@ -124,8 +124,6 @@ export const settingsCopy = {
   Nobody: 'Nobody',
   'Private live invitation': 'Private live invitation',
   'Allow hosts to invite you into private live rooms.': 'Allow hosts to invite you into private live rooms.',
-  'Automatic deduction for entering the private live broadcast room': 'Automatic deduction for entering the private live broadcast room',
-  'After opening, private rooms can automatically deduct diamonds.': 'After opening, private rooms can automatically deduct diamonds.',
   Blacklist: 'Blacklist',
   'Blocked users are controlled from the chat user menu.': 'Blocked users are controlled from the chat user menu.',
   'Live broadcast you are not interested in': 'Live broadcast you are not interested in',
@@ -135,7 +133,6 @@ export const settingsCopy = {
   Show: 'Show',
   'Message privacy updated.': 'Message privacy updated.',
   'Private live invitation setting updated.': 'Private live invitation setting updated.',
-  'Private-room deduction setting updated.': 'Private-room deduction setting updated.',
   'Live preference updated.': 'Live preference updated.',
   'Restricted Mode': 'Restricted Mode',
   'Hide potentially sensitive content.': 'Hide potentially sensitive content.',
@@ -430,17 +427,16 @@ export const regionAliases = {
   'Venezuela': ['Bolivarian Republic of Venezuela'],
   'Vietnam': ['Viet Nam'],
 }
-export const paymentMethods = ['Google Pay', 'PayPal', 'Apple Pay', 'Visa/ MasterCard/ JCB/ AMEX/ DINERS', 'Dpay(USDT & Bitcoin)', 'Razer Gold Wallet']
-export const feedbackCategories = ['Account', 'Room / RTC', 'Payment', 'Chat', 'Safety']
-export const feedbackTypes = ['Bug report', 'Feature request', 'Payment issue', 'Abuse report', 'Other']
+export const feedbackCategories = ['Account', 'Room / RTC', 'Chat', 'Safety', 'Other']
+export const feedbackTypes = ['Bug report', 'Feature request', 'Access issue', 'Abuse report', 'Other']
 export const maxFeedbackAttachmentSize = 25 * 1024 * 1024
 
 export const popularHelp = [
-  { id: 'recharge', title: 'How to recharge', body: 'Open a live room, click More in the gift bar, choose a payment method, then use Recharge to add diamonds.' },
-  { id: 'vip', title: 'How to become VIP/SVIP', body: 'Buy VIP through the personal center or use diamonds to buy VIP. VIP rewards and privileges are visible from the personal center.' },
+  { id: 'create-room', title: 'How to create a room', body: 'Open the create room panel, choose the room type and privacy, then publish the room when the details are ready.' },
+  { id: 'vip', title: 'How to become VIP/SVIP', body: 'Open the personal center to review available VIP access, rewards, and account privileges.' },
   { id: 'bind', title: 'How do I bind my phone number and email address?', body: 'For account security, bind your mobile phone number and email address in Settings, Account Security.' },
   { id: 'mvp', title: 'How to become an MVP and its benefits', body: 'MVP status unlocks monthly rewards, profile progress, and room benefits after qualifying top-up milestones.' },
-  { id: 'missing', title: "I made a payment, but I did not receive the diamonds", body: 'Check the payment record first. If the recharge is still missing, submit feedback with your payment time and receipt screenshot.' },
+  { id: 'missing', title: 'I submitted feedback but need help', body: 'Open Feedback record to review previous reports, or submit a new ticket with screenshots and device details.' },
 ]
 
 export const faqTopics = [
@@ -453,7 +449,6 @@ export const faqTopics = [
   'The live streaming page cannot be opened or is not smooth',
   'How to do a live/private live broadcast',
   'Block others',
-  'What can crystals be used for',
   'How to upgrade my account level',
   "Join other people's private broadcast",
   'Hide profile',
@@ -470,7 +465,6 @@ export const faqAnswers = {
   'The live streaming page cannot be opened or is not smooth': 'Check your network, close other heavy apps, refresh the room, and try a different room. If it continues, submit feedback with your device and network details.',
   'How to do a live/private live broadcast': 'Create a room, choose a live room type, then select public, private, or password privacy before publishing.',
   'Block others': 'Open the user menu from chat, profile, or room participants, then choose block or report when needed.',
-  'What can crystals be used for': 'Crystals can be used for platform rewards and room interactions where enabled.',
   'How to upgrade my account level': 'Account level grows through activity, room participation, and supported platform reward actions.',
   "Join other people's private broadcast": 'Open the private room invitation or room card. If a password or permission is required, enter it before joining.',
   'Hide profile': 'Use privacy settings to limit who can message you and reduce discoverability where supported.',
@@ -482,11 +476,11 @@ export const policyDocuments = [
   {
     id: 'terms',
     title: 'Terms of Service',
-    summary: 'The basic rules for using TalkEachOther rooms, chat, profiles, gifts, and RTC features.',
+    summary: 'The basic rules for using TalkEachOther rooms, chat, profiles, and RTC features.',
     sections: [
       ['Account responsibility', 'You are responsible for activity from your account, keeping your login details private, and using accurate profile information.'],
       ['Room behavior', 'Do not harass people, impersonate others, share illegal content, or use live rooms for scams, private transactions, or harmful activity.'],
-      ['Service changes', 'Features, rooms, moderation tools, gifts, and availability may change as the service improves or to protect the community.'],
+      ['Service changes', 'Features, rooms, moderation tools, and availability may change as the service improves or to protect the community.'],
     ],
   },
   {

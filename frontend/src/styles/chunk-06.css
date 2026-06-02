@@ -1,50 +1,4 @@
 
-.gift-toast {
-  position: absolute;
-  z-index: 4;
-  left: 50%;
-  bottom: 126px;
-  min-width: 220px;
-  display: grid;
-  place-items: center;
-  gap: 4px;
-  padding: 12px 16px;
-  border: 1px solid rgba(251, 191, 36, .32);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(251, 191, 36, .18), rgba(255, 63, 127, .18)),
-    rgba(15, 23, 42, .88);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
-  transform: translateX(-50%);
-  animation: joinPop 2.2s ease both;
-}
-
-.gift-toast span {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  padding: 5px;
-  border-radius: 14px;
-  background: rgba(251, 191, 36, .2);
-  color: #fde68a;
-  font-size: 11px;
-  font-weight: 1000;
-}
-
-.gift-toast span img {
-  width: 32px;
-  height: 32px;
-  display: block;
-  border-radius: 10px;
-  object-fit: cover;
-}
-
-.gift-toast strong {
-  color: #fff7ed;
-  font-size: 14px;
-}
-
 @keyframes joinPop {
   0% { opacity: 0; transform: translate(-50%, -8px) scale(.94); }
   14% { opacity: 1; transform: translate(-50%, 0) scale(1); }
@@ -536,29 +490,6 @@
   box-shadow: -18px 15px 0 currentColor, -3px 18px 0 currentColor;
 }
 
-.control-glyph.gift::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 8px;
-  width: 16px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-radius: 4px;
-  box-shadow: inset 6px 0 0 -4px currentColor, inset -6px 0 0 -4px currentColor;
-}
-
-.control-glyph.gift::after {
-  content: "";
-  position: absolute;
-  left: 1px;
-  top: 5px;
-  width: 20px;
-  height: 4px;
-  border: 2px solid currentColor;
-  border-radius: 5px;
-}
-
 .control-glyph.guard::before {
   content: "";
   position: absolute;
@@ -614,52 +545,6 @@
   padding: 0;
   border-color: rgba(148, 163, 184, .22);
   background: rgba(148, 163, 184, .1);
-}
-
-.live-gift-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px;
-}
-
-.live-gift-grid button {
-  min-width: 0;
-  min-height: 88px;
-  display: grid;
-  place-items: center;
-  gap: 4px;
-  padding: 9px;
-  border-color: rgba(251, 191, 36, .18);
-  background: rgba(251, 191, 36, .08);
-}
-
-.live-gift-grid button img {
-  width: 34px;
-  height: 34px;
-  display: block;
-  border-radius: 10px;
-  object-fit: cover;
-}
-
-.live-gift-grid button strong,
-.live-gift-grid button span {
-  overflow: hidden;
-  max-width: 100%;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.live-gift-grid button span {
-  color: #fde68a;
-  font-size: 12px;
-}
-
-.live-gift-grid > small {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .tool-status-panel {
@@ -881,13 +766,6 @@
   border-color: rgba(56, 189, 248, .34);
 }
 
-.chat-bubble.gift-message {
-  border-color: rgba(251, 191, 36, .32);
-  background:
-    linear-gradient(135deg, rgba(251, 191, 36, .15), rgba(255, 63, 127, .11)),
-    rgba(255, 255, 255, .075);
-}
-
 .chat-bubble.image-message {
   width: min(78%, 320px);
   padding: 8px;
@@ -963,30 +841,6 @@
   margin: 0;
   color: var(--text);
   overflow-wrap: anywhere;
-}
-
-.chat-gift-message {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.chat-gift-icon {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  display: inline-grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 9px;
-  background: rgba(251, 191, 36, .18);
-}
-
-.chat-gift-icon img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
 }
 
 .chat-image-message {

@@ -68,7 +68,6 @@
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide-row,
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-mic-line,
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-comments,
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail,
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer {
     position: relative !important;
     z-index: 2 !important;
@@ -559,32 +558,6 @@
     color: #fff !important;
     font-size: 12px !important;
     line-height: 1.25 !important;
-  }
-
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail {
-    position: fixed !important;
-    z-index: 8 !important;
-    right: 9px !important;
-    bottom: calc(72px + env(safe-area-inset-bottom)) !important;
-    display: grid !important;
-    justify-items: center !important;
-    gap: 9px !important;
-  }
-
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail button {
-    width: 42px !important;
-    height: 42px !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 12px !important;
-    background: rgba(255, 255, 255, .1) !important;
-    box-shadow: 0 8px 18px rgba(0, 0, 0, .2) !important;
-  }
-
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
   }
 
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer {

@@ -908,11 +908,6 @@
     grid-template-columns: minmax(0, 1fr) 80px !important;
   }
 
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail {
-    right: 10px !important;
-    bottom: calc(80px + env(safe-area-inset-bottom)) !important;
-  }
-
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer {
     grid-template-columns: 44px minmax(0, 1fr) 42px 42px !important;
     min-height: calc(58px + env(safe-area-inset-bottom)) !important;
@@ -940,19 +935,6 @@
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:first-child::after,
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:nth-of-type(2)::before {
     display: none !important;
-  }
-
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail button:first-child {
-    width: 92px !important;
-    height: 34px !important;
-    border-radius: 999px !important;
-    background: transparent !important;
-  }
-
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail button:first-child img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
   }
 
   .buzzcast-messages-drawer > main {
@@ -1450,8 +1432,7 @@
   }
 
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide-row,
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide,
-  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail {
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide {
     display: none !important;
   }
 

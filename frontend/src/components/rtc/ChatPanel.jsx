@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { avatarForIndex, chatAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
-import { giftById, giftIconForId, giftLabelForId } from '../../utils/gifts'
 
 const maxAudioBytes = 5 * 1024 * 1024
 
@@ -748,11 +747,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
           const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
-          const giftMessage = message.message_type === 'gift'
           const imageMessage = message.message_type === 'image'
           const avatarMessage = imageMessage && String(message.message_body || '').trim() === 'sent an avatar'
           const voiceMessage = message.message_type === 'voice'
-          const gift = giftMessage ? giftById(message.media_url) : null
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
@@ -764,9 +761,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const photoCaption = imageMessage && !['sent a photo', 'sent an avatar'].includes(String(message.message_body || '').trim())
             ? String(message.message_body || '').trim()
             : ''
-          const bubbleClass = giftMessage
-            ? 'chat-bubble gift-message'
-            : imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
+          const bubbleClass = imageMessage
+            ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
@@ -797,11 +793,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                       </button>
                     </div>
                   </form>
-                ) : giftMessage ? (
-                  <p className="chat-gift-message">
-                    <span className="chat-gift-icon"><img src={gift?.icon || giftIconForId(message.media_url)} alt="" /></span>
-                    <span>{message.message_body || `sent ${giftLabelForId(message.media_url)}`}</span>
-                  </p>
                 ) : imageMessage ? (
                   <div className="chat-image-message">
                     <a href={message.media_url} target="_blank" rel="noreferrer" aria-label={avatarMessage ? 'Open avatar' : 'Open image'}>

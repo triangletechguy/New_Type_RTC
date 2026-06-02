@@ -192,8 +192,7 @@
 
 .buzzcast-host-pill,
 .buzzcast-room-metadata,
-.buzzcast-join-ribbon,
-.buzzcast-gift-bar {
+.buzzcast-join-ribbon {
   position: absolute;
   z-index: 4;
 }
@@ -275,52 +274,6 @@
   color: #f5d95c;
   font-size: 12px;
   font-weight: 900;
-}
-
-.buzzcast-gift-bar {
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  height: 80px;
-  display: grid;
-  grid-template-columns: repeat(11, minmax(72px, 1fr)) 78px 70px;
-  gap: 8px;
-  border-radius: 8px;
-}
-
-.buzzcast-gift-bar button {
-  min-width: 0;
-  display: grid;
-  grid-template-rows: 30px auto auto;
-  place-items: center;
-  gap: 3px;
-  padding: 6px 5px;
-  border: 0;
-  border-radius: 8px;
-  background: rgba(76, 65, 67, .88);
-  color: #c8c4dc;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.buzzcast-gift-bar button img {
-  width: 30px;
-  height: 30px;
-  display: block;
-  border-radius: 8px;
-  object-fit: cover;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, .2);
-}
-
-.buzzcast-gift-bar button span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.buzzcast-gift-bar small {
-  color: #d5d1df;
 }
 
 .buzzcast-live-chat {
@@ -770,7 +723,6 @@
 }
 
 .buzzcast-host-panel,
-.buzzcast-recharge-panel,
 .buzzcast-feedback-modal {
   max-height: calc(100vh - 40px);
   overflow: auto;
@@ -797,13 +749,11 @@
 
 .buzzcast-host-panel h2,
 .buzzcast-host-panel h3,
-.buzzcast-recharge-panel h2,
 .buzzcast-feedback-modal h2 {
   margin: 0;
 }
 
 .buzzcast-host-panel > header button,
-.buzzcast-recharge-panel header button,
 .buzzcast-feedback-modal header button {
   width: 36px;
   height: 36px;
@@ -907,73 +857,10 @@
   background: #292838;
 }
 
-.buzzcast-recharge-panel {
-  width: min(424px, calc(100vw - 24px));
-  padding: 26px 16px 22px;
-}
-
-.buzzcast-recharge-panel header,
 .buzzcast-feedback-modal header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.buzzcast-recharge-panel h2 span {
-  margin-left: 28px;
-  color: #aaa6bb;
-  font-size: 14px;
-}
-
-.buzzcast-recharge-tabs {
-  display: flex;
-  gap: 26px;
-  margin: 26px 0 12px;
-}
-
-.buzzcast-recharge-tabs button {
-  position: relative;
-  padding: 0 0 9px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #aaa6bb;
-}
-
-.buzzcast-recharge-tabs button.active {
-  color: #fff;
-}
-
-.buzzcast-recharge-tabs button.active::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
-  border-radius: 999px;
-  background: #7658ff;
-}
-
-.buzzcast-recharge-panel > button:not(.buzzcast-recharge-button) {
-  width: 100%;
-  min-height: 64px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font-weight: 500;
-}
-
-.buzzcast-recharge-button {
-  width: calc(100% - 78px);
-  min-height: 50px;
-  margin: 114px 39px 0;
-  border: 0;
-  border-radius: 8px;
-  background: linear-gradient(90deg, #ffba4d, #ff784b);
 }
 
 .buzzcast-feedback-modal {

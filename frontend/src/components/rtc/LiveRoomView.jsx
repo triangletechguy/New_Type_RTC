@@ -14,7 +14,6 @@ import {
   peerMediaMapFromUsers,
   roomSupportsVideo,
 } from '../../utils/roomConfig'
-import { giftCatalog } from '../../utils/gifts'
 import { ChatPanel } from './ChatPanel'
 import { OwnerControlsPanel } from './OwnerControlsPanel'
 import { VideoTile } from './VideoTile'
@@ -60,8 +59,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [chatFocusRequest, setChatFocusRequest] = useState(0)
   const [externalChatMessage, setExternalChatMessage] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
-  const [sendingGiftId, setSendingGiftId] = useState('')
-  const [giftToast, setGiftToast] = useState(null)
   const [screenSharing, setScreenSharing] = useState(false)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
@@ -78,7 +75,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
-  const giftToastTimerRef = useRef(null)
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -391,12 +387,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     joinEffectTimerRef.current = window.setTimeout(() => setJoinEffect(null), 1800)
   }
 
-  function showGiftToast(gift) {
-    window.clearTimeout(giftToastTimerRef.current)
-    setGiftToast({ ...gift, key: Date.now() })
-    giftToastTimerRef.current = window.setTimeout(() => setGiftToast(null), 2200)
-  }
-
   function emitSavedChatMessage(message) {
     if (!message?.id) return
 
@@ -429,40 +419,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
 
     setActiveToolPanel((current) => (current === panel ? null : panel))
-  }
-
-  async function sendGift(gift) {
-    if (!joined) {
-      setStatus('Connect RTC before sending gifts.')
-      setActiveToolPanel('gifts')
-      return
-    }
-
-    if (room?.gift_enabled === false) {
-      setStatus('Gifts are disabled by owner controls.')
-      setActiveToolPanel('gifts')
-      return
-    }
-
-    try {
-      setSendingGiftId(gift.id)
-      setStatus(`Sending ${gift.label}...`)
-      const data = await apiRequest(`/rooms/${roomId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          message_type: 'gift',
-          message_body: `sent ${gift.label}`,
-          media_url: gift.id,
-        }),
-      })
-      emitSavedChatMessage(data.chat_message)
-      showGiftToast(gift)
-      setStatus(`${gift.label} sent`)
-    } catch (error) {
-      setStatus(error.message)
-    } finally {
-      setSendingGiftId('')
-    }
   }
 
   function currentCameraTrack(excludeTrack = null) {
@@ -1106,7 +1062,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
-    window.clearTimeout(giftToastTimerRef.current)
     if (activeRoomIdRef.current) {
       const roomToLeave = activeRoomIdRef.current
       activeRoomIdRef.current = null
@@ -1185,7 +1140,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           <button type="button" className="buzzcast-icon-button" onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
             <span className="control-glyph guard" aria-hidden="true"></span>
           </button>
-          <button type="button" className="buzzcast-icon-button accent" onClick={() => toggleToolPanel('gifts')} aria-label="Gifts" title="Gifts">+</button>
           <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
             <span className="image-avatar"><img src={profileAvatar} alt="" /></span>
           </button>
@@ -1218,13 +1172,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
-          {giftToast && (
-            <div className="gift-toast" key={giftToast.key}>
-              <span><img src={giftToast.icon} alt="" /></span>
-              <strong>{user?.name || 'You'} sent {giftToast.label}</strong>
-            </div>
-          )}
-
             <div className="buzzcast-host-pill">
               <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
               <strong>{hostName}</strong>
@@ -1325,21 +1272,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'gifts' ? 'Send a gift' : 'AI guard'}</strong>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : 'AI guard'}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
                 </header>
-                {activeToolPanel === 'gifts' ? (
-                  <div className="live-gift-grid" aria-label="Room gifts">
-                    {giftCatalog.map((gift) => (
-                      <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id || !joined || room?.gift_enabled === false}>
-                        <img src={gift.icon} alt="" loading="lazy" />
-                        <strong>{gift.label}</strong>
-                        <span>{gift.cost}</span>
-                      </button>
-                    ))}
-                    <small>{room?.gift_enabled === false ? 'Gifts are disabled in this room.' : joined ? 'Gifts are sent into this room chat.' : 'Connect RTC before sending gifts.'}</small>
-                  </div>
-                ) : activeToolPanel === 'screen' ? (
+                {activeToolPanel === 'screen' ? (
                   <div className="tool-status-panel">
                     <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
                     <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
@@ -1415,17 +1351,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               </button>
             </div>
 
-            <div className="buzzcast-gift-bar buzzcast-live-gift-bar">
-              {giftCatalog.slice(0, 11).map((gift) => (
-                <button key={gift.id} type="button" onClick={() => sendGift(gift)} disabled={sendingGiftId === gift.id || room?.gift_enabled === false} title={`${gift.label} - ${gift.cost}`}>
-                  <img src={gift.icon} alt="" loading="lazy" />
-                  <span>{gift.label}</span>
-                  <small>{gift.cost}</small>
-                </button>
-              ))}
-              <button type="button" onClick={() => toggleToolPanel('gifts')}>More</button>
-              <button type="button" onClick={() => toggleToolPanel('gifts')}>0</button>
-            </div>
           </div>
         </section>
 

@@ -4,7 +4,7 @@ const FEATURE_LABELS = {
   normal_video_group_chat: 'video group chat',
   live_video_pk: 'PK live rooms',
   solo_video_live: 'solo live rooms',
-  message_chat: 'chat and gifts',
+  message_chat: 'chat and media',
   private_room_password: 'private/password rooms',
   screen_share: 'screen sharing',
   ai_security_audio: 'AI audio guard',

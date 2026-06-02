@@ -2671,7 +2671,7 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
     service_model: {
       provider_name: 'TalkEachOther',
       product: 'Enterprise RTC SDK and API service',
-      purpose: 'Client companies integrate TalkEachOther audio, video, chat, moderation, gifts, filters, and usage billing into their own apps.',
+      purpose: 'Client companies integrate TalkEachOther audio, video, chat, moderation, filters, and usage billing into their own apps.',
       selling_unit: 'Company app package with SDK credentials, feature controls, and participant-minute billing.',
       rtc_provider: dashboard?.rtc_status || 'online',
       connection_indicator: dashboard?.rtc_status === 'online' ? 'online' : 'attention',

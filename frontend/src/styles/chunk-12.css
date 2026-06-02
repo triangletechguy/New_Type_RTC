@@ -458,7 +458,6 @@
   .buzzcast-mobile-live-guide,
   .buzzcast-mobile-mic-line,
   .buzzcast-mobile-live-comments,
-  .buzzcast-mobile-gift-rail,
   .buzzcast-mobile-live-composer {
     position: relative !important;
     z-index: 2 !important;
@@ -942,30 +941,6 @@
     color: #fff !important;
     font-size: 12px !important;
     line-height: 1.25 !important;
-  }
-
-  .buzzcast-mobile-gift-rail {
-    position: absolute !important;
-    right: 10px !important;
-    bottom: 72px !important;
-    display: grid !important;
-    justify-items: center !important;
-    gap: 9px !important;
-  }
-
-  .buzzcast-mobile-gift-rail button {
-    width: 42px !important;
-    height: 42px !important;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 12px !important;
-    background: rgba(255, 255, 255, .08) !important;
-  }
-
-  .buzzcast-mobile-gift-rail img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
   }
 
   .buzzcast-mobile-live-composer {

@@ -29,13 +29,6 @@
     width: 100%;
   }
 
-  .buzzcast-gift-bar {
-    grid-template-columns: repeat(3, minmax(72px, 1fr));
-    height: auto;
-    max-height: 220px;
-    overflow: auto;
-  }
-
   .buzzcast-stage,
   .buzzcast-live-chat {
     min-height: 560px;

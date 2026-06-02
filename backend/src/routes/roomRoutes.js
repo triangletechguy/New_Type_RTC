@@ -309,7 +309,7 @@ function validateRoomPayload(payload) {
       max_mic_count: maxMicCount || 8,
       theme: theme || null,
       chat_enabled: parseBoolean(payload.chat_enabled, true),
-      gift_enabled: parseBoolean(payload.gift_enabled, true),
+      gift_enabled: parseBoolean(payload.gift_enabled, false),
       screen_share_enabled: parseBoolean(payload.screen_share_enabled, false),
       ai_security_enabled: parseBoolean(payload.ai_security_enabled, false),
     },

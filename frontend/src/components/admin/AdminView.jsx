@@ -577,8 +577,7 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
     "room_type": "video",
     "privacy_type": "public",
     "max_mic_count": 8,
-    "chat_enabled": true,
-    "gift_enabled": true
+    "chat_enabled": true
   }'`
   const updateRoomCurl = `curl -X PATCH ${apiBase}/rooms/123 \\
   -H "Authorization: Bearer ${apiKey}" \\
@@ -588,7 +587,6 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
     "privacy_type": "password",
     "password": "2468",
     "chat_enabled": true,
-    "gift_enabled": false,
     "screen_share_enabled": true
   }'`
   const endRoomCurl = `curl -X DELETE ${apiBase}/rooms/123 \\

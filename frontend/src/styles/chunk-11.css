@@ -483,18 +483,6 @@
     min-height: min(620px, calc(100svh - 130px));
   }
 
-  .buzzcast-gift-bar,
-  .buzzcast-live-gift-bar {
-    overflow-x: auto;
-    grid-template-columns: repeat(13, minmax(76px, 90px));
-    scrollbar-width: none;
-  }
-
-  .buzzcast-gift-bar::-webkit-scrollbar,
-  .buzzcast-live-gift-bar::-webkit-scrollbar {
-    display: none;
-  }
-
   .buzzcast-messages-drawer {
     left: 10px;
     right: 10px;
@@ -746,7 +734,6 @@
   }
 
   .buzzcast-host-panel > header,
-  .buzzcast-recharge-panel header,
   .buzzcast-feedback-modal header,
   .buzzcast-rankings-modal header {
     align-items: flex-start;

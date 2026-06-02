@@ -11,7 +11,6 @@ import assetImage2HomeIcon from './asset-image2/smart-home-icon.png'
 import assetImage2LockIcon from './asset-image2/smart-lock-icon.png'
 import assetImage2SearchIcon from './asset-image2/smart-search-icon.png'
 
-import liveComposerGift from './live-ui/composer-gift.svg'
 import liveComposerMic from './live-ui/composer-mic.svg'
 import liveRailLive from './live-ui/rail-live.svg'
 import liveRailMoments from './live-ui/rail-moments.svg'
@@ -42,7 +41,6 @@ import audioStage from './rooms/audio-stage.png'
 import avatarGrid from './rooms/avatar-grid.png'
 import cameraOff from './rooms/camera-off.png'
 import connectionStatus from './rooms/connection-status.png'
-import giftIcons from './rooms/gift-icons.png'
 import mediaStates from './rooms/media-states.png'
 import musicRoom from './rooms/music-room.png'
 import passwordRoom from './rooms/password-room.png'
@@ -70,7 +68,6 @@ export const assetImage2Assets = {
 }
 
 export const liveRoomAssets = {
-  composerGift: liveComposerGift,
   composerMic: liveComposerMic,
   railLive: liveRailLive,
   railMoments: liveRailMoments,
@@ -109,7 +106,6 @@ export const roomAssets = {
   avatarGrid,
   cameraOff,
   connectionStatus,
-  giftIcons,
   mediaStates,
   musicRoom,
   passwordRoom,

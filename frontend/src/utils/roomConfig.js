@@ -49,7 +49,6 @@ export const themeOptions = [
 
 export const roomFeatureOptions = [
   { field: 'chat_enabled', label: 'Chat', detail: 'Live messages' },
-  { field: 'gift_enabled', label: 'Gifts', detail: 'Reactions and gifts' },
   { field: 'screen_share_enabled', label: 'Screen share', detail: 'Presenter tools' },
   { field: 'ai_security_enabled', label: 'AI guard', detail: 'Moderation layer' },
 ]
@@ -83,7 +82,6 @@ export const defaultRoomForm = {
   max_mic_count: 8,
   theme: 'neon',
   chat_enabled: true,
-  gift_enabled: true,
   screen_share_enabled: true,
   ai_security_enabled: false,
 }
@@ -95,7 +93,6 @@ export function getRoomMeta(roomType) {
 export function getRoomTags(room) {
   const tags = []
   if (room.chat_enabled) tags.push('Chat')
-  if (room.gift_enabled) tags.push('Gifts')
   if (room.screen_share_enabled) tags.push('Share')
   if (room.ai_security_enabled) tags.push('AI Guard')
   return tags.length ? tags : ['Live']
@@ -212,7 +209,6 @@ export function roomFormPayload(form) {
     max_mic_count: Number(form.max_mic_count),
     theme: form.theme,
     chat_enabled: form.chat_enabled,
-    gift_enabled: form.gift_enabled,
     screen_share_enabled: form.screen_share_enabled,
     ai_security_enabled: form.ai_security_enabled,
   }
