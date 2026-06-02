@@ -82,20 +82,16 @@ async function captureAvailableMedia(rtcMode, options = {}) {
   const pendingKinds = []
   const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
   const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
-  const captures = [
-    startMediaCapture('audio', { audio: audioConstraints, video: false }),
-  ]
+  const captureKinds = rtcMode === 'video' ? ['video', 'audio'] : ['audio']
 
-  if (rtcMode === 'video') {
-    captures.push(startMediaCapture('video', { audio: false, video: videoConstraints }))
-  }
-
-  const results = await Promise.all(captures.map((capture) => (
-    timeoutMs > 0 ? waitForCapture(capture, timeoutMs) : capture.promise
-  )))
-
-  results.forEach((result, index) => {
-    const capture = captures[index]
+  for (const kind of captureKinds) {
+    const capture = startMediaCapture(
+      kind,
+      kind === 'audio'
+        ? { audio: audioConstraints, video: false }
+        : { audio: false, video: videoConstraints }
+    )
+    const result = timeoutMs > 0 ? await waitForCapture(capture, timeoutMs) : await capture.promise
 
     if (result?.timedOut) {
       pendingKinds.push(capture.kind)
@@ -106,16 +102,18 @@ async function captureAvailableMedia(rtcMode, options = {}) {
           stopMediaStream(lateResult.stream)
         }
       }).catch(() => {})
-      return
+
+      if (capture.kind === 'video') break
+      continue
     }
 
     if (result?.track) {
       stream.addTrack(result.track)
-      return
+      continue
     }
 
     if (result?.error) failures[result.kind || capture.kind] = result.error
-  })
+  }
 
   const primaryError = failures.video || failures.audio || null
 
@@ -184,7 +182,7 @@ function formatMediaError(error, rtcMode) {
   const mediaLabel = rtcMode === 'audio' ? 'microphone' : 'camera/microphone'
 
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
-    return `Permission denied for ${mediaLabel}. Allow browser permissions and try again.`
+    return `Permission denied for ${mediaLabel}. Allow camera and microphone in the browser address-bar permissions, then try again.`
   }
 
   if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
@@ -202,7 +200,7 @@ function formatSingleMediaError(error, kind) {
   const mediaLabel = kind === 'audio' ? 'microphone' : 'camera'
 
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
-    return `Permission denied for ${mediaLabel}.`
+    return `Permission denied for ${mediaLabel}. Allow it in browser permissions, then try again.`
   }
 
   if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
@@ -224,10 +222,10 @@ function buildMediaWarning(stream, failures, combinedError, rtcMode, pendingKind
   const audioPending = pendingKinds.includes('audio')
   const videoPending = pendingKinds.includes('video')
 
-  if (audioPending && !hasAudio) messages.push('Microphone permission is still pending.')
   if (videoPending && !hasVideo) messages.push('Camera permission is still pending.')
-  if (!hasAudio && !audioPending) messages.push(formatSingleMediaError(failures.audio || combinedError, 'audio'))
   if (rtcMode === 'video' && !hasVideo && !videoPending) messages.push(formatSingleMediaError(failures.video || combinedError, 'video'))
+  if (audioPending && !hasAudio) messages.push('Microphone permission is still pending.')
+  if (!hasAudio && !audioPending) messages.push(formatSingleMediaError(failures.audio || combinedError, 'audio'))
 
   const uniqueMessages = Array.from(new Set(messages))
   const joinedAs = describeCapturedMedia(stream, rtcMode)

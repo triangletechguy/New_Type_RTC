@@ -3052,8 +3052,6 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
   useEffect(() => {
     load()
-    const timer = window.setInterval(() => load({ silent: true }), 15000)
-    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {

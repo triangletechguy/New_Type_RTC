@@ -23,6 +23,12 @@ import {
 } from '../../utils/roomConfig'
 import { giftCatalog } from '../../utils/gifts'
 
+const referenceAssetBase = '/rtc-reference-assets'
+
+function referenceAsset(number) {
+  return `${referenceAssetBase}/asset-(${number}).png`
+}
+
 const feedTabs = [
   { value: 'following', label: 'Following', mobileLabel: 'Mine', filter: 'all' },
   { value: 'for_you', label: 'For You', mobileLabel: 'Popular', filter: 'all' },
@@ -822,6 +828,21 @@ function savedFollowedThreadIds(defaultIds) {
   }
 }
 
+function savedRecentRoomIds() {
+  if (typeof window === 'undefined') return []
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('rtc_recent_mobile_room_ids') || '[]')
+    return Array.isArray(saved) ? saved.map(String).filter(Boolean).slice(0, 24) : []
+  } catch {
+    return []
+  }
+}
+
+function saveRecentRoomIds(ids) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem('rtc_recent_mobile_room_ids', JSON.stringify(ids.slice(0, 24)))
+}
+
 function formatFeedbackRecordDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Just now'
@@ -1066,7 +1087,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [activeSection, setActiveSection] = useState('live')
   const [activeFeed, setActiveFeed] = useState('for_you')
   const [activeExplore, setActiveExplore] = useState('all')
-  const [mobileRoomGroup, setMobileRoomGroup] = useState('group')
+  const [mobileRoomGroup, setMobileRoomGroup] = useState('recently')
   const [showSearchPanel, setShowSearchPanel] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
   const [showMobileRoomProfile, setShowMobileRoomProfile] = useState(false)
@@ -1120,6 +1141,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     { id: 'live-3', body: 'Now I can show you. Tap a user to open profile.', author: 'MARTEEN', badges: ['Lv.37'] },
   ])
   const [mobileToast, setMobileToast] = useState('')
+  const [recentRoomIds, setRecentRoomIds] = useState(savedRecentRoomIds)
   const [readThreadIds, setReadThreadIds] = useState([])
   const [followedThreadIds, setFollowedThreadIds] = useState(() => savedFollowedThreadIds(dmThreads.filter((thread) => thread.followed).map((thread) => thread.id)))
   const [activeRanking, setActiveRanking] = useState('rooms')
@@ -1148,6 +1170,44 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
   const clientCompanyCards = useMemo(() => buildClientCompanyCards(roomCards), [roomCards])
+  const ownRoomCard = useMemo(() => {
+    const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
+    if (ownLiveRoom) {
+      return {
+        ...ownLiveRoom,
+        title: ownLiveRoom.title || displayName,
+        host: ownLiveRoom.host || displayName,
+        avatarUrl: profileAvatar,
+        isOwnRoom: true,
+      }
+    }
+
+    if (createdRoom) {
+      return {
+        ...roomToFeedCard(createdRoom, 0),
+        title: createdRoom.name || displayName,
+        host: createdRoom.owner_name || displayName,
+        avatarUrl: profileAvatar,
+        isOwnRoom: true,
+      }
+    }
+
+    return {
+      id: 'own-mobile-room',
+      title: displayName,
+      host: settingsDraft.region || user?.current_residence || 'United States',
+      viewers: 0,
+      tone: 'mint',
+      badge: 'Mine',
+      category: 'Video Room',
+      country: settingsDraft.region || user?.current_residence || 'United States',
+      roomType: 'video',
+      privacy: 'public',
+      avatarIndex: displayId,
+      avatarUrl: profileAvatar,
+      isOwnRoom: true,
+    }
+  }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
     const usingLiveRooms = roomCards.length > 0
     let cards = usingLiveRooms ? [...roomCards] : [...demoCards]
@@ -1176,6 +1236,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
     return sortCardsForView(cards, sort).slice(0, activeFeed === 'party' ? 10 : 24)
   }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, sort])
+  const recentRoomCards = useMemo(() => {
+    const sourceCards = roomCards.length ? roomCards : demoCards
+    const cardsById = new Map(sourceCards.map((card) => [String(card.id), card]))
+    const rememberedCards = recentRoomIds
+      .map((id) => cardsById.get(String(id)))
+      .filter(Boolean)
+
+    if (rememberedCards.length) return rememberedCards.slice(0, 24)
+    return visibleCards.filter((card) => card.id !== ownRoomCard.id).slice(0, 24)
+  }, [ownRoomCard.id, recentRoomIds, roomCards, visibleCards])
   const searchTerm = search.trim().toLowerCase()
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
@@ -1762,7 +1832,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: true })
   }
 
+  function rememberRecentRoom(card) {
+    if (!card || card.isOwnRoom) return
+
+    setRecentRoomIds((previous) => {
+      const cardId = String(card.id)
+      const nextIds = [cardId, ...previous.filter((id) => id !== cardId)].slice(0, 24)
+      saveRecentRoomIds(nextIds)
+      return nextIds
+    })
+  }
+
   function openCard(card) {
+    rememberRecentRoom(card)
+
     if (card.room && !isMobileViewport()) {
       joinRoomFromCard(card.room)
       return
@@ -1895,7 +1978,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
-    const featuredMobileCard = visibleCards[0] || demoCards[0]
+    const featuredMobileCard = ownRoomCard
+    const mobileRoomListCards = recentRoomCards.length ? recentRoomCards : visibleCards
 
     return (
       <section className="buzzcast-discover">
@@ -1931,11 +2015,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
           <button type="button" className="mp4-feature-room" onClick={() => openCard(featuredMobileCard)}>
             <span className="mp4-feature-avatar image-avatar">
-              <img src={avatarForIndex(cardAvatarIndex(featuredMobileCard))} alt="" loading="lazy" />
+              <img src={featuredMobileCard.avatarUrl || avatarForIndex(cardAvatarIndex(featuredMobileCard))} alt="" loading="lazy" />
             </span>
             <span className="mp4-feature-copy">
               <strong>{featuredMobileCard.title}</strong>
-              <small><b></b><i>0</i><em></em></small>
+              <small><b></b><i>{compactNumber(featuredMobileCard.viewers || 0)}</i><em></em></small>
             </span>
             <span className="mp4-feature-ribbon">Mine</span>
           </button>
@@ -2029,8 +2113,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
         ) : (
           <>
-            <div className={`buzzcast-card-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
+            <div className={`buzzcast-card-grid desktop-feed-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
               {visibleCards.map((card, index) => (
+                <FeedCard
+                  key={card.id}
+                  card={card}
+                  featured={index === 0 && activeFeed !== 'party'}
+                  onOpen={openCard}
+                />
+              ))}
+            </div>
+            <div className={`buzzcast-card-grid mobile-recent-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
+              {mobileRoomListCards.map((card, index) => (
                 <FeedCard
                   key={card.id}
                   card={card}
@@ -2439,6 +2533,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const isWarning = card.sensitive && !acceptedWarnings[card.id]
     const previewCover = cardCover(card)
     const previewAvatar = avatarForIndex(cardAvatarIndex(card))
+    const referenceRoomAvatar = referenceAsset(33)
+    const referenceProfileAvatar = referenceAsset(42)
+    const referenceCommentAvatar = referenceAsset(84)
+    const referenceVideoPanel = referenceAsset(149)
+    const referenceSeatLocked = referenceAsset(2)
+    const referenceSeatMic = referenceAsset(3)
+    const referenceGuide = referenceAsset(40)
+    const referenceMicInvite = referenceAsset(168)
+    const referenceComposerMic = referenceAsset(73)
+    const referenceComposerGift = referenceAsset(90)
+    const referenceActionRail = referenceAsset(109)
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
     const isVideoRoom = roomSupportsVideo(card.room?.room_type || card.roomType)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
@@ -2466,7 +2571,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <header className="buzzcast-mobile-live-head">
             <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
             <button type="button" className="buzzcast-mobile-profile-avatar-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
-              <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+              <span className="image-avatar"><img src={referenceRoomAvatar} alt="" loading="lazy" /></span>
             </button>
             <button type="button" className="buzzcast-mobile-title-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
               <strong>{card.title}</strong>
@@ -2484,7 +2589,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </div>
             <button type="button" className="buzzcast-mobile-member-strip" onClick={() => setShowMobileMembers(true)} aria-label="Open room members">
               {[0, 1, 2].map((index) => (
-                <i key={index} className="image-avatar"><img src={avatarForIndex(index + 1)} alt="" loading="lazy" /></i>
+                <i key={index} className="image-avatar"><img src={index === 0 ? referenceCommentAvatar : avatarForIndex(index + 1)} alt="" loading="lazy" /></i>
               ))}
               <b>›</b>
             </button>
@@ -2498,12 +2603,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <button type="button" onClick={() => showMobileActionToast('Playlist opened')}>Play List</button>
                 <button type="button" onClick={() => setShowMobileRoomTools(true)}>⏻</button>
               </div>
-              <section className="buzzcast-mobile-video-card" aria-label="Room video">
+              <section className="buzzcast-mobile-video-card uses-reference-image" aria-label="Room video">
                 <div>
                   <strong>{card.title}</strong>
                   <small>{card.host} - Topic</small>
                 </div>
-                <img src={previewCover} alt="" loading="lazy" />
+                <img src={referenceVideoPanel} alt="" loading="lazy" />
                 <button type="button" aria-label="Play video"></button>
                 <span className="start-time">00:03:35</span>
                 <i></i>
@@ -2520,7 +2625,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 className={seat === 1 ? 'active' : ''}
                 onClick={() => seat === 1 ? setShowMobileRoomTools(true) : setShowMobileRoomLock(true)}
               >
-                <span>{seat === 1 ? 'mic' : 'lock'}</span>
+                <span><img src={seat === 1 ? referenceSeatMic : referenceSeatLocked} alt="" loading="lazy" /></span>
                 <small>No.{seat}</small>
               </button>
             ))}
@@ -2528,15 +2633,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <div className="buzzcast-mobile-pk-badge">PK</div>
 
           <div className="buzzcast-mobile-live-guide-row">
-            <p className="buzzcast-mobile-live-guide">Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.</p>
+            <p className="buzzcast-mobile-live-guide">
+              <img src={referenceGuide} alt="Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned." loading="lazy" />
+            </p>
             <span><img src={giftCatalog[0]?.icon} alt="" loading="lazy" /></span>
           </div>
-          <button type="button" className="buzzcast-mobile-mic-line">Come on mic and chat together~</button>
+          <button type="button" className="buzzcast-mobile-mic-line">
+            <img src={referenceMicInvite} alt="" loading="lazy" />
+            <span>Come on mic and chat together~</span>
+          </button>
 
           <div className="buzzcast-mobile-live-comments">
             {mobileComments.map((message) => (
               <article key={message.id}>
-                <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+                <span className="image-avatar"><img src={referenceCommentAvatar} alt="" loading="lazy" /></span>
                 <div>
                   <strong><i>Owner</i> {card.host}</strong>
                   <small>{message.badges.map((badge) => <b key={badge}>{badge}</b>)}</small>
@@ -2547,6 +2657,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
 
           <aside className="buzzcast-mobile-gift-rail">
+            <button type="button" title="Room actions" onClick={() => showMobileActionToast('Room actions opened')}>
+              <img src={referenceActionRail} alt="" loading="lazy" />
+            </button>
             {giftCatalog.slice(0, 3).map((gift) => (
               <button key={gift.id} type="button" title={gift.label} onClick={() => showMobileActionToast(`${gift.label} gift selected`)}>
                 <img src={gift.icon} alt="" loading="lazy" />
@@ -2555,9 +2668,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </aside>
 
           <form className="buzzcast-mobile-live-composer" onSubmit={sendLiveRoomMessage}>
-            <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice">mic</button>
+            <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice"><img src={referenceComposerMic} alt="" loading="lazy" /></button>
             <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
-            <button type="button" onClick={openRechargePanel} aria-label="Gift">gift</button>
+            <button type="button" onClick={openRechargePanel} aria-label="Gift"><img src={referenceComposerGift} alt="" loading="lazy" /></button>
             <button type="submit" aria-label="Send">send</button>
           </form>
 
@@ -2576,7 +2689,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 {mobileMembers.map((member, index) => (
                   <button key={`${member.name}-${index}`} type="button" onClick={() => showMobileActionToast(`${member.name} selected`)}>
                     <b>{index + 1}</b>
-                    <i className="image-avatar"><img src={avatarForIndex(index + 2)} alt="" loading="lazy" /></i>
+                    <i className="image-avatar"><img src={index === 0 ? referenceProfileAvatar : avatarForIndex(index + 2)} alt="" loading="lazy" /></i>
                     <span>
                       <strong>{member.name}{member.role ? <em>{member.role}</em> : null}</strong>
                       <small>{member.detail}</small>

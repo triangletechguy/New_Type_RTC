@@ -1271,6 +1271,10 @@
   align-items: start;
 }
 
+.mobile-recent-grid {
+  display: none;
+}
+
 .buzzcast-card-grid.party-grid {
   grid-template-columns: repeat(2, minmax(260px, 1fr));
   gap: 28px 20px;
@@ -6862,6 +6866,7 @@ pre {
 }
 
 .buzzcast-room-status,
+.buzzcast-media-permission-card,
 .buzzcast-room-controls,
 .buzzcast-live-stage-streams,
 .buzzcast-password-popover,
@@ -6907,6 +6912,60 @@ pre {
   color: rgba(255, 255, 255, .6);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.buzzcast-media-permission-card {
+  top: 192px;
+  left: 58px;
+  width: min(430px, calc(100vw - 116px));
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid rgba(96, 165, 250, .36);
+  border-radius: 12px;
+  background: rgba(6, 9, 24, .78);
+  color: #eff6ff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .34);
+  backdrop-filter: blur(12px);
+}
+
+.buzzcast-media-permission-card strong {
+  color: #fff;
+  font-size: 14px;
+}
+
+.buzzcast-media-permission-card p,
+.buzzcast-media-permission-card small {
+  margin: 0;
+  color: rgba(219, 234, 254, .86);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.buzzcast-media-permission-card div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.buzzcast-media-permission-card button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(147, 197, 253, .38);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, .22);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.buzzcast-media-permission-card button:not(:disabled):hover {
+  background: rgba(96, 165, 250, .34);
+}
+
+.buzzcast-media-permission-card button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
 }
 
 .buzzcast-live-stage-streams {
@@ -7347,6 +7406,13 @@ pre {
 
   .buzzcast-live-stage-streams {
     width: calc(100% - 28px);
+  }
+
+  .buzzcast-media-permission-card {
+    top: 188px;
+    left: 10px;
+    right: 10px;
+    width: auto;
   }
 }
 
@@ -18803,6 +18869,14 @@ pre {
     box-shadow: none !important;
   }
 
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .desktop-feed-grid {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-recent-grid {
+    display: grid !important;
+  }
+
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-grid,
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-grid.party-grid {
     padding: 8px 12px calc(76px + env(safe-area-inset-bottom)) !important;
@@ -18973,6 +19047,19 @@ pre {
     margin-top: 38px !important;
   }
 
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-video-card video {
+    width: min(100%, 560px) !important;
+    aspect-ratio: 16 / 9 !important;
+    display: block !important;
+    margin: 38px auto 0 !important;
+    object-fit: cover !important;
+    background: #050505 !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-video-card.has-video img {
+    display: none !important;
+  }
+
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid {
     gap: 20px 17px !important;
     margin: 16px 0 18px !important;
@@ -18981,10 +19068,63 @@ pre {
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid button span {
     width: 58px !important;
     height: 58px !important;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .08)),
-      linear-gradient(180deg, #cf6670, #8f0f19) !important;
-    box-shadow: 0 10px 0 rgba(91, 0, 10, .72), inset 0 0 0 2px rgba(255, 255, 255, .18) !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid button span::before,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid button span::after,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid button:not(.active) span::before {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-seat-grid button span img {
+    width: 74px !important;
+    max-width: none !important;
+    height: 74px !important;
+    object-fit: contain !important;
+    transform: translateY(-4px) !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide {
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: transparent !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide img {
+    width: 100% !important;
+    min-height: 48px !important;
+    display: block !important;
+    object-fit: cover !important;
+    border-radius: 4px !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-mic-line {
+    position: relative !important;
+    overflow: hidden !important;
+    padding: 0 12px !important;
+    background: linear-gradient(90deg, #d43fff, #f579ff 76%, #ba55ff) !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-mic-line > img {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 300% !important;
+    object-fit: cover !important;
+    object-position: center 50% !important;
+    transform: translateY(-33.333%) !important;
+    opacity: .94 !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-mic-line > span {
+    position: relative !important;
+    z-index: 1 !important;
+    display: block !important;
+    color: #fff !important;
+    font-weight: 1000 !important;
   }
 
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-guide-row {
@@ -19005,6 +19145,37 @@ pre {
   .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer input {
     background: rgba(0, 0, 0, .34) !important;
     color: #fff !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button img {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    object-fit: contain !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:first-child,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:nth-of-type(2) {
+    background: transparent !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:first-child::before,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:first-child::after,
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-live-composer button:nth-of-type(2)::before {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail button:first-child {
+    width: 92px !important;
+    height: 34px !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+  }
+
+  .buzzcast-shell.section-room:not(.buzzcast-live-shell) .buzzcast-mobile-gift-rail button:first-child img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
   }
 
   .buzzcast-messages-drawer > main {

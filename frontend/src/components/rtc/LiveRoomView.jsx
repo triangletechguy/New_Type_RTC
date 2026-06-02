@@ -1023,6 +1023,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraButtonTitle = cameraCanRetry
     ? 'Start camera'
     : screenSharing ? 'Stop screen share before changing camera' : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
+  const mediaStatusText = String(status || '')
+  const mediaPermissionBlocked = /permission denied|notallowed|camera permission|microphone permission|allow camera|allow microphone/i.test(mediaStatusText)
+  const showMediaPermissionRecovery = joined && (mediaPermissionBlocked || micCanRetry || cameraCanRetry)
+  const canRequestCamera = joined && rtcMode === 'video' && !cameraOn && !screenSharing && !mediaUpdating.camera
+  const canRequestMicrophone = joined && !micOn && !mediaUpdating.mic
   const guardFindings = chatMessages
     .filter((message) => message.message_type === 'text')
     .map((message) => {
@@ -1122,6 +1127,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               {joined ? 'Live' : joining ? 'Connecting' : connectAttempted ? 'Ready to rejoin' : 'Ready'}
               {status ? <small>{status}</small> : null}
             </div>
+
+            {showMediaPermissionRecovery ? (
+              <div className="buzzcast-media-permission-card" role="alert">
+                <strong>Camera or microphone permission is blocked</strong>
+                <p>{mediaStatusText || 'Allow this site to use your camera and microphone, then retry.'}</p>
+                <div>
+                  <button type="button" onClick={toggleCamera} disabled={!canRequestCamera}>
+                    {cameraOn ? 'Camera live' : 'Retry camera'}
+                  </button>
+                  <button type="button" onClick={toggleMic} disabled={!canRequestMicrophone}>
+                    {micOn ? 'Mic live' : 'Retry microphone'}
+                  </button>
+                </div>
+                <small>Click the lock/camera icon in the browser address bar, set Camera and Microphone to Allow for this site, then press the retry button.</small>
+              </div>
+            ) : null}
 
             <div className="buzzcast-live-stage-streams">
               {localStream || remoteTiles.length ? (
