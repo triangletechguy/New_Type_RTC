@@ -53,6 +53,8 @@ const {
   userStatusForCompany,
 } = require('./adminServiceUtils')
 
+let tenantCompanySchemaPromise = null
+
 async function ensureTenantCompanyColumns() {
   if (!tenantCompanySchemaPromise) {
     tenantCompanySchemaPromise = (async () => {

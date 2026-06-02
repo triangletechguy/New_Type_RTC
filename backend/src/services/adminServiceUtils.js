@@ -64,7 +64,6 @@ const DEFAULT_SERVICE_PLANS = [
     included_features: ['normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'ai_security_audio', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'ai_security_video', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'comment_reply', 'company_billing', 'admin_panel_analytics', 'rtc_connection_indicator'],
   },
 ]
-let tenantCompanySchemaPromise = null
 
 function toNumber(row, key, decimals = null) {
   const value = Number(row?.[key] || 0)
