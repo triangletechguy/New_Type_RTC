@@ -699,19 +699,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowRecharge(true)
   }
 
-  function openMobileGameSection() {
-    if (!isMobileViewport()) {
-      setShowInstall(true)
-      return
-    }
-
-    setActiveFeed('explore')
-    setActiveExplore('games')
-    setFilter('video')
-    setActiveSection('live')
-    setPreviewCard(null)
-  }
-
   function openMobileMomentsSection() {
     if (!isMobileViewport()) {
       openSettingsSection()
@@ -2366,10 +2353,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <b>Me</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
-        <button type="button" onClick={openMobileGameSection}>
-          <span className="buzzcast-rail-icon rail-app" aria-hidden="true"></span>
-          <b>Get the App</b>
-        </button>
         <button type="button" className={activeSection === 'settings' ? 'active' : ''} onClick={openMobileMomentsSection}>
           <span className="buzzcast-rail-icon rail-settings" aria-hidden="true"></span>
           <b>Settings</b>
