@@ -20,6 +20,7 @@ import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
 const RTC_PRESENCE_INTERVAL_MS = 20000
+const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function compactNumber(value) {
@@ -122,6 +123,69 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
   }
 }
 
+function numericStat(value, fallback = 0) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function roundedStat(value, precision = 2) {
+  const factor = 10 ** precision
+  return Math.round(Math.max(0, numericStat(value)) * factor) / factor
+}
+
+function compactPeerStates(peerStates = {}) {
+  return Object.values(peerStates || {}).reduce((counts, state) => {
+    const key = String(state || 'unknown').slice(0, 32)
+    counts[key] = (counts[key] || 0) + 1
+    return counts
+  }, {})
+}
+
+function uniqueStatValues(statsList, key) {
+  return Array.from(new Set(
+    statsList
+      .map((stats) => String(stats?.[key] || '').trim())
+      .filter(Boolean)
+      .slice(0, 8)
+  ))
+}
+
+function sumMediaBitrate(statsList, direction, kind) {
+  return statsList.reduce((total, stats) => total + numericStat(stats?.media?.[direction]?.[kind]?.bitrateKbps), 0)
+}
+
+function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats }) {
+  const statsList = Object.values(peerStats || {}).filter(Boolean)
+  const peerStateCount = Object.keys(peerStates || {}).length
+  const expectedPeerCount = Math.max(remotePeerCount || 0, peerStateCount, statsList.length)
+  const latencySamples = statsList.map((stats) => numericStat(stats.rttMs)).filter((value) => value > 0)
+  const availableOutgoingSamples = statsList
+    .map((stats) => numericStat(stats.availableOutgoingKbps))
+    .filter((value) => value > 0)
+
+  return {
+    quality: rtcHealth?.quality || 'unknown',
+    peer_count: expectedPeerCount,
+    measured_peer_count: statsList.length,
+    incoming_kbps: roundedStat(statsList.reduce((total, stats) => total + numericStat(stats.incomingKbps), 0)),
+    outgoing_kbps: roundedStat(statsList.reduce((total, stats) => total + numericStat(stats.outgoingKbps), 0)),
+    rtt_ms: roundedStat(latencySamples.length
+      ? latencySamples.reduce((total, value) => total + value, 0) / latencySamples.length
+      : 0),
+    packet_loss_pct: roundedStat(Math.max(0, ...statsList.map((stats) => numericStat(stats.packetLossPct)))),
+    available_outgoing_kbps: roundedStat(availableOutgoingSamples.length ? Math.min(...availableOutgoingSamples) : 0),
+    local_candidate_types: uniqueStatValues(statsList, 'localCandidateType'),
+    remote_candidate_types: uniqueStatValues(statsList, 'remoteCandidateType'),
+    peer_states: compactPeerStates(peerStates),
+    media: {
+      inbound_audio_kbps: roundedStat(sumMediaBitrate(statsList, 'inbound', 'audio')),
+      inbound_video_kbps: roundedStat(sumMediaBitrate(statsList, 'inbound', 'video')),
+      outbound_audio_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'audio')),
+      outbound_video_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'video')),
+    },
+  }
+}
+
 export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack, onProfile }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
@@ -171,6 +235,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
   const rejoiningSignalingRef = useRef(false)
+  const latestRtcQualityRef = useRef(null)
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -224,6 +289,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     signalingRoomRef.current = null
     localSocketIdRef.current = null
     rejoiningSignalingRef.current = false
+    latestRtcQualityRef.current = null
     negotiatedPeersRef.current.clear()
     if (clearState) {
       setLocalStream(null)
@@ -1292,6 +1358,37 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [joined, user?.id])
 
   useEffect(() => {
+    if (!joined) return undefined
+
+    let cancelled = false
+
+    async function reportRtcQuality() {
+      const activeRoomId = activeRoomIdRef.current
+      const payload = latestRtcQualityRef.current
+      if (cancelled || !activeRoomId || !payload) return
+      if (!payload.peer_count && !payload.measured_peer_count) return
+
+      try {
+        await apiRequest(`/rooms/${activeRoomId}/quality`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+      } catch (error) {
+        console.debug('RTC quality report skipped:', error.message)
+      }
+    }
+
+    const firstReport = window.setTimeout(reportRtcQuality, 5000)
+    const timer = window.setInterval(reportRtcQuality, RTC_QUALITY_REPORT_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(firstReport)
+      window.clearInterval(timer)
+    }
+  }, [joined])
+
+  useEffect(() => {
     syncMediaPermissions(rtcMode).catch(() => {})
   }, [rtcMode, joined])
 
@@ -1372,6 +1469,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats })
+  latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">

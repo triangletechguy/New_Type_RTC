@@ -433,6 +433,36 @@ CREATE TABLE IF NOT EXISTS rtc_events (
     CONSTRAINT fk_rtc_events_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS rtc_quality_samples (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    session_id BIGINT UNSIGNED NOT NULL,
+    participant_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    quality ENUM('good', 'fair', 'poor', 'degraded', 'failed', 'connecting', 'idle', 'unknown') DEFAULT 'unknown',
+    peer_count INT UNSIGNED DEFAULT 0,
+    measured_peer_count INT UNSIGNED DEFAULT 0,
+    incoming_kbps DECIMAL(12,2) DEFAULT 0.00,
+    outgoing_kbps DECIMAL(12,2) DEFAULT 0.00,
+    rtt_ms DECIMAL(10,2) DEFAULT 0.00,
+    packet_loss_pct DECIMAL(6,2) DEFAULT 0.00,
+    available_outgoing_kbps DECIMAL(12,2) DEFAULT 0.00,
+    local_candidate_types JSON NULL,
+    remote_candidate_types JSON NULL,
+    peer_states JSON NULL,
+    media_summary JSON NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_rtc_quality_room_created (room_id, created_at),
+    INDEX idx_rtc_quality_session_created (session_id, created_at),
+    INDEX idx_rtc_quality_user_created (user_id, created_at),
+    CONSTRAINT fk_rtc_quality_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_quality_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_quality_session FOREIGN KEY (session_id) REFERENCES rtc_sessions(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_quality_participant FOREIGN KEY (participant_id) REFERENCES rtc_session_participants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_rtc_quality_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,

@@ -11,6 +11,7 @@ const validRoomTypes = new Set(['audio', 'video', 'group_audio', 'group_video', 
 const validPrivacyTypes = new Set(['public', 'private', 'password'])
 const validRoomStatuses = new Set(['active', 'inactive', 'ended'])
 const validRtcModes = new Set(['audio', 'video'])
+const validRtcQualities = new Set(['good', 'fair', 'poor', 'degraded', 'failed', 'connecting', 'idle', 'unknown'])
 const validControlThemes = new Set(['neon', 'midnight', 'studio', 'mint'])
 const validModerationActions = new Set(['mute', 'mute_mic', 'disable_camera', 'kick', 'ban'])
 const validBanTypes = new Set(['temporary', 'permanent'])
@@ -61,6 +62,87 @@ function parseBoolean(value, defaultValue) {
   if (['true', '1', 'yes', 'on'].includes(normalized)) return true
   if (['false', '0', 'no', 'off'].includes(normalized)) return false
   return defaultValue
+}
+
+function boundedNumber(value, min, max, fallback = 0, precision = 2) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+
+  const bounded = Math.min(max, Math.max(min, number))
+  const factor = 10 ** precision
+  return Math.round(bounded * factor) / factor
+}
+
+function boundedInteger(value, min, max, fallback = 0) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.trunc(Math.min(max, Math.max(min, number)))
+}
+
+function cleanStringArray(value, maxItems = 8, maxLength = 32) {
+  if (!Array.isArray(value)) return []
+
+  const seen = new Set()
+  for (const item of value) {
+    const clean = cleanString(item, maxLength)
+    if (clean) seen.add(clean)
+    if (seen.size >= maxItems) break
+  }
+
+  return Array.from(seen)
+}
+
+function cleanCountMap(value, maxKeys = 16) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+  return Object.entries(value).slice(0, maxKeys).reduce((result, [key, count]) => {
+    const cleanKey = cleanString(key, 32) || 'unknown'
+    result[cleanKey] = boundedInteger(count, 0, 500, 0)
+    return result
+  }, {})
+}
+
+function cleanMediaSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+  return {
+    inbound_audio_kbps: boundedNumber(value.inbound_audio_kbps, 0, 1000000),
+    inbound_video_kbps: boundedNumber(value.inbound_video_kbps, 0, 1000000),
+    outbound_audio_kbps: boundedNumber(value.outbound_audio_kbps, 0, 1000000),
+    outbound_video_kbps: boundedNumber(value.outbound_video_kbps, 0, 1000000),
+  }
+}
+
+function normalizeRtcQuality(value) {
+  const quality = cleanString(value, 24).toLowerCase()
+  return validRtcQualities.has(quality) ? quality : 'unknown'
+}
+
+function participantStatusForQuality(quality) {
+  return ['failed', 'poor', 'degraded', 'connecting'].includes(quality) ? 'reconnecting' : 'connected'
+}
+
+function sanitizeRtcQualitySample(payload = {}) {
+  const sample = {
+    quality: normalizeRtcQuality(payload.quality),
+    peer_count: boundedInteger(payload.peer_count ?? payload.peerCount, 0, 500, 0),
+    measured_peer_count: boundedInteger(payload.measured_peer_count ?? payload.measuredPeerCount, 0, 500, 0),
+    incoming_kbps: boundedNumber(payload.incoming_kbps ?? payload.incomingKbps, 0, 1000000),
+    outgoing_kbps: boundedNumber(payload.outgoing_kbps ?? payload.outgoingKbps, 0, 1000000),
+    rtt_ms: boundedNumber(payload.rtt_ms ?? payload.rttMs, 0, 60000),
+    packet_loss_pct: boundedNumber(payload.packet_loss_pct ?? payload.packetLossPct, 0, 100),
+    available_outgoing_kbps: boundedNumber(payload.available_outgoing_kbps ?? payload.availableOutgoingKbps, 0, 1000000),
+    local_candidate_types: cleanStringArray(payload.local_candidate_types ?? payload.localCandidateTypes),
+    remote_candidate_types: cleanStringArray(payload.remote_candidate_types ?? payload.remoteCandidateTypes),
+    peer_states: cleanCountMap(payload.peer_states ?? payload.peerStates),
+    media_summary: cleanMediaSummary(payload.media ?? payload.media_summary ?? payload.mediaSummary),
+  }
+
+  if (sample.measured_peer_count > sample.peer_count) {
+    sample.peer_count = sample.measured_peer_count
+  }
+
+  return sample
 }
 
 function createHttpError(status, message) {
@@ -1368,6 +1450,110 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
         screen_shared: Boolean(Number(result.participant.screen_shared)),
       },
       events: result.mediaChanges,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/quality', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const rooms = await query(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = :roomId
+      AND tenant_id = :tenantId
+      AND status = 'active'
+      LIMIT 1
+      `,
+      { roomId, tenantId: req.user.tenant_id }
+    )
+
+    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+
+    const room = rooms[0]
+    const sample = sanitizeRtcQualitySample(req.body || {})
+
+    const result = await transaction(async (connection) => {
+      const [participants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND user_id = ?
+        AND left_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [room.id, req.user.id]
+      )
+
+      if (!participants.length) {
+        throw createHttpError(409, 'Join the room before sending RTC quality.')
+      }
+
+      const participant = participants[0]
+      const participantStatus = participantStatusForQuality(sample.quality)
+
+      const [insertResult] = await connection.execute(
+        `
+        INSERT INTO rtc_quality_samples (
+          tenant_id, room_id, session_id, participant_id, user_id,
+          quality, peer_count, measured_peer_count,
+          incoming_kbps, outgoing_kbps, rtt_ms, packet_loss_pct, available_outgoing_kbps,
+          local_candidate_types, remote_candidate_types, peer_states, media_summary, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        `,
+        [
+          room.tenant_id,
+          room.id,
+          participant.session_id,
+          participant.id,
+          req.user.id,
+          sample.quality,
+          sample.peer_count,
+          sample.measured_peer_count,
+          sample.incoming_kbps,
+          sample.outgoing_kbps,
+          sample.rtt_ms,
+          sample.packet_loss_pct,
+          sample.available_outgoing_kbps,
+          JSON.stringify(sample.local_candidate_types),
+          JSON.stringify(sample.remote_candidate_types),
+          JSON.stringify(sample.peer_states),
+          JSON.stringify(sample.media_summary),
+        ]
+      )
+
+      if (participant.connection_status !== participantStatus) {
+        await connection.execute(
+          `
+          UPDATE rtc_session_participants
+          SET connection_status = ?,
+              updated_at = NOW()
+          WHERE id = ?
+          `,
+          [participantStatus, participant.id]
+        )
+      }
+
+      return {
+        id: insertResult.insertId,
+        participant_status: participantStatus,
+      }
+    })
+
+    return res.json({
+      message: 'RTC quality recorded',
+      quality: sample.quality,
+      sample_id: result.id,
+      participant_status: result.participant_status,
     })
   } catch (error) {
     next(error)
