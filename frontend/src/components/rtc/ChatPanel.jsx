@@ -779,6 +779,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [socket, signalingRoom])
 
   return (
+    <>
     <aside className="chat-panel glass-card">
       <div className="chat-panel-header">
         <div>
@@ -1087,22 +1088,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       )}
       {status && <small className="warning-text">{status}</small>}
 
-      {imagePreview ? (
-        <div className="chat-image-preview-backdrop" onMouseDown={closeImagePreview}>
-          <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label="Photo preview" onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <strong>Photo</strong>
-              <button type="button" onClick={closeImagePreview} aria-label="Close photo preview">x</button>
-            </header>
-            <img src={imagePreview.src} alt={imagePreview.alt} />
-            {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
-            <footer>
-              <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
-            </footer>
-          </section>
-        </div>
-      ) : null}
-
       {deleteTarget ? (
         <div className="chat-delete-backdrop" onMouseDown={closeDeleteModal}>
           <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-delete-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1150,5 +1135,21 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         </div>
       ) : null}
     </aside>
+    {imagePreview ? (
+      <div className="chat-image-preview-backdrop" onMouseDown={closeImagePreview}>
+        <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label="Photo preview" onMouseDown={(event) => event.stopPropagation()}>
+          <header>
+            <strong>Photo</strong>
+            <button type="button" onClick={closeImagePreview} aria-label="Close photo preview">x</button>
+          </header>
+          <img src={imagePreview.src} alt={imagePreview.alt} />
+          {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
+          <footer>
+            <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
+          </footer>
+        </section>
+      </div>
+    ) : null}
+    </>
   )
 }
