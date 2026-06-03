@@ -2394,13 +2394,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <button type="button" onClick={() => setDmInput('হে! আমি আপনার সাথে বন্ধু হতে চাই।')}>হে! আমি আপনার সাথে বন্ধু হতে চাই।</button>
             </div>
             <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
-              <button type="button" aria-label="Voice message">mic</button>
+              <button type="button" className="buzzcast-dm-composer-icon mic" aria-label="Voice message" title="Voice message">
+                <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
+              </button>
               <input
                 value={dmInput}
                 onChange={(event) => setDmInput(event.target.value)}
                 placeholder={activeThreadFollowed ? 'Type a message...' : 'Type a message...'}
               />
-              <button type="button" aria-label="Photo">photo</button>
+              <button type="button" className="buzzcast-dm-composer-icon photo" aria-label="Photo" title="Photo">
+                <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
+              </button>
               <button type="submit" aria-label="Send message">send</button>
             </form>
           </main>
