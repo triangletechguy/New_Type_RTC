@@ -21,7 +21,8 @@ export function VideoTile({
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
-  const showVideo = Boolean(stream && hasVideo && cameraOn !== false && rtcMode === 'video')
+  const isScreenSharing = badge === 'screen'
+  const showVideo = Boolean(stream && hasVideo && (cameraOn !== false || isScreenSharing) && rtcMode === 'video')
   const visualIndex = visualIndexFromLabel(label)
   const avatar = avatarForIndex(visualIndex)
   const placeholderArt = rtcMode === 'audio'
@@ -67,7 +68,7 @@ export function VideoTile({
               {showMediaState && (
                 <div className="media-state-strip">
                   <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                  <span className={cameraOn && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                  <span className={(cameraOn || isScreenSharing) && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
                 </div>
               )}
             </div>
@@ -81,7 +82,7 @@ export function VideoTile({
             {showMediaState && (
               <div className="media-state-strip">
                 <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                <span className={cameraOn && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                <span className={(cameraOn || isScreenSharing) && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
               </div>
             )}
             {connectionState && <span className={`tile-state-text ${connectionState}`}>{connectionState}</span>}

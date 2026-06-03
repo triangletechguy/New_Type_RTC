@@ -153,9 +153,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   function applyLocalMediaState(nextMicOn, nextCameraOn) {
     rtcRef.current?.setAudioEnabled(nextMicOn)
-    rtcRef.current?.setVideoEnabled(nextCameraOn)
     streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = nextMicOn })
-    streamRef.current?.getVideoTracks().forEach((track) => { track.enabled = nextCameraOn })
+    streamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = track === screenShareTrackRef.current ? true : nextCameraOn
+    })
   }
 
   async function syncMediaPermissions(mode = rtcModeRef.current) {
@@ -393,11 +394,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setExternalChatMessage({ ...message, local_event_key: Date.now() })
 
     if (socketRef.current && signalingRoomRef.current) {
-      socketRef.current.timeout(3000).emit(
+      socketRef.current.timeout(8000).emit(
         'chat-message',
         {
           roomId: signalingRoomRef.current,
-          message,
+          message: { id: message.id },
         },
         (error, response) => {
           if (error || !response?.ok) setStatus('Message saved. Realtime delivery will resume when signaling reconnects.')
@@ -508,12 +509,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         stopScreenShare({ fromTrackEnded: true }).catch((error) => setStatus(`Screen share stopped with warning: ${error.message}`))
       }
 
-      const targetStream = streamRef.current || displayStream
-      if (targetStream && !targetStream.getTracks().includes(track)) targetStream.addTrack(track)
-      if (!streamRef.current) {
-        streamRef.current = targetStream
-        setLocalStream(targetStream)
+      const targetStream = new MediaStream([
+        track,
+        ...((streamRef.current || displayStream).getTracks?.().filter((item) => item !== track) || []),
+      ])
+      if (typeof streamRef.current?.__cleanup === 'function') {
+        targetStream.__cleanup = streamRef.current.__cleanup
       }
+      streamRef.current = targetStream
+      setLocalStream(targetStream)
 
       await rtcRef.current?.replaceLocalTrack('video', track, targetStream)
       setScreenSharing(true)
@@ -822,8 +826,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           }
 
           if (payload.action === 'disable_camera') {
-            streamRef.current?.getVideoTracks().forEach((track) => { track.enabled = false })
-            rtcRef.current?.setVideoEnabled(false)
+            streamRef.current?.getVideoTracks().forEach((track) => {
+              if (track !== screenShareTrackRef.current) track.enabled = false
+            })
             setCameraOn(false)
             setStatus('A moderator paused your camera')
           }

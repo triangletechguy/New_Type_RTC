@@ -16,6 +16,13 @@ const { emailDeliveryStatus } = require('./utils/email')
 
 const PORT = Number(process.env.PORT || 8000)
 
+function positiveIntegerEnv(key, fallback) {
+  const value = Number(process.env[key])
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+const SOCKET_MAX_HTTP_BUFFER_SIZE = positiveIntegerEnv('SOCKET_MAX_HTTP_BUFFER_SIZE', 20 * 1024 * 1024)
+
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174')
   .split(',')
   .map((origin) => origin.trim())
@@ -183,6 +190,8 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
     credentials: false,
   },
+  maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_SIZE,
+  perMessageDeflate: false,
 })
 
 registerSignaling(io)

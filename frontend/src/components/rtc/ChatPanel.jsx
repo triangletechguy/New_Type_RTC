@@ -348,11 +348,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       window.clearTimeout(typingTimeoutRef.current)
 
       if (socket && signalingRoom) {
-        socket.timeout(3000).emit(
+        socket.timeout(8000).emit(
           'chat-message',
           {
             roomId: signalingRoom,
-            message: data.chat_message,
+            message: { id: data.chat_message.id },
           },
           (error, response) => {
             if (error || !response?.ok) setStatus('Message saved. Realtime delivery will resume when signaling reconnects.')
