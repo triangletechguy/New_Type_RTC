@@ -2161,60 +2161,90 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 ) : activeToolPanel === 'filters' ? (
                   <div className="tool-status-panel camera-filter-panel">
                     <p>{activeCameraFilter.label}: {activeCameraFilter.detail}{beautyActiveCount ? ` - ${beautyActiveCount} beauty setting${beautyActiveCount === 1 ? '' : 's'} active` : ''}{backgroundEffectActive ? ` - ${activeBackgroundEffect.label} background` : ''}</p>
-                    <div className="camera-filter-grid" aria-label="Camera filter presets">
-                      {VIDEO_FILTERS.map((filter) => (
+                    <div className="camera-effect-summary" aria-label="Camera effect summary">
+                      <span>
+                        <strong>Face beauty</strong>
+                        <small>{beautyActiveCount ? `${beautyActiveCount} active` : 'Ready'}</small>
+                      </span>
+                      <span>
+                        <strong>Background filter</strong>
+                        <small>{backgroundEffect === 'blur' ? 'Blur on' : 'Blur off'}</small>
+                      </span>
+                    </div>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Background filter</strong>
+                        <small>Camera only</small>
+                      </header>
+                      <div className="camera-background-controls" aria-label="Background blur">
                         <button
-                          key={filter.id}
                           type="button"
-                          className={cameraFilter === filter.id ? 'active' : ''}
-                          onClick={() => changeCameraFilter(filter.id)}
+                          className={backgroundEffect === 'blur' ? 'background-blur-toggle active' : 'background-blur-toggle'}
+                          onClick={toggleBackgroundBlur}
                           disabled={mediaUpdating.filter || rtcMode === 'audio'}
-                          aria-pressed={cameraFilter === filter.id}
+                          aria-pressed={backgroundEffect === 'blur'}
                         >
-                          <span className={`filter-swatch ${filter.id}`} aria-hidden="true"></span>
-                          <strong>{filter.label}</strong>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="camera-beauty-controls" aria-label="Beauty filter controls">
-                      {BEAUTY_CONTROLS.map((control) => (
-                        <label key={control.id} className="beauty-slider-row">
+                          <span className="background-swatch blur" aria-hidden="true"></span>
                           <span>
-                            <strong>{control.label}</strong>
-                            <b>{beautySettings[control.id] || 0}</b>
+                            <strong>Background blur</strong>
+                            <small>{backgroundEffect === 'blur' ? 'On' : 'Off'} - camera only</small>
                           </span>
-                          <input
-                            type="range"
-                            min={control.min}
-                            max={control.max}
-                            step={control.step}
-                            value={beautySettings[control.id] || 0}
-                            onChange={(event) => changeBeautySetting(control.id, event.target.value)}
-                            disabled={rtcMode === 'audio'}
-                          />
-                        </label>
-                      ))}
+                          <b aria-hidden="true"></b>
+                        </button>
+                        <button type="button" className="beauty-reset-button camera-reset-button" onClick={resetCameraEffects} disabled={!cameraEffectsActive || mediaUpdating.filter || rtcMode === 'audio'}>
+                          Reset
+                        </button>
+                      </div>
+                    </section>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Face beauty</strong>
+                        <small>Smooth, light, warmth</small>
+                      </header>
+                      <div className="camera-beauty-controls" aria-label="Face beauty controls">
+                        {BEAUTY_CONTROLS.map((control) => (
+                          <label key={control.id} className="beauty-slider-row">
+                            <span>
+                              <strong>{control.label}</strong>
+                              <b>{beautySettings[control.id] || 0}</b>
+                            </span>
+                            <input
+                              type="range"
+                              min={control.min}
+                              max={control.max}
+                              step={control.step}
+                              value={beautySettings[control.id] || 0}
+                              onChange={(event) => changeBeautySetting(control.id, event.target.value)}
+                              disabled={rtcMode === 'audio'}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Filter presets</strong>
+                        <small>Color and style</small>
+                      </header>
+                      <div className="camera-filter-grid" aria-label="Camera filter presets">
+                        {VIDEO_FILTERS.map((filter) => (
+                          <button
+                            key={filter.id}
+                            type="button"
+                            className={cameraFilter === filter.id ? 'active' : ''}
+                            onClick={() => changeCameraFilter(filter.id)}
+                            disabled={mediaUpdating.filter || rtcMode === 'audio'}
+                            aria-pressed={cameraFilter === filter.id}
+                          >
+                            <span className={`filter-swatch ${filter.id}`} aria-hidden="true"></span>
+                            <strong>{filter.label}</strong>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                    <div className="camera-filter-footer">
+                      <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Camera effects apply after screen share stops.' : `Outgoing camera effects - ${cameraFilterPerformance}`}</small>
                     </div>
-                    <div className="camera-background-controls" aria-label="Background blur">
-                      <button
-                        type="button"
-                        className={backgroundEffect === 'blur' ? 'background-blur-toggle active' : 'background-blur-toggle'}
-                        onClick={toggleBackgroundBlur}
-                        disabled={mediaUpdating.filter || rtcMode === 'audio'}
-                        aria-pressed={backgroundEffect === 'blur'}
-                      >
-                        <span className="background-swatch blur" aria-hidden="true"></span>
-                        <span>
-                          <strong>Background blur</strong>
-                          <small>{backgroundEffect === 'blur' ? 'On' : 'Off'} - camera only</small>
-                        </span>
-                        <b aria-hidden="true"></b>
-                      </button>
-                      <button type="button" className="beauty-reset-button camera-reset-button" onClick={resetCameraEffects} disabled={!cameraEffectsActive || mediaUpdating.filter || rtcMode === 'audio'}>
-                        Reset
-                      </button>
-                    </div>
-                    <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Camera effects apply after screen share stops.' : `Outgoing camera effects - ${cameraFilterPerformance}`}</small>
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
