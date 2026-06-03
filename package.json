@@ -19,6 +19,7 @@
     "frontend:check": "npm --prefix frontend run check",
     "check": "npm --prefix backend run check && npm --prefix frontend run check",
     "health": "node scripts/health.js",
+    "rtc:readiness": "npm --prefix backend run rtc:readiness",
     "e2e": "npm --prefix backend run e2e"
   }
 }

@@ -1894,6 +1894,45 @@ async function getTenantUsers(tenantId) {
   }))
 }
 
+function countQualityCandidateTypes(rows, key) {
+  const counts = new Map()
+
+  for (const row of rows || []) {
+    for (const type of parseJsonArray(row[key])) {
+      const label = cleanString(type, 32) || 'unknown'
+      counts.set(label, (counts.get(label) || 0) + 1)
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
+    .slice(0, 8)
+}
+
+function buildActiveQualitySummary(rows) {
+  const samples = rows || []
+  const issueQualities = new Set(['poor', 'degraded', 'failed', 'connecting'])
+  const latencySamples = samples.map((row) => Number(row.rtt_ms || 0)).filter((value) => value > 0)
+
+  return {
+    samples: samples.length,
+    issue_samples: samples.filter((row) => issueQualities.has(row.quality)).length,
+    good_samples: samples.filter((row) => row.quality === 'good').length,
+    avg_rtt_ms: latencySamples.length
+      ? Number((latencySamples.reduce((total, value) => total + value, 0) / latencySamples.length).toFixed(2))
+      : 0,
+    max_packet_loss_pct: Number(Math.max(0, ...samples.map((row) => Number(row.packet_loss_pct || 0))).toFixed(2)),
+    incoming_kbps: Number(samples.reduce((total, row) => total + Number(row.incoming_kbps || 0), 0).toFixed(2)),
+    outgoing_kbps: Number(samples.reduce((total, row) => total + Number(row.outgoing_kbps || 0), 0).toFixed(2)),
+    last_sample_at: samples.reduce((latest, row) => {
+      if (!row.created_at) return latest
+      if (!latest) return row.created_at
+      return new Date(row.created_at) > new Date(latest) ? row.created_at : latest
+    }, null),
+  }
+}
+
 async function getDashboard(roomIds) {
   const roomFilter = makeInFilter('r.id', roomIds, 'room')
   const sessionRoomFilter = makeInFilter('s.room_id', roomIds, 'sessionRoom')
@@ -1902,6 +1941,7 @@ async function getDashboard(roomIds) {
   const chatRoomFilter = makeInFilter('cm.room_id', roomIds, 'chatRoom')
   const eventRoomFilter = makeInFilter('ev.room_id', roomIds, 'eventRoom')
   const banRoomFilter = makeInFilter('rb.room_id', roomIds, 'banRoom')
+  const qualityRoomFilter = makeInFilter('q.room_id', roomIds, 'qualityRoom')
 
   const [activeRooms] = await query(
     `SELECT COUNT(*) AS count FROM rooms r WHERE ${roomFilter.sql} AND r.status = 'active'`,
@@ -2118,6 +2158,110 @@ async function getDashboard(roomIds) {
     )
     : []
 
+  const activeSessionQualityRows = activeSessionIds.length
+    ? await query(
+      `
+      SELECT
+        q.id, q.session_id, q.participant_id, q.user_id, q.quality,
+        q.peer_count, q.measured_peer_count, q.incoming_kbps, q.outgoing_kbps,
+        q.rtt_ms, q.packet_loss_pct, q.available_outgoing_kbps,
+        q.local_candidate_types, q.remote_candidate_types, q.created_at
+      FROM rtc_quality_samples q
+      INNER JOIN (
+        SELECT participant_id, MAX(id) AS latest_id
+        FROM rtc_quality_samples
+        WHERE session_id IN (${activeSessionIds.map((_, index) => `:activeQualitySession${index}`).join(', ')})
+        GROUP BY participant_id
+      ) latest ON latest.latest_id = q.id
+      `,
+      activeSessionIds.reduce((params, sessionId, index) => {
+        params[`activeQualitySession${index}`] = sessionId
+        return params
+      }, {})
+    )
+    : []
+
+  const [qualitySummary] = await query(
+    `
+    SELECT
+      COUNT(*) AS samples,
+      COALESCE(SUM(q.created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)), 0) AS samples_last_5m,
+      COALESCE(SUM(q.quality = 'good'), 0) AS good_samples,
+      COALESCE(SUM(q.quality = 'fair'), 0) AS fair_samples,
+      COALESCE(SUM(q.quality = 'poor'), 0) AS poor_samples,
+      COALESCE(SUM(q.quality = 'degraded'), 0) AS degraded_samples,
+      COALESCE(SUM(q.quality = 'failed'), 0) AS failed_samples,
+      COALESCE(SUM(q.quality = 'connecting'), 0) AS connecting_samples,
+      COALESCE(SUM(q.quality IN ('poor', 'degraded', 'failed', 'connecting')), 0) AS issue_samples,
+      COALESCE(AVG(NULLIF(q.rtt_ms, 0)), 0) AS avg_rtt_ms,
+      COALESCE(MAX(q.packet_loss_pct), 0) AS max_packet_loss_pct,
+      COALESCE(AVG(q.packet_loss_pct), 0) AS avg_packet_loss_pct,
+      COALESCE(AVG(q.incoming_kbps), 0) AS avg_incoming_kbps,
+      COALESCE(AVG(q.outgoing_kbps), 0) AS avg_outgoing_kbps,
+      MAX(q.created_at) AS last_sample_at
+    FROM rtc_quality_samples q
+    WHERE ${qualityRoomFilter.sql}
+    AND q.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    `,
+    qualityRoomFilter.params
+  )
+
+  const qualityByRoomRows = await query(
+    `
+    SELECT
+      q.room_id,
+      r.name AS room_name,
+      COUNT(*) AS samples,
+      COALESCE(SUM(q.quality IN ('poor', 'degraded', 'failed', 'connecting')), 0) AS issue_samples,
+      COALESCE(SUM(q.quality = 'failed'), 0) AS failed_samples,
+      COALESCE(AVG(NULLIF(q.rtt_ms, 0)), 0) AS avg_rtt_ms,
+      COALESCE(MAX(q.packet_loss_pct), 0) AS max_packet_loss_pct,
+      COALESCE(AVG(q.incoming_kbps), 0) AS avg_incoming_kbps,
+      COALESCE(AVG(q.outgoing_kbps), 0) AS avg_outgoing_kbps,
+      MAX(q.created_at) AS last_sample_at
+    FROM rtc_quality_samples q
+    INNER JOIN rooms r ON r.id = q.room_id
+    WHERE ${qualityRoomFilter.sql}
+    AND q.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    GROUP BY q.room_id, r.name
+    ORDER BY issue_samples DESC, failed_samples DESC, max_packet_loss_pct DESC, avg_rtt_ms DESC
+    LIMIT 8
+    `,
+    qualityRoomFilter.params
+  )
+
+  const recentQualityIssueRows = await query(
+    `
+    SELECT
+      q.id, q.room_id, q.session_id, q.user_id, q.quality, q.peer_count, q.measured_peer_count,
+      q.incoming_kbps, q.outgoing_kbps, q.rtt_ms, q.packet_loss_pct,
+      q.local_candidate_types, q.remote_candidate_types, q.created_at,
+      r.name AS room_name,
+      u.name AS user_name
+    FROM rtc_quality_samples q
+    INNER JOIN rooms r ON r.id = q.room_id
+    LEFT JOIN users u ON u.id = q.user_id
+    WHERE ${qualityRoomFilter.sql}
+    AND q.quality IN ('poor', 'degraded', 'failed', 'connecting')
+    AND q.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    ORDER BY q.id DESC
+    LIMIT 10
+    `,
+    qualityRoomFilter.params
+  )
+
+  const recentQualityCandidateRows = await query(
+    `
+    SELECT q.local_candidate_types, q.remote_candidate_types
+    FROM rtc_quality_samples q
+    WHERE ${qualityRoomFilter.sql}
+    AND q.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    ORDER BY q.id DESC
+    LIMIT 200
+    `,
+    qualityRoomFilter.params
+  )
+
   const [endedParticipants] = await query(
     `
     SELECT COUNT(*) AS count
@@ -2269,9 +2413,57 @@ async function getDashboard(roomIds) {
     bans_today: toNumber(moderationMetrics, 'bans_today'),
     active_bans: toNumber(activeBans, 'count'),
   }
+  const qualitySampleCount = toNumber(qualitySummary, 'samples')
+  const qualityIssueCount = toNumber(qualitySummary, 'issue_samples')
+  const qualitySummaryData = {
+    window_hours: 24,
+    samples: qualitySampleCount,
+    samples_last_5m: toNumber(qualitySummary, 'samples_last_5m'),
+    good_samples: toNumber(qualitySummary, 'good_samples'),
+    fair_samples: toNumber(qualitySummary, 'fair_samples'),
+    poor_samples: toNumber(qualitySummary, 'poor_samples'),
+    degraded_samples: toNumber(qualitySummary, 'degraded_samples'),
+    failed_samples: toNumber(qualitySummary, 'failed_samples'),
+    connecting_samples: toNumber(qualitySummary, 'connecting_samples'),
+    issue_samples: qualityIssueCount,
+    issue_rate: qualitySampleCount ? Number(((qualityIssueCount / qualitySampleCount) * 100).toFixed(2)) : 0,
+    avg_rtt_ms: toNumber(qualitySummary, 'avg_rtt_ms', 2),
+    max_packet_loss_pct: toNumber(qualitySummary, 'max_packet_loss_pct', 2),
+    avg_packet_loss_pct: toNumber(qualitySummary, 'avg_packet_loss_pct', 2),
+    avg_incoming_kbps: toNumber(qualitySummary, 'avg_incoming_kbps', 2),
+    avg_outgoing_kbps: toNumber(qualitySummary, 'avg_outgoing_kbps', 2),
+    last_sample_at: qualitySummary?.last_sample_at || null,
+    local_candidate_types: countQualityCandidateTypes(recentQualityCandidateRows, 'local_candidate_types'),
+    remote_candidate_types: countQualityCandidateTypes(recentQualityCandidateRows, 'remote_candidate_types'),
+  }
+
+  const latestQualityByParticipant = activeSessionQualityRows.reduce((map, row) => {
+    map.set(Number(row.participant_id), {
+      quality: row.quality || 'unknown',
+      peer_count: toNumber(row, 'peer_count'),
+      measured_peer_count: toNumber(row, 'measured_peer_count'),
+      incoming_kbps: toNumber(row, 'incoming_kbps', 2),
+      outgoing_kbps: toNumber(row, 'outgoing_kbps', 2),
+      rtt_ms: toNumber(row, 'rtt_ms', 2),
+      packet_loss_pct: toNumber(row, 'packet_loss_pct', 2),
+      available_outgoing_kbps: toNumber(row, 'available_outgoing_kbps', 2),
+      local_candidate_types: parseJsonArray(row.local_candidate_types),
+      remote_candidate_types: parseJsonArray(row.remote_candidate_types),
+      sampled_at: row.created_at,
+    })
+    return map
+  }, new Map())
+
+  const latestQualityRowsBySession = activeSessionQualityRows.reduce((groups, row) => {
+    const sessionId = Number(row.session_id)
+    if (!groups.has(sessionId)) groups.set(sessionId, [])
+    groups.get(sessionId).push(row)
+    return groups
+  }, new Map())
 
   const participantsBySession = activeSessionParticipants.reduce((groups, participant) => {
     const sessionId = Number(participant.session_id)
+    const latestQuality = latestQualityByParticipant.get(Number(participant.id)) || null
     if (!groups.has(sessionId)) groups.set(sessionId, [])
     groups.get(sessionId).push({
       id: participant.id,
@@ -2287,6 +2479,7 @@ async function getDashboard(roomIds) {
       screen_shared: boolValue(participant.screen_shared),
       connection_status: participant.connection_status,
       updated_at: participant.updated_at,
+      quality: latestQuality,
     })
     return groups
   }, new Map())
@@ -2304,6 +2497,8 @@ async function getDashboard(roomIds) {
     sessions: activeSessionMonitorRows.map((session) => {
       const maxMicCount = Math.max(1, toNumber(session, 'max_mic_count') || 1)
       const activeParticipants = toNumber(session, 'active_participants')
+      const quality = buildActiveQualitySummary(latestQualityRowsBySession.get(Number(session.id)) || [])
+      const hasQualityAttention = quality.issue_samples > 0 || quality.max_packet_loss_pct >= 8 || quality.avg_rtt_ms >= 450
 
       return {
         id: session.id,
@@ -2325,7 +2520,8 @@ async function getDashboard(roomIds) {
         screen_shares: toNumber(session, 'screen_shares'),
         reconnecting: toNumber(session, 'reconnecting'),
         capacity_percent: Math.min(100, Math.round((activeParticipants / maxMicCount) * 100)),
-        health: toNumber(session, 'reconnecting') > 0 ? 'attention' : activeParticipants > 0 ? 'live' : 'idle',
+        quality,
+        health: toNumber(session, 'reconnecting') > 0 || hasQualityAttention ? 'attention' : activeParticipants > 0 ? 'live' : 'idle',
         last_participant_update: session.last_participant_update,
         participants: participantsBySession.get(Number(session.id)) || [],
       }
@@ -2377,6 +2573,40 @@ async function getDashboard(roomIds) {
         status: verificationStatus,
         issue_count: verificationIssues,
       },
+    },
+    rtc_quality: {
+      summary: qualitySummaryData,
+      rooms: qualityByRoomRows.map((row) => ({
+        room_id: row.room_id,
+        room_name: row.room_name,
+        samples: toNumber(row, 'samples'),
+        issue_samples: toNumber(row, 'issue_samples'),
+        failed_samples: toNumber(row, 'failed_samples'),
+        issue_rate: toNumber(row, 'samples') ? Number(((toNumber(row, 'issue_samples') / toNumber(row, 'samples')) * 100).toFixed(2)) : 0,
+        avg_rtt_ms: toNumber(row, 'avg_rtt_ms', 2),
+        max_packet_loss_pct: toNumber(row, 'max_packet_loss_pct', 2),
+        avg_incoming_kbps: toNumber(row, 'avg_incoming_kbps', 2),
+        avg_outgoing_kbps: toNumber(row, 'avg_outgoing_kbps', 2),
+        last_sample_at: row.last_sample_at,
+      })),
+      recent_issues: recentQualityIssueRows.map((row) => ({
+        id: row.id,
+        room_id: row.room_id,
+        room_name: row.room_name,
+        session_id: row.session_id,
+        user_id: row.user_id,
+        user_name: row.user_name || `User #${row.user_id}`,
+        quality: row.quality,
+        peer_count: toNumber(row, 'peer_count'),
+        measured_peer_count: toNumber(row, 'measured_peer_count'),
+        incoming_kbps: toNumber(row, 'incoming_kbps', 2),
+        outgoing_kbps: toNumber(row, 'outgoing_kbps', 2),
+        rtt_ms: toNumber(row, 'rtt_ms', 2),
+        packet_loss_pct: toNumber(row, 'packet_loss_pct', 2),
+        local_candidate_types: parseJsonArray(row.local_candidate_types),
+        remote_candidate_types: parseJsonArray(row.remote_candidate_types),
+        created_at: row.created_at,
+      })),
     },
     active_sessions_monitor: activeSessionMonitor,
     recent_usage_logs: recentUsageLogs.map((log) => ({

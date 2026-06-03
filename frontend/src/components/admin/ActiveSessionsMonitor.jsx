@@ -15,9 +15,30 @@ function sessionTypeLabel(type) {
   return String(type || 'rtc').replace(/_/g, ' ')
 }
 
+function formatMs(value) {
+  const number = Number(value || 0)
+  return number > 0 ? `${Math.round(number)} ms` : '-'
+}
+
+function formatPercent(value) {
+  return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+}
+
 function HealthBadge({ health }) {
   const label = health === 'attention' ? 'Attention' : health === 'idle' ? 'Idle' : 'Live'
   return <span className={`monitor-status ${health || 'idle'}`}>{label}</span>
+}
+
+function QualityBadge({ quality }) {
+  if (!quality) return <span className="monitor-quality unknown">No stats</span>
+
+  const state = ['failed', 'poor', 'degraded', 'connecting'].includes(quality.quality) ? 'attention' : quality.quality || 'unknown'
+
+  return (
+    <span className={`monitor-quality ${state}`}>
+      {quality.quality || 'unknown'} · {formatMs(quality.rtt_ms)}
+    </span>
+  )
 }
 
 function ParticipantPreview({ participant }) {
@@ -27,6 +48,7 @@ function ParticipantPreview({ participant }) {
       <div>
         <strong>{participant.user_name}</strong>
         <span>{participant.role} · {formatElapsed(participant.connected_seconds)}</span>
+        <QualityBadge quality={participant.quality} />
       </div>
       <div className="monitor-media">
         <span className={participant.mic_enabled ? 'on' : 'off'}>Mic</span>
@@ -56,6 +78,7 @@ function SessionRow({ session }) {
           <span>{session.room_privacy}</span>
           <span>{formatElapsed(session.elapsed_seconds)}</span>
           <span>{session.signaling_room}</span>
+          {session.quality?.samples ? <span>{formatNumber(session.quality.samples)} quality samples</span> : null}
         </div>
 
         <div className="monitor-capacity">
@@ -68,6 +91,7 @@ function SessionRow({ session }) {
         <div><span>Mics</span><strong>{formatNumber(session.mics_on)}</strong></div>
         <div><span>Cameras</span><strong>{formatNumber(session.cameras_on)}</strong></div>
         <div><span>Reconn.</span><strong>{formatNumber(session.reconnecting)}</strong></div>
+        <div><span>Loss</span><strong>{formatPercent(session.quality?.max_packet_loss_pct)}</strong></div>
       </div>
 
       <div className="monitor-participants-list">

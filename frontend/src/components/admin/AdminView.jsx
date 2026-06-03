@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { avatarForUser } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
+import { ActiveSessionsMonitor } from './ActiveSessionsMonitor'
 import { DashboardMetrics } from './DashboardMetrics'
+import { RtcQualityPanel } from './RtcQualityPanel'
 import { UsageLogCard } from './UsageLogCard'
 import { UsageVerificationCard } from './UsageVerificationCard'
 import { AdminCopyButton, AdminEmptyState, ApiSnippetCard, DashboardTabs } from './adminUiBits'
@@ -3112,6 +3114,8 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
             rooms={rooms}
             onTabChange={setActiveTab}
           />
+          <RtcQualityPanel quality={dashboard?.rtc_quality} />
+          <ActiveSessionsMonitor monitor={dashboard?.active_sessions_monitor} />
         </div>
       ) : null}
     </div>
