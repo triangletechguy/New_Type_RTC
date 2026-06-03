@@ -1333,9 +1333,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               >
                 <span className="control-glyph camera"></span>
               </button>
-              <button className="media-control-button icon-only utility" onClick={openChatTool} aria-label="Open chat" title="Open chat">
-                <span className="control-glyph chat"></span>
-              </button>
               <button
                 className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
                 onClick={toggleScreenShare}
