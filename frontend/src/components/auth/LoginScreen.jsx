@@ -72,7 +72,7 @@ export function LoginScreen({ onLogin }) {
       <section className="login-showcase" aria-label="Live room preview">
         <div className="showcase-topbar">
           <div className="app-mark image-mark">
-            <img src={brandAssets.appIcon} alt="TalkEachOther" />
+            <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
           </div>
           <div>
             <strong>TalkEachOther</strong>

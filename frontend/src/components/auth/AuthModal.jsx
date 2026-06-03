@@ -235,7 +235,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       <section className="auth-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
         <header className="auth-modal-header">
           <div className="auth-modal-brand">
-            <span className="image-mark"><img src={brandAssets.appIcon} alt="" /></span>
+            <span className="image-mark"><img src={brandAssets.appIconSmall} alt="" decoding="async" /></span>
             <div>
               <strong>TalkEachOther</strong>
               <small>Live video and music rooms</small>

@@ -380,7 +380,18 @@ $DOMAIN_HOST {
         reverse_proxy 127.0.0.1:8000
     }
 
+    handle /assets/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+
+    handle /mobile-room-reference.mp4 {
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+
     handle {
+        header Cache-Control "no-cache"
         try_files {path} /index.html
         file_server
     }

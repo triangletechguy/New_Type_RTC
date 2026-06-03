@@ -288,7 +288,7 @@ function BuzzLogo() {
   return (
     <div className="buzzcast-logo">
       <div className="buzzcast-logo-mark image-mark">
-        <img src={brandAssets.appIcon} alt="TalkEachOther" />
+        <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" fetchPriority="high" />
       </div>
       <div>
         <strong>TalkEachOther</strong>
@@ -303,18 +303,20 @@ function FeedCard({ card, featured, onOpen }) {
   const avatarIndex = cardAvatarIndex(card)
   const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
   const privacy = card.room?.privacy_type || card.privacy || 'public'
+  const imageLoading = featured ? 'eager' : 'lazy'
+  const imagePriority = featured ? 'high' : 'low'
 
   return (
     <article className={`buzzcast-room-card ${featured ? 'featured' : ''}`}>
       <button type="button" className="buzzcast-card-button" onClick={() => onOpen(card)}>
         <div className={`buzzcast-media media-${card.tone || 'aurora'}`}>
-          <img className="buzzcast-media-image" src={cover} alt="" loading="lazy" />
+          <img className="buzzcast-media-image" src={cover} alt="" loading={imageLoading} decoding="async" fetchPriority={imagePriority} />
           {card.badge ? <span className="buzzcast-card-badge">{card.badge}</span> : null}
           {card.sensitive ? <span className="buzzcast-sensitive-dot"></span> : null}
           <span className="buzzcast-viewers">{compactNumber(card.viewers)}</span>
           <span className="buzzcast-seat-dots">
             {[0, 1, 2].map((offset) => (
-              <i key={offset}><img src={avatarForIndex(avatarIndex + offset)} alt="" loading="lazy" /></i>
+              <i key={offset}><img src={avatarForIndex(avatarIndex + offset)} alt="" loading="lazy" decoding="async" fetchPriority="low" /></i>
             ))}
           </span>
         </div>
@@ -1227,9 +1229,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       <section className="buzzcast-discover">
         <div className="mp4-mobile-home-shell" aria-label="Mobile room feed">
           <header className="mp4-mobile-home-hero">
-            <img className="mp4-home-goat" src={assetImage2Assets.goat} alt="" loading="lazy" aria-hidden="true" />
+            <img className="mp4-home-goat" src={assetImage2Assets.goat} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
             <button type="button" className="mp4-home-menu" onClick={openLiveSection} aria-label="Home">
-              <img src={assetImage2Assets.homeIcon} alt="" loading="lazy" aria-hidden="true" />
+              <img src={assetImage2Assets.homeIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
             </button>
             <nav className="mp4-home-tabs" aria-label="Mobile feed tabs">
               <button type="button" className={activeFeed === 'following' ? 'active' : ''} onClick={() => switchFeed('following')}>Mine</button>
@@ -1237,7 +1239,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <button type="button" className={activeFeed === 'explore' ? 'active' : ''} onClick={() => switchFeed('explore')}>Explore</button>
             </nav>
             <button type="button" className="mp4-home-search" onClick={() => setShowSearchPanel((current) => !current)} aria-label="Search">
-              <img src={assetImage2Assets.searchIcon} alt="" loading="eager" aria-hidden="true" />
+              <img src={assetImage2Assets.searchIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
             </button>
           </header>
           {showSearchPanel ? (
@@ -1262,15 +1264,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
           <button type="button" className="mp4-feature-room" onClick={() => openCard(featuredMobileCard)}>
             <span className="mp4-feature-avatar">
-              <img src={assetImage2Assets.creatorCard} alt="" loading="lazy" />
+              <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
             </span>
             <span className="mp4-feature-copy">
               <strong>{featuredMobileTitle}</strong>
               <small>
-                <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="lazy" aria-hidden="true" />
-                <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="lazy" aria-hidden="true" />
+                <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
                 <i>{compactNumber(featuredMobileCard.viewers || 0)}</i>
-                <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="lazy" aria-hidden="true" />
+                <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
               </small>
             </span>
             <span className="mp4-feature-ribbon"><span>Mine</span></span>
@@ -2461,7 +2463,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <h2>Install app</h2>
             <div>
               <div className="buzzcast-logo-mark image-mark">
-                <img src={brandAssets.appIcon} alt="" />
+                <img src={brandAssets.appIconSmall} alt="" decoding="async" />
               </div>
               <span><strong>TalkEachOther</strong><small>TalkEachOther RTC</small></span>
             </div>

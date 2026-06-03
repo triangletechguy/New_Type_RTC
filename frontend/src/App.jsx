@@ -1,15 +1,14 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { avatarForUser } from './assets/rtc/catalog'
 import { AUTH_EXPIRED_EVENT, clearSession, getUser, getToken, refreshCurrentUser, saveUser } from './services/api'
-import { AuthModal } from './components/auth/AuthModal'
 import { Sidebar } from './components/layout/Sidebar'
-import { ProfileModal } from './components/profile/ProfilePanel'
-import { RoomsView } from './components/rooms/RoomsView'
-import { LiveRoomView } from './components/rtc/LiveRoomView'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
 import { canUseAdminDashboard } from './utils/roles'
 
+const AuthModal = lazy(() => import('./components/auth/AuthModal').then((module) => ({ default: module.AuthModal })))
 const AdminView = lazy(() => import('./components/admin/AdminView'))
+const LiveRoomView = lazy(() => import('./components/rtc/LiveRoomView').then((module) => ({ default: module.LiveRoomView })))
+const ProfileModal = lazy(() => import('./components/profile/ProfilePanel').then((module) => ({ default: module.ProfileModal })))
+const RoomsView = lazy(() => import('./components/rooms/RoomsView').then((module) => ({ default: module.RoomsView })))
 const SdkView = lazy(() => import('./components/sdk/SdkView'))
 
 function ViewFallback({ label }) {
@@ -18,11 +17,11 @@ function ViewFallback({ label }) {
 
 function AppProfileButton({ user, onClick }) {
   const label = user ? 'Open profile' : 'Login or signup'
-  const avatar = avatarForUser(user, user?.id || 0)
+  const avatar = user?.avatar_url || user?.avatarUrl || ''
 
   return (
     <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>
-      {user ? <img src={avatar} alt="" /> : <span></span>}
+      {user && avatar ? <img src={avatar} alt="" /> : <span></span>}
     </button>
   )
 }
@@ -218,17 +217,23 @@ export default function App() {
   if (activeRoom?.id && user) {
     return (
       <>
-        <LiveRoomView
-          roomId={activeRoom.id}
-          roomPassword={activeRoom.password}
-          initialRoom={activeRoom.room}
-          initialRtcMode={activeRoom.rtcMode}
-          autoConnect={activeRoom.autoConnect === true}
-          user={user}
-          onBack={leaveActiveRoomViaHistory}
-          onProfile={openProfile}
-        />
-        <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+        <Suspense fallback={<ViewFallback label="Live room" />}>
+          <LiveRoomView
+            roomId={activeRoom.id}
+            roomPassword={activeRoom.password}
+            initialRoom={activeRoom.room}
+            initialRtcMode={activeRoom.rtcMode}
+            autoConnect={activeRoom.autoConnect === true}
+            user={user}
+            onBack={leaveActiveRoomViaHistory}
+            onProfile={openProfile}
+          />
+        </Suspense>
+        {profileOpen ? (
+          <Suspense fallback={null}>
+            <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+          </Suspense>
+        ) : null}
       </>
     )
   }
@@ -239,22 +244,28 @@ export default function App() {
   if (safeView === 'rooms') {
     return (
       <>
-        <RoomsView
-          onEnterRoom={openRoom}
-          user={user}
-          onLogout={logout}
-          onUserUpdated={handleProfileSaved}
-          onView={changeView}
-          onAuthRequired={requireAuth}
-        />
-        <AuthModal
-          open={authModalOpen}
-          initialMode={authMode}
-          initialEmail={pendingSignupEmail}
-          reason={authReason}
-          onClose={() => setAuthModalOpen(false)}
-          onAuthenticated={handleLogin}
-        />
+        <Suspense fallback={<ViewFallback label="Rooms" />}>
+          <RoomsView
+            onEnterRoom={openRoom}
+            user={user}
+            onLogout={logout}
+            onUserUpdated={handleProfileSaved}
+            onView={changeView}
+            onAuthRequired={requireAuth}
+          />
+        </Suspense>
+        {authModalOpen ? (
+          <Suspense fallback={null}>
+            <AuthModal
+              open={authModalOpen}
+              initialMode={authMode}
+              initialEmail={pendingSignupEmail}
+              reason={authReason}
+              onClose={() => setAuthModalOpen(false)}
+              onAuthenticated={handleLogin}
+            />
+          </Suspense>
+        ) : null}
       </>
     )
   }
@@ -281,15 +292,23 @@ export default function App() {
           <AppProfileButton user={user} onClick={openProfile} />
         </div>
       )}
-      <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
-      <AuthModal
-        open={authModalOpen}
-        initialMode={authMode}
-        initialEmail={pendingSignupEmail}
-        reason={authReason}
-        onClose={() => setAuthModalOpen(false)}
-        onAuthenticated={handleLogin}
-      />
+      {profileOpen ? (
+        <Suspense fallback={null}>
+          <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+        </Suspense>
+      ) : null}
+      {authModalOpen ? (
+        <Suspense fallback={null}>
+          <AuthModal
+            open={authModalOpen}
+            initialMode={authMode}
+            initialEmail={pendingSignupEmail}
+            reason={authReason}
+            onClose={() => setAuthModalOpen(false)}
+            onAuthenticated={handleLogin}
+          />
+        </Suspense>
+      ) : null}
     </>
   )
 }

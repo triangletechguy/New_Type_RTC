@@ -9,7 +9,7 @@ export function Sidebar({ user, currentView, onView, onLogout }) {
     <aside className="sidebar glass-card">
       <div className="logo-row">
         <div className="logo-mark image-mark">
-          <img src={brandAssets.appIcon} alt="TalkEachOther" />
+          <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
         </div>
         <div>
           <strong>talk-each-other</strong>

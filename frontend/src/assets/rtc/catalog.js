@@ -53,6 +53,7 @@ import videoRoom from './rooms/video-room.png'
 
 export const brandAssets = {
   appIcon,
+  appIconSmall: assetImage2GroupIcon,
   appScreenshots,
   brandGuide,
   logoWordmark,

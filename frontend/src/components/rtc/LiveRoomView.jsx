@@ -1476,7 +1476,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       <header className="buzzcast-topbar buzzcast-live-topbar">
         <button type="button" className="buzzcast-logo buzzcast-live-logo" onClick={handleBack} aria-label="Back to rooms">
           <div className="buzzcast-logo-mark image-mark">
-            <img src={brandAssets.appIcon} alt="TalkEachOther" />
+            <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
           </div>
           <div>
             <strong>TalkEachOther</strong>
