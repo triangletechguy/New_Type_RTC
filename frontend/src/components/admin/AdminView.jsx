@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { adminAssets, avatarForUser } from '../../assets/rtc/catalog'
+import { avatarForUser } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -137,7 +137,6 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
           <h2>{title}</h2>
           <p>{subtitle}</p>
         </div>
-        <img src={isPlatform ? adminAssets.controlGrid : adminAssets.statusColors} alt="" loading="lazy" />
       </div>
 
       <div className="rtc-command-kpis">
