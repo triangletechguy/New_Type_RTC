@@ -192,11 +192,11 @@ function smtpErrorMessage(error = {}) {
   const raw = `${error.message || ''} ${error.code || ''} ${error.response || ''}`.toLowerCase()
 
   if (raw.includes('eauth') || raw.includes('invalid login') || raw.includes('username and password')) {
-    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).' 
+    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).'
   }
 
   if (raw.includes('535') || raw.includes('auth') || raw.includes('authentication')) {
-    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).' 
+    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).'
   }
 
   if (raw.includes('hostname') || raw.includes('getaddrinfo') || raw.includes('connect econnrefused') || raw.includes('network is unreachable')) {
@@ -208,6 +208,24 @@ function smtpErrorMessage(error = {}) {
   }
 
   return 'SMTP provider rejected the verification email. Check the SMTP settings, then request a new code.'
+}
+
+function buildSmtpTransport(config) {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.pass,
+    },
+    connectionTimeout: 120000,
+    greetingTimeout: 120000,
+    socketTimeout: 120000,
+    tls: {
+      minVersion: 'TLSv1.2',
+    },
+  })
 }
 
 function emailDeliveryStatus() {
@@ -267,17 +285,10 @@ async function sendWithResend(config, message) {
 }
 
 async function sendWithSmtp(config, message) {
-  const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: {
-      user: config.user,
-      pass: config.pass,
-    },
-  })
+  const transporter = buildSmtpTransport(config)
 
   try {
+    await transporter.verify()
     await transporter.sendMail({
       ...message,
       attachments: message.attachments?.map((attachment) => ({
