@@ -118,6 +118,44 @@
     flex-wrap: wrap;
   }
 
+  .buzzcast-live-side .chat-photo-button,
+  .buzzcast-live-side .chat-audio-button {
+    min-width: 46px;
+    width: 46px;
+    height: 42px;
+    min-height: 42px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 8px;
+    font-size: 0;
+  }
+
+  .buzzcast-live-side .chat-photo-button img,
+  .buzzcast-live-side .chat-audio-button img {
+    width: 25px;
+    height: 25px;
+    display: block;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .buzzcast-live-side .chat-audio-button img {
+    width: 22px;
+    height: 22px;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .28));
+  }
+
+  .buzzcast-live-side .chat-photo-button span,
+  .buzzcast-live-side .chat-audio-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
   .buzzcast-owner-panel {
     min-height: 42px;
     max-height: 42px;
@@ -256,5 +294,51 @@
   .buzzcast-live-side .chat-photo,
   .buzzcast-live-side .chat-voice-message audio {
     max-width: 100%;
+  }
+
+  .buzzcast-live-side .chat-photo-button,
+  .buzzcast-live-side .chat-audio-button {
+    min-width: 42px;
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+  }
+
+  .buzzcast-live-side .chat-photo-button::before,
+  .buzzcast-live-side .chat-photo-button::after,
+  .buzzcast-live-side .chat-audio-button::before,
+  .buzzcast-live-side .chat-audio-button::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-live-side .chat-photo-button img,
+  .buzzcast-live-side .chat-audio-button img {
+    width: 26px;
+    height: 26px;
+    display: block;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .buzzcast-live-side .chat-audio-button img {
+    width: 22px;
+    height: 22px;
+    filter: brightness(0) invert(1);
+  }
+
+  .buzzcast-live-side .chat-photo-button span,
+  .buzzcast-live-side .chat-audio-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }

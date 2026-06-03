@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { avatarForIndex, chatAssets } from '../../assets/rtc/catalog'
+import { avatarForIndex, chatAssets, liveRoomAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 
 const maxAudioBytes = 5 * 1024 * 1024
+const maxPhotoBytes = 6 * 1024 * 1024
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -45,19 +46,6 @@ function isVisibleRoomMessage(message, blockedSenderIds = []) {
   )
 }
 
-function userAvatarMediaUrl(user) {
-  const avatar = user?.avatar_url || avatarForIndex(Number(user?.id || 0))
-  if (!avatar) return ''
-  if (/^data:image\//i.test(avatar) || /^https?:\/\//i.test(avatar)) return avatar
-  if (typeof window === 'undefined') return avatar
-
-  try {
-    return new URL(avatar, window.location.origin).href
-  } catch {
-    return ''
-  }
-}
-
 function roleNames(user) {
   return (Array.isArray(user?.roles) ? user.roles : [])
     .map((role) => (typeof role === 'string' ? role : role?.name))
@@ -87,7 +75,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
-  const [avatarDraft, setAvatarDraft] = useState(null)
+  const [photoDraft, setPhotoDraft] = useState(null)
   const [audioDraft, setAudioDraft] = useState(null)
   const [recording, setRecording] = useState(false)
   const [recordingMs, setRecordingMs] = useState(0)
@@ -112,6 +100,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const messagesEndRef = useRef(null)
   const inboxEndRef = useRef(null)
   const composerRef = useRef(null)
+  const photoInputRef = useRef(null)
   const recorderRef = useRef(null)
   const recordingChunksRef = useRef([])
   const recordingStreamRef = useRef(null)
@@ -125,7 +114,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     .filter(Boolean)
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
-  const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(avatarDraft) || Boolean(audioDraft)) && !sending && !recording
+  const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft) || Boolean(audioDraft)) && !sending && !recording
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
   const typingText = typingNames.length
@@ -201,23 +190,43 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     typingTimeoutRef.current = window.setTimeout(() => emitTyping(false), 1400)
   }
 
-  function stageAvatarDraft() {
+  function openPhotoPicker() {
     if (!chatEnabled || sending) return
+    photoInputRef.current?.click()
+  }
 
-    const dataUrl = userAvatarMediaUrl(user)
-    if (!dataUrl) {
-      setStatus('No avatar is available for this account.')
+  async function stagePhotoDraft(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!file.type?.startsWith('image/')) {
+      setStatus('Choose an image file.')
       return
     }
 
-    setStatus('')
-    setAvatarDraft({ dataUrl })
-    setAudioDraft(null)
-    refocusComposerRef.current = true
+    if (file.size > maxPhotoBytes) {
+      setStatus('Photo message must be smaller than 6 MB.')
+      return
+    }
+
+    try {
+      setStatus('')
+      const dataUrl = await readFileAsDataUrl(file)
+      setPhotoDraft({
+        dataUrl,
+        name: file.name || 'Photo',
+        size: file.size,
+      })
+      setAudioDraft(null)
+      refocusComposerRef.current = true
+    } catch (error) {
+      setStatus(error.message)
+    }
   }
 
-  function clearAvatarDraft() {
-    setAvatarDraft(null)
+  function clearPhotoDraft() {
+    setPhotoDraft(null)
   }
 
   function stopRecordingTracks() {
@@ -242,7 +251,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     try {
       setStatus('')
       setAudioDraft(null)
-      setAvatarDraft(null)
+      setPhotoDraft(null)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mimeType = preferredAudioMimeType()
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
@@ -315,24 +324,24 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   async function sendMessage(event) {
     event.preventDefault()
     const value = text.trim()
-    if ((!value && !avatarDraft && !audioDraft) || sending || recording) return
+    if ((!value && !photoDraft && !audioDraft) || sending || recording) return
 
     try {
       setSending(true)
       setStatus('')
-      const messageType = audioDraft ? 'voice' : avatarDraft ? 'image' : 'text'
+      const messageType = audioDraft ? 'voice' : photoDraft ? 'image' : 'text'
       const data = await apiRequest(`/rooms/${roomId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
-          message_body: avatarDraft && !value ? 'sent an avatar' : value,
+          message_body: photoDraft && !value ? 'sent a photo' : value,
           message_type: messageType,
-          ...(avatarDraft ? { media_url: avatarDraft.dataUrl } : {}),
+          ...(photoDraft ? { media_url: photoDraft.dataUrl } : {}),
           ...(audioDraft ? { media_url: audioDraft.dataUrl } : {}),
         }),
       })
       appendMessage(data.chat_message)
       setText('')
-      clearAvatarDraft()
+      clearPhotoDraft()
       cancelAudioDraft()
       refocusComposerRef.current = true
       emitTyping(false)
@@ -844,14 +853,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       </div>
 
       <form className="chat-form" onSubmit={sendMessage}>
-        {avatarDraft ? (
-          <div className="chat-photo-draft chat-avatar-draft">
-            <img src={avatarDraft.dataUrl} alt="" />
+        {photoDraft ? (
+          <div className="chat-photo-draft">
+            <img src={photoDraft.dataUrl} alt="" />
             <span>
-              <strong>Avatar</strong>
-              <small>Your avatar is ready</small>
+              <strong>Photo</strong>
+              <small>{photoDraft.name || 'Ready to send'}</small>
             </span>
-            <button type="button" onClick={clearAvatarDraft} disabled={sending} aria-label="Remove avatar">x</button>
+            <button type="button" onClick={clearPhotoDraft} disabled={sending} aria-label="Remove photo">x</button>
           </div>
         ) : null}
         {audioDraft ? (
@@ -873,7 +882,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           onBlur={stopTyping}
-          placeholder={chatEnabled ? ((avatarDraft || audioDraft) ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
+          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
           maxLength={1200}
           rows={2}
           disabled={!chatEnabled || sending || recording}
@@ -882,16 +891,28 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
           <div className="chat-form-actions">
-            <button type="button" className="secondary-button chat-avatar-button" onClick={stageAvatarDraft} disabled={!chatEnabled || sending}>
-              Avatar
+            <input
+              ref={photoInputRef}
+              className="chat-photo-input"
+              type="file"
+              accept="image/*"
+              onChange={stagePhotoDraft}
+              disabled={!chatEnabled || sending}
+            />
+            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending} aria-label="Photo" title="Photo">
+              <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
+              <span>Photo</span>
             </button>
             <button
               type="button"
               className={recording ? 'secondary-button chat-audio-button recording' : 'secondary-button chat-audio-button'}
               onClick={recording ? stopAudioRecording : startAudioRecording}
               disabled={!chatEnabled || sending}
+              aria-label={recording ? 'Stop recording' : 'Audio'}
+              title={recording ? 'Stop recording' : 'Audio'}
             >
-              {recording ? 'Stop' : 'Audio'}
+              <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
+              <span>{recording ? 'Stop' : 'Audio'}</span>
             </button>
             <button className="primary-button" type="submit" disabled={!canSend}>
               {sending ? 'Sending' : 'Send'}

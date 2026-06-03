@@ -12,6 +12,7 @@ import assetImage2LockIcon from './asset-image2/smart-lock-icon.png'
 import assetImage2SearchIcon from './asset-image2/smart-search-icon.png'
 
 import liveComposerMic from './live-ui/composer-mic.svg'
+import liveComposerPhoto from './live-ui/photo.svg'
 import liveRailLive from './live-ui/rail-live.svg'
 import liveRailMoments from './live-ui/rail-moments.svg'
 import liveSeatLock from './live-ui/seat-lock.svg'
@@ -69,6 +70,7 @@ export const assetImage2Assets = {
 
 export const liveRoomAssets = {
   composerMic: liveComposerMic,
+  composerPhoto: liveComposerPhoto,
   railLive: liveRailLive,
   railMoments: liveRailMoments,
   seatLock: liveSeatLock,
