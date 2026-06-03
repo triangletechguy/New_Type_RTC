@@ -598,6 +598,17 @@
   color: #fde68a;
 }
 
+.buzzcast-live-shell .buzzcast-host-pill,
+.buzzcast-live-shell .buzzcast-room-metadata,
+.buzzcast-live-shell .buzzcast-join-ribbon,
+.buzzcast-live-shell .buzzcast-room-status,
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-host-pill,
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-room-metadata,
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-join-ribbon,
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-room-status {
+  display: none !important;
+}
+
 .media-control-button.syncing {
   position: relative;
   opacity: .88;

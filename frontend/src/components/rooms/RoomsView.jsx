@@ -2123,17 +2123,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </div>
           ) : (
             <>
-              <div className="buzzcast-host-pill">
-                <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
-                <strong>{card.host}</strong>
-                <small>{compactNumber(card.viewers)}</small>
+              <div className="buzzcast-room-summary" aria-label="Room summary">
+                <strong title={card.title}>{card.title}</strong>
+                <span>Room ID: {card.id}</span>
+                <small>{compactNumber(card.viewers || 0)} user{Number(card.viewers || 0) === 1 ? '' : 's'}</small>
               </div>
-              <div className="buzzcast-room-metadata">
-                <span>ID:29803275</span>
-                <strong>{card.title}</strong>
-                <small>{card.country || 'Australia'}</small>
-              </div>
-              <div className="buzzcast-join-ribbon">21 joined</div>
             </>
           )}
         </div>
