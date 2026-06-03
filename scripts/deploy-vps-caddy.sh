@@ -355,10 +355,38 @@ build_and_publish() {
   sudo rsync -a --delete frontend/dist/ "$WEB_ROOT/"
 }
 
+stop_conflicting_web_servers() {
+  log "Stopping conflicting web servers"
+
+  for service in nginx apache2 httpd; do
+    sudo systemctl disable --now "$service" >/dev/null 2>&1 || true
+  done
+}
+
+assert_caddy_ports_available() {
+  if ! command -v ss >/dev/null 2>&1; then
+    return
+  fi
+
+  busy_ports="$(sudo ss -ltnp '( sport = :80 or sport = :443 )' 2>/dev/null | awk 'NR > 1 && $0 !~ /caddy/ { print }')"
+  if [ -z "$busy_ports" ]; then
+    return
+  fi
+
+  cat >&2 <<EOF
+ERROR: Caddy cannot start because another process is already listening on port 80 or 443.
+
+Stop the process below, then run the deploy again:
+$busy_ports
+EOF
+  exit 1
+}
+
 configure_caddy() {
   log "Configuring Caddy"
 
-  sudo systemctl disable --now nginx >/dev/null 2>&1 || true
+  stop_conflicting_web_servers
+  assert_caddy_ports_available
 
   sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
 $DOMAIN_HOST {
