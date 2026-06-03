@@ -50,6 +50,24 @@ export const VIDEO_FILTERS = [
   },
 ]
 
+export const DEFAULT_BEAUTY_SETTINGS = Object.freeze({
+  smooth: 0,
+  brightness: 0,
+  warmth: 0,
+  contrast: 0,
+  sharpen: 0,
+  lighting: 0,
+})
+
+export const BEAUTY_CONTROLS = [
+  { id: 'smooth', label: 'Smooth skin', min: 0, max: 100, step: 1 },
+  { id: 'brightness', label: 'Brightness', min: 0, max: 100, step: 1 },
+  { id: 'warmth', label: 'Warmth', min: 0, max: 100, step: 1 },
+  { id: 'contrast', label: 'Contrast', min: 0, max: 100, step: 1 },
+  { id: 'sharpen', label: 'Sharpen', min: 0, max: 100, step: 1 },
+  { id: 'lighting', label: 'Soft face lighting', min: 0, max: 100, step: 1 },
+]
+
 const FILTER_MAP = new Map(VIDEO_FILTERS.map((filter) => [filter.id, filter]))
 const DEFAULT_FILTER = VIDEO_FILTERS[0]
 const DEFAULT_WIDTH = 640
@@ -109,6 +127,46 @@ export function isVideoFilterActive(filterId) {
   return normalizeVideoFilterId(filterId) !== DEFAULT_FILTER.id
 }
 
+export function normalizeBeautySettings(settings = {}) {
+  return BEAUTY_CONTROLS.reduce((normalized, control) => {
+    normalized[control.id] = Math.round(clampNumber(settings[control.id], control.min, control.max, DEFAULT_BEAUTY_SETTINGS[control.id]))
+    return normalized
+  }, {})
+}
+
+export function isBeautySettingsActive(settings = {}) {
+  const normalized = normalizeBeautySettings(settings)
+  return BEAUTY_CONTROLS.some((control) => normalized[control.id] > DEFAULT_BEAUTY_SETTINGS[control.id])
+}
+
+export function isCameraFilterEffectActive(filterId, beautySettings = {}) {
+  return isVideoFilterActive(filterId) || isBeautySettingsActive(beautySettings)
+}
+
+function settingRatio(settings, key) {
+  return clampNumber(settings?.[key], 0, 100, 0) / 100
+}
+
+function buildBeautyCanvasFilter(filter, beautySettings) {
+  const settings = normalizeBeautySettings(beautySettings)
+  const brightness = 1 + settingRatio(settings, 'brightness') * 0.32
+  const contrast = 1 + settingRatio(settings, 'contrast') * 0.34
+  const warmth = settingRatio(settings, 'warmth')
+  const sharpen = settingRatio(settings, 'sharpen')
+  const parts = []
+
+  if (filter?.canvasFilter && filter.canvasFilter !== 'none') parts.push(filter.canvasFilter)
+  if (brightness !== 1) parts.push(`brightness(${brightness.toFixed(3)})`)
+  if (contrast !== 1 || sharpen > 0) parts.push(`contrast(${(contrast + sharpen * 0.16).toFixed(3)})`)
+  if (warmth > 0) {
+    parts.push(`sepia(${(warmth * 0.22).toFixed(3)})`)
+    parts.push(`saturate(${(1 + warmth * 0.18).toFixed(3)})`)
+    parts.push(`hue-rotate(${(-warmth * 5).toFixed(2)}deg)`)
+  }
+
+  return parts.length ? parts.join(' ') : 'none'
+}
+
 export function supportsCameraFilterPipeline() {
   if (typeof document === 'undefined') return false
   const canvas = document.createElement('canvas')
@@ -119,12 +177,15 @@ export class CameraFilterPipeline {
   constructor(sourceTrack, filterId = DEFAULT_FILTER.id, options = {}) {
     this.sourceTrack = sourceTrack
     this.filterId = normalizeVideoFilterId(filterId)
+    this.beautySettings = normalizeBeautySettings(options.beautySettings)
     this.frameRate = clampNumber(options.frameRate, 8, 30, DEFAULT_FPS)
     this.maxWidth = clampNumber(options.maxWidth, 240, 1280, DEFAULT_WIDTH)
     this.maxHeight = clampNumber(options.maxHeight, 180, 720, DEFAULT_HEIGHT)
     this.video = null
     this.canvas = null
     this.context = null
+    this.scratchCanvas = null
+    this.scratchContext = null
     this.sourceStream = null
     this.outputStream = null
     this.outputTrack = null
@@ -166,8 +227,12 @@ export class CameraFilterPipeline {
     this.canvas.width = width
     this.canvas.height = height
     this.context = this.canvas.getContext('2d', { alpha: false })
+    this.scratchCanvas = document.createElement('canvas')
+    this.scratchCanvas.width = width
+    this.scratchCanvas.height = height
+    this.scratchContext = this.scratchCanvas.getContext('2d', { alpha: false })
 
-    if (!this.context) {
+    if (!this.context || !this.scratchContext) {
       throw new Error('Camera filter canvas could not be created.')
     }
 
@@ -192,6 +257,10 @@ export class CameraFilterPipeline {
     this.filterId = normalizeVideoFilterId(filterId)
   }
 
+  setBeautySettings(settings) {
+    this.beautySettings = normalizeBeautySettings(settings)
+  }
+
   drawFrame = () => {
     if (this.stopped) return
 
@@ -201,14 +270,54 @@ export class CameraFilterPipeline {
 
     if (context && canvas && video && video.readyState >= 2) {
       const filter = getVideoFilter(this.filterId)
+      const beautySettings = normalizeBeautySettings(this.beautySettings)
+      const canvasFilter = buildBeautyCanvasFilter(filter, beautySettings)
+      const smooth = settingRatio(beautySettings, 'smooth')
+      const sharpen = settingRatio(beautySettings, 'sharpen')
+      const lighting = settingRatio(beautySettings, 'lighting')
       context.save()
-      context.filter = filter.canvasFilter || 'none'
+      context.filter = canvasFilter
       context.drawImage(video, 0, 0, canvas.width, canvas.height)
       context.filter = 'none'
+
+      if (smooth > 0) {
+        context.globalAlpha = smooth * 0.28
+        context.filter = `${canvasFilter === 'none' ? '' : `${canvasFilter} `}blur(${(1 + smooth * 2.3).toFixed(2)}px)`
+        context.drawImage(video, 0, 0, canvas.width, canvas.height)
+        context.globalAlpha = 1
+        context.filter = 'none'
+      }
 
       if (filter.overlay) {
         context.fillStyle = filter.overlay
         context.fillRect(0, 0, canvas.width, canvas.height)
+      }
+
+      if (lighting > 0) {
+        const centerX = canvas.width * 0.5
+        const centerY = canvas.height * 0.38
+        const radius = Math.max(canvas.width, canvas.height) * 0.52
+        const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
+        gradient.addColorStop(0, `rgba(255, 244, 224, ${(lighting * 0.26).toFixed(3)})`)
+        gradient.addColorStop(0.42, `rgba(255, 231, 199, ${(lighting * 0.12).toFixed(3)})`)
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+        context.globalCompositeOperation = 'screen'
+        context.fillStyle = gradient
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.globalCompositeOperation = 'source-over'
+      }
+
+      if (sharpen > 0 && this.scratchContext && this.scratchCanvas) {
+        this.scratchContext.clearRect(0, 0, canvas.width, canvas.height)
+        this.scratchContext.filter = `contrast(${(1.28 + sharpen * 0.48).toFixed(3)}) saturate(${(1 + sharpen * 0.12).toFixed(3)})`
+        this.scratchContext.drawImage(video, 0, 0, canvas.width, canvas.height)
+        this.scratchContext.filter = 'none'
+
+        context.globalAlpha = sharpen * 0.13
+        context.globalCompositeOperation = 'soft-light'
+        context.drawImage(this.scratchCanvas, 0, 0)
+        context.globalAlpha = 1
+        context.globalCompositeOperation = 'source-over'
       }
 
       context.restore()
@@ -241,5 +350,7 @@ export class CameraFilterPipeline {
     this.sourceStream = null
     this.context = null
     this.canvas = null
+    this.scratchContext = null
+    this.scratchCanvas = null
   }
 }

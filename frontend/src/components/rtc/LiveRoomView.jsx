@@ -4,7 +4,19 @@ import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMediaTrack, stopMediaStream, watchLocalMediaPermissions } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
-import { CameraFilterPipeline, VIDEO_FILTERS, getVideoFilter, isVideoFilterActive, normalizeVideoFilterId, supportsCameraFilterPipeline } from '../../services/videoFilters'
+import {
+  BEAUTY_CONTROLS,
+  CameraFilterPipeline,
+  DEFAULT_BEAUTY_SETTINGS,
+  VIDEO_FILTERS,
+  getVideoFilter,
+  isBeautySettingsActive,
+  isCameraFilterEffectActive,
+  isVideoFilterActive,
+  normalizeBeautySettings,
+  normalizeVideoFilterId,
+  supportsCameraFilterPipeline,
+} from '../../services/videoFilters'
 import {
   defaultRtcModeForRoom,
   getInitialMediaMode,
@@ -222,6 +234,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [screenSharing, setScreenSharing] = useState(false)
   const [expandedScreenShareId, setExpandedScreenShareId] = useState('')
   const [cameraFilter, setCameraFilter] = useState('normal')
+  const [beautySettings, setBeautySettings] = useState(DEFAULT_BEAUTY_SETTINGS)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -238,6 +251,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraOnRef = useRef(cameraOn)
   const rtcModeRef = useRef(rtcMode)
   const cameraFilterRef = useRef(cameraFilter)
+  const beautySettingsRef = useRef(beautySettings)
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
@@ -338,10 +352,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return nextStream
   }
 
-  async function filteredCameraOutputTrack(sourceTrack, filterId = cameraFilterRef.current) {
+  async function filteredCameraOutputTrack(sourceTrack, filterId = cameraFilterRef.current, beautySettingsValue = beautySettingsRef.current) {
     const normalizedFilterId = normalizeVideoFilterId(filterId)
+    const normalizedBeautySettings = normalizeBeautySettings(beautySettingsValue)
 
-    if (!isVideoFilterActive(normalizedFilterId)) {
+    if (!isCameraFilterEffectActive(normalizedFilterId, normalizedBeautySettings)) {
       stopCameraFilterPipeline({ stopSource: false })
       return sourceTrack
     }
@@ -359,6 +374,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (!pipelineReusable) {
       stopCameraFilterPipeline({ stopSource: false })
       pipeline = new CameraFilterPipeline(sourceTrack, normalizedFilterId, {
+        beautySettings: normalizedBeautySettings,
         frameRate: 20,
         maxWidth: 960,
         maxHeight: 540,
@@ -367,27 +383,32 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       filteredCameraTrackRef.current = await pipeline.start()
     } else {
       pipeline.setFilter(normalizedFilterId)
+      pipeline.setBeautySettings(normalizedBeautySettings)
       filteredCameraTrackRef.current = pipeline.outputTrack
     }
 
     return filteredCameraTrackRef.current
   }
 
-  async function syncCameraFilterTrack({ filterId = cameraFilterRef.current, replaceOutgoing = true } = {}) {
+  async function syncCameraFilterTrack({ filterId = cameraFilterRef.current, beautySettingsValue = beautySettingsRef.current, replaceOutgoing = true } = {}) {
     if (rtcModeRef.current === 'audio') return null
 
     const normalizedFilterId = normalizeVideoFilterId(filterId)
+    const normalizedBeautySettings = normalizeBeautySettings(beautySettingsValue)
     const sourceTrack = rememberCameraSourceFromStream()
 
     if (!isLiveTrack(sourceTrack)) return null
 
-    const outputTrack = await filteredCameraOutputTrack(sourceTrack, normalizedFilterId)
+    const currentOutgoingTrack = streamRef.current?.getVideoTracks?.().find((track) => track !== screenShareTrackRef.current) || null
+    const outputTrack = await filteredCameraOutputTrack(sourceTrack, normalizedFilterId, normalizedBeautySettings)
     outputTrack.enabled = cameraOnRef.current
     sourceTrack.enabled = cameraOnRef.current
 
-    const nextStream = replaceCameraTrackInLocalStream(outputTrack)
+    const nextStream = currentOutgoingTrack === outputTrack
+      ? streamRef.current
+      : replaceCameraTrackInLocalStream(outputTrack)
 
-    if (replaceOutgoing && !screenShareTrackRef.current) {
+    if (replaceOutgoing && !screenShareTrackRef.current && currentOutgoingTrack !== outputTrack) {
       await rtcRef.current?.replaceLocalTrack('video', outputTrack, nextStream)
     }
 
@@ -400,11 +421,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const sourceTrack = stream?.getVideoTracks?.().find((track) => isLiveTrack(track)) || null
     cameraSourceTrackRef.current = sourceTrack
 
-    if (!sourceTrack || !isVideoFilterActive(cameraFilterRef.current)) return stream
+    if (!sourceTrack || !isCameraFilterEffectActive(cameraFilterRef.current, beautySettingsRef.current)) return stream
 
     let outputTrack = null
     try {
-      outputTrack = await filteredCameraOutputTrack(sourceTrack, cameraFilterRef.current)
+      outputTrack = await filteredCameraOutputTrack(sourceTrack, cameraFilterRef.current, beautySettingsRef.current)
     } catch (error) {
       setCameraFilter('normal')
       cameraFilterRef.current = 'normal'
@@ -1021,6 +1042,71 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
+  async function applyBeautySettings(nextSettings, successStatus = 'Beauty settings applied') {
+    const normalizedSettings = normalizeBeautySettings(nextSettings)
+    const effectActive = isCameraFilterEffectActive(cameraFilterRef.current, normalizedSettings)
+    const pipeline = cameraFilterPipelineRef.current
+
+    setBeautySettings(normalizedSettings)
+    beautySettingsRef.current = normalizedSettings
+
+    if (rtcModeRef.current === 'audio') {
+      setStatus('Beauty filters are available in video rooms.')
+      return
+    }
+
+    if (!joinedRef.current) {
+      setStatus('Beauty settings selected. They will apply when you connect RTC.')
+      return
+    }
+
+    try {
+      if (pipeline && isLiveTrack(filteredCameraTrackRef.current) && effectActive) {
+        pipeline.setBeautySettings(normalizedSettings)
+        setStatus(successStatus)
+        return
+      }
+
+      let sourceTrack = rememberCameraSourceFromStream()
+
+      if (!sourceTrack && cameraOnRef.current && !screenShareTrackRef.current) {
+        const { track } = await requestLocalMediaTrack('video')
+        cameraSourceTrackRef.current = track
+        sourceTrack = track
+      }
+
+      if (sourceTrack) {
+        await syncCameraFilterTrack({
+          beautySettingsValue: normalizedSettings,
+          replaceOutgoing: !screenShareTrackRef.current,
+        })
+      }
+
+      if (!sourceTrack && effectActive) {
+        setStatus('Beauty settings selected. Turn camera on to apply them.')
+      } else if (screenShareTrackRef.current) {
+        setStatus('Beauty settings selected. They will apply when screen share stops.')
+      } else {
+        setStatus(successStatus)
+      }
+    } catch (error) {
+      setStatus(`Beauty filter failed: ${error.message}`)
+    }
+  }
+
+  function changeBeautySetting(settingId, value) {
+    const nextSettings = normalizeBeautySettings({
+      ...beautySettingsRef.current,
+      [settingId]: value,
+    })
+
+    applyBeautySettings(nextSettings).catch((error) => setStatus(`Beauty filter failed: ${error.message}`))
+  }
+
+  function resetBeautySettings() {
+    applyBeautySettings(DEFAULT_BEAUTY_SETTINGS, 'Beauty settings reset').catch((error) => setStatus(`Beauty reset failed: ${error.message}`))
+  }
+
   function shouldInitiateOffer(remoteSocketId) {
     const localSocketId = localSocketIdRef.current
     if (!localSocketId || !remoteSocketId) return false
@@ -1588,6 +1674,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [cameraFilter])
 
   useEffect(() => {
+    beautySettingsRef.current = normalizeBeautySettings(beautySettings)
+  }, [beautySettings])
+
+  useEffect(() => {
     if (!joined) return undefined
 
     function sendPresence() {
@@ -1737,10 +1827,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const cameraFilterActive = isVideoFilterActive(cameraFilter)
+  const beautySettingsActive = isBeautySettingsActive(beautySettings)
+  const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(beautySettings[control.id] || 0) > 0).length
+  const cameraEffectsActive = cameraFilterActive || beautySettingsActive
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
   const filterButtonTitle = rtcMode === 'audio'
     ? 'Camera filters are available in video rooms'
-    : cameraFilterActive ? `${activeCameraFilter.label} filter active` : 'Camera filters'
+    : cameraEffectsActive ? 'Camera effects active' : 'Camera filters'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -1918,7 +2011,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   </div>
                 ) : activeToolPanel === 'filters' ? (
                   <div className="tool-status-panel camera-filter-panel">
-                    <p>{activeCameraFilter.label}: {activeCameraFilter.detail}</p>
+                    <p>{activeCameraFilter.label}: {activeCameraFilter.detail}{beautyActiveCount ? ` - ${beautyActiveCount} beauty setting${beautyActiveCount === 1 ? '' : 's'} active` : ''}</p>
                     <div className="camera-filter-grid" aria-label="Camera filter presets">
                       {VIDEO_FILTERS.map((filter) => (
                         <button
@@ -1933,6 +2026,28 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                           <strong>{filter.label}</strong>
                         </button>
                       ))}
+                    </div>
+                    <div className="camera-beauty-controls" aria-label="Beauty filter controls">
+                      {BEAUTY_CONTROLS.map((control) => (
+                        <label key={control.id} className="beauty-slider-row">
+                          <span>
+                            <strong>{control.label}</strong>
+                            <b>{beautySettings[control.id] || 0}</b>
+                          </span>
+                          <input
+                            type="range"
+                            min={control.min}
+                            max={control.max}
+                            step={control.step}
+                            value={beautySettings[control.id] || 0}
+                            onChange={(event) => changeBeautySetting(control.id, event.target.value)}
+                            disabled={rtcMode === 'audio'}
+                          />
+                        </label>
+                      ))}
+                      <button type="button" className="beauty-reset-button" onClick={resetBeautySettings} disabled={!beautySettingsActive || rtcMode === 'audio'}>
+                        Reset beauty
+                      </button>
                     </div>
                     <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Selected preset will apply after screen share.' : 'Outgoing camera preset'}</small>
                   </div>
@@ -1987,11 +2102,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph camera"></span>
               </button>
               <button
-                className={activeToolPanel === 'filters' || cameraFilterActive ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+                className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
                 onClick={() => toggleToolPanel('filters')}
                 disabled={filterButtonDisabled}
                 aria-label={filterButtonTitle}
-                aria-pressed={activeToolPanel === 'filters' || cameraFilterActive}
+                aria-pressed={activeToolPanel === 'filters' || cameraEffectsActive}
                 title={filterButtonTitle}
               >
                 <span className="control-glyph effects"></span>
