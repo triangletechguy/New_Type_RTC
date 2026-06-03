@@ -1980,9 +1980,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(beautySettings[control.id] || 0) > 0).length
   const cameraEffectsActive = cameraFilterActive || beautySettingsActive || backgroundEffectActive
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
-  const filterButtonTitle = rtcMode === 'audio'
-    ? 'Camera filters are available in video rooms'
-    : cameraEffectsActive ? 'Camera effects active' : 'Camera filters'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -2147,7 +2144,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Camera filters' : 'AI guard'}</strong>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Beauty & Background' : 'AI guard'}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
                 </header>
                 {activeToolPanel === 'screen' ? (
@@ -2297,14 +2294,26 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph camera"></span>
               </button>
               <button
-                className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
-                onClick={() => toggleToolPanel('filters')}
+                className={activeToolPanel === 'filters' || beautySettingsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                onClick={() => setActiveToolPanel('filters')}
                 disabled={filterButtonDisabled}
-                aria-label={filterButtonTitle}
-                aria-pressed={activeToolPanel === 'filters' || cameraEffectsActive}
-                title={filterButtonTitle}
+                aria-label="Open face beauty controls"
+                aria-pressed={activeToolPanel === 'filters' || beautySettingsActive}
+                title="Face beauty"
               >
-                <span className="control-glyph effects"></span>
+                <span className="control-glyph beauty"></span>
+                <span>Beauty</span>
+              </button>
+              <button
+                className={activeToolPanel === 'filters' || backgroundEffectActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                onClick={() => setActiveToolPanel('filters')}
+                disabled={filterButtonDisabled}
+                aria-label="Open background filter controls"
+                aria-pressed={activeToolPanel === 'filters' || backgroundEffectActive}
+                title="Background filter"
+              >
+                <span className="control-glyph background"></span>
+                <span>BG</span>
               </button>
               <button
                 className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
