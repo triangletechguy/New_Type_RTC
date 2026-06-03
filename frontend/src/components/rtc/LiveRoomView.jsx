@@ -169,6 +169,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
+  const rejoiningSignalingRef = useRef(false)
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -221,6 +222,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     streamRef.current = null
     signalingRoomRef.current = null
     localSocketIdRef.current = null
+    rejoiningSignalingRef.current = false
     negotiatedPeersRef.current.clear()
     if (clearState) {
       setLocalStream(null)
@@ -444,6 +446,74 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       negotiatedPeersRef.current.delete(remoteSocketId)
       setConnectionIssue(`${label} negotiation failed: ${error.message}`)
       setStatus(`${label} negotiation failed: ${error.message}`)
+    }
+  }
+
+  function clearPeerConnectionState(rtcClient = rtcRef.current) {
+    rtcClient?.closeAll?.()
+    negotiatedPeersRef.current.clear()
+    setRemoteStreams({})
+    setPeerStates({})
+    setPeerStats({})
+    setPeerMediaStates({})
+    setSignalingPeerCount(0)
+  }
+
+  function signalingJoinPayload({
+    roomId: payloadRoomId = signalingRoomRef.current,
+    rtcMode: payloadRtcMode = rtcModeRef.current,
+    micEnabled = micOnRef.current,
+    cameraEnabled = cameraOnRef.current,
+    screenShared = screenShareTrackRef.current?.readyState === 'live',
+  } = {}) {
+    const normalizedMode = normalizeRtcMode(payloadRtcMode, room)
+
+    return {
+      roomId: payloadRoomId,
+      userId: user?.id,
+      userName: user?.name || 'User',
+      userGender: user?.gender || '',
+      userAvatarUrl: user?.avatar_url || '',
+      rtcMode: normalizedMode,
+      micEnabled: Boolean(micEnabled),
+      cameraEnabled: normalizedMode === 'video' && Boolean(cameraEnabled),
+      screenShared: Boolean(screenShared),
+    }
+  }
+
+  async function rejoinSignalingRoom(socket, rtcClient) {
+    if (!socket || socketRef.current !== socket || !rtcClient || !joinedRef.current || !signalingRoomRef.current) return
+    if (rejoiningSignalingRef.current) return
+
+    rejoiningSignalingRef.current = true
+
+    try {
+      setSignalingState('reconnecting')
+      setStatus('Restoring signaling room...')
+      clearPeerConnectionState(rtcClient)
+
+      const response = await joinSignalingRoom(socket, signalingJoinPayload())
+      localSocketIdRef.current = response.socketId || socket.id
+      setSignalingState('connected')
+      setConnectionIssue('')
+
+      const peers = Array.isArray(response.users) ? response.users : []
+      if (peers.length) {
+        await negotiateExistingUsers(peers, rtcClient)
+      } else {
+        setSignalingPeerCount(0)
+        setPeerMediaStates({})
+      }
+
+      setStatus(peers.length
+        ? `Recovered signaling with ${peers.length} peer${peers.length === 1 ? '' : 's'}`
+        : 'Signaling recovered')
+    } catch (error) {
+      setSignalingState('error')
+      setConnectionIssue(`Signaling recovery failed: ${error.message}`)
+      setStatus(`Signaling recovery failed: ${error.message}`)
+    } finally {
+      rejoiningSignalingRef.current = false
     }
   }
 
@@ -820,6 +890,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         onPeerStats: (remoteSocketId, stats) => {
           setPeerStats((previous) => ({ ...previous, [remoteSocketId]: stats }))
         },
+        onPeerRecovery: (remoteSocketId, recoveryState, detail) => {
+          if (['scheduled', 'waiting', 'restarting'].includes(recoveryState)) {
+            setPeerStates((previous) => ({ ...previous, [remoteSocketId]: 'reconnecting' }))
+            setStatus(`Recovering peer ${remoteSocketId.slice(0, 6)}${detail ? `: ${detail}` : ''}`)
+          }
+
+          if (recoveryState === 'failed') {
+            setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} recovery failed${detail ? `: ${detail}` : ''}`)
+          }
+        },
       })
       rtcRef.current = rtcClient
       await flushPendingLocalTracks({ publish: false })
@@ -849,12 +929,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setStatus(`Signaling error: ${error.message}`)
       })
       socket.io.on('reconnect_attempt', () => {
-        if (socketRef.current === socket) setSignalingState('reconnecting')
+        if (socketRef.current === socket) {
+          setSignalingState('reconnecting')
+          setPeerStates((previous) => Object.fromEntries(
+            Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
+          ))
+        }
       })
       socket.io.on('reconnect', () => {
         if (socketRef.current === socket) {
-          setSignalingState('connected')
-          setConnectionIssue('')
+          localSocketIdRef.current = socket.id
+          rejoinSignalingRoom(socket, rtcClient).catch((error) => {
+            setSignalingState('error')
+            setConnectionIssue(`Signaling recovery failed: ${error.message}`)
+            setStatus(`Signaling recovery failed: ${error.message}`)
+          })
         }
       })
       socket.io.on('reconnect_error', (error) => {
@@ -983,6 +1072,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.on('disconnect', (reason) => {
         if (socketRef.current === socket) {
           setSignalingState(joinedRef.current ? 'disconnected' : 'idle')
+          if (joinedRef.current) {
+            setPeerStates((previous) => Object.fromEntries(
+              Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
+            ))
+          }
           if (joinedRef.current) setConnectionIssue(`Signaling disconnected: ${reason}`)
           setStatus(`Signaling disconnected: ${reason}`)
         }
@@ -1003,17 +1097,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await syncBackendMediaState(actualMicOn, actualCameraOn)
       }
 
-      const signalingJoin = await joinSignalingRoom(socket, {
+      const signalingJoin = await joinSignalingRoom(socket, signalingJoinPayload({
         roomId: joinData.rtc.signaling_room,
-        userId: user?.id,
-        userName: user?.name || 'User',
-        userGender: user?.gender || '',
-        userAvatarUrl: user?.avatar_url || '',
         rtcMode: joinedRtcMode,
         micEnabled: actualMicOn,
         cameraEnabled: actualCameraOn,
         screenShared: false,
-      })
+      }))
 
       localSocketIdRef.current = signalingJoin.socketId || socket.id
       const peerCount = Array.isArray(signalingJoin.users) ? signalingJoin.users.length : 0

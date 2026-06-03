@@ -35,6 +35,8 @@ function buildIceServers() {
 }
 
 const RTC_STATS_INTERVAL_MS = 2000
+const ICE_RESTART_DELAY_MS = 1400
+const ICE_RESTART_MAX_ATTEMPTS = 3
 
 function emptyMediaStats() {
   return {
@@ -201,7 +203,7 @@ function buildStatsSnapshot(remoteSocketId, peerConnection, reportMap, previous)
 }
 
 export class NativeRtcClient {
-  constructor({ socket, localStream, rtcMode = 'video', iceServers, iceTransportPolicy = 'all', onRemoteStream, onPeerState, onPeerStats }) {
+  constructor({ socket, localStream, rtcMode = 'video', iceServers, iceTransportPolicy = 'all', onRemoteStream, onPeerState, onPeerStats, onPeerRecovery }) {
     this.socket = socket
     this.localStream = localStream
     this.rtcMode = rtcMode === 'audio' ? 'audio' : 'video'
@@ -210,12 +212,16 @@ export class NativeRtcClient {
     this.onRemoteStream = onRemoteStream
     this.onPeerState = onPeerState
     this.onPeerStats = onPeerStats
+    this.onPeerRecovery = onPeerRecovery
     this.peerConnections = {}
     this.pendingCandidates = {}
     this.remoteMediaStreams = {}
     this.makingOffers = {}
     this.ignoredOffers = {}
     this.pendingOffers = {}
+    this.pendingIceRestarts = {}
+    this.iceRestartTimers = {}
+    this.iceRestartAttempts = {}
     this.statsTimers = {}
     this.previousStats = {}
   }
@@ -226,6 +232,58 @@ export class NativeRtcClient {
       ? peerConnection.iceConnectionState
       : peerConnection.connectionState
     this.onPeerState(remoteSocketId, state)
+  }
+
+  emitPeerRecovery(remoteSocketId, status, detail = '') {
+    if (this.onPeerRecovery) this.onPeerRecovery(remoteSocketId, status, detail)
+  }
+
+  clearIceRestart(remoteSocketId) {
+    if (this.iceRestartTimers[remoteSocketId]) {
+      clearTimeout(this.iceRestartTimers[remoteSocketId])
+      delete this.iceRestartTimers[remoteSocketId]
+    }
+  }
+
+  resetIceRestart(remoteSocketId) {
+    this.clearIceRestart(remoteSocketId)
+    delete this.iceRestartAttempts[remoteSocketId]
+    delete this.pendingIceRestarts[remoteSocketId]
+  }
+
+  scheduleIceRestart(remoteSocketId, reason = 'ice') {
+    const peerConnection = this.peerConnections[remoteSocketId]
+    if (!peerConnection || ['closed', 'failed'].includes(peerConnection.signalingState)) return
+    if (this.iceRestartTimers[remoteSocketId]) return
+
+    const attempts = Number(this.iceRestartAttempts[remoteSocketId] || 0)
+    if (attempts >= ICE_RESTART_MAX_ATTEMPTS) {
+      this.emitPeerRecovery(remoteSocketId, 'failed', 'ICE restart limit reached')
+      return
+    }
+
+    this.emitPeerRecovery(remoteSocketId, 'scheduled', reason)
+    this.iceRestartTimers[remoteSocketId] = setTimeout(() => {
+      delete this.iceRestartTimers[remoteSocketId]
+      this.restartIce(remoteSocketId, reason).catch((error) => {
+        this.emitPeerRecovery(remoteSocketId, 'failed', error.message)
+      })
+    }, reason === 'failed' ? 0 : ICE_RESTART_DELAY_MS)
+  }
+
+  async restartIce(remoteSocketId, reason = 'ice') {
+    const peerConnection = this.peerConnections[remoteSocketId]
+    if (!peerConnection || peerConnection.signalingState === 'closed') return false
+    if (!this.socket?.connected) {
+      this.pendingIceRestarts[remoteSocketId] = true
+      this.emitPeerRecovery(remoteSocketId, 'waiting', 'Signaling is reconnecting')
+      return false
+    }
+
+    this.iceRestartAttempts[remoteSocketId] = Number(this.iceRestartAttempts[remoteSocketId] || 0) + 1
+    this.pendingIceRestarts[remoteSocketId] = true
+    this.emitPeerRecovery(remoteSocketId, 'restarting', reason)
+    return this.createOffer(remoteSocketId, { iceRestart: true })
   }
 
   createPeerConnection(remoteSocketId) {
@@ -282,10 +340,15 @@ export class NativeRtcClient {
 
     peerConnection.onconnectionstatechange = () => {
       this.emitPeerState(remoteSocketId, peerConnection)
+      if (peerConnection.connectionState === 'connected') this.resetIceRestart(remoteSocketId)
+      if (peerConnection.connectionState === 'failed') this.scheduleIceRestart(remoteSocketId, 'failed')
     }
 
     peerConnection.oniceconnectionstatechange = () => {
       this.emitPeerState(remoteSocketId, peerConnection)
+      if (['connected', 'completed'].includes(peerConnection.iceConnectionState)) this.resetIceRestart(remoteSocketId)
+      if (peerConnection.iceConnectionState === 'disconnected') this.scheduleIceRestart(remoteSocketId, 'disconnected')
+      if (peerConnection.iceConnectionState === 'failed') this.scheduleIceRestart(remoteSocketId, 'failed')
     }
 
     this.peerConnections[remoteSocketId] = peerConnection
@@ -340,11 +403,19 @@ export class NativeRtcClient {
     return snapshot
   }
 
-  async createOffer(remoteSocketId) {
+  async createOffer(remoteSocketId, options = {}) {
     const peerConnection = this.createPeerConnection(remoteSocketId)
+    const iceRestart = Boolean(options.iceRestart || this.pendingIceRestarts[remoteSocketId])
+
+    if (!this.socket?.connected) {
+      this.pendingOffers[remoteSocketId] = true
+      if (iceRestart) this.pendingIceRestarts[remoteSocketId] = true
+      return false
+    }
 
     if (peerConnection.signalingState !== 'stable') {
       this.pendingOffers[remoteSocketId] = true
+      if (iceRestart) this.pendingIceRestarts[remoteSocketId] = true
       return false
     }
 
@@ -352,7 +423,10 @@ export class NativeRtcClient {
     this.pendingOffers[remoteSocketId] = false
 
     try {
-      const offer = await peerConnection.createOffer()
+      if (iceRestart && typeof peerConnection.restartIce === 'function') {
+        peerConnection.restartIce()
+      }
+      const offer = await peerConnection.createOffer(iceRestart ? { iceRestart: true } : undefined)
       await peerConnection.setLocalDescription(offer)
 
       this.socket.emit('webrtc-offer', {
@@ -360,6 +434,7 @@ export class NativeRtcClient {
         offer: peerConnection.localDescription,
       })
 
+      if (iceRestart) this.pendingIceRestarts[remoteSocketId] = false
       return true
     } finally {
       this.makingOffers[remoteSocketId] = false
@@ -369,7 +444,7 @@ export class NativeRtcClient {
   async flushPendingOffer(remoteSocketId) {
     const peerConnection = this.peerConnections[remoteSocketId]
     if (!this.pendingOffers[remoteSocketId] || !peerConnection || peerConnection.signalingState !== 'stable') return false
-    return this.createOffer(remoteSocketId)
+    return this.createOffer(remoteSocketId, { iceRestart: Boolean(this.pendingIceRestarts[remoteSocketId]) })
   }
 
   async handleOffer(fromSocketId, offer, { polite = true } = {}) {
@@ -534,6 +609,7 @@ export class NativeRtcClient {
     delete this.makingOffers[remoteSocketId]
     delete this.ignoredOffers[remoteSocketId]
     delete this.pendingOffers[remoteSocketId]
+    this.resetIceRestart(remoteSocketId)
   }
 
   closeAll() {
@@ -545,6 +621,10 @@ export class NativeRtcClient {
     this.makingOffers = {}
     this.ignoredOffers = {}
     this.pendingOffers = {}
+    Object.keys(this.iceRestartTimers).forEach((remoteSocketId) => this.clearIceRestart(remoteSocketId))
+    this.pendingIceRestarts = {}
+    this.iceRestartTimers = {}
+    this.iceRestartAttempts = {}
     this.statsTimers = {}
     this.previousStats = {}
   }
