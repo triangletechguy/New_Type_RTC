@@ -254,7 +254,7 @@ function classifyEmailDeliveryError(error) {
     || /"statusCode"\s*:\s*401/i.test(rawMessage)
   const setupRequired = error.code === 'email_not_configured'
   const providerRejected = invalidKey
-    || error.code === 'email_provider_rejected'
+    || ['email_provider_rejected', 'smtp_provider_rejected'].includes(error.code)
     || /validation_error|resend email failed|provider rejected/i.test(rawMessage)
 
   if (setupRequired) {
@@ -278,7 +278,7 @@ function classifyEmailDeliveryError(error) {
   if (providerRejected) {
     return {
       code: 'email_provider_rejected',
-      message: 'Verification code was created, but the email provider rejected the request. Check the sender domain/settings, then request a new code.',
+      message: error.message || 'Verification code was created, but the email provider rejected the request. Check sender/domain/settings, then request a new code.',
       providerRejected: true,
       setupRequired: false,
     }

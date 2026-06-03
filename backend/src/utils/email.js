@@ -13,7 +13,7 @@ function emailFromAddress() {
   const smtpFrom = firstEnv('SMTP_FROM', 'EMAIL_FROM')
   if (smtpFrom) return smtpFrom
 
-  const mailAddress = firstEnv('MAIL_FROM_ADDRESS')
+  const mailAddress = firstEnv('MAIL_FROM_ADDRESS', 'SMTP_USER', 'MAIL_USERNAME')
   if (!mailAddress) return ''
 
   const mailName = firstEnv('MAIL_FROM_NAME')
@@ -188,6 +188,28 @@ function resendErrorMessage(status, body) {
   return 'Email provider rejected the verification email. Check the email provider settings, then request a new code.'
 }
 
+function smtpErrorMessage(error = {}) {
+  const raw = `${error.message || ''} ${error.code || ''} ${error.response || ''}`.toLowerCase()
+
+  if (raw.includes('eauth') || raw.includes('invalid login') || raw.includes('username and password')) {
+    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).' 
+  }
+
+  if (raw.includes('535') || raw.includes('auth') || raw.includes('authentication')) {
+    return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS (use an app password for Gmail).' 
+  }
+
+  if (raw.includes('hostname') || raw.includes('getaddrinfo') || raw.includes('connect econnrefused') || raw.includes('network is unreachable')) {
+    return 'SMTP server was not reachable. Check SMTP_HOST and SMTP_PORT and server firewall/network access.'
+  }
+
+  if (raw.includes('from') && raw.includes('not')) {
+    return 'SMTP provider rejected sender email address. Verify SMTP_FROM and mailbox sender permissions.'
+  }
+
+  return 'SMTP provider rejected the verification email. Check the SMTP settings, then request a new code.'
+}
+
 function emailDeliveryStatus() {
   const config = emailConfig()
   const resendConfigured = resendReady(config)
@@ -255,14 +277,22 @@ async function sendWithSmtp(config, message) {
     },
   })
 
-  await transporter.sendMail({
-    ...message,
-    attachments: message.attachments?.map((attachment) => ({
-      filename: attachment.filename,
-      content: attachment.content,
-      contentType: attachment.contentType,
-    })),
-  })
+  try {
+    await transporter.sendMail({
+      ...message,
+      attachments: message.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        content: attachment.content,
+        contentType: attachment.contentType,
+      })),
+    })
+  } catch (error) {
+    const smtpError = new Error(smtpErrorMessage(error))
+    smtpError.status = 502
+    smtpError.code = 'smtp_provider_rejected'
+    throw smtpError
+  }
+
   return { provider: 'smtp' }
 }
 
