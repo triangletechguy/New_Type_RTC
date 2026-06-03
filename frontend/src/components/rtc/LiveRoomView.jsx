@@ -4,6 +4,7 @@ import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMediaTrack, stopMediaStream, watchLocalMediaPermissions } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
+import { CameraFilterPipeline, VIDEO_FILTERS, getVideoFilter, isVideoFilterActive, normalizeVideoFilterId, supportsCameraFilterPipeline } from '../../services/videoFilters'
 import {
   defaultRtcModeForRoom,
   getInitialMediaMode,
@@ -220,11 +221,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [chatMessages, setChatMessages] = useState([])
   const [screenSharing, setScreenSharing] = useState(false)
   const [expandedScreenShareId, setExpandedScreenShareId] = useState('')
+  const [cameraFilter, setCameraFilter] = useState('normal')
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
   const streamRef = useRef(null)
   const screenShareTrackRef = useRef(null)
+  const cameraSourceTrackRef = useRef(null)
+  const cameraFilterPipelineRef = useRef(null)
+  const filteredCameraTrackRef = useRef(null)
   const activeRoomIdRef = useRef(null)
   const signalingRoomRef = useRef(null)
   const localSocketIdRef = useRef(null)
@@ -232,6 +237,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const micOnRef = useRef(micOn)
   const cameraOnRef = useRef(cameraOn)
   const rtcModeRef = useRef(rtcMode)
+  const cameraFilterRef = useRef(cameraFilter)
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
@@ -275,6 +281,152 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const isRoomOwner = Number(room?.owner_id || initialRoom?.owner_id) === Number(user?.id)
   const ownerCanEndVideoRoom = isRoomOwner && roomSupportsVideo(room?.room_type || initialRoom?.room_type)
 
+  function isLiveTrack(track) {
+    return Boolean(track && track.readyState === 'live')
+  }
+
+  function stopCameraFilterPipeline({ stopSource = false } = {}) {
+    const pipeline = cameraFilterPipelineRef.current
+    cameraFilterPipelineRef.current = null
+
+    if (pipeline) {
+      pipeline.stop({ stopSource })
+    }
+
+    const filteredTrack = filteredCameraTrackRef.current
+    filteredCameraTrackRef.current = null
+
+    if (filteredTrack && filteredTrack.readyState !== 'ended') {
+      try { filteredTrack.stop() } catch {}
+    }
+
+    if (stopSource && cameraSourceTrackRef.current?.readyState !== 'ended') {
+      try { cameraSourceTrackRef.current.stop() } catch {}
+    }
+
+    if (stopSource) cameraSourceTrackRef.current = null
+  }
+
+  function rememberCameraSourceFromStream(stream = streamRef.current) {
+    if (isLiveTrack(cameraSourceTrackRef.current)) return cameraSourceTrackRef.current
+
+    const sourceTrack = stream?.getVideoTracks?.().find((track) => (
+      isLiveTrack(track)
+      && track !== screenShareTrackRef.current
+      && track !== filteredCameraTrackRef.current
+    )) || null
+
+    cameraSourceTrackRef.current = sourceTrack
+    return sourceTrack
+  }
+
+  function replaceCameraTrackInLocalStream(cameraTrack) {
+    const previousStream = streamRef.current
+    const previousTracks = previousStream?.getTracks?.() || []
+    const keptTracks = previousTracks.filter((track) => (
+      track.kind !== 'video' || track === screenShareTrackRef.current
+    ))
+    const nextTracks = cameraTrack ? [...keptTracks, cameraTrack] : keptTracks
+    const nextStream = new MediaStream(nextTracks)
+
+    if (typeof previousStream?.__cleanup === 'function') {
+      nextStream.__cleanup = previousStream.__cleanup
+    }
+
+    streamRef.current = nextStream
+    setLocalStream(nextStream)
+    return nextStream
+  }
+
+  async function filteredCameraOutputTrack(sourceTrack, filterId = cameraFilterRef.current) {
+    const normalizedFilterId = normalizeVideoFilterId(filterId)
+
+    if (!isVideoFilterActive(normalizedFilterId)) {
+      stopCameraFilterPipeline({ stopSource: false })
+      return sourceTrack
+    }
+
+    if (!supportsCameraFilterPipeline()) {
+      throw new Error('This browser does not support camera filters.')
+    }
+
+    let pipeline = cameraFilterPipelineRef.current
+    const pipelineReusable = pipeline
+      && !pipeline.stopped
+      && pipeline.sourceTrack === sourceTrack
+      && isLiveTrack(pipeline.outputTrack)
+
+    if (!pipelineReusable) {
+      stopCameraFilterPipeline({ stopSource: false })
+      pipeline = new CameraFilterPipeline(sourceTrack, normalizedFilterId, {
+        frameRate: 20,
+        maxWidth: 960,
+        maxHeight: 540,
+      })
+      cameraFilterPipelineRef.current = pipeline
+      filteredCameraTrackRef.current = await pipeline.start()
+    } else {
+      pipeline.setFilter(normalizedFilterId)
+      filteredCameraTrackRef.current = pipeline.outputTrack
+    }
+
+    return filteredCameraTrackRef.current
+  }
+
+  async function syncCameraFilterTrack({ filterId = cameraFilterRef.current, replaceOutgoing = true } = {}) {
+    if (rtcModeRef.current === 'audio') return null
+
+    const normalizedFilterId = normalizeVideoFilterId(filterId)
+    const sourceTrack = rememberCameraSourceFromStream()
+
+    if (!isLiveTrack(sourceTrack)) return null
+
+    const outputTrack = await filteredCameraOutputTrack(sourceTrack, normalizedFilterId)
+    outputTrack.enabled = cameraOnRef.current
+    sourceTrack.enabled = cameraOnRef.current
+
+    const nextStream = replaceCameraTrackInLocalStream(outputTrack)
+
+    if (replaceOutgoing && !screenShareTrackRef.current) {
+      await rtcRef.current?.replaceLocalTrack('video', outputTrack, nextStream)
+    }
+
+    return outputTrack
+  }
+
+  async function prepareStreamWithCameraFilter(stream, rtcModeValue) {
+    if (rtcModeValue === 'audio') return stream
+
+    const sourceTrack = stream?.getVideoTracks?.().find((track) => isLiveTrack(track)) || null
+    cameraSourceTrackRef.current = sourceTrack
+
+    if (!sourceTrack || !isVideoFilterActive(cameraFilterRef.current)) return stream
+
+    let outputTrack = null
+    try {
+      outputTrack = await filteredCameraOutputTrack(sourceTrack, cameraFilterRef.current)
+    } catch (error) {
+      setCameraFilter('normal')
+      cameraFilterRef.current = 'normal'
+      stopCameraFilterPipeline({ stopSource: false })
+      setStatus(`Camera filter unavailable; joining with normal camera: ${error.message}`)
+      return stream
+    }
+
+    outputTrack.enabled = sourceTrack.enabled
+
+    const nextStream = new MediaStream([
+      ...stream.getAudioTracks(),
+      outputTrack,
+    ])
+
+    if (typeof stream?.__cleanup === 'function') {
+      nextStream.__cleanup = stream.__cleanup
+    }
+
+    return nextStream
+  }
+
   function resetRtcState({ clearState = true } = {}) {
     if (socketRef.current) {
       const socket = socketRef.current
@@ -286,6 +438,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcRef.current.closeAll()
       rtcRef.current = null
     }
+    stopCameraFilterPipeline({ stopSource: true })
     stopMediaStream(streamRef.current)
     if (screenShareTrackRef.current) {
       try { screenShareTrackRef.current.stop() } catch {}
@@ -332,6 +485,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     streamRef.current?.getVideoTracks().forEach((track) => {
       track.enabled = track === screenShareTrackRef.current ? true : nextCameraOn
     })
+    if (cameraSourceTrackRef.current && cameraSourceTrackRef.current !== screenShareTrackRef.current) {
+      cameraSourceTrackRef.current.enabled = nextCameraOn
+    }
+    if (filteredCameraTrackRef.current) {
+      filteredCameraTrackRef.current.enabled = nextCameraOn
+    }
   }
 
   async function syncMediaPermissions(mode = rtcModeRef.current) {
@@ -350,6 +509,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     const previousStream = streamRef.current
     const previousTracks = previousStream?.getTracks?.() || []
+    let outgoingTrack = track
+
+    if (kind === 'video') {
+      stopCameraFilterPipeline({ stopSource: true })
+      cameraSourceTrackRef.current = track
+      outgoingTrack = await filteredCameraOutputTrack(track, cameraFilterRef.current)
+    }
+
     const keptTracks = previousTracks.filter((item) => item !== track && item.kind !== kind && item.readyState !== 'ended')
 
     previousTracks
@@ -359,15 +526,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
 
     track.enabled = true
+    outgoingTrack.enabled = true
 
-    const nextStream = new MediaStream([...keptTracks, track])
+    const nextStream = new MediaStream([...keptTracks, outgoingTrack])
     if (typeof previousStream?.__cleanup === 'function') {
       nextStream.__cleanup = previousStream.__cleanup
     }
 
     streamRef.current = nextStream
     setLocalStream(nextStream)
-    await rtcRef.current.addLocalTrack(track, nextStream)
+    await rtcRef.current.addLocalTrack(outgoingTrack, nextStream)
 
     const nextMicOn = kind === 'audio' ? true : micOnRef.current
     const nextCameraOn = kind === 'video' ? true : cameraOnRef.current
@@ -380,7 +548,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(kind === 'video' ? 'Camera is live' : 'Microphone is live')
     }
 
-    return track
+    return outgoingTrack
   }
 
   async function flushPendingLocalTracks(options = {}) {
@@ -667,6 +835,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function currentCameraTrack(excludeTrack = null) {
+    if (isLiveTrack(filteredCameraTrackRef.current) && filteredCameraTrackRef.current !== excludeTrack) {
+      return filteredCameraTrackRef.current
+    }
+
+    if (isLiveTrack(cameraSourceTrackRef.current) && cameraSourceTrackRef.current !== excludeTrack) {
+      return cameraSourceTrackRef.current
+    }
+
     return streamRef.current?.getVideoTracks?.().find((track) => (
       track !== excludeTrack && track.readyState === 'live' && track !== screenShareTrackRef.current
     )) || null
@@ -787,6 +963,62 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (mediaUpdating.screen) return
     if (screenSharing) return stopScreenShare()
     return startScreenShare()
+  }
+
+  async function changeCameraFilter(filterId) {
+    if (mediaUpdating.filter) return
+
+    const normalizedFilterId = normalizeVideoFilterId(filterId)
+    const filter = getVideoFilter(normalizedFilterId)
+
+    setCameraFilter(normalizedFilterId)
+    cameraFilterRef.current = normalizedFilterId
+
+    if (rtcModeRef.current === 'audio') {
+      setStatus('Camera filters are available in video rooms.')
+      return
+    }
+
+    if (!joinedRef.current) {
+      setStatus(`${filter.label} filter selected. It will apply when you connect RTC.`)
+      return
+    }
+
+    setMediaUpdating((state) => ({ ...state, filter: true }))
+
+    try {
+      let sourceTrack = rememberCameraSourceFromStream()
+
+      if (!sourceTrack && cameraOnRef.current && !screenShareTrackRef.current) {
+        setStatus('Requesting camera for filter...')
+        const { track } = await requestLocalMediaTrack('video')
+        cameraSourceTrackRef.current = track
+        sourceTrack = track
+      }
+
+      if (sourceTrack) {
+        await syncCameraFilterTrack({
+          filterId: normalizedFilterId,
+          replaceOutgoing: !screenShareTrackRef.current,
+        })
+      }
+
+      if (!sourceTrack && normalizedFilterId !== 'normal') {
+        setStatus(`${filter.label} filter selected. Turn camera on to apply it.`)
+      } else if (screenShareTrackRef.current) {
+        setStatus(`${filter.label} filter selected. It will apply when screen share stops.`)
+      } else {
+        setStatus(normalizedFilterId === 'normal' ? 'Camera filter removed' : `${filter.label} camera filter applied`)
+      }
+    } catch (error) {
+      setCameraFilter('normal')
+      cameraFilterRef.current = 'normal'
+      stopCameraFilterPipeline({ stopSource: false })
+      await syncCameraFilterTrack({ filterId: 'normal', replaceOutgoing: !screenShareTrackRef.current }).catch(() => {})
+      setStatus(`Camera filter failed: ${error.message}`)
+    } finally {
+      setMediaUpdating((state) => ({ ...state, filter: false }))
+    }
   }
 
   function shouldInitiateOffer(remoteSocketId) {
@@ -921,20 +1153,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           try { track.stop() } catch {}
         })
       }
-      streamRef.current = media.stream
-      setLocalStream(media.stream)
+      const localMediaStream = await prepareStreamWithCameraFilter(media.stream, joinedRtcMode)
+      streamRef.current = localMediaStream
+      setLocalStream(localMediaStream)
       setMediaState(media.warning ? 'warning' : 'ready')
       await syncMediaPermissions(joinedRtcMode)
 
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
-      let actualMicOn = requestedMicOn && hasLiveTrack(media.stream, 'audio')
-      let actualCameraOn = requestedCameraOn && hasLiveTrack(media.stream, 'video')
+      let actualMicOn = requestedMicOn && hasLiveTrack(localMediaStream, 'audio')
+      let actualCameraOn = requestedCameraOn && hasLiveTrack(localMediaStream, 'video')
 
       setMicOn(actualMicOn)
       setCameraOn(actualCameraOn)
-      media.stream.getAudioTracks().forEach((track) => { track.enabled = actualMicOn })
-      media.stream.getVideoTracks().forEach((track) => { track.enabled = actualCameraOn })
+      localMediaStream.getAudioTracks().forEach((track) => { track.enabled = actualMicOn })
+      localMediaStream.getVideoTracks().forEach((track) => { track.enabled = actualCameraOn })
+      if (cameraSourceTrackRef.current) cameraSourceTrackRef.current.enabled = actualCameraOn
 
       async function syncBackendMediaState(nextMicOn, nextCameraOn) {
         await apiRequest(`/rooms/${roomId}/media-state`, {
@@ -962,7 +1196,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       const rtcClient = new NativeRtcClient({
         socket,
-        localStream: media.stream,
+        localStream: localMediaStream,
         rtcMode: joinedRtcMode,
         iceServers: rtcConfig.iceServers,
         iceTransportPolicy: rtcConfig.iceTransportPolicy,
@@ -1350,6 +1584,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [rtcMode])
 
   useEffect(() => {
+    cameraFilterRef.current = normalizeVideoFilterId(cameraFilter)
+  }, [cameraFilter])
+
+  useEffect(() => {
     if (!joined) return undefined
 
     function sendPresence() {
@@ -1497,6 +1735,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats })
+  const activeCameraFilter = getVideoFilter(cameraFilter)
+  const cameraFilterActive = isVideoFilterActive(cameraFilter)
+  const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
+  const filterButtonTitle = rtcMode === 'audio'
+    ? 'Camera filters are available in video rooms'
+    : cameraFilterActive ? `${activeCameraFilter.label} filter active` : 'Camera filters'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -1661,7 +1905,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : 'AI guard'}</strong>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Camera filters' : 'AI guard'}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
                 </header>
                 {activeToolPanel === 'screen' ? (
@@ -1671,6 +1915,26 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
                     </button>
                     <small>{room?.screen_share_enabled === false ? 'Owner controls have Screen share turned off.' : 'Presenter tools are available for this room.'}</small>
+                  </div>
+                ) : activeToolPanel === 'filters' ? (
+                  <div className="tool-status-panel camera-filter-panel">
+                    <p>{activeCameraFilter.label}: {activeCameraFilter.detail}</p>
+                    <div className="camera-filter-grid" aria-label="Camera filter presets">
+                      {VIDEO_FILTERS.map((filter) => (
+                        <button
+                          key={filter.id}
+                          type="button"
+                          className={cameraFilter === filter.id ? 'active' : ''}
+                          onClick={() => changeCameraFilter(filter.id)}
+                          disabled={mediaUpdating.filter || rtcMode === 'audio'}
+                          aria-pressed={cameraFilter === filter.id}
+                        >
+                          <span className={`filter-swatch ${filter.id}`} aria-hidden="true"></span>
+                          <strong>{filter.label}</strong>
+                        </button>
+                      ))}
+                    </div>
+                    <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Selected preset will apply after screen share.' : 'Outgoing camera preset'}</small>
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
@@ -1721,6 +1985,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 title={cameraButtonTitle}
               >
                 <span className="control-glyph camera"></span>
+              </button>
+              <button
+                className={activeToolPanel === 'filters' || cameraFilterActive ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+                onClick={() => toggleToolPanel('filters')}
+                disabled={filterButtonDisabled}
+                aria-label={filterButtonTitle}
+                aria-pressed={activeToolPanel === 'filters' || cameraFilterActive}
+                title={filterButtonTitle}
+              >
+                <span className="control-glyph effects"></span>
               </button>
               <button
                 className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}

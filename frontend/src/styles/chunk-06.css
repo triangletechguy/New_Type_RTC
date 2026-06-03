@@ -618,6 +618,86 @@
   font-weight: 800;
 }
 
+.camera-filter-panel p {
+  color: #e0f2fe;
+  font-weight: 900;
+}
+
+.camera-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.camera-filter-grid button {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .72);
+  color: #e5e7eb;
+  text-align: left;
+}
+
+.camera-filter-grid button.active {
+  border-color: rgba(125, 92, 255, .65);
+  background: rgba(125, 92, 255, .2);
+  color: #fff;
+}
+
+.camera-filter-grid button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.camera-filter-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.filter-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  background: linear-gradient(135deg, #f8fafc, #94a3b8);
+}
+
+.filter-swatch.warm {
+  background: linear-gradient(135deg, #fff7ad, #fb7185);
+}
+
+.filter-swatch.cool {
+  background: linear-gradient(135deg, #67e8f9, #6366f1);
+}
+
+.filter-swatch.vintage {
+  background: linear-gradient(135deg, #f5d0a9, #7c2d12);
+}
+
+.filter-swatch.bright {
+  background: linear-gradient(135deg, #fff, #facc15);
+}
+
+.filter-swatch.contrast {
+  background: linear-gradient(135deg, #020617 0 48%, #f8fafc 52% 100%);
+}
+
+.filter-swatch.grayscale {
+  background: linear-gradient(135deg, #f8fafc, #64748b, #0f172a);
+}
+
+.filter-swatch.blur {
+  background: radial-gradient(circle at 50% 50%, #e0f2fe 0 22%, #38bdf8 42%, #1e293b 100%);
+}
+
 .ai-guard-panel p {
   color: #67efff;
   font-family: Georgia, "Times New Roman", serif;
