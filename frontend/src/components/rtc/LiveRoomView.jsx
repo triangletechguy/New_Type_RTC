@@ -658,7 +658,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setMediaUpdating((state) => ({ ...state, screen: true }))
       setStatus('Choose a screen or window to share...')
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'always' },
+        video: {
+          cursor: 'always',
+          width: { max: 1280 },
+          height: { max: 720 },
+          frameRate: { ideal: 10, max: 15 },
+        },
         audio: false,
       })
       const [track] = displayStream.getVideoTracks()

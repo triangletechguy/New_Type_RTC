@@ -5,9 +5,9 @@ const audioConstraints = {
 }
 
 const videoConstraints = {
-  width: { ideal: 640, max: 1280 },
-  height: { ideal: 360, max: 720 },
-  frameRate: { ideal: 24, max: 30 },
+  width: { ideal: 640, max: 960 },
+  height: { ideal: 360, max: 540 },
+  frameRate: { ideal: 20, max: 24 },
 }
 
 const permissionNames = {
@@ -77,6 +77,7 @@ export async function requestLocalMediaTrack(kind) {
       throw new Error(`No ${mediaKind === 'audio' ? 'microphone' : 'camera'} track was returned by the browser.`)
     }
 
+    prepareCapturedTrack(track, mediaKind)
     return { stream, track }
   } catch (error) {
     if (error?.message?.startsWith('No ')) throw error
@@ -218,6 +219,7 @@ function startMediaCapture(kind, constraints) {
         }
       }
 
+      prepareCapturedTrack(track, kind)
       return { kind, stream, track }
     })
     .catch((error) => ({ kind, error }))
@@ -232,6 +234,17 @@ function waitForCapture(capture, timeoutMs) {
       window.setTimeout(() => resolve({ kind: capture.kind, timedOut: true }), timeoutMs)
     }),
   ])
+}
+
+function prepareCapturedTrack(track, kind) {
+  if (!track) return
+
+  try {
+    if (kind === 'audio') track.contentHint = 'speech'
+    if (kind === 'video') track.contentHint = 'motion'
+  } catch {
+    // contentHint is optional and browser-dependent.
+  }
 }
 
 function stopCapturedStream(stream) {

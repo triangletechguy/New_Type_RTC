@@ -37,6 +37,11 @@ function buildIceServers() {
 const RTC_STATS_INTERVAL_MS = 2000
 const ICE_RESTART_DELAY_MS = 1400
 const ICE_RESTART_MAX_ATTEMPTS = 3
+const AUDIO_MAX_BITRATE = 32000
+const CAMERA_MAX_BITRATE = 650000
+const CAMERA_MAX_FRAMERATE = 24
+const SCREEN_MAX_BITRATE = 1200000
+const SCREEN_MAX_FRAMERATE = 12
 
 function emptyMediaStats() {
   return {
@@ -132,6 +137,28 @@ function connectionQuality({ connectionState, iceConnectionState, bitrateKbps, p
   if (packetLossPct >= 3 || rttMs >= 220) return 'fair'
   if (bitrateKbps <= 1) return 'idle'
   return 'good'
+}
+
+function isScreenTrack(track) {
+  const hint = String(track?.contentHint || '').toLowerCase()
+  const label = String(track?.label || '').toLowerCase()
+  return hint === 'detail' || hint === 'text' || label.includes('screen') || label.includes('display') || label.includes('window')
+}
+
+function senderLimitsForTrack(track) {
+  if (!track) return null
+  if (track.kind === 'audio') return { maxBitrate: AUDIO_MAX_BITRATE }
+  if (track.kind !== 'video') return null
+
+  return isScreenTrack(track)
+    ? {
+        maxBitrate: SCREEN_MAX_BITRATE,
+        maxFramerate: SCREEN_MAX_FRAMERATE,
+      }
+    : {
+        maxBitrate: CAMERA_MAX_BITRATE,
+        maxFramerate: CAMERA_MAX_FRAMERATE,
+      }
 }
 
 function buildStatsSnapshot(remoteSocketId, peerConnection, reportMap, previous) {
@@ -238,6 +265,49 @@ export class NativeRtcClient {
     if (this.onPeerRecovery) this.onPeerRecovery(remoteSocketId, status, detail)
   }
 
+  async tuneSenderForTrack(sender, track) {
+    const limits = senderLimitsForTrack(track)
+    if (!sender || !limits || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return
+
+    try {
+      const parameters = sender.getParameters() || {}
+      const encodings = Array.isArray(parameters.encodings) && parameters.encodings.length
+        ? parameters.encodings
+        : [{}]
+
+      parameters.encodings = encodings.map((encoding) => ({
+        ...encoding,
+        ...limits,
+      }))
+
+      await sender.setParameters(parameters)
+    } catch {
+      // Some browsers reject sender parameter changes until negotiation settles.
+    }
+  }
+
+  addTunedTrack(peerConnection, track, stream) {
+    const limits = senderLimitsForTrack(track)
+
+    if (limits && typeof peerConnection.addTransceiver === 'function') {
+      try {
+        const transceiver = peerConnection.addTransceiver(track, {
+          direction: 'sendrecv',
+          streams: stream ? [stream] : [],
+          sendEncodings: [limits],
+        })
+        this.tuneSenderForTrack(transceiver.sender, track).catch(() => {})
+        return transceiver.sender
+      } catch {
+        // Fall back to addTrack for browsers that reject sendEncodings.
+      }
+    }
+
+    const sender = stream ? peerConnection.addTrack(track, stream) : peerConnection.addTrack(track)
+    this.tuneSenderForTrack(sender, track).catch(() => {})
+    return sender
+  }
+
   clearIceRestart(remoteSocketId) {
     if (this.iceRestartTimers[remoteSocketId]) {
       clearTimeout(this.iceRestartTimers[remoteSocketId])
@@ -303,7 +373,7 @@ export class NativeRtcClient {
 
     if (this.localStream) {
       localTracks.forEach((track) => {
-        peerConnection.addTrack(track, this.localStream)
+        this.addTunedTrack(peerConnection, track, this.localStream)
       })
     }
 
@@ -534,11 +604,13 @@ export class NativeRtcClient {
 
       if (sender) {
         await sender.replaceTrack(track)
+        await this.tuneSenderForTrack(sender, track)
       } else if (transceiver) {
         transceiver.direction = transceiver.direction.includes('recv') ? 'sendrecv' : 'sendonly'
         await transceiver.sender.replaceTrack(track)
+        await this.tuneSenderForTrack(transceiver.sender, track)
       } else {
-        peerConnection.addTrack(track, mediaStream)
+        this.addTunedTrack(peerConnection, track, mediaStream)
       }
     }
 
@@ -564,13 +636,15 @@ export class NativeRtcClient {
 
       if (sender) {
         await sender.replaceTrack(track || null)
+        if (track) await this.tuneSenderForTrack(sender, track)
       } else if (transceiver) {
         transceiver.direction = track
           ? transceiver.direction.includes('recv') ? 'sendrecv' : 'sendonly'
           : transceiver.direction.includes('recv') ? 'recvonly' : 'inactive'
         await transceiver.sender.replaceTrack(track || null)
+        if (track) await this.tuneSenderForTrack(transceiver.sender, track)
       } else if (track && mediaStream) {
-        peerConnection.addTrack(track, mediaStream)
+        this.addTunedTrack(peerConnection, track, mediaStream)
       }
     }
 
