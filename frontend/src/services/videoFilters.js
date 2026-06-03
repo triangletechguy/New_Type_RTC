@@ -50,6 +50,39 @@ export const VIDEO_FILTERS = [
   },
 ]
 
+export const BACKGROUND_EFFECTS = [
+  {
+    id: 'none',
+    label: 'Original',
+    detail: 'No background processing',
+  },
+  {
+    id: 'blur',
+    label: 'Blur',
+    detail: 'Blur the room behind you',
+  },
+  {
+    id: 'replace',
+    label: 'Replace',
+    detail: 'Soft RTC studio scene',
+  },
+  {
+    id: 'studio',
+    label: 'Studio',
+    detail: 'Clean presenter lighting',
+  },
+  {
+    id: 'dark',
+    label: 'Dark room',
+    detail: 'Low-light private stage',
+  },
+  {
+    id: 'clean',
+    label: 'Clean room',
+    detail: 'Bright minimal room',
+  },
+]
+
 export const DEFAULT_BEAUTY_SETTINGS = Object.freeze({
   smooth: 0,
   brightness: 0,
@@ -70,9 +103,16 @@ export const BEAUTY_CONTROLS = [
 
 const FILTER_MAP = new Map(VIDEO_FILTERS.map((filter) => [filter.id, filter]))
 const DEFAULT_FILTER = VIDEO_FILTERS[0]
+const BACKGROUND_MAP = new Map(BACKGROUND_EFFECTS.map((effect) => [effect.id, effect]))
+const DEFAULT_BACKGROUND = BACKGROUND_EFFECTS[0]
 const DEFAULT_WIDTH = 640
 const DEFAULT_HEIGHT = 360
 const DEFAULT_FPS = 20
+const SEGMENTATION_FPS = 10
+const MEDIAPIPE_TASKS_VERSION = '0.10.35'
+const MEDIAPIPE_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VERSION}/wasm`
+const SELFIE_SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'
+let imageSegmenterPromise = null
 
 function clampNumber(value, min, max, fallback) {
   const number = Number(value)
@@ -127,6 +167,19 @@ export function isVideoFilterActive(filterId) {
   return normalizeVideoFilterId(filterId) !== DEFAULT_FILTER.id
 }
 
+export function normalizeBackgroundEffectId(effectId) {
+  const normalized = String(effectId || '').trim().toLowerCase()
+  return BACKGROUND_MAP.has(normalized) ? normalized : DEFAULT_BACKGROUND.id
+}
+
+export function getBackgroundEffect(effectId) {
+  return BACKGROUND_MAP.get(normalizeBackgroundEffectId(effectId)) || DEFAULT_BACKGROUND
+}
+
+export function isBackgroundEffectActive(effectId) {
+  return normalizeBackgroundEffectId(effectId) !== DEFAULT_BACKGROUND.id
+}
+
 export function normalizeBeautySettings(settings = {}) {
   return BEAUTY_CONTROLS.reduce((normalized, control) => {
     normalized[control.id] = Math.round(clampNumber(settings[control.id], control.min, control.max, DEFAULT_BEAUTY_SETTINGS[control.id]))
@@ -139,8 +192,8 @@ export function isBeautySettingsActive(settings = {}) {
   return BEAUTY_CONTROLS.some((control) => normalized[control.id] > DEFAULT_BEAUTY_SETTINGS[control.id])
 }
 
-export function isCameraFilterEffectActive(filterId, beautySettings = {}) {
-  return isVideoFilterActive(filterId) || isBeautySettingsActive(beautySettings)
+export function isCameraFilterEffectActive(filterId, beautySettings = {}, backgroundEffect = DEFAULT_BACKGROUND.id) {
+  return isVideoFilterActive(filterId) || isBeautySettingsActive(beautySettings) || isBackgroundEffectActive(backgroundEffect)
 }
 
 function settingRatio(settings, key) {
@@ -173,11 +226,49 @@ export function supportsCameraFilterPipeline() {
   return typeof canvas.captureStream === 'function' && typeof MediaStream !== 'undefined'
 }
 
+async function loadImageSegmenter() {
+  if (imageSegmenterPromise) return imageSegmenterPromise
+
+  imageSegmenterPromise = import('@mediapipe/tasks-vision')
+    .then(async ({ FilesetResolver, ImageSegmenter }) => {
+      const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL)
+      return ImageSegmenter.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: SELFIE_SEGMENTER_MODEL_URL,
+          delegate: 'GPU',
+        },
+        runningMode: 'VIDEO',
+        outputCategoryMask: true,
+        outputConfidenceMasks: false,
+      })
+    })
+    .catch((error) => {
+      imageSegmenterPromise = null
+      throw error
+    })
+
+  return imageSegmenterPromise
+}
+
+function setCanvasSize(canvas, width, height) {
+  if (!canvas) return
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
+}
+
+function createOutputCanvas(width, height) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  return canvas
+}
+
 export class CameraFilterPipeline {
   constructor(sourceTrack, filterId = DEFAULT_FILTER.id, options = {}) {
     this.sourceTrack = sourceTrack
     this.filterId = normalizeVideoFilterId(filterId)
     this.beautySettings = normalizeBeautySettings(options.beautySettings)
+    this.backgroundEffect = normalizeBackgroundEffectId(options.backgroundEffect)
     this.frameRate = clampNumber(options.frameRate, 8, 30, DEFAULT_FPS)
     this.maxWidth = clampNumber(options.maxWidth, 240, 1280, DEFAULT_WIDTH)
     this.maxHeight = clampNumber(options.maxHeight, 180, 720, DEFAULT_HEIGHT)
@@ -186,10 +277,20 @@ export class CameraFilterPipeline {
     this.context = null
     this.scratchCanvas = null
     this.scratchContext = null
+    this.maskCanvas = null
+    this.maskContext = null
+    this.detailCanvas = null
+    this.detailContext = null
     this.sourceStream = null
     this.outputStream = null
     this.outputTrack = null
     this.frameHandle = null
+    this.segmenter = null
+    this.segmenterLoading = false
+    this.segmenterError = null
+    this.hasSegmentationMask = false
+    this.lastSegmentationAt = 0
+    this.segmentationIntervalMs = 1000 / SEGMENTATION_FPS
     this.stopped = false
   }
 
@@ -231,8 +332,12 @@ export class CameraFilterPipeline {
     this.scratchCanvas.width = width
     this.scratchCanvas.height = height
     this.scratchContext = this.scratchCanvas.getContext('2d', { alpha: false })
+    this.maskCanvas = createOutputCanvas(width, height)
+    this.maskContext = this.maskCanvas.getContext('2d', { alpha: true })
+    this.detailCanvas = createOutputCanvas(width, height)
+    this.detailContext = this.detailCanvas.getContext('2d', { alpha: false })
 
-    if (!this.context || !this.scratchContext) {
+    if (!this.context || !this.scratchContext || !this.maskContext || !this.detailContext) {
       throw new Error('Camera filter canvas could not be created.')
     }
 
@@ -261,6 +366,218 @@ export class CameraFilterPipeline {
     this.beautySettings = normalizeBeautySettings(settings)
   }
 
+  setBackgroundEffect(effectId) {
+    this.backgroundEffect = normalizeBackgroundEffectId(effectId)
+  }
+
+  ensureSegmenter() {
+    if (!isBackgroundEffectActive(this.backgroundEffect) || this.segmenter || this.segmenterLoading || this.segmenterError || this.stopped) return
+
+    this.segmenterLoading = true
+    loadImageSegmenter()
+      .then((segmenter) => {
+        if (this.stopped) return
+        this.segmenter = segmenter
+        this.segmenterError = null
+      })
+      .catch((error) => {
+        this.segmenterError = error
+        console.error('[video-filter] MediaPipe background segmentation failed', error)
+      })
+      .finally(() => {
+        this.segmenterLoading = false
+      })
+  }
+
+  captureSegmentationMask(result) {
+    const mask = result?.categoryMask
+    if (!mask || !this.maskContext || !this.maskCanvas) {
+      try { result?.close?.() } catch {}
+      return
+    }
+
+    try {
+      const width = mask.width || this.canvas?.width || DEFAULT_WIDTH
+      const height = mask.height || this.canvas?.height || DEFAULT_HEIGHT
+      const maskData = typeof mask.getAsUint8Array === 'function'
+        ? mask.getAsUint8Array()
+        : mask.getAsFloat32Array()
+
+      if (!maskData?.length) return
+
+      setCanvasSize(this.maskCanvas, width, height)
+
+      const imageData = this.maskContext.createImageData(width, height)
+      const output = imageData.data
+      const pixelCount = Math.min(width * height, maskData.length)
+
+      for (let index = 0; index < pixelCount; index += 1) {
+        const value = maskData[index]
+        const alpha = value > 0 ? 255 : 0
+        const offset = index * 4
+        output[offset] = 255
+        output[offset + 1] = 255
+        output[offset + 2] = 255
+        output[offset + 3] = alpha
+      }
+
+      this.maskContext.putImageData(imageData, 0, 0)
+      this.hasSegmentationMask = true
+    } catch (error) {
+      this.hasSegmentationMask = false
+      this.segmenterError = error
+      console.error('[video-filter] MediaPipe mask conversion failed', error)
+    } finally {
+      try { result?.close?.() } catch {}
+    }
+  }
+
+  updateSegmentationMask(video) {
+    if (!isBackgroundEffectActive(this.backgroundEffect)) return
+    this.ensureSegmenter()
+
+    if (!this.segmenter || this.segmenterError) return
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (now - this.lastSegmentationAt < this.segmentationIntervalMs) return
+
+    this.lastSegmentationAt = now
+
+    try {
+      this.segmenter.segmentForVideo(video, now, (result) => this.captureSegmentationMask(result))
+    } catch (error) {
+      this.segmenterError = error
+      console.error('[video-filter] MediaPipe video segmentation failed', error)
+    }
+  }
+
+  drawProcessedFrame(targetContext, video, width, height, filter, beautySettings, canvasFilter) {
+    const smooth = settingRatio(beautySettings, 'smooth')
+
+    targetContext.save()
+    targetContext.clearRect(0, 0, width, height)
+    targetContext.filter = canvasFilter
+    targetContext.drawImage(video, 0, 0, width, height)
+    targetContext.filter = 'none'
+
+    if (smooth > 0) {
+      targetContext.globalAlpha = smooth * 0.28
+      targetContext.filter = `${canvasFilter === 'none' ? '' : `${canvasFilter} `}blur(${(1 + smooth * 2.3).toFixed(2)}px)`
+      targetContext.drawImage(video, 0, 0, width, height)
+      targetContext.globalAlpha = 1
+      targetContext.filter = 'none'
+    }
+
+    if (filter.overlay) {
+      targetContext.fillStyle = filter.overlay
+      targetContext.fillRect(0, 0, width, height)
+    }
+
+    targetContext.restore()
+  }
+
+  drawBackgroundLayer(context, video, width, height) {
+    const effectId = normalizeBackgroundEffectId(this.backgroundEffect)
+    context.save()
+    context.clearRect(0, 0, width, height)
+
+    if (effectId === 'blur') {
+      context.filter = 'blur(14px) saturate(1.08) brightness(.84)'
+      context.drawImage(video, -18, -18, width + 36, height + 36)
+      context.filter = 'none'
+      context.fillStyle = 'rgba(2, 6, 23, .18)'
+      context.fillRect(0, 0, width, height)
+    } else if (effectId === 'studio') {
+      const gradient = context.createRadialGradient(width * 0.5, height * 0.3, 0, width * 0.5, height * 0.3, Math.max(width, height) * 0.84)
+      gradient.addColorStop(0, '#2b3656')
+      gradient.addColorStop(0.46, '#121a32')
+      gradient.addColorStop(1, '#050814')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, width, height)
+      context.fillStyle = 'rgba(125, 92, 255, .14)'
+      context.fillRect(0, Math.round(height * 0.72), width, Math.round(height * 0.28))
+    } else if (effectId === 'dark') {
+      const gradient = context.createRadialGradient(width * 0.5, height * 0.24, 0, width * 0.5, height * 0.42, Math.max(width, height) * 0.74)
+      gradient.addColorStop(0, '#20233a')
+      gradient.addColorStop(0.52, '#080b18')
+      gradient.addColorStop(1, '#000000')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, width, height)
+      context.fillStyle = 'rgba(56, 189, 248, .1)'
+      context.fillRect(0, 0, width, Math.max(2, Math.round(height * 0.015)))
+    } else if (effectId === 'clean') {
+      const gradient = context.createLinearGradient(0, 0, width, height)
+      gradient.addColorStop(0, '#eef7ff')
+      gradient.addColorStop(0.48, '#d9f7f0')
+      gradient.addColorStop(1, '#f8fbff')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, width, height)
+      context.fillStyle = 'rgba(15, 23, 42, .06)'
+      context.fillRect(0, Math.round(height * 0.7), width, Math.round(height * 0.3))
+    } else {
+      const gradient = context.createLinearGradient(0, 0, width, height)
+      gradient.addColorStop(0, '#10334b')
+      gradient.addColorStop(0.42, '#372070')
+      gradient.addColorStop(1, '#061522')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, width, height)
+
+      const glow = context.createRadialGradient(width * 0.76, height * 0.2, 0, width * 0.76, height * 0.2, Math.max(width, height) * 0.58)
+      glow.addColorStop(0, 'rgba(74, 222, 128, .34)')
+      glow.addColorStop(0.48, 'rgba(125, 92, 255, .16)')
+      glow.addColorStop(1, 'rgba(125, 92, 255, 0)')
+      context.fillStyle = glow
+      context.fillRect(0, 0, width, height)
+    }
+
+    context.restore()
+  }
+
+  applyForegroundMask(width, height) {
+    if (!this.scratchContext || !this.maskCanvas) return false
+    if (!this.hasSegmentationMask || !this.maskCanvas.width || !this.maskCanvas.height) return false
+
+    this.scratchContext.save()
+    this.scratchContext.globalCompositeOperation = 'destination-in'
+    this.scratchContext.filter = 'blur(2px)'
+    this.scratchContext.drawImage(this.maskCanvas, 0, 0, width, height)
+    this.scratchContext.filter = 'none'
+    this.scratchContext.restore()
+    return true
+  }
+
+  applySoftLighting(context, width, height, lighting) {
+    if (lighting <= 0) return
+
+    const centerX = width * 0.5
+    const centerY = height * 0.38
+    const radius = Math.max(width, height) * 0.52
+    const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
+    gradient.addColorStop(0, `rgba(255, 244, 224, ${(lighting * 0.26).toFixed(3)})`)
+    gradient.addColorStop(0.42, `rgba(255, 231, 199, ${(lighting * 0.12).toFixed(3)})`)
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    context.save()
+    context.globalCompositeOperation = 'screen'
+    context.fillStyle = gradient
+    context.fillRect(0, 0, width, height)
+    context.restore()
+  }
+
+  applySharpen(context, video, width, height, sharpen) {
+    if (sharpen <= 0 || !this.detailContext || !this.detailCanvas) return
+
+    this.detailContext.clearRect(0, 0, width, height)
+    this.detailContext.filter = `contrast(${(1.28 + sharpen * 0.48).toFixed(3)}) saturate(${(1 + sharpen * 0.12).toFixed(3)})`
+    this.detailContext.drawImage(video, 0, 0, width, height)
+    this.detailContext.filter = 'none'
+
+    context.save()
+    context.globalAlpha = sharpen * 0.13
+    context.globalCompositeOperation = 'soft-light'
+    context.drawImage(this.detailCanvas, 0, 0)
+    context.restore()
+  }
+
   drawFrame = () => {
     if (this.stopped) return
 
@@ -272,55 +589,30 @@ export class CameraFilterPipeline {
       const filter = getVideoFilter(this.filterId)
       const beautySettings = normalizeBeautySettings(this.beautySettings)
       const canvasFilter = buildBeautyCanvasFilter(filter, beautySettings)
-      const smooth = settingRatio(beautySettings, 'smooth')
       const sharpen = settingRatio(beautySettings, 'sharpen')
       const lighting = settingRatio(beautySettings, 'lighting')
-      context.save()
-      context.filter = canvasFilter
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-      context.filter = 'none'
+      const backgroundActive = isBackgroundEffectActive(this.backgroundEffect)
+      const width = canvas.width
+      const height = canvas.height
 
-      if (smooth > 0) {
-        context.globalAlpha = smooth * 0.28
-        context.filter = `${canvasFilter === 'none' ? '' : `${canvasFilter} `}blur(${(1 + smooth * 2.3).toFixed(2)}px)`
-        context.drawImage(video, 0, 0, canvas.width, canvas.height)
-        context.globalAlpha = 1
-        context.filter = 'none'
+      if (backgroundActive && this.scratchContext && this.scratchCanvas) {
+        this.updateSegmentationMask(video)
+        this.drawProcessedFrame(this.scratchContext, video, width, height, filter, beautySettings, canvasFilter)
+
+        const masked = this.applyForegroundMask(width, height)
+        if (masked) {
+          this.drawBackgroundLayer(context, video, width, height)
+          context.drawImage(this.scratchCanvas, 0, 0)
+        } else {
+          context.clearRect(0, 0, width, height)
+          context.drawImage(this.scratchCanvas, 0, 0)
+        }
+      } else {
+        this.drawProcessedFrame(context, video, width, height, filter, beautySettings, canvasFilter)
       }
 
-      if (filter.overlay) {
-        context.fillStyle = filter.overlay
-        context.fillRect(0, 0, canvas.width, canvas.height)
-      }
-
-      if (lighting > 0) {
-        const centerX = canvas.width * 0.5
-        const centerY = canvas.height * 0.38
-        const radius = Math.max(canvas.width, canvas.height) * 0.52
-        const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
-        gradient.addColorStop(0, `rgba(255, 244, 224, ${(lighting * 0.26).toFixed(3)})`)
-        gradient.addColorStop(0.42, `rgba(255, 231, 199, ${(lighting * 0.12).toFixed(3)})`)
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-        context.globalCompositeOperation = 'screen'
-        context.fillStyle = gradient
-        context.fillRect(0, 0, canvas.width, canvas.height)
-        context.globalCompositeOperation = 'source-over'
-      }
-
-      if (sharpen > 0 && this.scratchContext && this.scratchCanvas) {
-        this.scratchContext.clearRect(0, 0, canvas.width, canvas.height)
-        this.scratchContext.filter = `contrast(${(1.28 + sharpen * 0.48).toFixed(3)}) saturate(${(1 + sharpen * 0.12).toFixed(3)})`
-        this.scratchContext.drawImage(video, 0, 0, canvas.width, canvas.height)
-        this.scratchContext.filter = 'none'
-
-        context.globalAlpha = sharpen * 0.13
-        context.globalCompositeOperation = 'soft-light'
-        context.drawImage(this.scratchCanvas, 0, 0)
-        context.globalAlpha = 1
-        context.globalCompositeOperation = 'source-over'
-      }
-
-      context.restore()
+      this.applySoftLighting(context, width, height, lighting)
+      this.applySharpen(context, video, width, height, sharpen)
     }
 
     this.frameHandle = nextAnimationFrame(this.drawFrame)
@@ -352,5 +644,12 @@ export class CameraFilterPipeline {
     this.canvas = null
     this.scratchContext = null
     this.scratchCanvas = null
+    this.maskContext = null
+    this.maskCanvas = null
+    this.detailContext = null
+    this.detailCanvas = null
+    this.hasSegmentationMask = false
   }
 }
+
+export const VideoFilterPipeline = CameraFilterPipeline

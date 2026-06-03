@@ -704,6 +704,119 @@
   background: radial-gradient(circle at 50% 50%, #e0f2fe 0 22%, #38bdf8 42%, #1e293b 100%);
 }
 
+.camera-background-controls {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(56, 189, 248, .16);
+  border-radius: 8px;
+  background: rgba(8, 16, 34, .46);
+}
+
+.camera-background-controls > strong {
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.camera-background-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.camera-background-grid button {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .72);
+  color: #e5e7eb;
+  text-align: left;
+}
+
+.camera-background-grid button.active {
+  border-color: rgba(56, 189, 248, .56);
+  background: rgba(14, 165, 233, .18);
+  color: #fff;
+}
+
+.camera-background-grid button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.camera-background-grid button span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.camera-background-grid b,
+.camera-background-grid small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-background-grid b {
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.camera-background-grid small {
+  color: #aab6cc;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.background-swatch {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  background: linear-gradient(135deg, #f8fafc, #94a3b8);
+}
+
+.background-swatch::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  bottom: 5px;
+  width: 14px;
+  height: 18px;
+  border-radius: 999px 999px 7px 7px;
+  background: rgba(255, 255, 255, .82);
+}
+
+.background-swatch.blur {
+  background: radial-gradient(circle at 35% 35%, #f8fafc 0 14%, #38bdf8 24%, #312e81 80%);
+  filter: blur(.2px);
+}
+
+.background-swatch.replace {
+  background: linear-gradient(135deg, #10334b, #6d28d9 52%, #22c55e);
+}
+
+.background-swatch.studio {
+  background: radial-gradient(circle at 50% 24%, #4b5d88, #111827 70%);
+}
+
+.background-swatch.dark {
+  background: radial-gradient(circle at 50% 22%, #334155, #020617 72%);
+}
+
+.background-swatch.clean {
+  background: linear-gradient(135deg, #eff6ff, #d9f99d);
+}
+
 .camera-beauty-controls {
   display: grid;
   gap: 9px;
