@@ -5,6 +5,9 @@ import { formatChatTime } from '../../utils/formatters'
 
 const maxAudioBytes = 5 * 1024 * 1024
 const maxPhotoBytes = 6 * 1024 * 1024
+const maxPhotoInputBytes = 12 * 1024 * 1024
+const photoMaxDimension = 1600
+const photoCompressionQuality = 0.78
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -67,6 +70,111 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error('Could not read this photo.'))
     reader.readAsDataURL(file)
   })
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0)
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`
+  return `${size} B`
+}
+
+function dataUrlExtension(dataUrl = '') {
+  const match = String(dataUrl).match(/^data:image\/([a-z0-9.+-]+);/i)
+  const type = match?.[1]?.toLowerCase() || 'jpg'
+  if (type === 'jpeg') return 'jpg'
+  if (type === 'svg+xml') return 'svg'
+  return type.replace(/[^a-z0-9]/g, '') || 'jpg'
+}
+
+function photoDownloadName(prefix, id, dataUrl) {
+  return `${prefix || 'chat'}-photo-${id || Date.now()}.${dataUrlExtension(dataUrl)}`
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not optimize this photo.'))
+    image.src = dataUrl
+  })
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('Could not optimize this photo.'))
+    }, type, quality)
+  })
+}
+
+async function optimizePhotoFile(file) {
+  const originalDataUrl = await readFileAsDataUrl(file)
+
+  if (
+    typeof document === 'undefined'
+    || !file.type?.startsWith('image/')
+    || file.type === 'image/gif'
+    || file.type === 'image/svg+xml'
+  ) {
+    return {
+      dataUrl: originalDataUrl,
+      name: file.name || 'Photo',
+      size: file.size,
+      originalSize: file.size,
+      optimized: false,
+    }
+  }
+
+  try {
+    const image = await loadImageFromDataUrl(originalDataUrl)
+    const sourceWidth = image.naturalWidth || image.width
+    const sourceHeight = image.naturalHeight || image.height
+    if (!sourceWidth || !sourceHeight) throw new Error('Could not optimize this photo.')
+
+    const scale = Math.min(1, photoMaxDimension / Math.max(sourceWidth, sourceHeight))
+    const width = Math.max(1, Math.round(sourceWidth * scale))
+    const height = Math.max(1, Math.round(sourceHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Could not optimize this photo.')
+
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
+    context.drawImage(image, 0, 0, width, height)
+
+    const blob = await canvasToBlob(canvas, 'image/jpeg', photoCompressionQuality)
+    if (!blob || blob.size >= file.size) {
+      return {
+        dataUrl: originalDataUrl,
+        name: file.name || 'Photo',
+        size: file.size,
+        originalSize: file.size,
+        optimized: false,
+      }
+    }
+
+    const dataUrl = await readFileAsDataUrl(blob)
+    const baseName = String(file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo'
+    return {
+      dataUrl,
+      name: `${baseName}.jpg`,
+      size: blob.size,
+      originalSize: file.size,
+      optimized: true,
+    }
+  } catch {
+    return {
+      dataUrl: originalDataUrl,
+      name: file.name || 'Photo',
+      size: file.size,
+      originalSize: file.size,
+      optimized: false,
+    }
+  }
 }
 
 export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, onMessagesChange }) {
@@ -210,20 +318,29 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       return
     }
 
-    if (file.size > maxPhotoBytes) {
-      setStatus('Photo message must be smaller than 6 MB.')
+    if (file.size > maxPhotoInputBytes) {
+      setStatus('Photo message must be smaller than 12 MB before optimization.')
       return
     }
 
     try {
-      setStatus('')
-      const dataUrl = await readFileAsDataUrl(file)
+      setStatus('Optimizing photo...')
+      const optimizedPhoto = await optimizePhotoFile(file)
+      if (optimizedPhoto.size > maxPhotoBytes) {
+        setStatus('Photo message is still too large after optimization.')
+        return
+      }
+
       setPhotoDraft({
-        dataUrl,
-        name: file.name || 'Photo',
-        size: file.size,
+        dataUrl: optimizedPhoto.dataUrl,
+        name: optimizedPhoto.name,
+        size: optimizedPhoto.size,
+        originalSize: optimizedPhoto.originalSize,
       })
       setAudioDraft(null)
+      setStatus(optimizedPhoto.optimized
+        ? `Photo optimized from ${formatFileSize(optimizedPhoto.originalSize)} to ${formatFileSize(optimizedPhoto.size)}.`
+        : '')
       refocusComposerRef.current = true
     } catch (error) {
       setStatus(error.message)
@@ -642,12 +759,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     emitTyping(false)
   }
 
-  function openImagePreview({ src, alt, caption }) {
+  function openImagePreview({ src, alt, caption, canOpenOriginal = false, downloadName = '' }) {
     if (!src) return
     setImagePreview({
       src,
       alt: alt || 'Chat photo',
       caption: caption || '',
+      canOpenOriginal: Boolean(canOpenOriginal),
+      downloadName: downloadName || photoDownloadName('chat', '', src),
     })
   }
 
@@ -861,6 +980,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                         src: message.media_url,
                         alt: `${senderName} sent`,
                         caption: photoCaption,
+                        canOpenOriginal: mine,
+                        downloadName: photoDownloadName('room', message.id, message.media_url),
                       })}
                       aria-label={avatarMessage ? 'Preview avatar' : 'Preview image'}
                     >
@@ -1043,6 +1164,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                           src: message.media_url,
                           alt: `${senderName} sent`,
                           caption: body && body !== 'sent a photo' ? body : '',
+                          canOpenOriginal: mine,
+                          downloadName: photoDownloadName('inbox', message.id, message.media_url),
                         })}
                         aria-label="Preview photo"
                       >
@@ -1145,7 +1268,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           <img src={imagePreview.src} alt={imagePreview.alt} />
           {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
           <footer>
-            <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
+            <a className="chat-image-download-action" href={imagePreview.src} download={imagePreview.downloadName || 'chat-photo.jpg'}>Download</a>
+            {imagePreview.canOpenOriginal ? (
+              <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
+            ) : null}
           </footer>
         </section>
       </div>
