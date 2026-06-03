@@ -1146,12 +1146,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           </button>
         </div>
         <div className="buzzcast-actions">
-          <button type="button" className="buzzcast-icon-button" onClick={toggleScreenShare} disabled={joining || mediaUpdating.screen} aria-label={screenSharing ? 'Stop screen share' : 'Screen share'} title={screenSharing ? 'Stop screen share' : 'Screen share'}>
-            <span className="control-glyph screen" aria-hidden="true"></span>
-          </button>
-          <button type="button" className="buzzcast-icon-button" onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
-            <span className="control-glyph guard" aria-hidden="true"></span>
-          </button>
           <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
             <span className="image-avatar"><img src={profileAvatar} alt="" /></span>
           </button>
