@@ -265,6 +265,7 @@ const io = new Server(server, {
   perMessageDeflate: false,
 })
 
+app.set('io', io)
 registerSignaling(io)
 
 server.listen(PORT, '127.0.0.1', () => {

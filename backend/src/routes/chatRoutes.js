@@ -191,6 +191,38 @@ async function findRoomForChat(roomId, tenantId) {
   return rooms[0] || null
 }
 
+async function findActiveSignalingRoom(roomId, tenantId) {
+  const sessions = await query(
+    `
+    SELECT signaling_room
+    FROM rtc_sessions
+    WHERE room_id = :roomId
+    AND tenant_id = :tenantId
+    AND status = 'active'
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+    { roomId, tenantId }
+  )
+
+  return sessions[0]?.signaling_room || ''
+}
+
+async function broadcastRoomChatMessage(req, roomId, tenantId, message) {
+  const io = req.app?.get('io')
+  if (!io || !message?.id) return false
+
+  const signalingRoom = await findActiveSignalingRoom(roomId, tenantId)
+  if (!signalingRoom) return false
+
+  io.to(String(signalingRoom)).emit('chat-message', {
+    message,
+    source: 'http',
+  })
+
+  return true
+}
+
 async function blockedUserIdsForRoom(roomId, userId) {
   const blockedRows = await query(
     `
@@ -226,6 +258,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     const roomId = parsePositiveInteger(req.params.id)
     const limit = Math.min(100, parsePositiveInteger(req.query.limit, 50) || 50)
+    const afterId = parsePositiveInteger(req.query.after_id)
 
     if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
 
@@ -243,11 +276,15 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
     const blockedUserIds = await blockedUserIdsForRoom(roomId, req.user.id)
 
+    const params = { tenantId: req.user.tenant_id, roomId, userId: req.user.id }
+    if (afterId) params.afterId = afterId
+
     const messages = await query(
       `
       ${messageSelectSql()}
       WHERE cm.tenant_id = :tenantId
       AND cm.room_id = :roomId
+      ${afterId ? 'AND cm.id > :afterId' : ''}
       AND cm.is_deleted = 0
       AND cm.message_type <> 'gift'
       AND NOT EXISTS (
@@ -266,7 +303,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       ORDER BY cm.id DESC
       LIMIT ${limit}
       `,
-      { tenantId: req.user.tenant_id, roomId, userId: req.user.id }
+      params
     )
 
     return res.json({
@@ -344,9 +381,19 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       id: result.insertId,
     })
 
+    const chatMessage = messages[0]
+    let realtimeBroadcasted = false
+
+    try {
+      realtimeBroadcasted = await broadcastRoomChatMessage(req, roomId, req.user.tenant_id, chatMessage)
+    } catch (broadcastError) {
+      console.error('[chat] realtime broadcast failed', broadcastError)
+    }
+
     return res.status(201).json({
       message: 'Message sent successfully',
-      chat_message: messages[0],
+      chat_message: chatMessage,
+      realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {
     next(error)

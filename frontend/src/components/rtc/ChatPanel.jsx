@@ -6,8 +6,9 @@ import { formatChatTime } from '../../utils/formatters'
 const maxAudioBytes = 5 * 1024 * 1024
 const maxPhotoBytes = 6 * 1024 * 1024
 const maxPhotoInputBytes = 12 * 1024 * 1024
-const photoMaxDimension = 1600
-const photoCompressionQuality = 0.78
+const photoMaxDimension = 1280
+const photoCompressionQuality = 0.72
+const audioBitsPerSecond = 32000
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -47,6 +48,15 @@ function isVisibleRoomMessage(message, blockedSenderIds = []) {
     && !Boolean(Number(message?.is_deleted || message?.is_unsent))
     && !blockedSenderIds.some((id) => Number(id) === Number(message?.sender_id))
   )
+}
+
+function messageIdValue(message) {
+  const id = Number(message?.id || 0)
+  return Number.isFinite(id) ? id : 0
+}
+
+function latestMessageId(messages = []) {
+  return messages.reduce((latest, message) => Math.max(latest, messageIdValue(message)), 0)
 }
 
 function roleNames(user) {
@@ -221,6 +231,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const typingTimeoutRef = useRef(null)
   const previousRoomMessageCountRef = useRef(0)
   const previousInboxMessageCountRef = useRef(0)
+  const latestRoomMessageIdRef = useRef(0)
 
   const realtimeConnected = Boolean(socket?.connected && signalingRoom)
   const typingNames = Object.values(typingUsers)
@@ -246,6 +257,27 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     })
   }
 
+  function mergeRoomMessages(incomingMessages) {
+    const incoming = Array.isArray(incomingMessages)
+      ? incomingMessages.filter((message) => message?.id && isVisibleRoomMessage(message, blockedSenderIds))
+      : []
+
+    if (!incoming.length) return
+
+    setMessages((previous) => {
+      const byId = new Map()
+      previous.forEach((message) => {
+        if (message?.id) byId.set(messageIdValue(message), message)
+      })
+      incoming.forEach((message) => {
+        const id = messageIdValue(message)
+        byId.set(id, { ...(byId.get(id) || {}), ...message })
+      })
+
+      return Array.from(byId.values()).sort((a, b) => messageIdValue(a) - messageIdValue(b))
+    })
+  }
+
   function replaceMessage(updatedMessage) {
     if (!updatedMessage?.id) return
     setMessages((previous) => previous.map((message) => (
@@ -263,20 +295,38 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     return String(message.created_at) !== String(message.updated_at)
   }
 
-  async function loadMessages() {
+  async function loadMessages({ afterId = 0, silent = false } = {}) {
     if (!roomId) return
     try {
-      setLoading(true)
-      setStatus('')
-      const data = await apiRequest(`/rooms/${roomId}/messages`)
-      setMessages(data.messages || [])
+      if (!silent) {
+        setLoading(true)
+        setStatus('')
+      }
+
+      const params = new URLSearchParams()
+      if (afterId) {
+        params.set('after_id', String(afterId))
+        params.set('limit', '100')
+      }
+
+      const data = await apiRequest(`/rooms/${roomId}/messages${params.toString() ? `?${params}` : ''}`)
+      if (afterId) mergeRoomMessages(data.messages || [])
+      else setMessages(data.messages || [])
       setChatEnabled(data.meta?.chat_enabled !== false)
       setBlockedSenderIds(data.meta?.blocked_user_ids || [])
     } catch (error) {
       setStatus(error.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
+  }
+
+  async function syncMissedRoomMessages() {
+    if (!roomId) return
+    await loadMessages({
+      afterId: latestRoomMessageIdRef.current,
+      silent: true,
+    })
   }
 
   function emitTyping(active) {
@@ -376,7 +426,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       setPhotoDraft(null)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mimeType = preferredAudioMimeType()
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      const recorderOptions = {
+        audioBitsPerSecond,
+        ...(mimeType ? { mimeType } : {}),
+      }
+      const recorder = new MediaRecorder(stream, recorderOptions)
       recordingChunksRef.current = []
       recordingStreamRef.current = stream
       recorderRef.current = recorder
@@ -469,7 +523,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       emitTyping(false)
       window.clearTimeout(typingTimeoutRef.current)
 
-      if (socket && signalingRoom) {
+      if (!data.realtime_broadcasted && socket && signalingRoom) {
         socket.timeout(8000).emit(
           'chat-message',
           {
@@ -808,6 +862,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [messages, blockedSenderIds, onMessagesChange])
 
   useEffect(() => {
+    latestRoomMessageIdRef.current = latestMessageId(messages)
+  }, [messages])
+
+  useEffect(() => {
     previousRoomMessageCountRef.current = 0
     loadMessages()
   }, [roomId])
@@ -850,6 +908,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   useEffect(() => {
     if (!socket) return undefined
+    const syncAfterReconnect = () => {
+      syncMissedRoomMessages().catch((error) => setStatus(`Chat sync failed: ${error.message}`))
+    }
     const handleMessage = ({ message }) => appendMessage(message)
     const handleMessageEdited = ({ message }) => replaceMessage(message)
     const handleMessageDeleted = ({ messageId }) => {
@@ -873,22 +934,26 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       })
     }
 
+    socket.on('connect', syncAfterReconnect)
     socket.on('chat-message', handleMessage)
     socket.on('chat-message-edited', handleMessageEdited)
     socket.on('chat-message-deleted', handleMessageDeleted)
     socket.on('chat-message-unsent', handleMessageUnsent)
     socket.on('typing-start', handleTypingStart)
     socket.on('typing-stop', handleTypingStop)
+    socket.io?.on('reconnect', syncAfterReconnect)
 
     return () => {
+      socket.off('connect', syncAfterReconnect)
       socket.off('chat-message', handleMessage)
       socket.off('chat-message-edited', handleMessageEdited)
       socket.off('chat-message-deleted', handleMessageDeleted)
       socket.off('chat-message-unsent', handleMessageUnsent)
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
+      socket.io?.off('reconnect', syncAfterReconnect)
     }
-  }, [socket, user?.id, blockedSenderIds])
+  }, [socket, roomId, user?.id, blockedSenderIds])
 
   useEffect(() => () => {
     window.clearTimeout(typingTimeoutRef.current)
