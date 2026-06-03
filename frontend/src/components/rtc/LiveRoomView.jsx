@@ -219,6 +219,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [externalChatMessage, setExternalChatMessage] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
   const [screenSharing, setScreenSharing] = useState(false)
+  const [expandedScreenShareId, setExpandedScreenShareId] = useState('')
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -258,6 +259,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       }
     })
   }, [peerMediaStates, peerStates, remoteStreams])
+  const expandedScreenShareTile = useMemo(() => {
+    if (!expandedScreenShareId) return null
+
+    return remoteTiles.find(({ socketId, stream, mediaState }) => (
+      socketId === expandedScreenShareId
+      && stream
+      && mediaState?.screenShared
+    )) || null
+  }, [expandedScreenShareId, remoteTiles])
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
   const roomVisualIndex = Number(room?.id || roomId || 0)
   const roomAvatar = avatarForIndex(roomVisualIndex)
@@ -303,6 +313,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setMediaState('idle')
       setConnectStep('ready')
       setScreenSharing(false)
+      setExpandedScreenShareId('')
       setActiveToolPanel(null)
     }
   }
@@ -1431,6 +1442,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     joinRoom()
   }, [])
 
+  useEffect(() => {
+    if (!expandedScreenShareId) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setExpandedScreenShareId('')
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [expandedScreenShareId])
+
+  useEffect(() => {
+    if (expandedScreenShareId && !expandedScreenShareTile) {
+      setExpandedScreenShareId('')
+    }
+  }, [expandedScreenShareId, expandedScreenShareTile])
+
   const localAudioAvailable = hasLiveTrack(localStream, 'audio')
   const localVideoAvailable = hasLiveTrack(localStream, 'video')
   const micCanRetry = joined && !micOn && !localAudioAvailable
@@ -1584,22 +1612,29 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     rtcMode={rtcMode}
                     showMediaState
                   />
-                  {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => (
-                    <VideoTile
-                      key={socketId}
-                      stream={stream}
-                      label={label}
-                      userId={mediaState.userId}
-                      gender={mediaState.gender}
-                      avatarUrl={mediaState.avatarUrl}
-                      badge={badge}
-                      micOn={mediaState.micOn !== false}
-                      cameraOn={mediaState.cameraOn !== false}
-                      rtcMode={mediaState.rtcMode || 'video'}
-                      connectionState={peerState}
-                      showMediaState
-                    />
-                  ))}
+                  {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
+                    const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
+                    const screenShareOwner = mediaState.userName || 'remote user'
+
+                    return (
+                      <VideoTile
+                        key={socketId}
+                        stream={stream}
+                        label={label}
+                        userId={mediaState.userId}
+                        gender={mediaState.gender}
+                        avatarUrl={mediaState.avatarUrl}
+                        badge={badge}
+                        micOn={mediaState.micOn !== false}
+                        cameraOn={mediaState.cameraOn !== false}
+                        rtcMode={mediaState.rtcMode || 'video'}
+                        connectionState={peerState}
+                        showMediaState
+                        onExpand={canExpandScreenShare ? () => setExpandedScreenShareId(socketId) : undefined}
+                        expandLabel={`Open ${screenShareOwner} screen share full screen`}
+                      />
+                    )
+                  })}
                 </>
               ) : (
                 <div className="buzzcast-waiting-card">
@@ -1732,6 +1767,31 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           ) : null}
         </aside>
       </main>
+      {expandedScreenShareTile ? (
+        <div className="screen-share-viewer" role="dialog" aria-modal="true" aria-label="Remote screen share">
+          <div className="screen-share-viewer-backdrop" onClick={() => setExpandedScreenShareId('')}></div>
+          <section className="screen-share-viewer-panel">
+            <header>
+              <div>
+                <strong>{expandedScreenShareTile.mediaState.userName || 'Screen share'}</strong>
+                <span>Room ID: {room?.id || roomId}</span>
+              </div>
+              <button type="button" onClick={() => setExpandedScreenShareId('')} aria-label="Close screen share">x</button>
+            </header>
+            <VideoTile
+              stream={expandedScreenShareTile.stream}
+              label={`${expandedScreenShareTile.mediaState.userName || 'Remote user'} screen`}
+              userId={expandedScreenShareTile.mediaState.userId}
+              gender={expandedScreenShareTile.mediaState.gender}
+              avatarUrl={expandedScreenShareTile.mediaState.avatarUrl}
+              badge="screen"
+              micOn={expandedScreenShareTile.mediaState.micOn !== false}
+              cameraOn
+              rtcMode="video"
+            />
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

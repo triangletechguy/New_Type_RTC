@@ -88,12 +88,66 @@
   border: 1px solid rgba(255, 255, 255, .12);
 }
 
+.video-tile.expandable {
+  cursor: zoom-in;
+}
+
+.video-tile.expandable:focus-visible {
+  outline: 3px solid rgba(125, 92, 255, .82);
+  outline-offset: 3px;
+}
+
 .video-element {
   width: 100%;
   height: 100%;
   min-height: 330px;
   object-fit: cover;
   display: block;
+}
+
+.screen-sharing-tile .video-element {
+  object-fit: contain;
+  background: #020617;
+}
+
+.screen-expand-icon {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  background:
+    linear-gradient(135deg, transparent 46%, rgba(255, 255, 255, .95) 47%, rgba(255, 255, 255, .95) 54%, transparent 55%),
+    rgba(5, 8, 20, .74);
+  color: rgba(255, 255, 255, .95);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+  pointer-events: none;
+}
+
+.screen-expand-icon::before,
+.screen-expand-icon::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: rgba(255, 255, 255, .95);
+}
+
+.screen-expand-icon::before {
+  top: 9px;
+  right: 9px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+
+.screen-expand-icon::after {
+  left: 9px;
+  bottom: 9px;
+  border-left: 2px solid;
+  border-bottom: 2px solid;
 }
 
 .audio-element {

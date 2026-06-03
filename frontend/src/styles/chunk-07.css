@@ -319,6 +319,99 @@
   min-height: 220px;
 }
 
+.screen-share-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(2, 6, 23, .82);
+  backdrop-filter: blur(14px);
+}
+
+.screen-share-viewer-backdrop {
+  position: absolute;
+  inset: 0;
+}
+
+.screen-share-viewer-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  max-height: calc(100dvh - 44px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, .3);
+  background: #080d1c;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .55);
+}
+
+.screen-share-viewer-panel header {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, .18);
+  background: rgba(15, 23, 42, .88);
+}
+
+.screen-share-viewer-panel header div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.screen-share-viewer-panel header strong,
+.screen-share-viewer-panel header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-share-viewer-panel header span {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.screen-share-viewer-panel header button {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .15);
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.screen-share-viewer-panel .video-tile {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: #020617;
+}
+
+.screen-share-viewer-panel .video-element,
+.screen-share-viewer-panel .video-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.screen-share-viewer-panel .video-element {
+  object-fit: contain;
+}
+
 .buzzcast-waiting-card {
   justify-self: center;
   width: min(100%, 300px);

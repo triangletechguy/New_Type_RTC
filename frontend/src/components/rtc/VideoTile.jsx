@@ -20,12 +20,16 @@ export function VideoTile({
   rtcMode = 'video',
   showMediaState = false,
   connectionState = '',
+  onExpand,
+  expandLabel = 'Open screen share full screen',
 }) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
   const isScreenSharing = badge === 'screen'
-  const showVideo = Boolean(stream && hasVideo && (cameraOn !== false || isScreenSharing) && rtcMode === 'video')
+  const showVideo = Boolean(stream && hasVideo && (isScreenSharing || (cameraOn !== false && rtcMode === 'video')))
+  const videoStateOn = isScreenSharing || (cameraOn && rtcMode === 'video')
+  const canExpand = typeof onExpand === 'function'
   const visualIndex = visualIndexFromLabel(label)
   const avatar = avatarForUser({ id: userId, gender, avatar_url: avatarUrl }, userId || visualIndex)
   const placeholderArt = rtcMode === 'audio'
@@ -56,9 +60,25 @@ export function VideoTile({
     }
   }, [stream, showVideo])
 
+  function handleKeyDown(event) {
+    if (!canExpand) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    onExpand()
+  }
+
   return (
-    <div className="video-tile">
+    <div
+      className={`video-tile${isScreenSharing ? ' screen-sharing-tile' : ''}${canExpand ? ' expandable' : ''}`}
+      onClick={canExpand ? onExpand : undefined}
+      onKeyDown={canExpand ? handleKeyDown : undefined}
+      role={canExpand ? 'button' : undefined}
+      tabIndex={canExpand ? 0 : undefined}
+      aria-label={canExpand ? expandLabel : undefined}
+    >
       {badge && <div className="video-badge">{badge}</div>}
+      {canExpand ? <span className="screen-expand-icon" aria-hidden="true"></span> : null}
       {showVideo ? (
         <video ref={videoRef} autoPlay playsInline muted={muted} className="video-element" />
       ) : stream ? (
@@ -71,7 +91,7 @@ export function VideoTile({
               {showMediaState && (
                 <div className="media-state-strip">
                   <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                  <span className={(cameraOn || isScreenSharing) && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                  <span className={videoStateOn ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
                 </div>
               )}
             </div>
@@ -85,7 +105,7 @@ export function VideoTile({
             {showMediaState && (
               <div className="media-state-strip">
                 <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                <span className={(cameraOn || isScreenSharing) && rtcMode === 'video' ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                <span className={videoStateOn ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
               </div>
             )}
             {connectionState && <span className={`tile-state-text ${connectionState}`}>{connectionState}</span>}
