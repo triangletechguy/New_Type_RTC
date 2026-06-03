@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { avatarForUser, chatAssets, liveRoomAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 
@@ -918,12 +918,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       <div className="messages" ref={messagesRef} role="log" aria-label="Room chat messages">
         {loading ? (
           <div className="empty-chat">Loading chat...</div>
-        ) : visibleMessages.length === 0 ? (
-          <div className="empty-chat">
-            <img className="empty-chat-art" src={chatAssets.mobileChat} alt="" loading="lazy" />
-            <strong>No messages yet</strong>
-            <span>The conversation will appear here.</span>
-          </div>
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
