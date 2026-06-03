@@ -2170,31 +2170,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     </div>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Background filter</strong>
-                        <small>Camera only</small>
-                      </header>
-                      <div className="camera-background-controls" aria-label="Background blur">
-                        <button
-                          type="button"
-                          className={backgroundEffect === 'blur' ? 'background-blur-toggle active' : 'background-blur-toggle'}
-                          onClick={toggleBackgroundBlur}
-                          disabled={mediaUpdating.filter || rtcMode === 'audio'}
-                          aria-pressed={backgroundEffect === 'blur'}
-                        >
-                          <span className="background-swatch blur" aria-hidden="true"></span>
-                          <span>
-                            <strong>Background blur</strong>
-                            <small>{backgroundEffect === 'blur' ? 'On' : 'Off'} - camera only</small>
-                          </span>
-                          <b aria-hidden="true"></b>
-                        </button>
-                        <button type="button" className="beauty-reset-button camera-reset-button" onClick={resetCameraEffects} disabled={!cameraEffectsActive || mediaUpdating.filter || rtcMode === 'audio'}>
-                          Reset
-                        </button>
-                      </div>
-                    </section>
-                    <section className="camera-effect-section">
-                      <header>
                         <strong>Face beauty</strong>
                         <small>Smooth, light, warmth</small>
                       </header>
@@ -2305,12 +2280,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span>Beauty</span>
               </button>
               <button
-                className={activeToolPanel === 'filters' || backgroundEffectActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
-                onClick={() => setActiveToolPanel('filters')}
+                className={backgroundEffectActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                onClick={toggleBackgroundBlur}
                 disabled={filterButtonDisabled}
-                aria-label="Open background filter controls"
-                aria-pressed={activeToolPanel === 'filters' || backgroundEffectActive}
-                title="Background filter"
+                aria-label={backgroundEffectActive ? 'Turn background blur off' : 'Turn background blur on'}
+                aria-pressed={backgroundEffectActive}
+                title={backgroundEffectActive ? 'Background blur on' : 'Background blur off'}
               >
                 <span className="control-glyph background"></span>
                 <span>BG</span>

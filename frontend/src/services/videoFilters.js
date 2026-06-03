@@ -369,7 +369,7 @@ export class CameraFilterPipeline {
     this.scratchCanvas = document.createElement('canvas')
     this.scratchCanvas.width = width
     this.scratchCanvas.height = height
-    this.scratchContext = this.scratchCanvas.getContext('2d', { alpha: false })
+    this.scratchContext = this.scratchCanvas.getContext('2d', { alpha: true })
     this.maskCanvas = createOutputCanvas(width, height)
     this.maskContext = this.maskCanvas.getContext('2d', { alpha: true })
     this.detailCanvas = createOutputCanvas(width, height)
