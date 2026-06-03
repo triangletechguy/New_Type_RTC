@@ -527,7 +527,8 @@ async function getRoomControls(connection, room, userId) {
       p.screen_shared, p.connection_status, p.created_at, p.updated_at,
       u.name AS user_name,
       u.email AS user_email,
-      u.avatar_url AS user_avatar_url
+      u.avatar_url AS user_avatar_url,
+      u.gender AS user_gender
     FROM rtc_session_participants p
     LEFT JOIN users u ON u.id = p.user_id
     WHERE p.room_id = ?
@@ -558,6 +559,7 @@ async function getRoomControls(connection, room, userId) {
       user_name: participant.user_name || `User #${participant.user_id}`,
       user_email: participant.user_email,
       user_avatar_url: participant.user_avatar_url,
+      user_gender: participant.user_gender,
       created_at: participant.created_at,
       updated_at: participant.updated_at,
     })),

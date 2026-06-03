@@ -26,6 +26,8 @@ function registerSignaling(io) {
       socketId,
       userId: user.userId,
       userName: user.userName,
+      userGender: user.userGender,
+      userAvatarUrl: user.userAvatarUrl,
       rtcMode: user.rtcMode,
       micEnabled: user.micEnabled,
       cameraEnabled: user.cameraEnabled,
@@ -39,7 +41,8 @@ function registerSignaling(io) {
       SELECT
         cm.*,
         u.name AS sender_name,
-        u.avatar_url AS sender_avatar_url
+        u.avatar_url AS sender_avatar_url,
+        u.gender AS sender_gender
       FROM chat_messages cm
       LEFT JOIN users u ON u.id = cm.sender_id
       WHERE cm.id = :messageId
@@ -94,7 +97,7 @@ function registerSignaling(io) {
   io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id)
 
-    socket.on('join-room', ({ roomId, userId, userName, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+    socket.on('join-room', ({ roomId, userId, userName, userGender, userAvatarUrl, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -110,6 +113,8 @@ function registerSignaling(io) {
       users.set(socket.id, {
         userId: userId || null,
         userName: userName || 'Guest',
+        userGender: userGender || '',
+        userAvatarUrl: userAvatarUrl || '',
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
         cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
@@ -138,6 +143,8 @@ function registerSignaling(io) {
         socketId: socket.id,
         userId: userId || null,
         userName: userName || 'Guest',
+        userGender: userGender || '',
+        userAvatarUrl: userAvatarUrl || '',
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
         cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),

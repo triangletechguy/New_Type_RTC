@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { avatarForIndex, chatAssets, liveRoomAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, chatAssets, liveRoomAssets } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 
@@ -652,6 +652,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       id: peerId,
       name: peer.name || peer.peer_name || `User #${peerId}`,
       avatar_url: peer.avatar_url || peer.peer_avatar_url || '',
+      gender: peer.gender || peer.peer_gender || '',
     }
 
     setInboxTarget(target)
@@ -666,6 +667,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         id: Number(data.peer.id),
         name: data.peer.name || target.name,
         avatar_url: data.peer.avatar_url || target.avatar_url,
+        gender: data.peer.gender || target.gender,
       } : target)
       setInboxMessages(data.messages || [])
     } catch (error) {
@@ -681,6 +683,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       id: message.sender_id,
       name: message.sender_name,
       avatar_url: message.sender_avatar_url,
+      gender: message.sender_gender,
     })
   }
 
@@ -924,7 +927,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
-          const senderAvatar = message.sender_avatar_url || avatarForIndex(Number(message.sender_id || 0))
+          const senderAvatar = avatarForUser(message, Number(message.sender_id || 0))
           const imageMessage = message.message_type === 'image'
           const avatarMessage = imageMessage && String(message.message_body || '').trim() === 'sent an avatar'
           const voiceMessage = message.message_type === 'voice'
@@ -1115,7 +1118,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
             return (
               <button key={thread.peer_id} type="button" className={active ? 'active' : ''} onClick={() => loadInboxConversation(thread)}>
-                <span className="image-avatar"><img src={thread.peer_avatar_url || avatarForIndex(thread.peer_id)} alt="" loading="lazy" /></span>
+                <span className="image-avatar"><img src={avatarForUser(thread, thread.peer_id)} alt="" loading="lazy" /></span>
                 <b>{thread.peer_name || `User #${thread.peer_id}`}</b>
                 <small>{preview || 'New chat'}</small>
               </button>
@@ -1148,7 +1151,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
             return (
               <div className={mine ? 'chat-row mine' : 'chat-row'} key={`dm-${message.id}`}>
                 <div className="chat-avatar image-avatar">
-                  <img src={(mine ? user?.avatar_url : inboxTarget.avatar_url) || avatarForIndex(message.sender_id || 0)} alt={senderName} loading="lazy" />
+                  <img src={mine ? avatarForUser(user, user?.id || message.sender_id || 0) : avatarForUser({ ...inboxTarget, sender_gender: message.sender_gender }, message.sender_id || 0)} alt={senderName} loading="lazy" />
                 </div>
                 <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
                   <div className="chat-meta">

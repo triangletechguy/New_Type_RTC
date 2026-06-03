@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { avatarForIndex, roomAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, roomAssets } from '../../assets/rtc/catalog'
 
 function visualIndexFromLabel(label) {
   return String(label || 'User')
@@ -10,6 +10,9 @@ function visualIndexFromLabel(label) {
 export function VideoTile({
   stream,
   label,
+  userId,
+  gender = '',
+  avatarUrl = '',
   muted = false,
   badge,
   micOn = true,
@@ -24,7 +27,7 @@ export function VideoTile({
   const isScreenSharing = badge === 'screen'
   const showVideo = Boolean(stream && hasVideo && (cameraOn !== false || isScreenSharing) && rtcMode === 'video')
   const visualIndex = visualIndexFromLabel(label)
-  const avatar = avatarForIndex(visualIndex)
+  const avatar = avatarForUser({ id: userId, gender, avatar_url: avatarUrl }, userId || visualIndex)
   const placeholderArt = rtcMode === 'audio'
     ? roomAssets.audioStage
     : cameraOn === false

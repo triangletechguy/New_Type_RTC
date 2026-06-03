@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { adminAssets, avatarForIndex } from '../../assets/rtc/catalog'
+import { adminAssets, avatarForUser } from '../../assets/rtc/catalog'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
 import { DashboardMetrics } from './DashboardMetrics'
@@ -2642,7 +2642,7 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     if (isSuperAdmin) return 'Client Company Dashboard'
     return 'Admin Dashboard'
   }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
-  const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
+  const profileAvatar = avatarForUser(user, user?.id || 0)
   const profileLabel = user ? 'Open profile' : 'Profile'
   const companySections = [
     { key: 'directory', label: 'Directory', detail: `${formatNumber(enterprise?.clients?.length)} companies` },

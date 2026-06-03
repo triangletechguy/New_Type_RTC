@@ -175,6 +175,35 @@ export function avatarForGender(gender, fallbackIndex = 0) {
   return avatarForIndex(fallbackIndex)
 }
 
+function avatarRoleNames(user = {}) {
+  return (Array.isArray(user.roles) ? user.roles : [])
+    .map((role) => (typeof role === 'string' ? role : role?.name || role?.role || ''))
+    .filter(Boolean)
+}
+
+export function avatarForUser(user = {}, fallbackIndex = 0) {
+  const profile = user || {}
+  const avatar = profile.avatar_url
+    || profile.avatarUrl
+    || profile.sender_avatar_url
+    || profile.peer_avatar_url
+    || profile.user_avatar_url
+    || ''
+  if (avatar) return avatar
+
+  const roles = avatarRoleNames(profile)
+  const adminUser = roles.some((role) => ['super_admin', 'client_admin', 'admin'].includes(role))
+    || profile.is_super_admin === true
+    || profile.isSuperAdmin === true
+
+  if (adminUser) return avatarForGender('male', fallbackIndex)
+
+  return avatarForGender(
+    profile.gender || profile.sender_gender || profile.peer_gender || profile.user_gender,
+    fallbackIndex
+  )
+}
+
 export function coverForDemoTone(tone, index = 0) {
   return toneCovers[tone] || coverRotation[safeIndex(index, coverRotation.length)]
 }

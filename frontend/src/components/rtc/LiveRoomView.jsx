@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { avatarForIndex, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
+import { avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMediaTrack, stopMediaStream, watchLocalMediaPermissions } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -881,6 +881,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         roomId: joinData.rtc.signaling_room,
         userId: user?.id,
         userName: user?.name || 'User',
+        userGender: user?.gender || '',
+        userAvatarUrl: user?.avatar_url || '',
         rtcMode: joinedRtcMode,
         micEnabled: actualMicOn,
         cameraEnabled: actualCameraOn,
@@ -1125,7 +1127,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const viewerCount = Math.max(Number(room?.active_participants || 0), remotePeerCount, joined ? 1 : 0)
   const roomTitle = room?.name || `Room #${roomId}`
   const displayUserCount = compactNumber(viewerCount)
-  const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
+  const profileAvatar = avatarForUser(user, user?.id || 0)
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">
@@ -1219,6 +1221,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     stream={localStream}
                     muted
                     label={user?.name || 'You'}
+                    userId={user?.id}
+                    gender={user?.gender}
+                    avatarUrl={user?.avatar_url}
                     badge={screenSharing ? 'screen' : mediaMode}
                     micOn={micOn}
                     cameraOn={cameraOn}
@@ -1230,6 +1235,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       key={socketId}
                       stream={stream}
                       label={label}
+                      userId={mediaState.userId}
+                      gender={mediaState.gender}
+                      avatarUrl={mediaState.avatarUrl}
                       badge={badge}
                       micOn={mediaState.micOn !== false}
                       cameraOn={mediaState.cameraOn !== false}

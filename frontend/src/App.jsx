@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { avatarForIndex } from './assets/rtc/catalog'
+import { avatarForUser } from './assets/rtc/catalog'
 import { AUTH_EXPIRED_EVENT, clearSession, getUser, getToken, refreshCurrentUser, saveUser } from './services/api'
 import { AuthModal } from './components/auth/AuthModal'
 import { Sidebar } from './components/layout/Sidebar'
@@ -18,7 +18,7 @@ function ViewFallback({ label }) {
 
 function AppProfileButton({ user, onClick }) {
   const label = user ? 'Open profile' : 'Login or signup'
-  const avatar = user?.avatar_url || avatarForIndex(user?.id || 0)
+  const avatar = avatarForUser(user, user?.id || 0)
 
   return (
     <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>

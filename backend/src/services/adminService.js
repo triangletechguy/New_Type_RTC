@@ -474,6 +474,7 @@ async function createClientAdmin(connection, tenantId, companyStatus, contact) {
       SET tenant_id = ?,
           name = ?,
           phone = ?,
+          gender = COALESCE(gender, 'male'),
           status = ?,
           updated_at = NOW()
       WHERE id = ?
@@ -518,9 +519,9 @@ async function createClientAdmin(connection, tenantId, companyStatus, contact) {
   const [result] = await connection.execute(
     `
     INSERT INTO users (
-      tenant_id, name, email, phone, password_hash, status, created_at, updated_at
+      tenant_id, name, email, phone, gender, password_hash, status, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    VALUES (?, ?, ?, ?, 'male', ?, ?, NOW(), NOW())
     `,
     [tenantId, contact.name, contact.email, contact.phone, passwordHash, userStatus]
   )

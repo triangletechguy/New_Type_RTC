@@ -223,6 +223,8 @@ export function peerMediaFromSignal(user) {
   return {
     userId: user?.userId || null,
     userName: user?.userName || 'Remote User',
+    gender: user?.userGender || user?.gender || '',
+    avatarUrl: user?.userAvatarUrl || user?.avatarUrl || user?.avatar_url || '',
     rtcMode,
     micOn: user?.micEnabled !== false,
     cameraOn: rtcMode === 'video' && user?.cameraEnabled !== false,

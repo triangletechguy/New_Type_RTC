@@ -1,9 +1,9 @@
-import { avatarForIndex, brandAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, brandAssets } from '../../assets/rtc/catalog'
 import { canUseAdminDashboard } from '../../utils/roles'
 
 export function Sidebar({ user, currentView, onView, onLogout }) {
   const showAdminDashboard = canUseAdminDashboard(user) === true
-  const avatar = user?.avatar_url || avatarForIndex(user?.id || 0)
+  const avatar = avatarForUser(user, user?.id || 0)
 
   return (
     <aside className="sidebar glass-card">

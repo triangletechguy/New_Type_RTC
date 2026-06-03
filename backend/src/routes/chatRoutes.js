@@ -127,7 +127,8 @@ function messageSelectSql() {
     SELECT
       cm.*,
       u.name AS sender_name,
-      u.avatar_url AS sender_avatar_url
+      u.avatar_url AS sender_avatar_url,
+      u.gender AS sender_gender
     FROM chat_messages cm
     LEFT JOIN users u ON u.id = cm.sender_id
   `
@@ -139,8 +140,10 @@ function directMessageSelectSql() {
       dm.*,
       sender.name AS sender_name,
       sender.avatar_url AS sender_avatar_url,
+      sender.gender AS sender_gender,
       recipient.name AS recipient_name,
-      recipient.avatar_url AS recipient_avatar_url
+      recipient.avatar_url AS recipient_avatar_url,
+      recipient.gender AS recipient_gender
     FROM direct_messages dm
     LEFT JOIN users sender ON sender.id = dm.sender_id
     LEFT JOIN users recipient ON recipient.id = dm.recipient_id
@@ -205,7 +208,7 @@ async function blockedUserIdsForRoom(roomId, userId) {
 async function findUserForDirectMessage(userId, tenantId) {
   const users = await query(
     `
-    SELECT id, name, avatar_url
+    SELECT id, name, avatar_url, gender
     FROM users
     WHERE id = :userId
     AND tenant_id = :tenantId
@@ -416,6 +419,7 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
         latest.peer_id,
         peer.name AS peer_name,
         peer.avatar_url AS peer_avatar_url,
+        peer.gender AS peer_gender,
         dm.id AS last_message_id,
         dm.sender_id,
         dm.recipient_id,
@@ -447,6 +451,7 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
         peer_id: Number(row.peer_id),
         peer_name: row.peer_name,
         peer_avatar_url: row.peer_avatar_url,
+        peer_gender: row.peer_gender,
         last_message: row,
       })),
     })

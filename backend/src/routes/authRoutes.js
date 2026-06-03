@@ -417,6 +417,7 @@ async function migrateLegacySuperadminEmail() {
         UPDATE users
         SET email = :currentEmail,
             name = 'TalkEachOther Super Admin',
+            gender = 'male',
             password_hash = :passwordHash,
             status = 'active',
             updated_at = NOW()
@@ -458,6 +459,7 @@ async function migrateLegacySuperadminEmail() {
       `
       UPDATE users
       SET name = 'TalkEachOther Super Admin',
+          gender = 'male',
           password_hash = :passwordHash,
           status = 'active',
           updated_at = NOW()
@@ -471,6 +473,7 @@ async function migrateLegacySuperadminEmail() {
     `
     UPDATE users
     SET name = 'TalkEachOther Super Admin',
+        gender = 'male',
         password_hash = :passwordHash,
         status = 'active',
         updated_at = NOW()
