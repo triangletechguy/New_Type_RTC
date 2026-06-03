@@ -2,6 +2,7 @@ const express = require('express')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
+const { closeParticipantSession } = require('../services/rtcSessionLifecycle')
 const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 
 const router = express.Router()
@@ -316,10 +317,6 @@ function validateRoomPayload(payload) {
   }
 }
 
-function usageTypeFromRoomType(roomType) {
-  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType) ? 'video' : 'audio'
-}
-
 async function getRoomRole(connection, roomId, userId) {
   const [rows] = await connection.execute(
     `
@@ -393,126 +390,6 @@ function parseBanOptions(payload = {}) {
     banType,
     durationMinutes: banType === 'temporary' ? durationMinutes : null,
     reason: reason || null,
-  }
-}
-
-async function closeParticipantSession(connection, room, participant, userId) {
-  if (participant.left_at) {
-    return {
-      durationSeconds: Number(participant.duration_seconds || 0),
-      billableMinutes: Number((Number(participant.duration_seconds || 0) / 60).toFixed(2)),
-      usageLogId: null,
-      alreadyClosed: true,
-    }
-  }
-
-  const [durationRows] = await connection.execute(
-    `
-    SELECT TIMESTAMPDIFF(SECOND, joined_at, NOW()) AS duration_seconds
-    FROM rtc_session_participants
-    WHERE id = ?
-    `,
-    [participant.id]
-  )
-
-  const durationSeconds = Math.max(0, Number(durationRows[0]?.duration_seconds || 0))
-  const billableMinutes = Number((durationSeconds / 60).toFixed(2))
-
-  const [updateParticipant] = await connection.execute(
-    `
-    UPDATE rtc_session_participants
-    SET left_at = NOW(),
-        duration_seconds = ?,
-        connection_status = 'disconnected',
-        updated_at = NOW()
-    WHERE id = ?
-    AND left_at IS NULL
-    `,
-    [durationSeconds, participant.id]
-  )
-
-  if (!updateParticipant.affectedRows) {
-    return {
-      durationSeconds,
-      billableMinutes,
-      usageLogId: null,
-      alreadyClosed: true,
-    }
-  }
-
-  const [usageInsert] = await connection.execute(
-    `
-    INSERT INTO usage_logs (
-      tenant_id, room_id, session_id, user_id, usage_type,
-      started_at, ended_at, duration_seconds, billable_minutes, created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW())
-    `,
-    [
-      room.tenant_id,
-      room.id,
-      participant.session_id,
-      userId,
-      usageTypeFromRoomType(room.room_type),
-      participant.joined_at,
-      durationSeconds,
-      billableMinutes,
-    ]
-  )
-
-  const [activeCountRows] = await connection.execute(
-    `
-    SELECT COUNT(*) AS active_count
-    FROM rtc_session_participants
-    WHERE session_id = ?
-    AND left_at IS NULL
-    `,
-    [participant.session_id]
-  )
-
-  const [totalRows] = await connection.execute(
-    `
-    SELECT COALESCE(SUM(duration_seconds), 0) AS total_seconds
-    FROM rtc_session_participants
-    WHERE session_id = ?
-    AND left_at IS NOT NULL
-    `,
-    [participant.session_id]
-  )
-
-  const activeCount = Number(activeCountRows[0]?.active_count || 0)
-  const totalParticipantMinutes = Number((Number(totalRows[0]?.total_seconds || 0) / 60).toFixed(2))
-
-  if (activeCount === 0) {
-    await connection.execute(
-      `
-      UPDATE rtc_sessions
-      SET status = 'ended',
-          ended_at = NOW(),
-          total_participant_minutes = ?,
-          total_duration_seconds = TIMESTAMPDIFF(SECOND, started_at, NOW()),
-          updated_at = NOW()
-      WHERE id = ?
-      `,
-      [totalParticipantMinutes, participant.session_id]
-    )
-  } else {
-    await connection.execute(
-      `
-      UPDATE rtc_sessions
-      SET total_participant_minutes = ?,
-          updated_at = NOW()
-      WHERE id = ?
-      `,
-      [totalParticipantMinutes, participant.session_id]
-    )
-  }
-
-  return {
-    durationSeconds,
-    billableMinutes,
-    usageLogId: usageInsert.insertId,
-    alreadyClosed: false,
   }
 }
 

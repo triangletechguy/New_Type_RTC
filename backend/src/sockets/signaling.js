@@ -1,7 +1,11 @@
 const { query } = require('../config/db')
+const { closeActiveParticipantForUser, touchActiveParticipant } = require('../services/rtcSessionLifecycle')
+
+const PRESENCE_CLOSE_GRACE_MS = Math.max(10000, Number(process.env.RTC_PRESENCE_CLOSE_GRACE_MS || 45000))
 
 function registerSignaling(io) {
   const rooms = new Map()
+  const pendingPresenceCloseTimers = new Map()
 
   function getRoomUsers(roomId) {
     if (!rooms.has(roomId)) {
@@ -33,6 +37,61 @@ function registerSignaling(io) {
       cameraEnabled: user.cameraEnabled,
       screenShared: user.screenShared,
     }
+  }
+
+  function parseDatabaseRoomId(roomId) {
+    const direct = Number(roomId || 0)
+    if (Number.isInteger(direct) && direct > 0) return direct
+
+    const match = String(roomId || '').match(/(?:^|_)room_(\d+)$/)
+    const parsed = Number(match?.[1] || 0)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+  }
+
+  function resolveDatabaseRoomId(roomId, user = {}, payload = {}) {
+    const fromPayload = Number(payload.databaseRoomId || payload.roomDbId || 0)
+    if (Number.isInteger(fromPayload) && fromPayload > 0) return fromPayload
+
+    const fromUser = Number(user.databaseRoomId || 0)
+    if (Number.isInteger(fromUser) && fromUser > 0) return fromUser
+
+    return parseDatabaseRoomId(roomId)
+  }
+
+  function presenceKey(databaseRoomId, userId) {
+    return `${databaseRoomId}:${userId}`
+  }
+
+  function cancelPendingPresenceClose(databaseRoomId, userId) {
+    if (!databaseRoomId || !userId) return
+
+    const key = presenceKey(databaseRoomId, userId)
+    const timer = pendingPresenceCloseTimers.get(key)
+    if (!timer) return
+
+    clearTimeout(timer)
+    pendingPresenceCloseTimers.delete(key)
+  }
+
+  function schedulePresenceClose(databaseRoomId, user, reason) {
+    if (!databaseRoomId || !user?.userId) return
+
+    const key = presenceKey(databaseRoomId, user.userId)
+    cancelPendingPresenceClose(databaseRoomId, user.userId)
+
+    const timer = setTimeout(() => {
+      pendingPresenceCloseTimers.delete(key)
+      closeActiveParticipantForUser({
+        roomId: databaseRoomId,
+        userId: user.userId,
+        eventType: 'disconnect',
+        reason,
+      }).catch((error) => {
+        console.error('[signaling] stale participant cleanup failed', error)
+      })
+    }, PRESENCE_CLOSE_GRACE_MS)
+
+    pendingPresenceCloseTimers.set(key, timer)
   }
 
   async function fetchOwnedChatMessage(messageId, userId) {
@@ -77,17 +136,25 @@ function registerSignaling(io) {
     return rooms.get(String(roomId))?.get(socketId) || null
   }
 
-  function removeSocketFromRooms(socket) {
+  function removeSocketFromRooms(socket, reason = 'disconnect') {
     for (const [roomId, users] of rooms.entries()) {
       if (users.has(socket.id)) {
         const user = users.get(socket.id)
+        const databaseRoomId = resolveDatabaseRoomId(roomId, user)
         users.delete(socket.id)
+        const userStillPresent = Array.from(users.values()).some((roomUser) => (
+          roomUser?.userId && Number(roomUser.userId) === Number(user.userId)
+        ))
 
         socket.to(roomId).emit('user-left', {
           socketId: socket.id,
           userId: user.userId,
           userName: user.userName,
         })
+
+        if (reason === 'disconnect' && !userStillPresent) {
+          schedulePresenceClose(databaseRoomId, user, reason)
+        }
 
         if (users.size === 0) rooms.delete(roomId)
       }
@@ -97,7 +164,7 @@ function registerSignaling(io) {
   io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id)
 
-    socket.on('join-room', ({ roomId, userId, userName, userGender, userAvatarUrl, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+    socket.on('join-room', ({ roomId, databaseRoomId, roomDbId, userId, userName, userGender, userAvatarUrl, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -107,11 +174,13 @@ function registerSignaling(io) {
 
       const roomKey = String(roomId)
       const users = getRoomUsers(roomKey)
+      const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, {}, { databaseRoomId, roomDbId })
 
       const existingUsers = Array.from(users.entries()).map(([socketId, user]) => serializeUser(socketId, user))
 
       users.set(socket.id, {
         userId: userId || null,
+        databaseRoomId: resolvedDatabaseRoomId,
         userName: userName || 'Guest',
         userGender: userGender || '',
         userAvatarUrl: userAvatarUrl || '',
@@ -122,6 +191,16 @@ function registerSignaling(io) {
       })
 
       socket.join(roomKey)
+      cancelPendingPresenceClose(resolvedDatabaseRoomId, userId)
+      if (resolvedDatabaseRoomId && userId) {
+        touchActiveParticipant({
+          roomId: resolvedDatabaseRoomId,
+          userId,
+          micEnabled: normalizeBoolean(micEnabled, true),
+          cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+          screenShared: normalizeBoolean(screenShared, false),
+        }).catch((error) => console.error('[signaling] presence touch failed', error))
+      }
 
       socket.emit('existing-users', {
         ok: true,
@@ -152,6 +231,50 @@ function registerSignaling(io) {
       })
 
       console.log(`Socket ${socket.id} joined room ${roomKey}`)
+    })
+
+    socket.on('rtc-presence', ({ roomId, databaseRoomId, roomDbId, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+      if (!roomId) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: 'Missing signaling room ID.' })
+        }
+        return
+      }
+
+      const roomKey = String(roomId)
+      const users = rooms.get(roomKey)
+      const currentUser = users?.get(socket.id)
+
+      if (!users || !currentUser?.userId) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: false, message: 'Socket is not in this signaling room.' })
+        }
+        return
+      }
+
+      const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, currentUser, { databaseRoomId, roomDbId })
+      const nextUser = {
+        ...currentUser,
+        databaseRoomId: resolvedDatabaseRoomId,
+        micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
+        cameraEnabled: normalizeBoolean(cameraEnabled, currentUser.cameraEnabled),
+        screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
+      }
+
+      users.set(socket.id, nextUser)
+      cancelPendingPresenceClose(resolvedDatabaseRoomId, currentUser.userId)
+
+      touchActiveParticipant({
+        roomId: resolvedDatabaseRoomId,
+        userId: currentUser.userId,
+        micEnabled: nextUser.micEnabled,
+        cameraEnabled: nextUser.cameraEnabled,
+        screenShared: nextUser.screenShared,
+      }).then((result) => {
+        if (typeof acknowledge === 'function') acknowledge({ ok: true, ...result })
+      }).catch((error) => {
+        if (typeof acknowledge === 'function') acknowledge({ ok: false, message: error.message || 'Presence update failed.' })
+      })
     })
 
     socket.on('webrtc-offer', ({ targetSocketId, offer }) => {
@@ -386,12 +509,12 @@ function registerSignaling(io) {
     })
 
     socket.on('leave-room', () => {
-      removeSocketFromRooms(socket)
+      removeSocketFromRooms(socket, 'leave-room')
     })
 
     socket.on('disconnect', () => {
       console.log('Socket disconnected:', socket.id)
-      removeSocketFromRooms(socket)
+      removeSocketFromRooms(socket, 'disconnect')
     })
   })
 }

@@ -19,6 +19,7 @@ import { OwnerControlsPanel } from './OwnerControlsPanel'
 import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
+const RTC_PRESENCE_INTERVAL_MS = 20000
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function compactNumber(value) {
@@ -470,6 +471,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     return {
       roomId: payloadRoomId,
+      databaseRoomId: activeRoomIdRef.current,
       userId: user?.id,
       userName: user?.name || 'User',
       userGender: user?.gender || '',
@@ -1269,6 +1271,25 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     rtcModeRef.current = rtcMode
   }, [rtcMode])
+
+  useEffect(() => {
+    if (!joined) return undefined
+
+    function sendPresence() {
+      const socket = socketRef.current
+      if (!socket?.connected || !signalingRoomRef.current) return
+
+      socket.timeout(3000).emit(
+        'rtc-presence',
+        signalingJoinPayload(),
+        () => {}
+      )
+    }
+
+    sendPresence()
+    const timer = window.setInterval(sendPresence, RTC_PRESENCE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [joined, user?.id])
 
   useEffect(() => {
     syncMediaPermissions(rtcMode).catch(() => {})
