@@ -11,6 +11,16 @@ const adminPassword = 'admin@gmail.com'
 const passwordRoomPassword = 'Room@1234'
 const superadminEmail = 'admin@gmail.com'
 const legacySuperadminEmails = ['superadmin@talkeachother.com', 'superadmin@chadnichok.com']
+const includeDemoRooms = process.argv.includes('--demo')
+  || ['1', 'true', 'yes', 'on'].includes(String(process.env.SEED_DEMO_ROOMS || process.env.INCLUDE_DEMO_ROOMS || '').toLowerCase())
+const seededDemoRoomNames = [
+  'Demo BuzzCast Stage',
+  'TalkEachOther Demo Stage',
+  'Demo Music Lounge',
+  'Demo Password Greenroom',
+  'Demo Private Studio',
+  'Demo Replay Room',
+]
 
 const connectionConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
@@ -350,13 +360,14 @@ async function deactivateKnownDemoUsers(connection) {
 }
 
 async function deleteLegacySeedRooms(connection) {
+  const placeholders = seededDemoRoomNames.map(() => '?').join(', ')
   await connection.execute(
     `
     DELETE FROM rooms
     WHERE tenant_id = ?
-    AND name = 'Demo BuzzCast Stage'
+    AND name IN (${placeholders})
     `,
-    [tenantId]
+    [tenantId, ...seededDemoRoomNames]
   )
 }
 
@@ -1073,6 +1084,16 @@ async function main() {
       roleIds
     )
     await deactivateKnownDemoUsers(connection)
+    await deleteLegacySeedRooms(connection)
+
+    if (!includeDemoRooms) {
+      await connection.commit()
+      console.log('TalkEachOther production bootstrap completed.')
+      console.log(`Superadmin: ${superadminEmail} / ${adminPassword}`)
+      console.log('Demo rooms skipped and known seeded demo rooms removed.')
+      console.log('Run npm run db:seed:demo only for local demonstrations.')
+      return
+    }
 
     const users = {
       superadmin,
@@ -1082,7 +1103,6 @@ async function main() {
       viewer: await upsertUser(connection, { name: 'Inactive Demo Viewer', email: 'demo-viewer@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
       banned: await upsertUser(connection, { name: 'Inactive Demo Blocked Viewer', email: 'demo-banned@rtc.com', roles: ['end_user'], status: 'inactive', replaceRoles: true }, inactivePasswordHash, roleIds),
     }
-    await deleteLegacySeedRooms(connection)
 
     const roomConfigs = [
       {

@@ -23,7 +23,6 @@ import {
 } from '../../utils/roomConfig'
 import {
   defaultClientCompanies,
-  demoCards,
   dmThreads,
   exploreFilters,
   faqAnswers,
@@ -399,16 +398,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [helpMode, setHelpMode] = useState('popular')
   const [activeHelp, setActiveHelp] = useState(popularHelp[0]?.id || '')
   const [activeFaq, setActiveFaq] = useState(faqTopics[0])
-  const [activeThread, setActiveThread] = useState(dmThreads[0].id)
+  const [activeThread, setActiveThread] = useState(dmThreads[0]?.id || '')
   const [dmMessages, setDmMessages] = useState(initialDmMessages)
   const [dmInput, setDmInput] = useState('')
   const [dmStatus, setDmStatus] = useState('')
   const [mobileRoomLockCode, setMobileRoomLockCode] = useState('199')
-  const [liveChatMessages, setLiveChatMessages] = useState([
-    { id: 'live-1', body: 'Hi', author: 'MARTEEN', badges: ['Lv.37', 'Lv.30'] },
-    { id: 'live-2', body: 'This is comment area for all users', author: 'MARTEEN', badges: ['Lv.37', 'Lv.30'] },
-    { id: 'live-3', body: 'Now I can show you. Tap a user to open profile.', author: 'MARTEEN', badges: ['Lv.37'] },
-  ])
+  const [liveChatMessages, setLiveChatMessages] = useState([])
   const [mobileToast, setMobileToast] = useState('')
   const [recentRoomIds, setRecentRoomIds] = useState(savedRecentRoomIds)
   const [readThreadIds, setReadThreadIds] = useState([])
@@ -478,36 +473,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
-    const usingLiveRooms = roomCards.length > 0
-    let cards = usingLiveRooms ? [...roomCards] : [...demoCards]
+    let cards = [...roomCards]
 
-    if (usingLiveRooms) {
-      if (activeFeed === 'party') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
-      if (activeFeed === 'explore' && activeExplore === 'pk') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
-      if (activeFeed === 'explore' && activeExplore === 'games') cards = cards.filter((card) => roomSupportsVideo(card.room?.room_type))
-      return sortCardsForView(cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter)), sort).slice(0, 48)
-    }
-
-    if (activeFeed === 'latest') cards = cards.filter((card) => card.tab === 'latest' || card.room).slice(0, 16)
-    if (activeFeed === 'nearby') cards = cards.filter((card) => card.tab === 'nearby' || card.room).slice(0, 16)
-    if (activeFeed === 'party') cards = cards.filter((card) => card.party || card.tab === 'party' || card.room?.room_type === 'pk_live')
+    if (activeFeed === 'party') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
     if (activeFeed === 'explore') {
       cards = cards.filter((card) => {
-        if (activeExplore === 'all') return card.tab !== 'party'
-        if (activeExplore === 'pk') return card.room?.room_type === 'pk_live' || card.explore === 'pk'
-        if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(card.room?.room_type)
-        return card.room || card.explore === activeExplore
+        if (activeExplore === 'all') return true
+        if (activeExplore === 'pk') return card.room?.room_type === 'pk_live'
+        if (activeExplore === 'games') return roomSupportsVideo(card.room?.room_type)
+        return true
       })
     }
-    if (activeFeed === 'following') cards = cards.filter((card, index) => card.room || index < 6)
-    if (activeFeed === 'global') cards = cards.filter((card) => card.tab === 'latest' || card.room).concat(demoCards.slice(0, 4))
 
     cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
-    return sortCardsForView(cards, sort).slice(0, activeFeed === 'party' ? 10 : 24)
+    return sortCardsForView(cards, sort).slice(0, 48)
   }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, sort])
   const recentRoomCards = useMemo(() => {
-    const sourceCards = roomCards.length ? roomCards : demoCards
-    const cardsById = new Map(sourceCards.map((card) => [String(card.id), card]))
+    const cardsById = new Map(roomCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
       .map((id) => cardsById.get(String(id)))
       .filter(Boolean)
@@ -518,14 +500,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const searchTerm = search.trim().toLowerCase()
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
-    const candidateCards = (roomCards.length ? roomCards : demoCards)
+    const candidateCards = roomCards
       .filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore))
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
       .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country}`))
 
     return candidateCards.slice(0, 8).map((card) => ({
       id: card.id,
-      type: card.room ? 'room' : 'demo',
+      type: 'room',
       name: card.title,
       detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
       avatarIndex: cardAvatarIndex(card),
@@ -545,21 +527,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       unread,
     }
   }), [dmMessages, readThreadIds])
-  const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0]
+  const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0] || null
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
   const searchPanelTitle = loadingRooms
     ? 'Searching rooms...'
     : search.trim()
       ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
       : `${activeFilterLabel} rooms`
-  const activeThreadFollowed = followedThreadIds.includes(activeThread)
+  const activeThreadFollowed = Boolean(activeThread && followedThreadIds.includes(activeThread))
   const unreadThreadCount = messageThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
-  const sentBeforeFollowCount = (dmMessages[activeThread] || []).filter((message) => message.mine).length
-  const dmNotice = activeThreadFollowed
-    ? 'You follow each other. Private messages are open.'
-    : 'Follow this user to keep sending and receiving private messages.'
+  const sentBeforeFollowCount = activeThread ? (dmMessages[activeThread] || []).filter((message) => message.mine).length : 0
+  const dmNotice = !activeThreadData
+    ? 'No private conversations yet.'
+    : activeThreadFollowed
+      ? 'You follow each other. Private messages are open.'
+      : 'Follow this user to keep sending and receiving private messages.'
   const rankingRows = useMemo(() => {
-    const cards = roomCards.length ? roomCards : demoCards
+    const cards = roomCards
 
     if (activeRanking === 'hosts') {
       const hosts = new Map()
@@ -632,13 +616,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function applySectionFromHistory(state = {}) {
     const section = state.buzzcastSection || 'live'
-    if (section === 'room' && state.previewCardId) {
-      const card = demoCards.find((item) => item.id === state.previewCardId)
-      if (card) {
-        setPreviewCard(card)
-        setActiveSection('room')
-        return
-      }
+    if (section === 'room') {
+      setPreviewCard(null)
+      setActiveSection('live')
+      return
     }
 
     if (['live', 'me', 'settings', 'help'].includes(section)) {
@@ -798,6 +779,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function toggleThreadFollow(threadId = activeThread) {
+    if (!threadId) return
+
     setFollowedThreadIds((previous) => {
       const following = previous.includes(threadId)
       const next = following ? previous.filter((id) => id !== threadId) : [...previous, threadId]
@@ -1120,6 +1103,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function sendDmMessage(event) {
     event.preventDefault()
     if (!requireAuth('Log in to send chat messages.', 'login')) return
+    if (!activeThreadData || !activeThread) {
+      setDmStatus('No private conversation is selected.')
+      return
+    }
     const body = dmInput.trim()
     if (!body) return
     if (!activeThreadFollowed && sentBeforeFollowCount >= 2) {
@@ -1775,7 +1762,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderRoomPreview() {
-    const card = previewCard || demoCards[0]
+    const card = previewCard
+    if (!card) return renderLiveFeed()
+
     const isWarning = card.sensitive && !acceptedWarnings[card.id]
     const previewCover = cardCover(card)
     const previewAvatar = avatarForIndex(cardAvatarIndex(card))
@@ -1788,7 +1777,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const memberCount = Math.max(1, Math.min(999, Math.round(Number(card.viewers || 0) / 18)))
     const mobileComments = liveChatMessages
     const mobileMembers = [
-      { name: card.host || 'MARTEEN', detail: 'Contributed 0 Exp', role: 'Owner' },
+      { name: card.host || 'Room owner', detail: 'Owner', role: 'Owner' },
       { name: 'EYANA', detail: 'Contributed 1187775 Exp' },
       { name: 'Nila Rahaman', detail: 'Contributed 559000 Exp' },
       { name: '0056372496', detail: 'Contributed 487900 Exp' },
@@ -2359,56 +2348,66 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 {thread.unread ? <em>{thread.unread}</em> : null}
               </button>
             ))}
+            {!messageThreads.length ? (
+              <div className="buzzcast-empty-state compact">No private messages yet.</div>
+            ) : null}
           </aside>
           <main>
-            <header className="buzzcast-dm-header">
-              <button type="button" className="buzzcast-dm-back" onClick={() => setShowMessages(false)} aria-label="Back to rooms">‹</button>
-              <span className="buzzcast-dm-peer-avatar image-avatar">
-                <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
-              </span>
-              <strong>{activeThreadData.name}</strong>
-              <span className="buzzcast-dm-peer-id">( ID: {activeThreadData.peerId})</span>
-              <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
-                {activeThreadFollowed ? 'Following' : 'Follow'}
-              </button>
-              <button type="button" className="buzzcast-dm-more" aria-label="More options">...</button>
-            </header>
-            <p className="buzzcast-dm-intro">You can meet more friends and chat with them on TalkEachOther. I hope you can find interesting souls!</p>
-            <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
-              {dmStatus || dmNotice}
-            </div>
-            <div className="buzzcast-dm-body">
-              {(dmMessages[activeThread] || []).map((message, index) => (
-                <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
-                  <time>{index === 0 ? '2026-5-23 17:17' : '2026-5-23 18:13'}</time>
-                  {!message.mine ? (
-                    <span className="image-avatar">
-                      <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
-                    </span>
-                  ) : null}
-                  <p>{message.body}</p>
+            {activeThreadData ? (
+              <>
+                <header className="buzzcast-dm-header">
+                  <button type="button" className="buzzcast-dm-back" onClick={() => setShowMessages(false)} aria-label="Back to rooms">‹</button>
+                  <span className="buzzcast-dm-peer-avatar image-avatar">
+                    <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+                  </span>
+                  <strong>{activeThreadData.name}</strong>
+                  <span className="buzzcast-dm-peer-id">( ID: {activeThreadData.peerId})</span>
+                  <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
+                    {activeThreadFollowed ? 'Following' : 'Follow'}
+                  </button>
+                  <button type="button" className="buzzcast-dm-more" aria-label="More options">...</button>
+                </header>
+                <p className="buzzcast-dm-intro">Private messages appear here when conversations are available.</p>
+                <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
+                  {dmStatus || dmNotice}
                 </div>
-              ))}
-            </div>
-            <div className="buzzcast-dm-quick-replies">
-              <button type="button" onClick={() => setDmInput('হাই')}>হাই</button>
-              <button type="button" onClick={() => setDmInput('হ্যালো')}>হ্যালো</button>
-              <button type="button" onClick={() => setDmInput('হে! আমি আপনার সাথে বন্ধু হতে চাই।')}>হে! আমি আপনার সাথে বন্ধু হতে চাই।</button>
-            </div>
-            <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
-              <button type="button" className="buzzcast-dm-composer-icon mic" aria-label="Voice message" title="Voice message">
-                <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
-              </button>
-              <input
-                value={dmInput}
-                onChange={(event) => setDmInput(event.target.value)}
-                placeholder={activeThreadFollowed ? 'Type a message...' : 'Type a message...'}
-              />
-              <button type="button" className="buzzcast-dm-composer-icon photo" aria-label="Photo" title="Photo">
-                <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
-              </button>
-              <button type="submit" aria-label="Send message">send</button>
-            </form>
+                <div className="buzzcast-dm-body">
+                  {(dmMessages[activeThread] || []).map((message, index) => (
+                    <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
+                      <time>{formatChatTime(message.createdAt)}</time>
+                      {!message.mine ? (
+                        <span className="image-avatar">
+                          <img src={avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+                        </span>
+                      ) : null}
+                      <p>{message.body}</p>
+                    </div>
+                  ))}
+                </div>
+                <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
+                  <button type="button" className="buzzcast-dm-composer-icon mic" aria-label="Voice message" title="Voice message">
+                    <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
+                  </button>
+                  <input
+                    value={dmInput}
+                    onChange={(event) => setDmInput(event.target.value)}
+                    placeholder="Type a message..."
+                  />
+                  <button type="button" className="buzzcast-dm-composer-icon photo" aria-label="Photo" title="Photo">
+                    <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
+                  </button>
+                  <button type="submit" aria-label="Send message">send</button>
+                </form>
+              </>
+            ) : (
+              <div className="buzzcast-empty-state visual">
+                <img src={roomAssets.sidebarEmpty} alt="" loading="lazy" />
+                <div>
+                  <strong>No private messages yet</strong>
+                  <span>Conversations will appear here when real users message each other.</span>
+                </div>
+              </div>
+            )}
           </main>
         </section>
       ) : null}

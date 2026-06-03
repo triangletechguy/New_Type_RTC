@@ -49,17 +49,15 @@ http://localhost:5173
 
 ```txt
 Superadmin: admin@gmail.com / admin@gmail.com
-Accenture admin: admin@accenture.com / admin@gmail.com
 ```
 
-## Demo seed data
+## Seed data
 
-```txt
-Password room password: Room@1234
-```
+Run `npm run db:seed` to create or refresh production bootstrap data and remove
+known seeded demo rooms. It does not create demo rooms.
 
-Run `npm run db:seed` to create or refresh the two admin accounts, demo rooms,
-active RTC sessions, chat messages, moderation examples, and verified usage logs.
+Run `npm run db:seed:demo` only in a local demonstration environment if you need
+sample rooms, seeded chat messages, moderation examples, and usage logs.
 
 ## Email verification
 
@@ -187,7 +185,8 @@ npm run check        # backend syntax check + frontend production build
 npm run health       # backend, database, and frontend health checks
 npm run db:host:wsl  # refresh backend/.env DB_HOST after WSL restarts
 npm run db:init      # create/refresh database tables and seed admin user
-npm run db:seed      # create/refresh idempotent demo data
+npm run db:seed      # create/refresh production bootstrap data; removes demo rooms
+npm run db:seed:demo # opt-in local demo rooms and sample RTC history
 npm run e2e          # run full API + DB end-to-end smoke with cleanup
 npm run dev:backend  # run only backend API + signaling
 npm run dev:frontend # run only frontend on 127.0.0.1:5173

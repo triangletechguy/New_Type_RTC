@@ -21,57 +21,11 @@ export const exploreFilters = [
   { value: 'pk', label: 'PK', filter: 'pk' },
 ]
 
-export const demoCards = [
-  { id: 'demo-1', title: 'Creator Studio Warm-up', host: 'Maya Studio', viewers: 5631, tone: 'aurora', country: 'United States', size: 'feature', badge: 'Group Video', roomType: 'group_video', avatarIndex: 0 },
-  { id: 'demo-2', title: 'Open Mic Lounge', host: 'Luna Waves', viewers: 6018, tone: 'warm', category: 'Music', badge: 'Music', roomType: 'audio', avatarIndex: 1 },
-  { id: 'demo-3', title: 'Daily Product Standup', host: 'Nora Labs', viewers: 1794, tone: 'rose', category: 'Video', roomType: 'video', avatarIndex: 2 },
-  { id: 'demo-4', title: 'Design Review Live', host: 'Pixel Team', viewers: 6186, tone: 'sunset', roomType: 'group_video', avatarIndex: 3 },
-  { id: 'demo-5', title: 'Creator Office Hours', host: 'TalkEachOther', viewers: 1090, tone: 'slate', roomType: 'solo_live', avatarIndex: 4 },
-  { id: 'demo-6', title: 'Acoustic Session', host: 'Matt M.', viewers: 589, tone: 'amber', roomType: 'group_audio', avatarIndex: 5 },
-  { id: 'demo-7', title: 'Night Studio', host: 'Natalie', viewers: 5689, tone: 'night', roomType: 'video', avatarIndex: 6 },
-  { id: 'demo-8', title: 'Global Music Room', host: 'Lyss', viewers: 1418, tone: 'plum', country: 'Canada', roomType: 'audio', avatarIndex: 7 },
-  { id: 'demo-9', title: 'Supporter Lounge', host: 'Community Ops', viewers: 2032, tone: 'copper', badge: 'Community', roomType: 'group_audio', avatarIndex: 1 },
-  { id: 'demo-10', title: 'Morning Sync', host: 'Sarah', viewers: 7489, tone: 'cloud', roomType: 'group_video', avatarIndex: 2 },
-  { id: 'demo-11', title: 'Private Client Demo', host: 'Enterprise Desk', viewers: 1853, tone: 'wine', privacy: 'private', badge: 'Private', roomType: 'video', avatarIndex: 3 },
-  { id: 'demo-12', title: 'Password Beta Room', host: 'QA Studio', viewers: 928, tone: 'silver', privacy: 'password', badge: 'Locked', roomType: 'video', avatarIndex: 4 },
-  { id: 'demo-13', title: 'Fresh Creator Drop', host: 'Winnie', viewers: 208, tone: 'olive', tab: 'latest', roomType: 'solo_live', avatarIndex: 5 },
-  { id: 'demo-14', title: 'New Host Practice', host: 'Seyi', viewers: 84, tone: 'taupe', tab: 'latest', roomType: 'video', avatarIndex: 6 },
-  { id: 'demo-15', title: 'Audio Check Room', host: 'Engineering', viewers: 77, tone: 'mono', tab: 'latest', roomType: 'audio', avatarIndex: 7 },
-  { id: 'demo-16', title: 'First Stream Setup', host: 'Vee Studio', viewers: 136, tone: 'rose', tab: 'latest', roomType: 'solo_live', avatarIndex: 0 },
-  { id: 'demo-17', title: 'Nearby Creators', host: 'John F.', viewers: 527, tone: 'earth', tab: 'nearby', roomType: 'group_video', avatarIndex: 1 },
-  { id: 'demo-18', title: 'Community Check-in', host: 'Art Room', viewers: 181, tone: 'mid', tab: 'nearby', roomType: 'group_audio', avatarIndex: 2 },
-  { id: 'demo-19', title: 'Moderator Training', host: 'Ocean Ops', viewers: 57, tone: 'violet', tab: 'nearby', roomType: 'video', avatarIndex: 3 },
-  { id: 'demo-20', title: 'Local Music Circle', host: 'ChiChi', viewers: 1238, tone: 'pink', tab: 'nearby', roomType: 'audio', avatarIndex: 4 },
-  { id: 'demo-21', title: 'Game Night Voice', host: 'Paniax Gaming', viewers: 299, tone: 'game', tab: 'explore', explore: 'games', roomType: 'group_video', avatarIndex: 5 },
-  { id: 'demo-22', title: 'Watch Party Studio', host: 'Cleo', viewers: 1230, tone: 'sand', tab: 'explore', explore: 'games', roomType: 'group_video', avatarIndex: 6 },
-  { id: 'demo-23', title: 'Film Room Live', host: 'Prime Stage', viewers: 68279, tone: 'ocean', tab: 'explore', explore: 'games', roomType: 'video', avatarIndex: 7 },
-  { id: 'demo-24', title: 'PK Creator Battle', host: 'United States', viewers: 865, tone: 'sky', tab: 'party', party: true, roomType: 'pk_live', avatarIndex: 0 },
-  { id: 'demo-25', title: 'Community Party', host: 'Stage Hosts', viewers: 5133, tone: 'storm', tab: 'party', party: true, roomType: 'group_video', avatarIndex: 1 },
-  { id: 'demo-26', title: 'Cozy Streamer Night', host: 'The Cozy Studio', viewers: 244, tone: 'ember', tab: 'party', party: true, roomType: 'solo_live', avatarIndex: 2 },
-  { id: 'demo-27', title: 'Community Guidelines Preview', host: 'Trust and Safety', viewers: 6345, tone: 'sensitive', sensitive: true, privacy: 'private', roomType: 'video', avatarIndex: 3 },
-]
+export const defaultClientCompanies = []
 
-export const defaultClientCompanies = [
-  { id: 'client-accenture', name: 'Accenture', detail: 'Enterprise RTC client', roomCount: 0, avatarIndex: 2 },
-  { id: 'client-imo', name: 'IMO', detail: 'Video rooms client', roomCount: 0, avatarIndex: 6 },
-]
+export const dmThreads = []
 
-export const dmThreads = [
-  { id: 'donna', peerId: 32165333, name: 'Donna Walk3...', time: 'Wednesday 19:24', preview: 'Hi, are you joining the live room today?', unread: 1, followed: false },
-  { id: 'jennifer', peerId: 32165334, name: 'Jennifer Ortiz...', time: 'Wednesday 17:35', preview: 'Can you check the room invite I sent?', unread: 1, followed: false },
-  { id: 'friend', peerId: 32165335, name: 'Friend...', time: 'Wednesday 01:27', preview: 'Following up on the private room link.', unread: 4, followed: true },
-  { id: 'buzz', peerId: 32165336, name: 'TalkEachOther', time: 'Wednesday 01:27', preview: 'Welcome to the TalkEachOther lobby.', unread: 1, followed: true },
-]
-
-export const initialDmMessages = {
-  donna: [{ id: 'donna-1', author: 'Donna Walk3...', body: 'Hi, are you joining the live room today?', mine: false }],
-  jennifer: [{ id: 'jennifer-1', author: 'Jennifer Ortiz...', body: 'Can you check the room invite I sent?', mine: false }],
-  friend: [
-    { id: 'friend-1', author: 'Friend...', body: 'Following up on the private room link.', mine: false },
-    { id: 'friend-2', author: 'You', body: 'Yes, send it again and I will join.', mine: true },
-  ],
-  buzz: [{ id: 'welcome', author: 'TalkEachOther', body: 'Welcome to the TalkEachOther lobby.', mine: false }],
-}
+export const initialDmMessages = {}
 
 export const settingsNav = [
   { value: 'account', labelKey: 'Account Security', icon: 'U' },
