@@ -105,10 +105,11 @@ verification screen and prints/returns a local verification code for testing.
 - Frontend uses `VITE_MEDIA_MODE=real` by default for real camera/microphone.
 - Use `VITE_MEDIA_MODE=mock` in `frontend/.env` only when you need a generated test stream.
 - Browsers require HTTPS for real camera/microphone access on deployed servers.
-- Production peer-to-peer video should use a TURN server. The browser now loads
-  ICE/TURN settings from the backend at `/api/rtc/config`, so set `TURN_URLS`,
-  `TURN_USERNAME`, and `TURN_CREDENTIAL` in `backend/.env` or PM2 env, then
-  restart the backend.
+- Production RTC should use a TURN server. The browser loads ICE/TURN settings
+  from `/api/rtc/config`. For coturn production, set `TURN_URLS` and
+  `TURN_SHARED_SECRET`; the backend returns short-lived HMAC TURN credentials
+  instead of exposing one permanent password. Open `3478/tcp`, `3478/udp`,
+  `5349/tcp`, and the relay UDP range configured by coturn.
 
 ## WebRTC Architecture
 

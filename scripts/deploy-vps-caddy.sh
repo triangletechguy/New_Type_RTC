@@ -82,7 +82,9 @@ write_env_files() {
 
   db_password="$(get_env DB_PASSWORD backend/.env)"
   jwt_secret="$(get_env JWT_SECRET backend/.env)"
-  turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
+  turn_secret="${TURN_SHARED_SECRET:-$(get_env TURN_SHARED_SECRET backend/.env)}"
+  if [ -z "$turn_secret" ]; then turn_secret="${TURN_AUTH_SECRET:-$(get_env TURN_AUTH_SECRET backend/.env)}"; fi
+  if [ -z "$turn_secret" ]; then turn_secret="$(get_env TURN_CREDENTIAL backend/.env)"; fi
   feedback_to_email="$(get_env FEEDBACK_TO_EMAIL backend/.env)"
   resend_api_key="${RESEND_API_KEY:-$(get_env RESEND_API_KEY backend/.env)}"
   email_provider="${EMAIL_PROVIDER:-${MAIL_MAILER:-$(get_env EMAIL_PROVIDER backend/.env)}}"
@@ -108,8 +110,8 @@ write_env_files() {
     fi
   fi
   if [ -z "$smtp_from" ]; then smtp_from="$email_from"; fi
-  if [ -z "$turn_credential" ] || [ "$turn_credential" = "YOUR_TURN_PASSWORD" ]; then
-    turn_credential="$(random_hex 20)"
+  if [ -z "$turn_secret" ] || [ "$turn_secret" = "YOUR_TURN_PASSWORD" ]; then
+    turn_secret="$(random_hex 32)"
   fi
 
   set_env NODE_ENV production
@@ -124,8 +126,9 @@ write_env_files() {
   set_env JWT_EXPIRES_IN 7d
   set_env STUN_URLS stun:stun.l.google.com:19302
   set_env TURN_URLS "turn:$DOMAIN_HOST:3478?transport=udp,turn:$DOMAIN_HOST:3478?transport=tcp"
-  set_env TURN_USERNAME rtcuser
-  set_env TURN_CREDENTIAL "$turn_credential"
+  set_env TURN_SHARED_SECRET "$turn_secret"
+  set_env TURN_AUTH_SECRET "$turn_secret"
+  set_env TURN_TTL_SECONDS "${TURN_TTL_SECONDS:-3600}"
   set_env RTC_ICE_TRANSPORT_POLICY all
   set_env FEEDBACK_TO_EMAIL "$feedback_to_email"
   if [ -n "$email_provider" ]; then set_env EMAIL_PROVIDER "$email_provider"; fi
@@ -249,26 +252,71 @@ SQL
 configure_turn() {
   log "Configuring TURN relay"
 
-  turn_username="$(get_env TURN_USERNAME)"
-  turn_credential="$(get_env TURN_CREDENTIAL)"
+  turn_secret="$(get_env TURN_SHARED_SECRET)"
+  if [ -z "$turn_secret" ]; then turn_secret="$(get_env TURN_AUTH_SECRET)"; fi
+  if [ -z "$turn_secret" ]; then
+    echo "ERROR: TURN_SHARED_SECRET is missing. Run write_env_files before configure_turn." >&2
+    exit 1
+  fi
+
+  turn_realm="${TURN_REALM:-$DOMAIN_HOST}"
+  turn_min_port="${TURN_MIN_PORT:-49152}"
+  turn_max_port="${TURN_MAX_PORT:-65535}"
+  turn_cert_dir="/etc/coturn/certs"
+  turn_cert="$turn_cert_dir/$DOMAIN_HOST.crt"
+  turn_key="$turn_cert_dir/$DOMAIN_HOST.key"
+  tls_ready=0
 
   if [ -f /etc/turnserver.conf ]; then
     sudo cp /etc/turnserver.conf "/etc/turnserver.conf.bak.$(date +%Y%m%d%H%M%S)"
   fi
 
-  sudo tee /etc/turnserver.conf >/dev/null <<EOF
+  sudo mkdir -p "$turn_cert_dir"
+  caddy_cert="$(sudo find /var/lib/caddy/.local/share/caddy/certificates -type f -name "$DOMAIN_HOST.crt" 2>/dev/null | head -n 1 || true)"
+  caddy_key="$(sudo find /var/lib/caddy/.local/share/caddy/certificates -type f -name "$DOMAIN_HOST.key" 2>/dev/null | head -n 1 || true)"
+  if [ -n "$caddy_cert" ] && [ -n "$caddy_key" ]; then
+    sudo install -m 0644 "$caddy_cert" "$turn_cert"
+    sudo install -m 0640 "$caddy_key" "$turn_key"
+    if id turnserver >/dev/null 2>&1; then
+      sudo chown turnserver:turnserver "$turn_cert" "$turn_key"
+    fi
+    tls_ready=1
+  else
+    log "Caddy TLS certificate was not found yet; TURN will run on UDP/TCP 3478 now. Re-run deploy after Caddy has issued the certificate to enable turns:5349."
+  fi
+
+  turn_urls="turn:$DOMAIN_HOST:3478?transport=udp,turn:$DOMAIN_HOST:3478?transport=tcp"
+  if [ "$tls_ready" -eq 1 ]; then
+    turn_urls="$turn_urls,turns:$DOMAIN_HOST:5349?transport=tcp"
+  fi
+  set_env TURN_URLS "$turn_urls"
+  set_env TURN_SHARED_SECRET "$turn_secret"
+  set_env TURN_AUTH_SECRET "$turn_secret"
+
+sudo tee /etc/turnserver.conf >/dev/null <<EOF
 listening-port=3478
 fingerprint
 lt-cred-mech
-user=${turn_username}:${turn_credential}
-realm=${DOMAIN_HOST}
-server-name=${DOMAIN_HOST}
+use-auth-secret
+static-auth-secret=${turn_secret}
+realm=${turn_realm}
+server-name=${turn_realm}
 external-ip=${PUBLIC_IP}
-min-port=49152
-max-port=65535
+min-port=${turn_min_port}
+max-port=${turn_max_port}
 no-multicast-peers
 no-cli
+no-tlsv1
+no-tlsv1_1
 EOF
+
+  if [ "$tls_ready" -eq 1 ]; then
+    sudo tee -a /etc/turnserver.conf >/dev/null <<EOF
+tls-listening-port=5349
+cert=${turn_cert}
+pkey=${turn_key}
+EOF
+  fi
 
   if [ -f /etc/default/coturn ]; then
     if grep -q '^#\?TURNSERVER_ENABLED=' /etc/default/coturn; then
@@ -286,7 +334,8 @@ EOF
     sudo ufw allow 443/tcp
     sudo ufw allow 3478/tcp
     sudo ufw allow 3478/udp
-    sudo ufw allow 49152:65535/udp
+    sudo ufw allow 5349/tcp
+    sudo ufw allow "$turn_min_port:$turn_max_port/udp"
   fi
 }
 
@@ -341,6 +390,7 @@ EOF
   sudo caddy fmt --overwrite /etc/caddy/Caddyfile
   sudo systemctl enable --now caddy
   sudo systemctl restart caddy
+  curl -fsS --retry 4 --retry-delay 2 "$DOMAIN/" >/dev/null 2>&1 || true
 }
 
 restart_backend() {
@@ -372,6 +422,14 @@ verify() {
     *'"iceServers"'*) ;;
     *) echo "RTC config did not return JSON from the backend."; exit 1 ;;
   esac
+  case "$rtc_config" in
+    *'"turnConfigured":true'*) ;;
+    *) echo "RTC config does not show TURN as configured."; exit 1 ;;
+  esac
+  case "$rtc_config" in
+    *'"turnCredentialType":"ephemeral"'*) ;;
+    *) echo "RTC config is not using short-lived TURN credentials."; exit 1 ;;
+  esac
 }
 
 main() {
@@ -379,10 +437,10 @@ main() {
   ensure_repo
   write_env_files
   configure_mysql
-  configure_turn
   build_and_publish
-  restart_backend
   configure_caddy
+  configure_turn
+  restart_backend
   verify
 
   log "Deployment complete: $DOMAIN"

@@ -155,10 +155,15 @@ Current production env keys:
 FRONTEND_ORIGINS=https://chadnichok.com
 STUN_URLS=stun:stun.l.google.com:19302
 TURN_URLS=turn:chadnichok.com:3478?transport=udp,turn:chadnichok.com:3478?transport=tcp
-TURN_USERNAME=...
-TURN_CREDENTIAL=...
+TURN_SHARED_SECRET=...
+TURN_TTL_SECONDS=3600
 RTC_ICE_TRANSPORT_POLICY=all
 ```
+
+Production coturn is configured with `use-auth-secret` and
+`static-auth-secret`. The backend signs temporary TURN usernames with HMAC-SHA1
+and returns them from `/api/rtc/config`, so browsers receive short-lived TURN
+credentials instead of one reusable server password.
 
 ## What To Tell A Client
 

@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), 
 
 const express = require('express')
 const cors = require('cors')
+const crypto = require('crypto')
 const http = require('http')
 const { Server } = require('socket.io')
 const { query } = require('./config/db')
@@ -54,6 +55,15 @@ function splitUrls(value) {
     .filter(Boolean)
 }
 
+function firstEnv(...keys) {
+  for (const key of keys) {
+    const value = process.env[key]
+    if (value !== undefined && value !== '') return value
+  }
+
+  return ''
+}
+
 function parseIceServers(value) {
   if (!value) return null
 
@@ -70,27 +80,83 @@ function iceServerHasTurn(server) {
   return urls.some((url) => String(url || '').startsWith('turn:') || String(url || '').startsWith('turns:'))
 }
 
+function iceServerHasCredentials(server) {
+  return Boolean(server?.username && server?.credential)
+}
+
+function turnTtlSeconds() {
+  const ttl = positiveIntegerEnv('TURN_TTL_SECONDS', 3600)
+  return Math.min(Math.max(ttl, 300), 86400)
+}
+
+function createTemporaryTurnCredentials() {
+  const secret = firstEnv('TURN_SHARED_SECRET', 'TURN_AUTH_SECRET')
+  if (!secret) return null
+
+  const ttl = turnTtlSeconds()
+  const expiresAt = Math.floor(Date.now() / 1000) + ttl
+  const username = `${expiresAt}:rtc`
+  const credential = crypto
+    .createHmac('sha1', secret)
+    .update(username)
+    .digest('base64')
+
+  return {
+    username,
+    credential,
+    expiresAt,
+    ttl,
+  }
+}
+
+function decorateTurnServers(iceServers, credentials) {
+  if (!credentials) return iceServers
+
+  return iceServers.map((server) => {
+    if (!iceServerHasTurn(server)) return server
+    return {
+      ...server,
+      username: server.username || credentials.username,
+      credential: server.credential || credentials.credential,
+    }
+  })
+}
+
 function buildRtcConfig() {
   const configuredIceServers = parseIceServers(process.env.RTC_ICE_SERVERS || process.env.ICE_SERVERS)
   const stunUrls = splitUrls(process.env.STUN_URLS || 'stun:stun.l.google.com:19302')
   const turnUrls = splitUrls(process.env.TURN_URLS || process.env.TURN_URL)
-  const turnUsername = process.env.TURN_USERNAME || ''
-  const turnCredential = process.env.TURN_CREDENTIAL || ''
+  const temporaryTurnCredentials = createTemporaryTurnCredentials()
+  const staticTurnUsername = process.env.TURN_USERNAME || ''
+  const staticTurnCredential = process.env.TURN_CREDENTIAL || ''
 
   if (configuredIceServers?.length) {
-    const turnConfigured = configuredIceServers.some(iceServerHasTurn)
+    const iceServers = decorateTurnServers(configuredIceServers, temporaryTurnCredentials)
+    const turnConfigured = iceServers.some((server) => iceServerHasTurn(server) && (
+      iceServerHasCredentials(server) || Boolean(temporaryTurnCredentials)
+    ))
     const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
       ? process.env.RTC_ICE_TRANSPORT_POLICY
       : 'all'
 
     return {
-      iceServers: configuredIceServers,
+      iceServers,
       iceTransportPolicy,
       turnConfigured,
+      turnCredentialType: temporaryTurnCredentials ? 'ephemeral' : turnConfigured ? 'static' : null,
+      ...(temporaryTurnCredentials ? {
+        turnExpiresAt: temporaryTurnCredentials.expiresAt,
+        turnTtlSeconds: temporaryTurnCredentials.ttl,
+      } : {}),
     }
   }
 
-  const turnConfigured = turnUrls.length > 0 && Boolean(turnUsername && turnCredential)
+  const turnCredentials = temporaryTurnCredentials || (
+    staticTurnUsername && staticTurnCredential
+      ? { username: staticTurnUsername, credential: staticTurnCredential }
+      : null
+  )
+  const turnConfigured = turnUrls.length > 0 && Boolean(turnCredentials)
   const iceTransportPolicy = ['all', 'relay'].includes(process.env.RTC_ICE_TRANSPORT_POLICY)
     ? process.env.RTC_ICE_TRANSPORT_POLICY
     : 'all'
@@ -99,8 +165,8 @@ function buildRtcConfig() {
   if (turnUrls.length) {
     iceServers.push({
       urls: turnUrls,
-      username: turnUsername,
-      credential: turnCredential,
+      username: turnCredentials?.username || '',
+      credential: turnCredentials?.credential || '',
     })
   }
 
@@ -108,6 +174,11 @@ function buildRtcConfig() {
     iceServers,
     iceTransportPolicy,
     turnConfigured,
+    turnCredentialType: temporaryTurnCredentials ? 'ephemeral' : turnCredentials ? 'static' : null,
+    ...(temporaryTurnCredentials ? {
+      turnExpiresAt: temporaryTurnCredentials.expiresAt,
+      turnTtlSeconds: temporaryTurnCredentials.ttl,
+    } : {}),
   }
 }
 

@@ -124,19 +124,17 @@ write_backend_env() {
   set_env STUN_URLS stun:stun.l.google.com:19302
 
   if [ "$SETUP_TURN" = "1" ]; then
-    turn_username="$(get_env TURN_USERNAME backend/.env)"
-    if [ -z "$turn_username" ]; then
-      turn_username="rtcuser"
-    fi
-
-    turn_credential="$(get_env TURN_CREDENTIAL backend/.env)"
-    if [ -z "$turn_credential" ] || [ "$turn_credential" = "YOUR_TURN_PASSWORD" ]; then
-      turn_credential="$(random_hex 20)"
+    turn_secret="${TURN_SHARED_SECRET:-$(get_env TURN_SHARED_SECRET backend/.env)}"
+    if [ -z "$turn_secret" ]; then turn_secret="${TURN_AUTH_SECRET:-$(get_env TURN_AUTH_SECRET backend/.env)}"; fi
+    if [ -z "$turn_secret" ]; then turn_secret="$(get_env TURN_CREDENTIAL backend/.env)"; fi
+    if [ -z "$turn_secret" ] || [ "$turn_secret" = "YOUR_TURN_PASSWORD" ]; then
+      turn_secret="$(random_hex 32)"
     fi
 
     set_env TURN_URLS "turn:$PUBLIC_HOST:3478?transport=udp,turn:$PUBLIC_HOST:3478?transport=tcp"
-    set_env TURN_USERNAME "$turn_username"
-    set_env TURN_CREDENTIAL "$turn_credential"
+    set_env TURN_SHARED_SECRET "$turn_secret"
+    set_env TURN_AUTH_SECRET "$turn_secret"
+    set_env TURN_TTL_SECONDS "${TURN_TTL_SECONDS:-3600}"
     set_env RTC_ICE_TRANSPORT_POLICY all
   else
     set_env RTC_ICE_TRANSPORT_POLICY all
@@ -174,8 +172,19 @@ configure_turn() {
 
   log "Configuring coturn for WebRTC relay"
 
-  turn_username="$(get_env TURN_USERNAME)"
-  turn_credential="$(get_env TURN_CREDENTIAL)"
+  turn_secret="$(get_env TURN_SHARED_SECRET)"
+  if [ -z "$turn_secret" ]; then turn_secret="$(get_env TURN_AUTH_SECRET)"; fi
+  if [ -z "$turn_secret" ]; then
+    echo "ERROR: TURN_SHARED_SECRET is missing. Run write_backend_env before configure_turn." >&2
+    exit 1
+  fi
+  turn_realm="${TURN_REALM:-$PUBLIC_HOST}"
+  turn_min_port="${TURN_MIN_PORT:-49152}"
+  turn_max_port="${TURN_MAX_PORT:-65535}"
+  turn_cert_dir="/etc/coturn/certs"
+  turn_cert="$turn_cert_dir/$PUBLIC_HOST.crt"
+  turn_key="$turn_cert_dir/$PUBLIC_HOST.key"
+  tls_ready=0
 
   if ! command -v turnserver >/dev/null 2>&1; then
     sudo apt-get update
@@ -186,19 +195,50 @@ configure_turn() {
     sudo cp /etc/turnserver.conf "/etc/turnserver.conf.bak.$(date +%Y%m%d%H%M%S)"
   fi
 
-  sudo tee /etc/turnserver.conf >/dev/null <<EOF
+  sudo mkdir -p "$turn_cert_dir"
+  letsencrypt_cert="/etc/letsencrypt/live/$PUBLIC_HOST/fullchain.pem"
+  letsencrypt_key="/etc/letsencrypt/live/$PUBLIC_HOST/privkey.pem"
+  if has_file "$letsencrypt_cert" && has_file "$letsencrypt_key"; then
+    sudo install -m 0644 "$letsencrypt_cert" "$turn_cert"
+    sudo install -m 0640 "$letsencrypt_key" "$turn_key"
+    if id turnserver >/dev/null 2>&1; then
+      sudo chown turnserver:turnserver "$turn_cert" "$turn_key"
+    fi
+    tls_ready=1
+  fi
+
+  turn_urls="turn:$PUBLIC_HOST:3478?transport=udp,turn:$PUBLIC_HOST:3478?transport=tcp"
+  if [ "$tls_ready" -eq 1 ]; then
+    turn_urls="$turn_urls,turns:$PUBLIC_HOST:5349?transport=tcp"
+  fi
+  set_env TURN_URLS "$turn_urls"
+  set_env TURN_SHARED_SECRET "$turn_secret"
+  set_env TURN_AUTH_SECRET "$turn_secret"
+
+sudo tee /etc/turnserver.conf >/dev/null <<EOF
 listening-port=3478
 fingerprint
 lt-cred-mech
-user=${turn_username}:${turn_credential}
-realm=${PUBLIC_HOST}
-server-name=${PUBLIC_HOST}
+use-auth-secret
+static-auth-secret=${turn_secret}
+realm=${turn_realm}
+server-name=${turn_realm}
 external-ip=${PUBLIC_IP}
-min-port=49152
-max-port=65535
+min-port=${turn_min_port}
+max-port=${turn_max_port}
 no-multicast-peers
 no-cli
+no-tlsv1
+no-tlsv1_1
 EOF
+
+  if [ "$tls_ready" -eq 1 ]; then
+    sudo tee -a /etc/turnserver.conf >/dev/null <<EOF
+tls-listening-port=5349
+cert=${turn_cert}
+pkey=${turn_key}
+EOF
+  fi
 
   if [ -f /etc/default/coturn ]; then
     if grep -q '^#\?TURNSERVER_ENABLED=' /etc/default/coturn; then
@@ -216,7 +256,8 @@ EOF
     sudo ufw allow 443/tcp
     sudo ufw allow 3478/tcp
     sudo ufw allow 3478/udp
-    sudo ufw allow 49152:65535/udp
+    sudo ufw allow 5349/tcp
+    sudo ufw allow "$turn_min_port:$turn_max_port/udp"
   fi
 }
 
@@ -515,13 +556,13 @@ main() {
   ensure_repo
   write_backend_env
   configure_mysql
-  configure_turn
   write_frontend_env
   install_and_build
   release_web_ports
   open_web_firewall
   write_nginx_config
   ensure_https_certificate
+  configure_turn
   restart_backend
   verify_deploy
 
