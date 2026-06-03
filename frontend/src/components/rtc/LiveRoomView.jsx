@@ -28,6 +28,99 @@ function compactNumber(value) {
   return String(number)
 }
 
+function formatRtcBitrate(value) {
+  const number = Number(value || 0)
+  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)} Mb/s`
+  return `${Math.max(0, Math.round(number))} kb/s`
+}
+
+function formatRtcLatency(value) {
+  const number = Number(value || 0)
+  return number > 0 ? `${Math.round(number)} ms` : '--'
+}
+
+function formatRtcLoss(value) {
+  const number = Number(value || 0)
+  return `${number.toFixed(number > 0 && number < 10 ? 1 : 0)}%`
+}
+
+function worstRtcQuality(statsList) {
+  const order = ['failed', 'poor', 'degraded', 'fair', 'connecting', 'idle', 'unknown', 'good']
+  return statsList.reduce((worst, stats) => {
+    const quality = stats?.quality || 'unknown'
+    return order.indexOf(quality) < order.indexOf(worst) ? quality : worst
+  }, 'good')
+}
+
+function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) {
+  if (!joined) {
+    return {
+      quality: 'idle',
+      label: 'RTC ready',
+      detail: 'Connect to start media diagnostics',
+      incoming: '0 kb/s',
+      outgoing: '0 kb/s',
+      rtt: '--',
+      loss: '0%',
+    }
+  }
+
+  const expectedPeers = Math.max(remotePeerCount || 0, Object.keys(peerStates || {}).length)
+  if (!expectedPeers) {
+    return {
+      quality: 'good',
+      label: 'RTC ready',
+      detail: 'Waiting for another user',
+      incoming: '0 kb/s',
+      outgoing: '0 kb/s',
+      rtt: '--',
+      loss: '0%',
+    }
+  }
+
+  const statsList = Object.values(peerStats || {}).filter(Boolean)
+  if (!statsList.length) {
+    return {
+      quality: 'connecting',
+      label: 'Measuring RTC',
+      detail: `${expectedPeers} peer${expectedPeers === 1 ? '' : 's'} negotiating`,
+      incoming: '0 kb/s',
+      outgoing: '0 kb/s',
+      rtt: '--',
+      loss: '0%',
+    }
+  }
+
+  const incomingKbps = statsList.reduce((total, stats) => total + Number(stats.incomingKbps || 0), 0)
+  const outgoingKbps = statsList.reduce((total, stats) => total + Number(stats.outgoingKbps || 0), 0)
+  const packetLossPct = Math.max(...statsList.map((stats) => Number(stats.packetLossPct || 0)))
+  const latencySamples = statsList.map((stats) => Number(stats.rttMs || 0)).filter((value) => value > 0)
+  const rttMs = latencySamples.length
+    ? latencySamples.reduce((total, value) => total + value, 0) / latencySamples.length
+    : 0
+  const quality = worstRtcQuality(statsList)
+  const qualityLabel = {
+    failed: 'RTC failed',
+    poor: 'RTC poor',
+    degraded: 'RTC degraded',
+    fair: 'RTC fair',
+    connecting: 'RTC connecting',
+    idle: 'RTC idle',
+    unknown: 'RTC measuring',
+    good: 'RTC healthy',
+  }[quality] || 'RTC measuring'
+
+  return {
+    quality,
+    label: qualityLabel,
+    detail: `${statsList.length}/${expectedPeers} peer${expectedPeers === 1 ? '' : 's'} measured`,
+    incoming: formatRtcBitrate(incomingKbps),
+    outgoing: formatRtcBitrate(outgoingKbps),
+    rtt: formatRtcLatency(rttMs),
+    loss: formatRtcLoss(packetLossPct),
+  }
+}
+
 export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack, onProfile }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
@@ -40,6 +133,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [localStream, setLocalStream] = useState(null)
   const [remoteStreams, setRemoteStreams] = useState({})
   const [peerStates, setPeerStates] = useState({})
+  const [peerStats, setPeerStats] = useState({})
   const [peerMediaStates, setPeerMediaStates] = useState({})
   const [signalingPeerCount, setSignalingPeerCount] = useState(0)
   const [signalingState, setSignalingState] = useState(autoConnect ? 'connecting' : 'idle')
@@ -132,6 +226,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setLocalStream(null)
       setRemoteStreams({})
       setPeerStates({})
+      setPeerStats({})
       setPeerMediaStates({})
       setSession(null)
       setSignalingPeerCount(0)
@@ -701,6 +796,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           setPeerStates((previous) => ({ ...previous, [remoteSocketId]: state }))
           if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
         },
+        onPeerStats: (remoteSocketId, stats) => {
+          setPeerStats((previous) => ({ ...previous, [remoteSocketId]: stats }))
+        },
       })
       rtcRef.current = rtcClient
       await flushPendingLocalTracks({ publish: false })
@@ -800,6 +898,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           return copy
         })
         setPeerStates((previous) => {
+          const copy = { ...previous }
+          delete copy[socketId]
+          return copy
+        })
+        setPeerStats((previous) => {
           const copy = { ...previous }
           delete copy[socketId]
           return copy
@@ -1128,6 +1231,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
+  const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats })
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">
@@ -1185,6 +1289,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <span>Room ID: {room?.id || roomId}</span>
               <small>{displayUserCount} user{viewerCount === 1 ? '' : 's'}</small>
             </div>
+
+            {joined ? (
+              <div className={`rtc-health-strip ${rtcHealth.quality}`} aria-label="RTC health">
+                <span className="rtc-health-dot" aria-hidden="true"></span>
+                <strong>{rtcHealth.label}</strong>
+                <small>{rtcHealth.detail}</small>
+                <span>In {rtcHealth.incoming}</span>
+                <span>Out {rtcHealth.outgoing}</span>
+                <span>RTT {rtcHealth.rtt}</span>
+                <span>Loss {rtcHealth.loss}</span>
+              </div>
+            ) : null}
 
             {showMediaPermissionRecovery ? (
               <div className="buzzcast-media-permission-card" role="alert">
