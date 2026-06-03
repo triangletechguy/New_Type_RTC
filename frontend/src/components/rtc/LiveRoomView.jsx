@@ -5,7 +5,6 @@ import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMedi
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
 import {
-  BACKGROUND_EFFECTS,
   BEAUTY_CONTROLS,
   CameraFilterPipeline,
   DEFAULT_BEAUTY_SETTINGS,
@@ -240,6 +239,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [cameraFilter, setCameraFilter] = useState('normal')
   const [beautySettings, setBeautySettings] = useState(DEFAULT_BEAUTY_SETTINGS)
   const [backgroundEffect, setBackgroundEffect] = useState('none')
+  const [cameraFilterPerformance, setCameraFilterPerformance] = useState('720p / 24fps')
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -358,6 +358,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return nextStream
   }
 
+  function handleCameraFilterPerformanceChange(event) {
+    if (event?.type === 'reduced-resolution') {
+      setCameraFilterPerformance('480p adaptive')
+      setStatus('Camera effects reduced to 480p to keep RTC smooth.')
+      return
+    }
+
+    if (event?.type === 'disabled-background') {
+      setBackgroundEffect('none')
+      backgroundEffectRef.current = 'none'
+      setCameraFilterPerformance('480p light')
+      setStatus('Background blur was turned off to keep RTC smooth.')
+    }
+  }
+
   async function filteredCameraOutputTrack(
     sourceTrack,
     filterId = cameraFilterRef.current,
@@ -388,9 +403,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       pipeline = new CameraFilterPipeline(sourceTrack, normalizedFilterId, {
         beautySettings: normalizedBeautySettings,
         backgroundEffect: normalizedBackgroundEffect,
-        frameRate: 20,
-        maxWidth: 960,
-        maxHeight: 540,
+        frameRate: 24,
+        maxWidth: 1280,
+        maxHeight: 720,
+        onPerformanceChange: handleCameraFilterPerformanceChange,
       })
       cameraFilterPipelineRef.current = pipeline
       filteredCameraTrackRef.current = await pipeline.start()
@@ -1069,6 +1085,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const normalizedSettings = normalizeBeautySettings(nextSettings)
     const effectActive = isCameraFilterEffectActive(cameraFilterRef.current, normalizedSettings, backgroundEffectRef.current)
     const pipeline = cameraFilterPipelineRef.current
+    const sharingScreen = Boolean(screenShareTrackRef.current)
 
     setBeautySettings(normalizedSettings)
     beautySettingsRef.current = normalizedSettings
@@ -1086,7 +1103,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       if (pipeline && isLiveTrack(filteredCameraTrackRef.current) && effectActive) {
         pipeline.setBeautySettings(normalizedSettings)
-        setStatus(successStatus)
+        setStatus(sharingScreen ? 'Beauty settings selected. They will apply when screen share stops.' : successStatus)
         return
       }
 
@@ -1127,8 +1144,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     applyBeautySettings(nextSettings).catch((error) => setStatus(`Beauty filter failed: ${error.message}`))
   }
 
-  function resetBeautySettings() {
-    applyBeautySettings(DEFAULT_BEAUTY_SETTINGS, 'Beauty settings reset').catch((error) => setStatus(`Beauty reset failed: ${error.message}`))
+  function toggleBackgroundBlur() {
+    const nextEffect = backgroundEffectRef.current === 'blur' ? 'none' : 'blur'
+    changeBackgroundEffect(nextEffect).catch((error) => setStatus(`Background blur failed: ${error.message}`))
   }
 
   async function changeBackgroundEffect(effectId) {
@@ -1182,6 +1200,51 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       stopCameraFilterPipeline({ stopSource: false })
       await syncCameraFilterTrack({ backgroundEffectValue: 'none', replaceOutgoing: !screenShareTrackRef.current }).catch(() => {})
       setStatus(`Background effect failed: ${error.message}`)
+    } finally {
+      setMediaUpdating((state) => ({ ...state, filter: false }))
+    }
+  }
+
+  async function resetCameraEffects() {
+    if (mediaUpdating.filter) return
+
+    setCameraFilter('normal')
+    cameraFilterRef.current = 'normal'
+    setBeautySettings(DEFAULT_BEAUTY_SETTINGS)
+    beautySettingsRef.current = DEFAULT_BEAUTY_SETTINGS
+    setBackgroundEffect('none')
+    backgroundEffectRef.current = 'none'
+    setCameraFilterPerformance('720p / 24fps')
+
+    if (rtcModeRef.current === 'audio') {
+      setStatus('Camera effects reset. They are available in video rooms.')
+      return
+    }
+
+    if (!joinedRef.current) {
+      stopCameraFilterPipeline({ stopSource: false })
+      setStatus('Camera effects reset. They will stay normal when you connect RTC.')
+      return
+    }
+
+    setMediaUpdating((state) => ({ ...state, filter: true }))
+
+    try {
+      const sourceTrack = rememberCameraSourceFromStream()
+      if (sourceTrack) {
+        await syncCameraFilterTrack({
+          filterId: 'normal',
+          beautySettingsValue: DEFAULT_BEAUTY_SETTINGS,
+          backgroundEffectValue: 'none',
+          replaceOutgoing: !screenShareTrackRef.current,
+        })
+      } else {
+        stopCameraFilterPipeline({ stopSource: false })
+      }
+
+      setStatus(screenShareTrackRef.current ? 'Camera effects reset. Screen share stays unchanged.' : 'Camera effects reset')
+    } catch (error) {
+      setStatus(`Camera effects reset failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, filter: false }))
     }
@@ -2113,27 +2176,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         </button>
                       ))}
                     </div>
-                    <div className="camera-background-controls" aria-label="Background effects">
-                      <strong>Background</strong>
-                      <div className="camera-background-grid">
-                        {BACKGROUND_EFFECTS.map((effect) => (
-                          <button
-                            key={effect.id}
-                            type="button"
-                            className={backgroundEffect === effect.id ? 'active' : ''}
-                            onClick={() => changeBackgroundEffect(effect.id)}
-                            disabled={mediaUpdating.filter || rtcMode === 'audio'}
-                            aria-pressed={backgroundEffect === effect.id}
-                          >
-                            <span className={`background-swatch ${effect.id}`} aria-hidden="true"></span>
-                            <span>
-                              <b>{effect.label}</b>
-                              <small>{effect.detail}</small>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                     <div className="camera-beauty-controls" aria-label="Beauty filter controls">
                       {BEAUTY_CONTROLS.map((control) => (
                         <label key={control.id} className="beauty-slider-row">
@@ -2152,11 +2194,27 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                           />
                         </label>
                       ))}
-                      <button type="button" className="beauty-reset-button" onClick={resetBeautySettings} disabled={!beautySettingsActive || rtcMode === 'audio'}>
-                        Reset beauty
+                    </div>
+                    <div className="camera-background-controls" aria-label="Background blur">
+                      <button
+                        type="button"
+                        className={backgroundEffect === 'blur' ? 'background-blur-toggle active' : 'background-blur-toggle'}
+                        onClick={toggleBackgroundBlur}
+                        disabled={mediaUpdating.filter || rtcMode === 'audio'}
+                        aria-pressed={backgroundEffect === 'blur'}
+                      >
+                        <span className="background-swatch blur" aria-hidden="true"></span>
+                        <span>
+                          <strong>Background blur</strong>
+                          <small>{backgroundEffect === 'blur' ? 'On' : 'Off'} - camera only</small>
+                        </span>
+                        <b aria-hidden="true"></b>
+                      </button>
+                      <button type="button" className="beauty-reset-button camera-reset-button" onClick={resetCameraEffects} disabled={!cameraEffectsActive || mediaUpdating.filter || rtcMode === 'audio'}>
+                        Reset
                       </button>
                     </div>
-                    <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Selected preset will apply after screen share.' : 'Outgoing camera preset'}</small>
+                    <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Camera effects apply after screen share stops.' : `Outgoing camera effects - ${cameraFilterPerformance}`}</small>
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">

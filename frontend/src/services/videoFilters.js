@@ -105,10 +105,15 @@ const FILTER_MAP = new Map(VIDEO_FILTERS.map((filter) => [filter.id, filter]))
 const DEFAULT_FILTER = VIDEO_FILTERS[0]
 const BACKGROUND_MAP = new Map(BACKGROUND_EFFECTS.map((effect) => [effect.id, effect]))
 const DEFAULT_BACKGROUND = BACKGROUND_EFFECTS[0]
-const DEFAULT_WIDTH = 640
-const DEFAULT_HEIGHT = 360
-const DEFAULT_FPS = 20
+const DEFAULT_WIDTH = 1280
+const DEFAULT_HEIGHT = 720
+const DEFAULT_FPS = 24
 const SEGMENTATION_FPS = 10
+const ADAPTIVE_HEIGHT = 480
+const PERFORMANCE_SAMPLE_SIZE = 30
+const SLOW_FRAME_MS = 46
+const VERY_SLOW_FRAME_MS = 72
+const PERFORMANCE_COOLDOWN_MS = 4500
 const MEDIAPIPE_TASKS_VERSION = '0.10.35'
 const MEDIAPIPE_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VERSION}/wasm`
 const SELFIE_SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'
@@ -120,22 +125,35 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, number))
 }
 
-function nextAnimationFrame(callback) {
-  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-    return window.requestAnimationFrame(callback)
+function nextAnimationFrame(callback, delayMs = 1000 / DEFAULT_FPS) {
+  const delay = clampNumber(delayMs, 16, 250, 1000 / DEFAULT_FPS)
+
+  if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+    return window.setTimeout(() => {
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(callback)
+        return
+      }
+
+      callback()
+    }, delay)
   }
 
-  return window.setTimeout(callback, 1000 / DEFAULT_FPS)
+  return setTimeout(callback, delay)
 }
 
 function cancelAnimationFrameSafe(handle) {
   if (!handle) return
   if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
     window.cancelAnimationFrame(handle)
+  }
+
+  if (typeof window !== 'undefined' && typeof window.clearTimeout === 'function') {
+    window.clearTimeout(handle)
     return
   }
 
-  window.clearTimeout(handle)
+  clearTimeout(handle)
 }
 
 function waitForVideoReady(video) {
@@ -263,6 +281,23 @@ function createOutputCanvas(width, height) {
   return canvas
 }
 
+function scaledDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight) {
+  const width = sourceWidth || DEFAULT_WIDTH
+  const height = sourceHeight || DEFAULT_HEIGHT
+  const scale = Math.min(1, maxWidth / width, maxHeight / height)
+
+  return {
+    width: Math.max(240, Math.round(width * scale)),
+    height: Math.max(180, Math.round(height * scale)),
+  }
+}
+
+function nowMs() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
 export class CameraFilterPipeline {
   constructor(sourceTrack, filterId = DEFAULT_FILTER.id, options = {}) {
     this.sourceTrack = sourceTrack
@@ -272,6 +307,7 @@ export class CameraFilterPipeline {
     this.frameRate = clampNumber(options.frameRate, 8, 30, DEFAULT_FPS)
     this.maxWidth = clampNumber(options.maxWidth, 240, 1280, DEFAULT_WIDTH)
     this.maxHeight = clampNumber(options.maxHeight, 180, 720, DEFAULT_HEIGHT)
+    this.onPerformanceChange = typeof options.onPerformanceChange === 'function' ? options.onPerformanceChange : null
     this.video = null
     this.canvas = null
     this.context = null
@@ -291,6 +327,10 @@ export class CameraFilterPipeline {
     this.hasSegmentationMask = false
     this.lastSegmentationAt = 0
     this.segmentationIntervalMs = 1000 / SEGMENTATION_FPS
+    this.frameIntervalMs = 1000 / this.frameRate
+    this.frameDurations = []
+    this.performanceStage = 0
+    this.lastPerformanceChangeAt = 0
     this.stopped = false
   }
 
@@ -320,9 +360,7 @@ export class CameraFilterPipeline {
     const settings = this.sourceTrack.getSettings?.() || {}
     const sourceWidth = settings.width || this.video.videoWidth || DEFAULT_WIDTH
     const sourceHeight = settings.height || this.video.videoHeight || DEFAULT_HEIGHT
-    const aspectRatio = sourceWidth && sourceHeight ? sourceWidth / sourceHeight : DEFAULT_WIDTH / DEFAULT_HEIGHT
-    const width = clampNumber(sourceWidth, 240, this.maxWidth, DEFAULT_WIDTH)
-    const height = clampNumber(Math.round(width / aspectRatio), 180, this.maxHeight, DEFAULT_HEIGHT)
+    const { width, height } = scaledDimensions(sourceWidth, sourceHeight, this.maxWidth, this.maxHeight)
 
     this.canvas = document.createElement('canvas')
     this.canvas.width = width
@@ -354,6 +392,7 @@ export class CameraFilterPipeline {
       // contentHint is best-effort.
     }
 
+    this.lastPerformanceChangeAt = nowMs()
     this.drawFrame()
     return this.outputTrack
   }
@@ -368,6 +407,80 @@ export class CameraFilterPipeline {
 
   setBackgroundEffect(effectId) {
     this.backgroundEffect = normalizeBackgroundEffectId(effectId)
+    if (isBackgroundEffectActive(this.backgroundEffect) && this.performanceStage >= 2) {
+      this.performanceStage = 1
+      this.frameDurations = []
+      this.hasSegmentationMask = false
+      this.lastPerformanceChangeAt = nowMs()
+    }
+  }
+
+  notifyPerformanceChange(payload) {
+    if (!this.onPerformanceChange) return
+
+    try {
+      this.onPerformanceChange(payload)
+    } catch (error) {
+      console.error('[video-filter] Performance callback failed', error)
+    }
+  }
+
+  resizeProcessingResolution(maxHeight = ADAPTIVE_HEIGHT) {
+    if (!this.canvas) return false
+
+    const currentWidth = this.canvas.width || DEFAULT_WIDTH
+    const currentHeight = this.canvas.height || DEFAULT_HEIGHT
+    if (currentHeight <= maxHeight) return false
+
+    const aspectRatio = currentWidth / currentHeight
+    const nextHeight = Math.max(180, Math.min(maxHeight, currentHeight))
+    const nextWidth = Math.max(240, Math.round(nextHeight * aspectRatio))
+
+    setCanvasSize(this.canvas, nextWidth, nextHeight)
+    setCanvasSize(this.scratchCanvas, nextWidth, nextHeight)
+    setCanvasSize(this.maskCanvas, nextWidth, nextHeight)
+    setCanvasSize(this.detailCanvas, nextWidth, nextHeight)
+    this.hasSegmentationMask = false
+    return true
+  }
+
+  recordFramePerformance(startTime, backgroundActive) {
+    const elapsed = nowMs() - startTime
+    if (!Number.isFinite(elapsed) || elapsed <= 0) return
+
+    this.frameDurations.push(elapsed)
+    if (this.frameDurations.length > PERFORMANCE_SAMPLE_SIZE) {
+      this.frameDurations.shift()
+    }
+
+    if (this.frameDurations.length < PERFORMANCE_SAMPLE_SIZE) return
+
+    const now = nowMs()
+    if (now - this.lastPerformanceChangeAt < PERFORMANCE_COOLDOWN_MS) return
+
+    const average = this.frameDurations.reduce((total, value) => total + value, 0) / this.frameDurations.length
+    const peak = Math.max(...this.frameDurations)
+
+    if (this.performanceStage === 0 && (average > SLOW_FRAME_MS || peak > SLOW_FRAME_MS * 2.2)) {
+      this.performanceStage = 1
+      this.lastPerformanceChangeAt = now
+      this.frameDurations = []
+      this.frameIntervalMs = Math.max(this.frameIntervalMs, 1000 / 20)
+      this.segmentationIntervalMs = 1000 / 8
+      this.resizeProcessingResolution(ADAPTIVE_HEIGHT)
+      this.notifyPerformanceChange({ type: 'reduced-resolution', label: '480p adaptive' })
+      return
+    }
+
+    if (this.performanceStage === 1 && backgroundActive && (average > VERY_SLOW_FRAME_MS || peak > VERY_SLOW_FRAME_MS * 2)) {
+      this.performanceStage = 2
+      this.lastPerformanceChangeAt = now
+      this.frameDurations = []
+      this.frameIntervalMs = Math.max(this.frameIntervalMs, 1000 / 18)
+      this.backgroundEffect = DEFAULT_BACKGROUND.id
+      this.hasSegmentationMask = false
+      this.notifyPerformanceChange({ type: 'disabled-background', label: 'background disabled' })
+    }
   }
 
   ensureSegmenter() {
@@ -581,6 +694,8 @@ export class CameraFilterPipeline {
   drawFrame = () => {
     if (this.stopped) return
 
+    const frameStartedAt = nowMs()
+
     const context = this.context
     const canvas = this.canvas
     const video = this.video
@@ -613,9 +728,10 @@ export class CameraFilterPipeline {
 
       this.applySoftLighting(context, width, height, lighting)
       this.applySharpen(context, video, width, height, sharpen)
+      this.recordFramePerformance(frameStartedAt, backgroundActive)
     }
 
-    this.frameHandle = nextAnimationFrame(this.drawFrame)
+    this.frameHandle = nextAnimationFrame(this.drawFrame, this.frameIntervalMs)
   }
 
   stop({ stopSource = false } = {}) {
@@ -649,6 +765,8 @@ export class CameraFilterPipeline {
     this.detailContext = null
     this.detailCanvas = null
     this.hasSegmentationMask = false
+    this.frameDurations = []
+    this.onPerformanceChange = null
   }
 }
 
