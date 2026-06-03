@@ -211,19 +211,30 @@ function smtpErrorMessage(error = {}) {
 }
 
 function buildSmtpTransport(config) {
+  const host = String(config.host || '').trim()
+  const port = Number(config.port || 0)
+  const secure = Boolean(config.secure)
+  const user = String(config.user || '').trim()
+  const rawPass = String(config.pass || '')
+  const pass = host.toLowerCase().includes('gmail.com')
+    ? rawPass.replace(/\s+/g, '')
+    : rawPass
+
   return nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
+    host,
+    port,
+    secure,
     auth: {
-      user: config.user,
-      pass: config.pass,
+      user,
+      pass,
     },
+    requireTLS: !secure && port !== 25,
     connectionTimeout: 120000,
     greetingTimeout: 120000,
     socketTimeout: 120000,
     tls: {
       minVersion: 'TLSv1.2',
+      servername: host,
     },
   })
 }
