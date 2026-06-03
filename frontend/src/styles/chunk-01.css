@@ -538,6 +538,12 @@
   background: currentColor;
 }
 
+.rail-me.image-avatar::before,
+.rail-me.image-avatar::after {
+  content: none;
+  display: none;
+}
+
 .rail-app::before {
   left: 4px;
   top: 4px;

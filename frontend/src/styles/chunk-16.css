@@ -735,10 +735,10 @@
     width: 32px !important;
     height: 32px !important;
     border-radius: 50% !important;
-    border: 2px solid rgba(255, 255, 255, .96) !important;
-    background: #fff !important;
-    box-shadow: 0 1px 4px rgba(0, 60, 48, .2) !important;
-    overflow: visible !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .rail-me img {
