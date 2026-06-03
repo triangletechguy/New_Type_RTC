@@ -88,6 +88,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [blockTarget, setBlockTarget] = useState(null)
   const [blockingUserIds, setBlockingUserIds] = useState({})
   const [blockedSenderIds, setBlockedSenderIds] = useState([])
+  const [imagePreview, setImagePreview] = useState(null)
   const [chatMode, setChatMode] = useState('comments')
   const [inboxThreads, setInboxThreads] = useState([])
   const [inboxMessages, setInboxMessages] = useState([])
@@ -97,7 +98,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [sendingInbox, setSendingInbox] = useState(false)
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
+  const messagesRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const inboxMessagesRef = useRef(null)
   const inboxEndRef = useRef(null)
   const composerRef = useRef(null)
   const photoInputRef = useRef(null)
@@ -108,6 +111,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const recordingTimerRef = useRef(null)
   const refocusComposerRef = useRef(false)
   const typingTimeoutRef = useRef(null)
+  const previousRoomMessageCountRef = useRef(0)
+  const previousInboxMessageCountRef = useRef(0)
 
   const realtimeConnected = Boolean(socket?.connected && signalingRoom)
   const typingNames = Object.values(typingUsers)
@@ -536,6 +541,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     setChatMode('inbox')
     setLoadingInbox(true)
     setStatus('')
+    previousInboxMessageCountRef.current = 0
 
     try {
       const data = await apiRequest(`/direct-messages/${peerId}`)
@@ -636,6 +642,31 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     emitTyping(false)
   }
 
+  function openImagePreview({ src, alt, caption }) {
+    if (!src) return
+    setImagePreview({
+      src,
+      alt: alt || 'Chat photo',
+      caption: caption || '',
+    })
+  }
+
+  function closeImagePreview() {
+    setImagePreview(null)
+  }
+
+  function shouldStickToLatestMessage(container) {
+    if (!container) return true
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    return distanceFromBottom < 96
+  }
+
+  function scrollToLatestMessage(endRef) {
+    window.requestAnimationFrame(() => {
+      endRef.current?.scrollIntoView({ block: 'end' })
+    })
+  }
+
   useEffect(() => {
     setChatEnabled(room?.chat_enabled !== false)
   }, [room?.chat_enabled])
@@ -655,6 +686,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [messages, blockedSenderIds, onMessagesChange])
 
   useEffect(() => {
+    previousRoomMessageCountRef.current = 0
     loadMessages()
   }, [roomId])
 
@@ -663,11 +695,28 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [chatMode])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+    if (!imagePreview) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') closeImagePreview()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [imagePreview])
+
+  useEffect(() => {
+    const previousCount = previousRoomMessageCountRef.current
+    const shouldScroll = previousCount === 0 || shouldStickToLatestMessage(messagesRef.current)
+    previousRoomMessageCountRef.current = visibleMessages.length
+    if (shouldScroll) scrollToLatestMessage(messagesEndRef)
   }, [visibleMessages.length])
 
   useEffect(() => {
-    inboxEndRef.current?.scrollIntoView({ block: 'end' })
+    const previousCount = previousInboxMessageCountRef.current
+    const shouldScroll = previousCount === 0 || shouldStickToLatestMessage(inboxMessagesRef.current)
+    previousInboxMessageCountRef.current = inboxMessages.length
+    if (shouldScroll) scrollToLatestMessage(inboxEndRef)
   }, [inboxMessages.length, chatMode])
 
   useEffect(() => {
@@ -743,7 +792,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
       {chatMode === 'comments' ? (
       <>
-      <div className="messages">
+      <div className="messages" ref={messagesRef} role="log" aria-label="Room chat messages">
         {loading ? (
           <div className="empty-chat">Loading chat...</div>
         ) : visibleMessages.length === 0 ? (
@@ -804,9 +853,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                   </form>
                 ) : imageMessage ? (
                   <div className="chat-image-message">
-                    <a href={message.media_url} target="_blank" rel="noreferrer" aria-label={avatarMessage ? 'Open avatar' : 'Open image'}>
+                    <button
+                      type="button"
+                      className="chat-photo-preview-button"
+                      onClick={() => openImagePreview({
+                        src: message.media_url,
+                        alt: `${senderName} sent`,
+                        caption: photoCaption,
+                      })}
+                      aria-label={avatarMessage ? 'Preview avatar' : 'Preview image'}
+                    >
                       <img className={avatarMessage ? 'chat-photo chat-avatar-share' : 'chat-photo'} src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
-                    </a>
+                    </button>
                     {photoCaption ? <p>{photoCaption}</p> : null}
                   </div>
                 ) : voiceMessage ? (
@@ -945,7 +1003,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           )}
         </div>
 
-        <div className="messages inbox-messages">
+        <div className="messages inbox-messages" ref={inboxMessagesRef} role="log" aria-label="Private inbox messages">
           {!inboxTarget ? (
             <div className="empty-chat">
               <strong>Personal inbox</strong>
@@ -977,9 +1035,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                   </div>
                   {imageMessage ? (
                     <div className="chat-image-message">
-                      <a href={message.media_url} target="_blank" rel="noreferrer" aria-label="Open photo">
+                      <button
+                        type="button"
+                        className="chat-photo-preview-button"
+                        onClick={() => openImagePreview({
+                          src: message.media_url,
+                          alt: `${senderName} sent`,
+                          caption: body && body !== 'sent a photo' ? body : '',
+                        })}
+                        aria-label="Preview photo"
+                      >
                         <img className="chat-photo" src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
-                      </a>
+                      </button>
                       {body && body !== 'sent a photo' ? <p>{body}</p> : null}
                     </div>
                   ) : voiceMessage ? (
@@ -1019,6 +1086,22 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       </>
       )}
       {status && <small className="warning-text">{status}</small>}
+
+      {imagePreview ? (
+        <div className="chat-image-preview-backdrop" onMouseDown={closeImagePreview}>
+          <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label="Photo preview" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <strong>Photo</strong>
+              <button type="button" onClick={closeImagePreview} aria-label="Close photo preview">x</button>
+            </header>
+            <img src={imagePreview.src} alt={imagePreview.alt} />
+            {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
+            <footer>
+              <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
+            </footer>
+          </section>
+        </div>
+      ) : null}
 
       {deleteTarget ? (
         <div className="chat-delete-backdrop" onMouseDown={closeDeleteModal}>
