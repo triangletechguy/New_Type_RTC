@@ -960,19 +960,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !micOn
     const previous = micOn
 
+    setMicOn(next)
+    applyLocalMediaState(next, cameraOn)
     setMediaUpdating((state) => ({ ...state, mic: true }))
+    setStatus(next ? 'Starting microphone...' : 'Microphone muted')
+
     try {
       if (joined && next && !hasLiveLocalTrack('audio')) {
         setStatus('Requesting microphone permission...')
         await attachNewLocalTrack('audio', { publish: false })
+        applyLocalMediaState(next, cameraOn)
       }
-
-      setMicOn(next)
-      applyLocalMediaState(next, cameraOn)
 
       if (!joined) return
 
       const synced = await publishMediaState(next, cameraOn)
+      setMicOn(synced.micOn)
+      applyLocalMediaState(synced.micOn, cameraOn)
       if (synced.micOn) setMediaRecoveryDismissed(true)
       setStatus(synced.micOn ? 'Microphone is live' : 'Microphone muted')
     } catch (error) {
@@ -990,19 +994,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !cameraOn
     const previous = cameraOn
 
+    setCameraOn(next)
+    applyLocalMediaState(micOn, next)
     setMediaUpdating((state) => ({ ...state, camera: true }))
+    setStatus(next ? 'Starting camera...' : 'Camera paused')
+
     try {
       if (joined && next && !hasLiveLocalTrack('video')) {
         setStatus('Requesting camera permission...')
         await attachNewLocalTrack('video', { publish: false })
+        applyLocalMediaState(micOn, next)
       }
-
-      setCameraOn(next)
-      applyLocalMediaState(micOn, next)
 
       if (!joined) return
 
       const synced = await publishMediaState(micOn, next)
+      setCameraOn(synced.cameraOn)
+      applyLocalMediaState(micOn, synced.cameraOn)
       if (synced.cameraOn) setMediaRecoveryDismissed(true)
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
@@ -1116,8 +1124,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     .slice(-5)
   const viewerCount = Math.max(Number(room?.active_participants || 0), remotePeerCount, joined ? 1 : 0)
   const roomTitle = room?.name || `Room #${roomId}`
-  const hostName = room?.owner_name || user?.name || 'Room host'
-  const roomCountry = user?.current_residence || 'Australia'
+  const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = user?.avatar_url || avatarForIndex(user?.id || 0)
 
   return (
@@ -1177,24 +1184,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
-            <div className="buzzcast-host-pill">
-              <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
-              <strong>{hostName}</strong>
-              <small>{compactNumber(viewerCount)}</small>
-            </div>
-
-            <div className="buzzcast-room-metadata">
-              <span>ID:{room?.id || roomId}</span>
-              <strong>{roomTitle}</strong>
-              <small>{roomCountry}</small>
-            </div>
-
-            <div className="buzzcast-join-ribbon">{Math.max(1, viewerCount || 21)} joined</div>
-
-            <div className="buzzcast-room-status" aria-live="polite">
-              <span className={joined ? 'online' : joining ? 'connecting' : ''}></span>
-              {joined ? 'Live' : joining ? 'Connecting' : connectAttempted ? 'Ready to rejoin' : 'Ready'}
-              {status ? <small>{status}</small> : null}
+            <div className="buzzcast-room-summary" aria-label="Room summary">
+              <strong title={roomTitle}>{roomTitle}</strong>
+              <span>Room ID: {room?.id || roomId}</span>
+              <small>{displayUserCount} user{viewerCount === 1 ? '' : 's'}</small>
             </div>
 
             {showMediaPermissionRecovery ? (
@@ -1319,7 +1312,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </button>
               )}
               <button
-                className={micOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+                className={`media-control-button icon-only ${micOn ? 'active' : 'muted'}${mediaUpdating.mic ? ' syncing' : ''}`}
                 onClick={toggleMic}
                 disabled={micButtonDisabled}
                 aria-label={micButtonTitle}
@@ -1329,7 +1322,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph mic"></span>
               </button>
               <button
-                className={cameraOn ? 'media-control-button icon-only active' : 'media-control-button icon-only muted'}
+                className={`media-control-button icon-only ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
                 onClick={toggleCamera}
                 disabled={cameraButtonDisabled}
                 aria-label={cameraButtonTitle}
