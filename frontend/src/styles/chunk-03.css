@@ -740,6 +740,22 @@
   padding: 22px;
 }
 
+.buzzcast-join-panel {
+  width: min(460px, calc(100vw - 28px));
+  display: block;
+}
+
+.buzzcast-join-panel > header {
+  margin-bottom: 14px;
+}
+
+.buzzcast-join-panel > header small {
+  display: block;
+  margin-top: 4px;
+  color: #b8b4c9;
+  font-weight: 700;
+}
+
 .buzzcast-host-panel > header {
   grid-column: 1 / -1;
   display: flex;

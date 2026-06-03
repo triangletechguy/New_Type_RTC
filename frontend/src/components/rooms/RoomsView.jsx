@@ -366,6 +366,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
+  const [showJoinPanel, setShowJoinPanel] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [activeSettings, setActiveSettings] = useState('account')
@@ -659,6 +660,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function openHostPanel(reason = 'Log in or sign up to create a live room.') {
     if (!requireAuth(reason, 'register')) return
+    setShowJoinPanel(false)
     setShowHostPanel(true)
   }
 
@@ -883,6 +885,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     pushSectionHistory('live')
     setActiveSection('live')
     setPreviewCard(null)
+    setShowJoinPanel(false)
     setShowMobileRoomProfile(false)
     setShowMobileRoomTools(false)
     setShowMobileRoomLock(false)
@@ -1047,6 +1050,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         rtcMode: normalizeRtcMode(joinRtcMode, targetRoom),
         autoConnect: true,
       })
+      setShowJoinPanel(false)
+      setShowHostPanel(false)
     } catch (error) {
       setStatus(error.message)
     } finally {
@@ -1059,10 +1064,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
     if (room.privacy_type === 'password') {
       selectRoom(room)
-      setShowHostPanel(true)
+      setShowHostPanel(false)
+      setShowJoinPanel(true)
       return
     }
 
+    setShowJoinPanel(false)
     onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: true })
   }
 
@@ -1080,7 +1087,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openCard(card) {
     rememberRecentRoom(card)
 
-    if (card.room && !isMobileViewport()) {
+    if (card.room) {
       joinRoomFromCard(card.room)
       return
     }
@@ -2554,6 +2561,48 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 </button>
               ) : null}
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {showJoinPanel && selectedRoom ? (
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowJoinPanel(false)}>
+          <section className="buzzcast-host-panel buzzcast-join-panel" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <h2>Join Locked Room</h2>
+                <small>{selectedRoom.name || `Room #${selectedRoom.id}`}</small>
+              </div>
+              <button type="button" onClick={() => setShowJoinPanel(false)}>x</button>
+            </header>
+            <form className="buzzcast-quick-join" onSubmit={(event) => {
+              event.preventDefault()
+              joinSelectedRoom()
+            }}>
+              <label>RTC Mode</label>
+              <div className="buzzcast-choice-grid">
+                {rtcModeOptions.map((option) => {
+                  const disabled = option.value === 'video' && !selectedRoomSupportsVideo
+                  return (
+                    <button key={option.value} type="button" className={joinRtcMode === option.value ? 'active' : ''} onClick={() => updateJoinRtcMode(option.value)} disabled={disabled}>
+                      {disabled ? 'Unavailable' : option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <label>Room Password</label>
+              <input
+                type="password"
+                value={joinPassword}
+                onChange={(event) => setJoinPassword(event.target.value)}
+                placeholder="Enter locked room password"
+                autoComplete="current-password"
+                autoFocus
+              />
+              <button className="buzzcast-submit secondary" type="submit" disabled={!canJoinRoom}>
+                {openingRoom ? 'Opening...' : 'Open RTC Room'}
+              </button>
+            </form>
           </section>
         </div>
       ) : null}
