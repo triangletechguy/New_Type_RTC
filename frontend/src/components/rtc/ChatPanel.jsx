@@ -816,13 +816,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     emitTyping(false)
   }
 
-  function openImagePreview({ src, alt, caption, canOpenOriginal = false, downloadName = '' }) {
+  function openImagePreview({ src, alt, caption, downloadName = '' }) {
     if (!src) return
     setImagePreview({
       src,
       alt: alt || 'Chat photo',
       caption: caption || '',
-      canOpenOriginal: Boolean(canOpenOriginal),
       downloadName: downloadName || photoDownloadName('chat', '', src),
     })
   }
@@ -1042,7 +1041,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                         src: message.media_url,
                         alt: `${senderName} sent`,
                         caption: photoCaption,
-                        canOpenOriginal: mine,
                         downloadName: photoDownloadName('room', message.id, message.media_url),
                       })}
                       aria-label={avatarMessage ? 'Preview avatar' : 'Preview image'}
@@ -1226,7 +1224,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                           src: message.media_url,
                           alt: `${senderName} sent`,
                           caption: body && body !== 'sent a photo' ? body : '',
-                          canOpenOriginal: mine,
                           downloadName: photoDownloadName('inbox', message.id, message.media_url),
                         })}
                         aria-label="Preview photo"
@@ -1331,9 +1328,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
           <footer>
             <a className="chat-image-download-action" href={imagePreview.src} download={imagePreview.downloadName || 'chat-photo.jpg'}>Download</a>
-            {imagePreview.canOpenOriginal ? (
-              <a href={imagePreview.src} target="_blank" rel="noreferrer">Open original</a>
-            ) : null}
           </footer>
         </section>
       </div>

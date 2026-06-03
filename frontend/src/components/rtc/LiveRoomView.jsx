@@ -7,6 +7,7 @@ import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocket
 import {
   BEAUTY_CONTROLS,
   CameraFilterPipeline,
+  DEFAULT_BACKGROUND_BLUR_AMOUNT,
   DEFAULT_BEAUTY_SETTINGS,
   VIDEO_FILTERS,
   getBackgroundEffect,
@@ -16,6 +17,7 @@ import {
   isCameraFilterEffectActive,
   isVideoFilterActive,
   normalizeBackgroundEffectId,
+  normalizeBackgroundBlurAmount,
   normalizeBeautySettings,
   normalizeVideoFilterId,
   supportsCameraFilterPipeline,
@@ -239,6 +241,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [cameraFilter, setCameraFilter] = useState('normal')
   const [beautySettings, setBeautySettings] = useState(DEFAULT_BEAUTY_SETTINGS)
   const [backgroundEffect, setBackgroundEffect] = useState('none')
+  const [backgroundBlurAmount, setBackgroundBlurAmount] = useState(DEFAULT_BACKGROUND_BLUR_AMOUNT)
   const [cameraFilterPerformance, setCameraFilterPerformance] = useState('720p / 24fps')
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
@@ -258,6 +261,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraFilterRef = useRef(cameraFilter)
   const beautySettingsRef = useRef(beautySettings)
   const backgroundEffectRef = useRef(backgroundEffect)
+  const backgroundBlurAmountRef = useRef(backgroundBlurAmount)
   const negotiatedPeersRef = useRef(new Set())
   const pendingLocalTracksRef = useRef([])
   const joinEffectTimerRef = useRef(null)
@@ -378,10 +382,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     filterId = cameraFilterRef.current,
     beautySettingsValue = beautySettingsRef.current,
     backgroundEffectValue = backgroundEffectRef.current,
+    backgroundBlurAmountValue = backgroundBlurAmountRef.current,
   ) {
     const normalizedFilterId = normalizeVideoFilterId(filterId)
     const normalizedBeautySettings = normalizeBeautySettings(beautySettingsValue)
     const normalizedBackgroundEffect = normalizeBackgroundEffectId(backgroundEffectValue)
+    const normalizedBackgroundBlurAmount = normalizeBackgroundBlurAmount(backgroundBlurAmountValue)
 
     if (!isCameraFilterEffectActive(normalizedFilterId, normalizedBeautySettings, normalizedBackgroundEffect)) {
       stopCameraFilterPipeline({ stopSource: false })
@@ -403,6 +409,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       pipeline = new CameraFilterPipeline(sourceTrack, normalizedFilterId, {
         beautySettings: normalizedBeautySettings,
         backgroundEffect: normalizedBackgroundEffect,
+        backgroundBlurAmount: normalizedBackgroundBlurAmount,
         frameRate: 24,
         maxWidth: 1280,
         maxHeight: 720,
@@ -414,6 +421,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       pipeline.setFilter(normalizedFilterId)
       pipeline.setBeautySettings(normalizedBeautySettings)
       pipeline.setBackgroundEffect(normalizedBackgroundEffect)
+      pipeline.setBackgroundBlurAmount(normalizedBackgroundBlurAmount)
       filteredCameraTrackRef.current = pipeline.outputTrack
     }
 
@@ -424,6 +432,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     filterId = cameraFilterRef.current,
     beautySettingsValue = beautySettingsRef.current,
     backgroundEffectValue = backgroundEffectRef.current,
+    backgroundBlurAmountValue = backgroundBlurAmountRef.current,
     replaceOutgoing = true,
   } = {}) {
     if (rtcModeRef.current === 'audio') return null
@@ -431,12 +440,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const normalizedFilterId = normalizeVideoFilterId(filterId)
     const normalizedBeautySettings = normalizeBeautySettings(beautySettingsValue)
     const normalizedBackgroundEffect = normalizeBackgroundEffectId(backgroundEffectValue)
+    const normalizedBackgroundBlurAmount = normalizeBackgroundBlurAmount(backgroundBlurAmountValue)
     const sourceTrack = rememberCameraSourceFromStream()
 
     if (!isLiveTrack(sourceTrack)) return null
 
     const currentOutgoingTrack = streamRef.current?.getVideoTracks?.().find((track) => track !== screenShareTrackRef.current) || null
-    const outputTrack = await filteredCameraOutputTrack(sourceTrack, normalizedFilterId, normalizedBeautySettings, normalizedBackgroundEffect)
+    const outputTrack = await filteredCameraOutputTrack(sourceTrack, normalizedFilterId, normalizedBeautySettings, normalizedBackgroundEffect, normalizedBackgroundBlurAmount)
     outputTrack.enabled = cameraOnRef.current
     sourceTrack.enabled = cameraOnRef.current
 
@@ -461,7 +471,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     let outputTrack = null
     try {
-      outputTrack = await filteredCameraOutputTrack(sourceTrack, cameraFilterRef.current, beautySettingsRef.current, backgroundEffectRef.current)
+      outputTrack = await filteredCameraOutputTrack(
+        sourceTrack,
+        cameraFilterRef.current,
+        beautySettingsRef.current,
+        backgroundEffectRef.current,
+        backgroundBlurAmountRef.current,
+      )
     } catch (error) {
       setCameraFilter('normal')
       cameraFilterRef.current = 'normal'
@@ -573,7 +589,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (kind === 'video') {
       stopCameraFilterPipeline({ stopSource: true })
       cameraSourceTrackRef.current = track
-      outgoingTrack = await filteredCameraOutputTrack(track, cameraFilterRef.current, beautySettingsRef.current, backgroundEffectRef.current)
+      outgoingTrack = await filteredCameraOutputTrack(
+        track,
+        cameraFilterRef.current,
+        beautySettingsRef.current,
+        backgroundEffectRef.current,
+        backgroundBlurAmountRef.current,
+      )
     }
 
     const keptTracks = previousTracks.filter((item) => item !== track && item.kind !== kind && item.readyState !== 'ended')
@@ -1059,6 +1081,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await syncCameraFilterTrack({
           filterId: normalizedFilterId,
           backgroundEffectValue: backgroundEffectRef.current,
+          backgroundBlurAmountValue: backgroundBlurAmountRef.current,
           replaceOutgoing: !screenShareTrackRef.current,
         })
       }
@@ -1074,7 +1097,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setCameraFilter('normal')
       cameraFilterRef.current = 'normal'
       stopCameraFilterPipeline({ stopSource: false })
-      await syncCameraFilterTrack({ filterId: 'normal', backgroundEffectValue: backgroundEffectRef.current, replaceOutgoing: !screenShareTrackRef.current }).catch(() => {})
+      await syncCameraFilterTrack({
+        filterId: 'normal',
+        backgroundEffectValue: backgroundEffectRef.current,
+        backgroundBlurAmountValue: backgroundBlurAmountRef.current,
+        replaceOutgoing: !screenShareTrackRef.current,
+      }).catch(() => {})
       setStatus(`Camera filter failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, filter: false }))
@@ -1119,6 +1147,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await syncCameraFilterTrack({
           beautySettingsValue: normalizedSettings,
           backgroundEffectValue: backgroundEffectRef.current,
+          backgroundBlurAmountValue: backgroundBlurAmountRef.current,
           replaceOutgoing: !screenShareTrackRef.current,
         })
       }
@@ -1147,6 +1176,24 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function toggleBackgroundBlur() {
     const nextEffect = backgroundEffectRef.current === 'blur' ? 'none' : 'blur'
     changeBackgroundEffect(nextEffect).catch((error) => setStatus(`Background blur failed: ${error.message}`))
+  }
+
+  function changeBackgroundBlurAmount(value) {
+    const normalizedAmount = normalizeBackgroundBlurAmount(value)
+
+    setBackgroundBlurAmount(normalizedAmount)
+    backgroundBlurAmountRef.current = normalizedAmount
+
+    const pipeline = cameraFilterPipelineRef.current
+    if (pipeline && isLiveTrack(filteredCameraTrackRef.current)) {
+      pipeline.setBackgroundBlurAmount(normalizedAmount)
+    }
+
+    setStatus(
+      backgroundEffectRef.current === 'blur'
+        ? `Background blur amount set to ${normalizedAmount}%.`
+        : `Background blur amount set to ${normalizedAmount}%. Press BG to turn blur on.`
+    )
   }
 
   async function changeBackgroundEffect(effectId) {
@@ -1183,6 +1230,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       if (sourceTrack) {
         await syncCameraFilterTrack({
           backgroundEffectValue: normalizedEffectId,
+          backgroundBlurAmountValue: backgroundBlurAmountRef.current,
           replaceOutgoing: !screenShareTrackRef.current,
         })
       }
@@ -1198,7 +1246,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setBackgroundEffect('none')
       backgroundEffectRef.current = 'none'
       stopCameraFilterPipeline({ stopSource: false })
-      await syncCameraFilterTrack({ backgroundEffectValue: 'none', replaceOutgoing: !screenShareTrackRef.current }).catch(() => {})
+      await syncCameraFilterTrack({
+        backgroundEffectValue: 'none',
+        backgroundBlurAmountValue: backgroundBlurAmountRef.current,
+        replaceOutgoing: !screenShareTrackRef.current,
+      }).catch(() => {})
       setStatus(`Background effect failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, filter: false }))
@@ -1214,6 +1266,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     beautySettingsRef.current = DEFAULT_BEAUTY_SETTINGS
     setBackgroundEffect('none')
     backgroundEffectRef.current = 'none'
+    setBackgroundBlurAmount(DEFAULT_BACKGROUND_BLUR_AMOUNT)
+    backgroundBlurAmountRef.current = DEFAULT_BACKGROUND_BLUR_AMOUNT
     setCameraFilterPerformance('720p / 24fps')
 
     if (rtcModeRef.current === 'audio') {
@@ -1236,6 +1290,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           filterId: 'normal',
           beautySettingsValue: DEFAULT_BEAUTY_SETTINGS,
           backgroundEffectValue: 'none',
+          backgroundBlurAmountValue: DEFAULT_BACKGROUND_BLUR_AMOUNT,
           replaceOutgoing: !screenShareTrackRef.current,
         })
       } else {
@@ -1825,6 +1880,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [backgroundEffect])
 
   useEffect(() => {
+    backgroundBlurAmountRef.current = normalizeBackgroundBlurAmount(backgroundBlurAmount)
+  }, [backgroundBlurAmount])
+
+  useEffect(() => {
     if (!joined) return undefined
 
     function sendPresence() {
@@ -1977,6 +2036,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraFilterActive = isVideoFilterActive(cameraFilter)
   const beautySettingsActive = isBeautySettingsActive(beautySettings)
   const backgroundEffectActive = isBackgroundEffectActive(backgroundEffect)
+  const backgroundBlurPercent = normalizeBackgroundBlurAmount(backgroundBlurAmount)
   const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(beautySettings[control.id] || 0) > 0).length
   const cameraEffectsActive = cameraFilterActive || beautySettingsActive || backgroundEffectActive
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
@@ -2165,9 +2225,30 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       </span>
                       <span>
                         <strong>Background filter</strong>
-                        <small>{backgroundEffect === 'blur' ? 'Blur on' : 'Blur off'}</small>
+                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% blur` : 'Blur off'}</small>
                       </span>
                     </div>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Background blur</strong>
+                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% strength` : 'Use BG to enable'}</small>
+                      </header>
+                      <label className="beauty-slider-row background-blur-slider">
+                        <span>
+                          <strong>Blur amount</strong>
+                          <b>{backgroundBlurPercent}%</b>
+                        </span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={backgroundBlurPercent}
+                          onChange={(event) => changeBackgroundBlurAmount(event.target.value)}
+                          disabled={rtcMode === 'audio'}
+                        />
+                      </label>
+                    </section>
                     <section className="camera-effect-section">
                       <header>
                         <strong>Face beauty</strong>
@@ -2285,7 +2366,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 disabled={filterButtonDisabled}
                 aria-label={backgroundEffectActive ? 'Turn background blur off' : 'Turn background blur on'}
                 aria-pressed={backgroundEffectActive}
-                title={backgroundEffectActive ? 'Background blur on' : 'Background blur off'}
+                title={backgroundEffectActive ? `Background blur ${backgroundBlurPercent}%` : 'Background blur off'}
               >
                 <span className="control-glyph background"></span>
                 <span>BG</span>

@@ -101,6 +101,8 @@ export const BEAUTY_CONTROLS = [
   { id: 'lighting', label: 'Soft face lighting', min: 0, max: 100, step: 1 },
 ]
 
+export const DEFAULT_BACKGROUND_BLUR_AMOUNT = 60
+
 const FILTER_MAP = new Map(VIDEO_FILTERS.map((filter) => [filter.id, filter]))
 const DEFAULT_FILTER = VIDEO_FILTERS[0]
 const BACKGROUND_MAP = new Map(BACKGROUND_EFFECTS.map((effect) => [effect.id, effect]))
@@ -205,6 +207,10 @@ export function normalizeBeautySettings(settings = {}) {
   }, {})
 }
 
+export function normalizeBackgroundBlurAmount(value) {
+  return Math.round(clampNumber(value, 0, 100, DEFAULT_BACKGROUND_BLUR_AMOUNT))
+}
+
 export function isBeautySettingsActive(settings = {}) {
   const normalized = normalizeBeautySettings(settings)
   return BEAUTY_CONTROLS.some((control) => normalized[control.id] > DEFAULT_BEAUTY_SETTINGS[control.id])
@@ -304,6 +310,7 @@ export class CameraFilterPipeline {
     this.filterId = normalizeVideoFilterId(filterId)
     this.beautySettings = normalizeBeautySettings(options.beautySettings)
     this.backgroundEffect = normalizeBackgroundEffectId(options.backgroundEffect)
+    this.backgroundBlurAmount = normalizeBackgroundBlurAmount(options.backgroundBlurAmount)
     this.frameRate = clampNumber(options.frameRate, 8, 30, DEFAULT_FPS)
     this.maxWidth = clampNumber(options.maxWidth, 240, 1280, DEFAULT_WIDTH)
     this.maxHeight = clampNumber(options.maxHeight, 180, 720, DEFAULT_HEIGHT)
@@ -324,6 +331,9 @@ export class CameraFilterPipeline {
     this.segmenter = null
     this.segmenterLoading = false
     this.segmenterError = null
+    this.foregroundCategoryIndex = Number.isFinite(Number(options.foregroundCategoryIndex))
+      ? Math.round(Number(options.foregroundCategoryIndex))
+      : null
     this.hasSegmentationMask = false
     this.lastSegmentationAt = 0
     this.segmentationIntervalMs = 1000 / SEGMENTATION_FPS
@@ -415,6 +425,10 @@ export class CameraFilterPipeline {
     }
   }
 
+  setBackgroundBlurAmount(value) {
+    this.backgroundBlurAmount = normalizeBackgroundBlurAmount(value)
+  }
+
   notifyPerformanceChange(payload) {
     if (!this.onPerformanceChange) return
 
@@ -502,6 +516,50 @@ export class CameraFilterPipeline {
       })
   }
 
+  inferForegroundCategory(maskData, width, height) {
+    if (!maskData?.length || !width || !height) return 0
+
+    const categoryCounts = new Map()
+    const cornerCounts = new Map()
+    const addCount = (map, category) => {
+      map.set(category, (map.get(category) || 0) + 1)
+    }
+    const categoryAt = (x, y) => {
+      const index = Math.min(maskData.length - 1, Math.max(0, Math.round(y) * width + Math.round(x)))
+      return Math.round(maskData[index])
+    }
+    const sampleSize = Math.max(8, Math.round(Math.min(width, height) * 0.08))
+    const cornerOrigins = [
+      [0, 0],
+      [Math.max(0, width - sampleSize), 0],
+      [0, Math.max(0, height - sampleSize)],
+      [Math.max(0, width - sampleSize), Math.max(0, height - sampleSize)],
+    ]
+
+    for (let index = 0; index < maskData.length; index += Math.max(1, Math.floor(maskData.length / 5000))) {
+      addCount(categoryCounts, Math.round(maskData[index]))
+    }
+
+    for (const [originX, originY] of cornerOrigins) {
+      for (let y = 0; y < sampleSize; y += 2) {
+        for (let x = 0; x < sampleSize; x += 2) {
+          addCount(cornerCounts, categoryAt(originX + x, originY + y))
+        }
+      }
+    }
+
+    const backgroundCategory = Array.from(cornerCounts.entries())
+      .sort((a, b) => b[1] - a[1])[0]?.[0]
+    const foregroundEntry = Array.from(categoryCounts.entries())
+      .filter(([category]) => category !== backgroundCategory)
+      .sort((a, b) => b[1] - a[1])[0]
+
+    if (foregroundEntry) return foregroundEntry[0]
+
+    const centerCategory = categoryAt(width / 2, height / 2)
+    return centerCategory === backgroundCategory ? 0 : centerCategory
+  }
+
   captureSegmentationMask(result) {
     const mask = result?.categoryMask
     if (!mask || !this.maskContext || !this.maskCanvas) {
@@ -523,10 +581,13 @@ export class CameraFilterPipeline {
       const imageData = this.maskContext.createImageData(width, height)
       const output = imageData.data
       const pixelCount = Math.min(width * height, maskData.length)
+      const foregroundCategory = Number.isFinite(this.foregroundCategoryIndex)
+        ? this.foregroundCategoryIndex
+        : this.inferForegroundCategory(maskData, width, height)
 
       for (let index = 0; index < pixelCount; index += 1) {
         const value = maskData[index]
-        const alpha = value > 0 ? 255 : 0
+        const alpha = Math.round(value) === foregroundCategory ? 255 : 0
         const offset = index * 4
         output[offset] = 255
         output[offset + 1] = 255
@@ -591,12 +652,15 @@ export class CameraFilterPipeline {
 
   drawBackgroundLayer(context, video, width, height) {
     const effectId = normalizeBackgroundEffectId(this.backgroundEffect)
+    const blurAmount = normalizeBackgroundBlurAmount(this.backgroundBlurAmount)
     context.save()
     context.clearRect(0, 0, width, height)
 
     if (effectId === 'blur') {
-      context.filter = 'blur(14px) saturate(1.08) brightness(.84)'
-      context.drawImage(video, -18, -18, width + 36, height + 36)
+      const blurPx = 3 + (blurAmount / 100) * 25
+      const pad = Math.ceil(blurPx * 2)
+      context.filter = `blur(${blurPx.toFixed(1)}px) saturate(1.08) brightness(.84)`
+      context.drawImage(video, -pad, -pad, width + pad * 2, height + pad * 2)
       context.filter = 'none'
       context.fillStyle = 'rgba(2, 6, 23, .18)'
       context.fillRect(0, 0, width, height)
