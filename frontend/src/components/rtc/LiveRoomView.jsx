@@ -679,6 +679,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function joinRoom() {
     let backendJoined = false
+    let startupCancelled = false
 
     try {
       if (joined || joining) return
@@ -696,6 +697,44 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(`Joining room #${roomId}...`)
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
+      const rtcConfigPromise = getRtcConfig().catch((error) => {
+        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
+        return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
+      })
+      const permissionPromise = syncMediaPermissions(selectedRtcMode).catch(() => null)
+      const mediaPromise = createLocalMediaStream(
+        mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto',
+        selectedRtcMode,
+        {
+          timeoutMs: LOCAL_MEDIA_FAST_TIMEOUT_MS,
+          onLateTrack: ({ kind, track }) => {
+            if (startupCancelled || !activeRoomIdRef.current) {
+              try { track.stop() } catch {}
+              return
+            }
+
+            attachCapturedLocalTrack(kind, track).catch((error) => {
+              try { track.stop() } catch {}
+              setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} started late but could not attach: ${error.message}`)
+            })
+          },
+        }
+      ).then((mediaResult) => {
+        if (startupCancelled && mediaResult?.stream && streamRef.current !== mediaResult.stream) {
+          stopMediaStream(mediaResult.stream)
+        }
+        return mediaResult
+      }).catch((error) => ({ error }))
+      const socket = createSignalingSocket()
+      socketRef.current = socket
+      const socketReadyPromise = waitForSocketConnection(socket)
+        .then(() => ({ ok: true }))
+        .catch((error) => ({ ok: false, error }))
+
+      setMediaState('starting')
+      setSignalingState('connecting')
+      setStatus('Preparing media, TURN, and signaling...')
+
       const joinData = await apiRequest(`/rooms/${roomId}/join`, {
         method: 'POST',
         body: JSON.stringify({
@@ -717,31 +756,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setCameraOn(joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled))
 
       setConnectStep('media')
-      setMediaState('starting')
-      setStatus('Starting fast media path...')
-      await syncMediaPermissions(joinedRtcMode)
-      const rtcConfigPromise = getRtcConfig().catch((error) => {
-        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
-        return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
-      })
-      const media = await createLocalMediaStream(
-        mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto',
-        joinedRtcMode,
-        {
-          timeoutMs: LOCAL_MEDIA_FAST_TIMEOUT_MS,
-          onLateTrack: ({ kind, track }) => {
-            if (!activeRoomIdRef.current) {
-              try { track.stop() } catch {}
-              return
-            }
-
-            attachCapturedLocalTrack(kind, track).catch((error) => {
-              try { track.stop() } catch {}
-              setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} started late but could not attach: ${error.message}`)
-            })
-          },
-        }
-      )
+      setStatus('Finishing fast media path...')
+      await permissionPromise
+      const [mediaResult, rtcConfig] = await Promise.all([mediaPromise, rtcConfigPromise])
+      if (mediaResult?.error) throw mediaResult.error
+      const media = mediaResult
+      if (joinedRtcMode === 'audio') {
+        media.stream.getVideoTracks().forEach((track) => {
+          media.stream.removeTrack(track)
+          try { track.stop() } catch {}
+        })
+      }
       streamRef.current = media.stream
       setLocalStream(media.stream)
       setMediaState(media.warning ? 'warning' : 'ready')
@@ -771,19 +796,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await syncBackendMediaState(actualMicOn, actualCameraOn)
       }
 
-      setStatus('Loading TURN/ICE configuration...')
-      const rtcConfig = await rtcConfigPromise
       setRtcConfigState(rtcConfig)
 
       if (joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured) {
-        throw new Error('TURN is not configured on the backend. Remote camera cannot work reliably on this deployed server until TURN_URLS, TURN_USERNAME, and TURN_CREDENTIAL are set and PM2 is restarted.')
+        throw new Error('TURN is not configured on the backend. Remote camera cannot work reliably on this deployed server until TURN_URLS and TURN_SHARED_SECRET are set and PM2 is restarted.')
       }
 
       setConnectStep('signaling')
       setSignalingState('connecting')
       setStatus(rtcConfig.turnConfigured ? 'Connecting with TURN enabled...' : 'Connecting without TURN. Remote video may fail on strict networks.')
-      const socket = createSignalingSocket()
-      socketRef.current = socket
 
       const rtcClient = new NativeRtcClient({
         socket,
@@ -967,7 +988,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         }
       })
 
-      await waitForSocketConnection(socket)
+      const socketReady = await socketReadyPromise
+      if (!socketReady.ok) throw socketReady.error
+      if (socket.id) localSocketIdRef.current = socket.id
       const signalingMicOn = requestedMicOn && hasLiveLocalTrack('audio')
       const signalingCameraOn = requestedCameraOn && hasLiveLocalTrack('video')
 
@@ -1006,6 +1029,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(media.warning || `Connected to ${joinData.rtc.signaling_room}`)
     } catch (error) {
       console.error(error)
+      startupCancelled = true
       setMediaState((state) => state === 'starting' ? 'failed' : state)
       setSignalingState((state) => state === 'connecting' ? 'error' : state)
       resetRtcState()
