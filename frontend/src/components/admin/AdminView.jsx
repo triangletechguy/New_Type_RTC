@@ -591,7 +591,7 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
     "chat_enabled": true,
     "screen_share_enabled": true
   }'`
-  const endRoomCurl = `curl -X DELETE ${apiBase}/rooms/123 \\
+  const closeRoomCurl = `curl -X DELETE ${apiBase}/rooms/123 \\
   -H "Authorization: Bearer ${apiKey}"`
   const tokenCurl = `curl -X POST ${apiBase}/rtc/token \\
   -H "Authorization: Bearer ${apiKey}" \\
@@ -676,7 +676,7 @@ await rtc.joinRoom(123, {
       <div className="client-api-flow-grid">
         <div><b>1</b><strong>Verify key</strong><span>Call `/me` from the company backend.</span></div>
         <div><b>2</b><strong>Sync app user</strong><span>Map the client app user to a free RTC shadow user.</span></div>
-        <div><b>3</b><strong>Manage room</strong><span>Create, list, update, or end rooms from the client backend.</span></div>
+        <div><b>3</b><strong>Manage room</strong><span>Create, list, update, or close rooms from the client backend.</span></div>
         <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
         <div><b>5</b><strong>Join RTC</strong><span>Use the room token in the web/mobile SDK.</span></div>
       </div>
@@ -689,7 +689,7 @@ await rtc.joinRoom(123, {
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/token" detail="Use the returned `room.id`; returns `rtc_token`, controls, grants, and expiry." code={tokenCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and returns client-company billable minutes." code={endSessionCurl} />
-        <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Ends a room, disconnects active sessions, and keeps usage history." code={endRoomCurl} />
+        <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Closes room availability for the client API; in-app owner delete removes the room record." code={closeRoomCurl} />
         <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="The browser uses your backend token response, not the API key." code={webSample} />
       </div>
 

@@ -117,6 +117,10 @@ const PERFORMANCE_SAMPLE_SIZE = 30
 const SLOW_FRAME_MS = 46
 const VERY_SLOW_FRAME_MS = 72
 const PERFORMANCE_COOLDOWN_MS = 4500
+const MASK_CONFIDENCE_LOW = 0.32
+const MASK_CONFIDENCE_HIGH = 0.72
+const MASK_TEMPORAL_BLEND = 0.58
+const MASK_FEATHER_PX = 7
 const MEDIAPIPE_TASKS_VERSION = '0.10.35'
 const MEDIAPIPE_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VERSION}/wasm`
 const SELFIE_SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'
@@ -289,7 +293,7 @@ async function loadImageSegmenter() {
         },
         runningMode: 'VIDEO',
         outputCategoryMask: true,
-        outputConfidenceMasks: false,
+        outputConfidenceMasks: true,
       })
     })
     .catch((error) => {
@@ -330,6 +334,11 @@ function nowMs() {
     : Date.now()
 }
 
+function smoothstep(edge0, edge1, value) {
+  const nextValue = clampNumber((value - edge0) / (edge1 - edge0), 0, 1, 0)
+  return nextValue * nextValue * (3 - 2 * nextValue)
+}
+
 export class CameraFilterPipeline {
   constructor(sourceTrack, filterId = DEFAULT_FILTER.id, options = {}) {
     this.sourceTrack = sourceTrack
@@ -360,6 +369,7 @@ export class CameraFilterPipeline {
     this.foregroundCategoryIndex = Number.isFinite(Number(options.foregroundCategoryIndex))
       ? Math.round(Number(options.foregroundCategoryIndex))
       : null
+    this.previousAlphaMask = null
     this.hasSegmentationMask = false
     this.lastSegmentationAt = 0
     this.segmentationIntervalMs = 1000 / SEGMENTATION_FPS
@@ -480,6 +490,7 @@ export class CameraFilterPipeline {
     setCanvasSize(this.scratchCanvas, nextWidth, nextHeight)
     setCanvasSize(this.maskCanvas, nextWidth, nextHeight)
     setCanvasSize(this.detailCanvas, nextWidth, nextHeight)
+    this.previousAlphaMask = null
     this.hasSegmentationMask = false
     return true
   }
@@ -518,6 +529,7 @@ export class CameraFilterPipeline {
       this.frameDurations = []
       this.frameIntervalMs = Math.max(this.frameIntervalMs, 1000 / 18)
       this.backgroundEffect = DEFAULT_BACKGROUND.id
+      this.previousAlphaMask = null
       this.hasSegmentationMask = false
       this.notifyPerformanceChange({ type: 'disabled-background', label: 'background disabled' })
     }
@@ -587,44 +599,67 @@ export class CameraFilterPipeline {
   }
 
   captureSegmentationMask(result) {
-    const mask = result?.categoryMask
-    if (!mask || !this.maskContext || !this.maskCanvas) {
+    const categoryMask = result?.categoryMask
+    const confidenceMasks = Array.isArray(result?.confidenceMasks) ? result.confidenceMasks : []
+    if ((!categoryMask && !confidenceMasks.length) || !this.maskContext || !this.maskCanvas) {
       try { result?.close?.() } catch {}
       return
     }
 
     try {
-      const width = mask.width || this.canvas?.width || DEFAULT_WIDTH
-      const height = mask.height || this.canvas?.height || DEFAULT_HEIGHT
-      const maskData = typeof mask.getAsUint8Array === 'function'
-        ? mask.getAsUint8Array()
-        : mask.getAsFloat32Array()
+      const categoryData = categoryMask
+        ? (typeof categoryMask.getAsUint8Array === 'function'
+          ? categoryMask.getAsUint8Array()
+          : categoryMask.getAsFloat32Array())
+        : null
+      const fallbackMask = categoryMask || confidenceMasks[0]
+      const width = fallbackMask?.width || this.canvas?.width || DEFAULT_WIDTH
+      const height = fallbackMask?.height || this.canvas?.height || DEFAULT_HEIGHT
 
-      if (!maskData?.length) return
+      if (!width || !height) return
 
       setCanvasSize(this.maskCanvas, width, height)
 
       const imageData = this.maskContext.createImageData(width, height)
       const output = imageData.data
-      const pixelCount = Math.min(width * height, maskData.length)
+      const pixelCount = Math.min(width * height, categoryData?.length || width * height)
       const foregroundCategory = Number.isFinite(this.foregroundCategoryIndex)
         ? this.foregroundCategoryIndex
-        : this.inferForegroundCategory(maskData, width, height)
+        : this.inferForegroundCategory(categoryData, width, height)
+      const confidenceMask = confidenceMasks[foregroundCategory]
+        || confidenceMasks.find((mask, index) => index !== 0 && mask?.width === width && mask?.height === height)
+        || confidenceMasks[confidenceMasks.length - 1]
+        || null
+      const confidenceData = confidenceMask && typeof confidenceMask.getAsFloat32Array === 'function'
+        ? confidenceMask.getAsFloat32Array()
+        : null
+      const canBlendPrevious = this.previousAlphaMask?.length === pixelCount
+      const nextAlphaMask = new Uint8ClampedArray(pixelCount)
 
       for (let index = 0; index < pixelCount; index += 1) {
-        const value = maskData[index]
-        const alpha = Math.round(value) === foregroundCategory ? 255 : 0
+        const categoryAlpha = Math.round(categoryData?.[index]) === foregroundCategory ? 1 : 0
+        const confidenceValue = Number(confidenceData?.[index])
+        const confidenceAlpha = Number.isFinite(confidenceValue)
+          ? smoothstep(MASK_CONFIDENCE_LOW, MASK_CONFIDENCE_HIGH, confidenceValue)
+          : categoryAlpha
+        const rawAlpha = categoryData ? Math.max(categoryAlpha * 0.42, confidenceAlpha) : confidenceAlpha
+        const previousAlpha = canBlendPrevious ? this.previousAlphaMask[index] / 255 : rawAlpha
+        const blendedAlpha = previousAlpha * MASK_TEMPORAL_BLEND + rawAlpha * (1 - MASK_TEMPORAL_BLEND)
+        const alpha = Math.round(clampNumber(blendedAlpha, 0, 1, 0) * 255)
         const offset = index * 4
+        nextAlphaMask[index] = alpha
         output[offset] = 255
         output[offset + 1] = 255
         output[offset + 2] = 255
         output[offset + 3] = alpha
       }
 
+      this.previousAlphaMask = nextAlphaMask
       this.maskContext.putImageData(imageData, 0, 0)
       this.hasSegmentationMask = true
     } catch (error) {
       this.hasSegmentationMask = false
+      this.previousAlphaMask = null
       this.segmenterError = error
       console.error('[video-filter] MediaPipe mask conversion failed', error)
     } finally {
@@ -743,7 +778,7 @@ export class CameraFilterPipeline {
 
     this.scratchContext.save()
     this.scratchContext.globalCompositeOperation = 'destination-in'
-    this.scratchContext.filter = 'blur(2px)'
+    this.scratchContext.filter = `blur(${MASK_FEATHER_PX}px)`
     drawVideoFrame(this.scratchContext, this.maskCanvas, width, height, mirrored)
     this.scratchContext.filter = 'none'
     this.scratchContext.restore()
@@ -856,6 +891,7 @@ export class CameraFilterPipeline {
     this.maskCanvas = null
     this.detailContext = null
     this.detailCanvas = null
+    this.previousAlphaMask = null
     this.hasSegmentationMask = false
     this.frameDurations = []
     this.onPerformanceChange = null

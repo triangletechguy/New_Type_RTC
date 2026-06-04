@@ -421,7 +421,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomLaunchButtonLabel = roomLaunchPending ? 'Preparing Room...' : openingRoom ? 'Opening...' : 'Open Room'
   const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
 
-  const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
+  const roomCards = useMemo(() => {
+    const cardRooms = createdRoom?.id ? upsertRoomById(rooms, createdRoom) : rooms
+    return cardRooms.map(roomToFeedCard)
+  }, [createdRoom, rooms])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
