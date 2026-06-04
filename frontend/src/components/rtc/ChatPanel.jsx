@@ -691,8 +691,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     try {
       setLoadingInbox(true)
       setStatus('')
-      const data = await apiRequest('/direct-messages/threads')
-      setInboxThreads(data.threads || [])
+      const data = await apiRequest('/direct-messages/contacts')
+      setInboxThreads(data.contacts || data.threads || [])
     } catch (error) {
       setStatus(`Inbox failed: ${error.message}`)
     } finally {
@@ -1223,11 +1223,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               <button key={thread.peer_id} type="button" className={active ? 'active' : ''} onClick={() => loadInboxConversation(thread)}>
                 <span className="image-avatar"><img src={avatarForUser(thread, thread.peer_id)} alt="" loading="lazy" /></span>
                 <b>{thread.peer_name || `User #${thread.peer_id}`}</b>
-                <small>{preview || 'New chat'}</small>
+                <small>{preview || 'Start chat'}</small>
               </button>
             )
           }) : (
-            <span>No private chats yet</span>
+            <span>No contacts yet</span>
           )}
         </div>
 

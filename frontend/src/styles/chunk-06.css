@@ -421,10 +421,10 @@
 }
 
 .media-control-button.active {
-  border-color: rgba(45, 212, 191, .42);
-  background: rgba(20, 184, 166, .18);
+  border-color: rgba(45, 212, 191, .58);
+  background: linear-gradient(135deg, rgba(20, 184, 166, .34), rgba(34, 211, 238, .2));
   color: #ecfeff;
-  box-shadow: none;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, .12), 0 12px 28px rgba(15, 118, 110, .22), inset 0 0 20px rgba(153, 246, 228, .12);
 }
 
 .media-control-button.icon-only.active::before {
@@ -432,16 +432,16 @@
 }
 
 .media-control-button.media-toggle-mic.active {
-  border-color: rgba(52, 211, 153, .46);
-  background: rgba(16, 185, 129, .18);
-  box-shadow: none;
+  border-color: rgba(52, 211, 153, .64);
+  background: linear-gradient(135deg, rgba(16, 185, 129, .42), rgba(20, 184, 166, .24));
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, .14), 0 12px 28px rgba(5, 150, 105, .2), inset 0 0 20px rgba(167, 243, 208, .14);
 }
 
 .media-control-button.media-toggle-camera.active {
-  border-color: rgba(96, 165, 250, .48);
-  background: rgba(37, 99, 235, .18);
+  border-color: rgba(96, 165, 250, .66);
+  background: linear-gradient(135deg, rgba(37, 99, 235, .4), rgba(6, 182, 212, .24));
   color: #eff6ff;
-  box-shadow: none;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, .14), 0 12px 28px rgba(37, 99, 235, .22), inset 0 0 20px rgba(191, 219, 254, .16);
 }
 
 .media-control-button.muted {
@@ -455,6 +455,19 @@
   border-color: rgba(248, 113, 113, .3);
   background: rgba(71, 85, 105, .24);
   color: #f8fafc;
+}
+
+.media-control-button.muted::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fb7185;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, .72);
+  pointer-events: none;
 }
 
 .media-control-button.muted::after {
@@ -483,15 +496,15 @@
 }
 
 .media-control-button.active .control-glyph {
-  filter: none;
+  filter: drop-shadow(0 0 9px rgba(255, 255, 255, .2)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
 }
 
 .media-control-button.media-toggle-mic.active .control-glyph {
-  filter: none;
+  filter: drop-shadow(0 0 10px rgba(110, 231, 183, .38)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
 }
 
 .media-control-button.media-toggle-camera.active .control-glyph {
-  filter: none;
+  filter: drop-shadow(0 0 10px rgba(147, 197, 253, .44)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
 }
 
 .control-glyph.mic::before {

@@ -494,6 +494,67 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
   }
 })
 
+router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const rows = await query(
+      `
+      SELECT
+        u.id AS peer_id,
+        u.name AS peer_name,
+        u.avatar_url AS peer_avatar_url,
+        u.gender AS peer_gender,
+        dm.id AS last_message_id,
+        dm.sender_id,
+        dm.recipient_id,
+        dm.message_type,
+        dm.message_body,
+        dm.media_url,
+        dm.created_at,
+        dm.updated_at
+      FROM users u
+      LEFT JOIN (
+        SELECT paired.peer_id, MAX(paired.id) AS last_message_id
+        FROM (
+          SELECT
+            CASE WHEN sender_id = :userId THEN recipient_id ELSE sender_id END AS peer_id,
+            id
+          FROM direct_messages
+          WHERE tenant_id = :tenantId
+          AND is_deleted = 0
+          AND (sender_id = :userId OR recipient_id = :userId)
+        ) paired
+        GROUP BY paired.peer_id
+      ) latest ON latest.peer_id = u.id
+      LEFT JOIN direct_messages dm ON dm.id = latest.last_message_id
+      WHERE u.tenant_id = :tenantId
+      AND u.id <> :userId
+      AND u.status = 'active'
+      ORDER BY
+        CASE WHEN latest.last_message_id IS NULL THEN 1 ELSE 0 END,
+        latest.last_message_id DESC,
+        u.name ASC,
+        u.id ASC
+      LIMIT 120
+      `,
+      { tenantId: req.user.tenant_id, userId: req.user.id }
+    )
+
+    return res.json({
+      contacts: rows.map((row) => ({
+        peer_id: Number(row.peer_id),
+        peer_name: row.peer_name,
+        peer_avatar_url: row.peer_avatar_url,
+        peer_gender: row.peer_gender,
+        last_message: row.last_message_id ? row : null,
+      })),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
