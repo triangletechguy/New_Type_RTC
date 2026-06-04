@@ -9,6 +9,7 @@ const router = express.Router()
 const validRoomTypes = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
 const validPrivacyTypes = new Set(['public', 'private', 'password'])
 const validRoomStatuses = new Set(['active', 'inactive', 'ended'])
+const validRoomFeeds = new Set(['following', 'for_you', 'explore', 'party', 'nearby', 'latest', 'global'])
 const validRtcModes = new Set(['audio', 'video'])
 const validRtcQualities = new Set(['good', 'fair', 'poor', 'degraded', 'failed', 'connecting', 'idle', 'unknown'])
 const validControlThemes = new Set(['neon', 'midnight', 'studio', 'mint'])
@@ -22,9 +23,10 @@ const roomRoleRank = {
   admin: 2,
   owner: 3,
 }
+let roomFollowSchemaPromise = null
 const roomTypeGroups = {
   all: null,
-  live: ['solo_live', 'pk_live', 'group_video'],
+  live: ['video', 'group_video', 'solo_live', 'pk_live'],
   video: ['video', 'group_video', 'solo_live', 'pk_live'],
   music: ['audio', 'group_audio'],
   voice: ['audio', 'group_audio'],
@@ -151,6 +153,31 @@ function createHttpError(status, message) {
   return error
 }
 
+async function ensureRoomFollowSchema() {
+  if (!roomFollowSchemaPromise) {
+    roomFollowSchemaPromise = query(`
+      CREATE TABLE IF NOT EXISTS user_follows (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        follower_id BIGINT UNSIGNED NOT NULL,
+        followed_user_id BIGINT UNSIGNED NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_follow (tenant_id, follower_id, followed_user_id),
+        INDEX idx_user_follows_follower (tenant_id, follower_id),
+        INDEX idx_user_follows_followed (tenant_id, followed_user_id),
+        CONSTRAINT fk_room_user_follows_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_user_follows_follower FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_user_follows_followed FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `).catch((error) => {
+      roomFollowSchemaPromise = null
+      throw error
+    })
+  }
+
+  return roomFollowSchemaPromise
+}
+
 function roomSupportsVideo(roomType) {
   return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
 }
@@ -168,6 +195,8 @@ function serializeRoom(row) {
     tenant_name: row.tenant_name || null,
     owner_id: Number(row.owner_id),
     owner_name: row.owner_name || null,
+    owner_region: row.owner_region || null,
+    owner_followed: Boolean(Number(row.owner_followed || 0)),
     name: row.name,
     description: row.description,
     profile_image: row.profile_image,
@@ -187,7 +216,9 @@ function serializeRoom(row) {
   }
 }
 
-function roomSelectSql() {
+function roomSelectSql(options = {}) {
+  const includeViewerFields = Boolean(options.includeViewerFields)
+
   return `
     SELECT
       r.id, r.tenant_id, r.owner_id, r.name, r.description, r.profile_image,
@@ -196,10 +227,18 @@ function roomSelectSql() {
       r.status, r.created_at, r.updated_at,
       tenant.name AS tenant_name,
       owner.name AS owner_name,
+      owner.current_residence AS owner_region,
+      ${includeViewerFields ? 'CASE WHEN followed_owner.followed_user_id IS NULL THEN 0 ELSE 1 END' : '0'} AS owner_followed,
       COALESCE(active_counts.active_participants, 0) AS active_participants
     FROM rooms r
     LEFT JOIN tenants tenant ON tenant.id = r.tenant_id
     LEFT JOIN users owner ON owner.id = r.owner_id
+    ${includeViewerFields ? `
+    LEFT JOIN user_follows followed_owner
+      ON followed_owner.tenant_id = r.tenant_id
+      AND followed_owner.follower_id = :feedViewerUserId
+      AND followed_owner.followed_user_id = r.owner_id
+    ` : ''}
     LEFT JOIN (
       SELECT active_sessions.room_id, COUNT(active_participants.id) AS active_participants
       FROM rtc_sessions active_sessions
@@ -243,6 +282,8 @@ function getRoomListOptions(req) {
   const type = cleanString(firstQueryValue(req.query.type || req.query.room_type), 30) || 'all'
   const privacy = cleanString(firstQueryValue(req.query.privacy || req.query.privacy_type), 30) || 'all'
   const sort = cleanString(firstQueryValue(req.query.sort), 30) || 'newest'
+  const feed = cleanString(firstQueryValue(req.query.feed), 30)
+  const region = cleanString(firstQueryValue(req.query.region), 120)
 
   if (status !== 'all' && !validRoomStatuses.has(status)) {
     return { error: 'Invalid room status filter.' }
@@ -260,7 +301,11 @@ function getRoomListOptions(req) {
     return { error: 'Invalid room sort option.' }
   }
 
-  return { page, perPage, search, status, type, privacy, sort }
+  if (feed && !validRoomFeeds.has(feed)) {
+    return { error: 'Invalid room feed filter.' }
+  }
+
+  return { page, perPage, search, status, type, privacy, sort, feed, region }
 }
 
 function buildRoomListWhere(options, tenantId, userId, user) {
@@ -337,6 +382,38 @@ function buildRoomListWhere(options, tenantId, userId, user) {
       )
     `)
     params.search = `%${options.search}%`
+  }
+
+  if (options.feed === 'following') {
+    if (!userId) {
+      conditions.push('1 = 0')
+    } else {
+      params.feedUserId = userId
+      conditions.push(`
+        (
+          r.owner_id = :feedUserId
+          OR EXISTS (
+            SELECT 1
+            FROM user_follows feed_follows
+            WHERE feed_follows.tenant_id = r.tenant_id
+            AND feed_follows.follower_id = :feedUserId
+            AND feed_follows.followed_user_id = r.owner_id
+          )
+        )
+      `)
+    }
+  }
+
+  if (options.feed === 'nearby' && options.region) {
+    params.feedRegion = options.region.toLowerCase()
+    conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM users nearby_owner
+        WHERE nearby_owner.id = r.owner_id
+        AND LOWER(nearby_owner.current_residence) = :feedRegion
+      )
+    `)
   }
 
   return { whereSql: conditions.length ? conditions.join(' AND ') : '1 = 1', params }
@@ -543,15 +620,19 @@ router.get('/', optionalAuthMiddleware, async (req, res, next) => {
     const options = getRoomListOptions(req)
     if (options.error) return res.status(422).json({ message: options.error })
     const tenantId = req.user?.tenant_id || 1
+    const includeViewerFields = Boolean(req.user?.id)
+
+    if (includeViewerFields) await ensureRoomFollowSchema()
 
     const { whereSql, params } = buildRoomListWhere(options, tenantId, req.user?.id || null, req.user)
+    if (includeViewerFields) params.feedViewerUserId = req.user.id
     const offset = (options.page - 1) * options.perPage
     const limitSql = Number(options.perPage)
     const offsetSql = Number(offset)
 
     const rooms = await query(
       `
-      ${roomSelectSql()}
+      ${roomSelectSql({ includeViewerFields })}
       WHERE ${whereSql}
       ORDER BY ${sortOptions[options.sort]}
       LIMIT ${limitSql}
@@ -587,6 +668,8 @@ router.get('/', optionalAuthMiddleware, async (req, res, next) => {
           type: options.type,
           privacy: options.privacy,
           sort: options.sort,
+          feed: options.feed,
+          region: options.region,
         },
       },
     })

@@ -104,7 +104,7 @@ export function getRoomTags(room) {
 
 export function roomMatchesFilter(room, filter) {
   if (filter === 'all') return true
-  if (filter === 'live') return ['solo_live', 'pk_live', 'group_video'].includes(room.room_type)
+  if (filter === 'live') return ['video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
   if (filter === 'video') return ['video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
   if (filter === 'music') return ['audio', 'group_audio'].includes(room.room_type)
   if (filter === 'pk') return room.room_type === 'pk_live'
@@ -168,7 +168,7 @@ export function formatRoomDate(value) {
   }
 }
 
-export function buildRoomsPath({ page, search, filter, privacy, sort }) {
+export function buildRoomsPath({ page, search, filter, privacy, sort, feed, region }) {
   const params = new URLSearchParams({
     page: String(page),
     per_page: '24',
@@ -179,6 +179,8 @@ export function buildRoomsPath({ page, search, filter, privacy, sort }) {
 
   const searchTerm = search.trim()
   if (searchTerm) params.set('q', searchTerm)
+  if (feed) params.set('feed', feed)
+  if (region) params.set('region', region)
 
   return `/rooms?${params.toString()}`
 }

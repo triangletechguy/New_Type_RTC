@@ -41,6 +41,8 @@ import {
   settingsNav,
 } from './roomsStaticData'
 
+const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
+
 function initialsFromName(name) {
   return String(name || 'User')
     .split(/\s+/)
@@ -128,6 +130,10 @@ function compactText(value, maxLength = 56) {
   return `${text.slice(0, maxLength - 1)}...`
 }
 
+function normalizedRegion(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
 function threadPreview(thread, messages) {
   const lastMessage = messages[messages.length - 1]
   if (!lastMessage) return compactText(thread.preview || 'No messages yet')
@@ -162,6 +168,7 @@ function cardCover(card, fallback = 0) {
 
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
+  const ownerRegion = room.owner_region || room.owner_current_residence || room.country || ''
   return {
     id: `room-${room.id}`,
     room,
@@ -172,7 +179,9 @@ function roomToFeedCard(room, index) {
     badge: room.privacy_type === 'password' ? 'Locked' : meta.short,
     category: meta.label,
     clientCompany: room.tenant_name || null,
-    country: 'United States',
+    country: ownerRegion || 'Global',
+    region: ownerRegion || '',
+    following: Boolean(room.owner_followed),
     size: index === 0 ? 'feature' : '',
     roomType: room.room_type,
     privacy: room.privacy_type,
@@ -202,17 +211,31 @@ function defaultLiveRoomName(displayName) {
   return ownerName ? `${ownerName} Live Room` : 'Enterprise Live Room'
 }
 
-function cardMatchesActiveFeed(card, activeFeed, activeExplore) {
-  if (activeFeed === 'latest') return card.tab === 'latest' || card.room
-  if (activeFeed === 'nearby') return card.tab === 'nearby' || card.room
+function cardMatchesActiveFeed(card, activeFeed, activeExplore, context = {}) {
+  const roomType = card.room?.room_type || card.roomType
+  const userId = Number(context.user?.id || 0)
+  const selectedRegion = normalizedRegion(context.region || context.user?.current_residence)
+  const cardRegion = normalizedRegion(card.region || card.country || card.room?.owner_region || card.room?.owner_current_residence)
+
+  if (activeFeed === 'latest') return Boolean(card.tab === 'latest' || card.room)
+  if (activeFeed === 'nearby') {
+    return Boolean(card.tab === 'nearby' || card.nearby || (selectedRegion && cardRegion && selectedRegion === cardRegion))
+  }
   if (activeFeed === 'party') return card.party || card.tab === 'party' || card.room?.room_type === 'pk_live'
-  if (activeFeed === 'following') return Boolean(card.room || card.following || card.host === 'TalkEachOther')
-  if (activeFeed === 'global') return card.tab === 'latest' || card.room || card.country || card.host === 'TalkEachOther'
+  if (activeFeed === 'following') {
+    return Boolean(
+      card.isOwnRoom
+      || card.following
+      || card.room?.owner_followed
+      || (userId && Number(card.room?.owner_id) === userId)
+    )
+  }
+  if (activeFeed === 'global') return Boolean(card.tab === 'global' || card.tab === 'latest' || card.room || card.country || card.host === 'TalkEachOther')
   if (activeFeed === 'explore') {
     if (activeExplore === 'all') return card.tab !== 'party'
     if (activeExplore === 'pk') return card.room?.room_type === 'pk_live' || card.explore === 'pk'
-    if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(card.room?.room_type || card.roomType)
-    return card.room || card.explore === activeExplore
+    if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(roomType)
+    return Boolean(card.room || card.explore === activeExplore)
   }
 
   return true
@@ -238,6 +261,12 @@ function sortCardsForView(cards, sort) {
     nextCards.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
   } else if (sort === 'active') {
     nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0))
+  } else if (sort === 'newest') {
+    nextCards.sort((a, b) => {
+      const aDate = new Date(a.room?.created_at || a.createdAt || 0).getTime() || 0
+      const bDate = new Date(b.room?.created_at || b.createdAt || 0).getTime() || 0
+      return bDate - aDate || Number(cardAvatarIndex(b)) - Number(cardAvatarIndex(a))
+    })
   } else if (sort === 'oldest') {
     nextCards.sort((a, b) => Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b)))
   }
@@ -332,9 +361,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [createdRoom, setCreatedRoom] = useState(null)
   const [pendingRoomDraft, setPendingRoomDraft] = useState(null)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState(defaultFeedTab.filter || 'all')
   const [privacyFilter, setPrivacyFilter] = useState('all')
-  const [sort, setSort] = useState('newest')
+  const [sort, setSort] = useState(defaultFeedTab.sort || 'newest')
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingRoomId, setDeletingRoomId] = useState(null)
@@ -465,21 +494,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
-    let cards = [...roomCards]
-
-    if (activeFeed === 'party') cards = cards.filter((card) => card.room?.room_type === 'pk_live')
-    if (activeFeed === 'explore') {
-      cards = cards.filter((card) => {
-        if (activeExplore === 'all') return true
-        if (activeExplore === 'pk') return card.room?.room_type === 'pk_live'
-        if (activeExplore === 'games') return roomSupportsVideo(card.room?.room_type)
-        return true
-      })
-    }
+    let cards = roomCards.filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore, {
+      user,
+      region: settingsDraft.region,
+    }))
 
     cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
     return sortCardsForView(cards, sort).slice(0, 48)
-  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, sort])
+  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
   const recentRoomCards = useMemo(() => {
     const cardsById = new Map(roomCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
@@ -493,7 +515,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
     const candidateCards = roomCards
-      .filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore))
+      .filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore, {
+        user,
+        region: settingsDraft.region,
+      }))
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
       .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country}`))
 
@@ -506,7 +531,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       room: card.room,
       card,
     }))
-  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm])
+  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, user])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const roomMessageThreads = useMemo(() => roomCards.slice(0, 24).map((card, index) => ({
@@ -1025,14 +1050,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setActiveSection('live')
     setPreviewCard(null)
     setActiveFeed(nextFeed)
-    if (tab?.filter) setFilter(tab.filter)
-    if (tab?.sort) setSort(tab.sort)
+    setFilter(tab?.filter || 'all')
+    setSort(tab?.sort || 'newest')
   }
 
   function switchExplore(nextExplore) {
     const next = exploreFilters.find((item) => item.value === nextExplore)
     setActiveExplore(nextExplore)
-    if (activeFeed === 'explore') setFilter(next?.filter || 'all')
+    if (activeFeed === 'explore') {
+      setFilter(next?.filter || 'all')
+      setSort(nextExplore === 'new_host' ? 'newest' : 'active')
+    }
   }
 
   function switchMobileRoomGroup(nextGroup) {
@@ -1050,11 +1078,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (nextGroup === 'follow') {
       setActiveFeed('following')
       setFilter('all')
+      setSort('active')
       return
     }
 
     setActiveFeed('for_you')
-    setFilter('all')
+    setFilter(defaultFeedTab.filter || 'all')
+    setSort(defaultFeedTab.sort || 'newest')
   }
 
   async function loadRooms({
@@ -1063,6 +1093,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     filterValue = filter,
     privacyValue = privacyFilter,
     sortValue = sort,
+    feedValue = activeFeed,
+    regionValue = settingsDraft.region || user?.current_residence || '',
     quiet = false,
     preserveStatus = false,
     throwOnError = false,
@@ -1074,6 +1106,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       filter: filterValue,
       privacy: privacyValue,
       sort: sortValue,
+      feed: feedValue,
+      region: regionValue,
     })
 
     function applyRoomData(data) {
@@ -1184,6 +1218,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           filterValue: 'all',
           privacyValue: 'all',
           sortValue: 'newest',
+          feedValue: 'latest',
           quiet: true,
           preserveStatus: true,
           throwOnError: true,
@@ -2438,12 +2473,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         filterValue: filter,
         privacyValue: privacyFilter,
         sortValue: sort,
+        feedValue: activeFeed,
+        regionValue: settingsDraft.region || user?.current_residence || '',
         quiet: true,
       })
     }, search.trim() ? 300 : 0)
 
     return () => clearTimeout(timeout)
-  }, [search, filter, privacyFilter, sort])
+  }, [activeFeed, search, filter, privacyFilter, sort, settingsDraft.region, user?.current_residence])
 
   useEffect(() => {
     function handleBeforeInstallPrompt(event) {

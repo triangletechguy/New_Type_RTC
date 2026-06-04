@@ -1,11 +1,11 @@
 export const feedTabs = [
-  { value: 'following', label: 'Following', mobileLabel: 'Mine', filter: 'all' },
-  { value: 'for_you', label: 'For You', mobileLabel: 'Popular', filter: 'all' },
-  { value: 'explore', label: 'Explore', filter: 'all' },
-  { value: 'party', label: 'Party', filter: 'pk' },
-  { value: 'nearby', label: 'Nearby', filter: 'all' },
+  { value: 'following', label: 'Following', mobileLabel: 'Mine', filter: 'all', sort: 'active' },
+  { value: 'for_you', label: 'For You', mobileLabel: 'Popular', filter: 'live', sort: 'active' },
+  { value: 'explore', label: 'Explore', filter: 'all', sort: 'active' },
+  { value: 'party', label: 'Party', filter: 'pk', sort: 'active' },
+  { value: 'nearby', label: 'Nearby', filter: 'all', sort: 'active' },
   { value: 'latest', label: 'Latest', filter: 'all', sort: 'newest' },
-  { value: 'global', label: 'Global', filter: 'all' },
+  { value: 'global', label: 'Global', filter: 'all', sort: 'active' },
 ]
 
 export const exploreFilters = [
