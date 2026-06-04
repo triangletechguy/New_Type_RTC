@@ -370,13 +370,26 @@
 
 .media-control-button {
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
   min-width: 142px;
   display: inline-flex;
   justify-content: center;
   align-items: center;
   gap: 9px;
+  border-width: 1px;
   border-color: rgba(52, 211, 153, .35);
   background: rgba(52, 211, 153, .12);
+  transition: transform .16s ease, border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.media-control-button > * {
+  position: relative;
+  z-index: 1;
+}
+
+.media-control-button:not(:disabled):hover {
+  transform: translateY(-1px);
 }
 
 .media-control-button.icon-only {
@@ -404,7 +417,35 @@
 }
 
 .media-control-button.active {
-  box-shadow: 0 0 0 4px rgba(52, 211, 153, .1), inset 0 0 18px rgba(52, 211, 153, .08);
+  border-color: rgba(45, 212, 191, .58);
+  background: linear-gradient(135deg, rgba(20, 184, 166, .34), rgba(34, 211, 238, .2));
+  color: #ecfeff;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, .12), 0 12px 28px rgba(15, 118, 110, .22), inset 0 0 20px rgba(153, 246, 228, .12);
+}
+
+.media-control-button.icon-only.active::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, .28), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, .12), transparent 62%);
+  opacity: .85;
+  pointer-events: none;
+}
+
+.media-control-button.media-toggle-mic.active {
+  border-color: rgba(52, 211, 153, .64);
+  background: linear-gradient(135deg, rgba(16, 185, 129, .42), rgba(20, 184, 166, .24));
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, .14), 0 12px 28px rgba(5, 150, 105, .2), inset 0 0 20px rgba(167, 243, 208, .14);
+}
+
+.media-control-button.media-toggle-camera.active {
+  border-color: rgba(96, 165, 250, .66);
+  background: linear-gradient(135deg, rgba(37, 99, 235, .4), rgba(6, 182, 212, .24));
+  color: #eff6ff;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, .14), 0 12px 28px rgba(37, 99, 235, .22), inset 0 0 20px rgba(191, 219, 254, .16);
 }
 
 .media-control-button.muted {
@@ -412,6 +453,12 @@
   background: rgba(239, 68, 68, .13);
   color: #fecaca;
   box-shadow: 0 0 0 4px rgba(239, 68, 68, .08), inset 0 0 18px rgba(239, 68, 68, .08);
+}
+
+.media-control-button.media-toggle-camera.muted {
+  border-color: rgba(248, 113, 113, .42);
+  background: linear-gradient(135deg, rgba(239, 68, 68, .16), rgba(124, 45, 18, .14));
+  color: #fee2e2;
 }
 
 .media-control-button.muted::after {
@@ -423,6 +470,8 @@
   background: currentColor;
   transform: rotate(-38deg);
   opacity: .95;
+  box-shadow: 0 0 10px rgba(254, 202, 202, .28);
+  pointer-events: none;
 }
 
 .media-control-button.utility {
@@ -443,6 +492,19 @@
   height: 22px;
   flex: 0 0 auto;
   color: currentColor;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .18));
+}
+
+.media-control-button.active .control-glyph {
+  filter: drop-shadow(0 0 9px rgba(255, 255, 255, .2)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
+}
+
+.media-control-button.media-toggle-mic.active .control-glyph {
+  filter: drop-shadow(0 0 10px rgba(110, 231, 183, .38)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
+}
+
+.media-control-button.media-toggle-camera.active .control-glyph {
+  filter: drop-shadow(0 0 10px rgba(147, 197, 253, .44)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
 }
 
 .control-glyph.mic::before {

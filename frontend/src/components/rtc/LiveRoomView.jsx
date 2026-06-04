@@ -2231,7 +2231,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </button>
               )}
               <button
-                className={`media-control-button icon-only ${micOn ? 'active' : 'muted'}${mediaUpdating.mic ? ' syncing' : ''}`}
+                className={`media-control-button icon-only media-toggle-mic ${micOn ? 'active' : 'muted'}${mediaUpdating.mic ? ' syncing' : ''}`}
                 onClick={toggleMic}
                 disabled={micButtonDisabled}
                 aria-label={micButtonTitle}
@@ -2241,7 +2241,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph mic"></span>
               </button>
               <button
-                className={`media-control-button icon-only ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
+                className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
                 onClick={toggleCamera}
                 disabled={cameraButtonDisabled}
                 aria-label={cameraButtonTitle}
