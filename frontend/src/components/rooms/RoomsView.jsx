@@ -726,8 +726,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openMessagesDrawer() {
     if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
     setShowRankings(false)
-    setReadThreadIds((previous) => previous.includes(activeThread) ? previous : [...previous, activeThread])
+    if (activeThread) {
+      setReadThreadIds((previous) => previous.includes(activeThread) ? previous : [...previous, activeThread])
+    }
     setShowMessages(true)
+  }
+
+  function toggleMessagesDrawer() {
+    if (showMessages) {
+      setShowMessages(false)
+      return
+    }
+
+    openMessagesDrawer()
   }
 
   function openRankings() {
@@ -756,7 +767,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return
     }
 
-    openMessagesDrawer()
+    toggleMessagesDrawer()
   }
 
   function updateSettings(field, value, message) {
@@ -2364,7 +2375,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
-          <IconButton label="Messages" badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={openMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
+          <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
           <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">

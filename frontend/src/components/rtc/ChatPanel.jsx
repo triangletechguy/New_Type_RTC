@@ -742,6 +742,16 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     })
   }
 
+  function showRoomComments() {
+    setChatMode('comments')
+    setStatus('')
+  }
+
+  function showPersonalInbox() {
+    setChatMode('inbox')
+    setStatus('')
+  }
+
   async function sendInboxMessage(event) {
     event.preventDefault()
     const value = inboxText.trim()
@@ -976,6 +986,26 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
           {chatMode === 'inbox' ? 'Private' : typingNames.length ? 'Typing' : realtimeConnected ? 'Realtime' : 'Saved'}
         </span>
+      </div>
+      <div className="chat-mode-tabs" role="tablist" aria-label="Message section">
+        <button
+          type="button"
+          className={chatMode === 'comments' ? 'active' : ''}
+          onClick={showRoomComments}
+          role="tab"
+          aria-selected={chatMode === 'comments'}
+        >
+          Room
+        </button>
+        <button
+          type="button"
+          className={chatMode === 'inbox' ? 'active' : ''}
+          onClick={showPersonalInbox}
+          role="tab"
+          aria-selected={chatMode === 'inbox'}
+        >
+          Inbox
+        </button>
       </div>
 
       {chatMode === 'comments' ? (
