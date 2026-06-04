@@ -742,14 +742,28 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     })
   }
 
-  function showRoomComments() {
+  function showRoomComments({ focusComposer = false } = {}) {
     setChatMode('comments')
+    setLoadingInbox(false)
     setStatus('')
+    previousRoomMessageCountRef.current = 0
+
+    window.requestAnimationFrame(() => {
+      scrollToLatestMessage(messagesEndRef)
+      if (focusComposer) composerRef.current?.focus()
+    })
   }
 
   function showPersonalInbox() {
-    setChatMode('inbox')
     setStatus('')
+    previousInboxMessageCountRef.current = 0
+
+    if (chatMode === 'inbox') {
+      loadInboxThreads()
+      return
+    }
+
+    setChatMode('inbox')
   }
 
   async function sendInboxMessage(event) {
@@ -859,8 +873,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   useEffect(() => {
     if (!focusRequest) return
-    composerRef.current?.focus()
-    composerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    showRoomComments({ focusComposer: true })
+    window.requestAnimationFrame(() => {
+      composerRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
   }, [focusRequest])
 
   useEffect(() => {
