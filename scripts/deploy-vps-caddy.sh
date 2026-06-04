@@ -151,9 +151,9 @@ write_env_files() {
   resend_ready=0
   if [ -n "$resend_api_key" ] && [ -n "$email_from" ]; then resend_ready=1; fi
 
-  if [ "${REQUIRE_EMAIL_DELIVERY:-true}" != "false" ] && [ "$email_ready" -ne 1 ]; then
+  if [ "${REQUIRE_EMAIL_DELIVERY:-false}" = "true" ] && [ "$email_ready" -ne 1 ]; then
     cat >&2 <<EOF
-ERROR: Email delivery is required for production signup verification.
+ERROR: Email delivery was requested, but Resend/SMTP settings are missing.
 
 Deploy with Resend:
   RESEND_API_KEY='re_xxxxxxxxx' EMAIL_FROM='TalkEachOther <verify@chadnichok.com>' DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
