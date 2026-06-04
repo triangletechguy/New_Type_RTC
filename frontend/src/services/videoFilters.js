@@ -90,6 +90,7 @@ export const DEFAULT_BEAUTY_SETTINGS = Object.freeze({
   contrast: 0,
   sharpen: 0,
   lighting: 0,
+  mirror: false,
 })
 
 export const BEAUTY_CONTROLS = [
@@ -125,6 +126,14 @@ function clampNumber(value, min, max, fallback) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
   return Math.min(max, Math.max(min, number))
+}
+
+function normalizeBoolean(value) {
+  if (typeof value === 'string') {
+    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+  }
+
+  return value === true || value === 1
 }
 
 function nextAnimationFrame(callback, delayMs = 1000 / DEFAULT_FPS) {
@@ -201,10 +210,14 @@ export function isBackgroundEffectActive(effectId) {
 }
 
 export function normalizeBeautySettings(settings = {}) {
-  return BEAUTY_CONTROLS.reduce((normalized, control) => {
-    normalized[control.id] = Math.round(clampNumber(settings[control.id], control.min, control.max, DEFAULT_BEAUTY_SETTINGS[control.id]))
-    return normalized
+  const source = settings && typeof settings === 'object' ? settings : {}
+  const normalized = BEAUTY_CONTROLS.reduce((nextSettings, control) => {
+    nextSettings[control.id] = Math.round(clampNumber(source[control.id], control.min, control.max, DEFAULT_BEAUTY_SETTINGS[control.id]))
+    return nextSettings
   }, {})
+
+  normalized.mirror = normalizeBoolean(source.mirror)
+  return normalized
 }
 
 export function normalizeBackgroundBlurAmount(value) {
@@ -213,7 +226,7 @@ export function normalizeBackgroundBlurAmount(value) {
 
 export function isBeautySettingsActive(settings = {}) {
   const normalized = normalizeBeautySettings(settings)
-  return BEAUTY_CONTROLS.some((control) => normalized[control.id] > DEFAULT_BEAUTY_SETTINGS[control.id])
+  return normalized.mirror || BEAUTY_CONTROLS.some((control) => normalized[control.id] > DEFAULT_BEAUTY_SETTINGS[control.id])
 }
 
 export function isCameraFilterEffectActive(filterId, beautySettings = {}, backgroundEffect = DEFAULT_BACKGROUND.id) {
@@ -242,6 +255,19 @@ function buildBeautyCanvasFilter(filter, beautySettings) {
   }
 
   return parts.length ? parts.join(' ') : 'none'
+}
+
+function drawVideoFrame(context, source, width, height, mirrored = false, dx = 0, dy = 0, drawWidth = width, drawHeight = height) {
+  if (!mirrored) {
+    context.drawImage(source, dx, dy, drawWidth, drawHeight)
+    return
+  }
+
+  context.save()
+  context.translate(width, 0)
+  context.scale(-1, 1)
+  context.drawImage(source, width - dx - drawWidth, dy, drawWidth, drawHeight)
+  context.restore()
 }
 
 export function supportsCameraFilterPipeline() {
@@ -627,17 +653,18 @@ export class CameraFilterPipeline {
 
   drawProcessedFrame(targetContext, video, width, height, filter, beautySettings, canvasFilter) {
     const smooth = settingRatio(beautySettings, 'smooth')
+    const mirrored = Boolean(beautySettings?.mirror)
 
     targetContext.save()
     targetContext.clearRect(0, 0, width, height)
     targetContext.filter = canvasFilter
-    targetContext.drawImage(video, 0, 0, width, height)
+    drawVideoFrame(targetContext, video, width, height, mirrored)
     targetContext.filter = 'none'
 
     if (smooth > 0) {
       targetContext.globalAlpha = smooth * 0.28
       targetContext.filter = `${canvasFilter === 'none' ? '' : `${canvasFilter} `}blur(${(1 + smooth * 2.3).toFixed(2)}px)`
-      targetContext.drawImage(video, 0, 0, width, height)
+      drawVideoFrame(targetContext, video, width, height, mirrored)
       targetContext.globalAlpha = 1
       targetContext.filter = 'none'
     }
@@ -650,7 +677,7 @@ export class CameraFilterPipeline {
     targetContext.restore()
   }
 
-  drawBackgroundLayer(context, video, width, height) {
+  drawBackgroundLayer(context, video, width, height, mirrored = false) {
     const effectId = normalizeBackgroundEffectId(this.backgroundEffect)
     const blurAmount = normalizeBackgroundBlurAmount(this.backgroundBlurAmount)
     context.save()
@@ -660,7 +687,7 @@ export class CameraFilterPipeline {
       const blurPx = 3 + (blurAmount / 100) * 25
       const pad = Math.ceil(blurPx * 2)
       context.filter = `blur(${blurPx.toFixed(1)}px) saturate(1.08) brightness(.84)`
-      context.drawImage(video, -pad, -pad, width + pad * 2, height + pad * 2)
+      drawVideoFrame(context, video, width, height, mirrored, -pad, -pad, width + pad * 2, height + pad * 2)
       context.filter = 'none'
       context.fillStyle = 'rgba(2, 6, 23, .18)'
       context.fillRect(0, 0, width, height)
@@ -710,14 +737,14 @@ export class CameraFilterPipeline {
     context.restore()
   }
 
-  applyForegroundMask(width, height) {
+  applyForegroundMask(width, height, mirrored = false) {
     if (!this.scratchContext || !this.maskCanvas) return false
     if (!this.hasSegmentationMask || !this.maskCanvas.width || !this.maskCanvas.height) return false
 
     this.scratchContext.save()
     this.scratchContext.globalCompositeOperation = 'destination-in'
     this.scratchContext.filter = 'blur(2px)'
-    this.scratchContext.drawImage(this.maskCanvas, 0, 0, width, height)
+    drawVideoFrame(this.scratchContext, this.maskCanvas, width, height, mirrored)
     this.scratchContext.filter = 'none'
     this.scratchContext.restore()
     return true
@@ -740,12 +767,12 @@ export class CameraFilterPipeline {
     context.restore()
   }
 
-  applySharpen(context, video, width, height, sharpen) {
+  applySharpen(context, video, width, height, sharpen, mirrored = false) {
     if (sharpen <= 0 || !this.detailContext || !this.detailCanvas) return
 
     this.detailContext.clearRect(0, 0, width, height)
     this.detailContext.filter = `contrast(${(1.28 + sharpen * 0.48).toFixed(3)}) saturate(${(1 + sharpen * 0.12).toFixed(3)})`
-    this.detailContext.drawImage(video, 0, 0, width, height)
+    drawVideoFrame(this.detailContext, video, width, height, mirrored)
     this.detailContext.filter = 'none'
 
     context.save()
@@ -771,6 +798,7 @@ export class CameraFilterPipeline {
       const sharpen = settingRatio(beautySettings, 'sharpen')
       const lighting = settingRatio(beautySettings, 'lighting')
       const backgroundActive = isBackgroundEffectActive(this.backgroundEffect)
+      const mirrored = Boolean(beautySettings.mirror)
       const width = canvas.width
       const height = canvas.height
 
@@ -778,9 +806,9 @@ export class CameraFilterPipeline {
         this.updateSegmentationMask(video)
         this.drawProcessedFrame(this.scratchContext, video, width, height, filter, beautySettings, canvasFilter)
 
-        const masked = this.applyForegroundMask(width, height)
+        const masked = this.applyForegroundMask(width, height, mirrored)
         if (masked) {
-          this.drawBackgroundLayer(context, video, width, height)
+          this.drawBackgroundLayer(context, video, width, height, mirrored)
           context.drawImage(this.scratchCanvas, 0, 0)
         } else {
           context.clearRect(0, 0, width, height)
@@ -791,7 +819,7 @@ export class CameraFilterPipeline {
       }
 
       this.applySoftLighting(context, width, height, lighting)
-      this.applySharpen(context, video, width, height, sharpen)
+      this.applySharpen(context, video, width, height, sharpen, mirrored)
       this.recordFramePerformance(frameStartedAt, backgroundActive)
     }
 

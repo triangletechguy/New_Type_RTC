@@ -1114,6 +1114,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     applyBeautySettings(nextSettings).catch((error) => setStatus(`Beauty filter failed: ${error.message}`))
   }
 
+  function toggleBeautyMirror() {
+    const mirrorEnabled = !Boolean(beautySettingsRef.current?.mirror)
+    const nextSettings = normalizeBeautySettings({
+      ...beautySettingsRef.current,
+      mirror: mirrorEnabled,
+    })
+
+    applyBeautySettings(nextSettings, mirrorEnabled ? 'Mirror camera applied' : 'Mirror camera removed')
+      .catch((error) => setStatus(`Mirror failed: ${error.message}`))
+  }
+
   function toggleBackgroundBlur() {
     const nextEffect = backgroundEffectRef.current === 'blur' ? 'none' : 'blur'
     changeBackgroundEffect(nextEffect).catch((error) => setStatus(`Background blur failed: ${error.message}`))
@@ -1927,11 +1938,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
+  const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
   const cameraFilterActive = isVideoFilterActive(cameraFilter)
-  const beautySettingsActive = isBeautySettingsActive(beautySettings)
+  const beautySettingsActive = isBeautySettingsActive(normalizedBeautySettings)
   const backgroundEffectActive = isBackgroundEffectActive(backgroundEffect)
   const backgroundBlurPercent = normalizeBackgroundBlurAmount(backgroundBlurAmount)
-  const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(beautySettings[control.id] || 0) > 0).length
+  const mirrorEnabled = normalizedBeautySettings.mirror
+  const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(normalizedBeautySettings[control.id] || 0) > 0).length + (mirrorEnabled ? 1 : 0)
   const cameraEffectsActive = cameraFilterActive || beautySettingsActive || backgroundEffectActive
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
@@ -2134,9 +2147,24 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     <section className="camera-effect-section">
                       <header>
                         <strong>Face beauty</strong>
-                        <small>Smooth, light, warmth</small>
+                        <small>{mirrorEnabled ? 'Mirror on' : 'Smooth, light, warmth'}</small>
                       </header>
                       <div className="camera-beauty-controls" aria-label="Face beauty controls">
+                        <button
+                          type="button"
+                          className={mirrorEnabled ? 'beauty-mirror-button active' : 'beauty-mirror-button'}
+                          onClick={toggleBeautyMirror}
+                          disabled={filterButtonDisabled}
+                          aria-pressed={mirrorEnabled}
+                          title={mirrorEnabled ? 'Turn mirror camera off' : 'Turn mirror camera on'}
+                        >
+                          <span className="control-glyph mirror" aria-hidden="true"></span>
+                          <span>
+                            <strong>Mirror</strong>
+                            <small>{mirrorEnabled ? 'Mirrored camera view' : 'Normal camera view'}</small>
+                          </span>
+                          <b>{mirrorEnabled ? 'On' : 'Off'}</b>
+                        </button>
                         {BEAUTY_CONTROLS.map((control) => (
                           <label key={control.id} className="beauty-slider-row">
                             <span>

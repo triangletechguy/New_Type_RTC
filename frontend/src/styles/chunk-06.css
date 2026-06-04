@@ -607,6 +607,29 @@
   background: rgba(255, 255, 255, .12);
 }
 
+.control-glyph.mirror::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 18px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+}
+
+.control-glyph.mirror::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 2px;
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: -5px 7px 0 -1px currentColor, 5px 7px 0 -1px currentColor;
+}
+
 .control-glyph.guard::before {
   content: "";
   position: absolute;
@@ -872,6 +895,75 @@
 
 .background-blur-slider input[type="range"] {
   accent-color: #38bdf8;
+}
+
+.beauty-mirror-button {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, .09);
+  color: #dbeafe;
+  text-align: left;
+}
+
+.beauty-mirror-button .control-glyph {
+  width: 24px;
+  height: 24px;
+}
+
+.beauty-mirror-button > span:not(.control-glyph) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.beauty-mirror-button strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.beauty-mirror-button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #aab6cc;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.beauty-mirror-button b {
+  min-width: 34px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .16);
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 1000;
+  text-align: center;
+}
+
+.beauty-mirror-button.active {
+  border-color: rgba(125, 92, 255, .64);
+  background: rgba(125, 92, 255, .2);
+  color: #ddd6fe;
+  box-shadow: inset 0 0 18px rgba(125, 92, 255, .12);
+}
+
+.beauty-mirror-button.active b {
+  background: rgba(125, 92, 255, .36);
+  color: #fff;
+}
+
+.beauty-mirror-button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
 }
 
 .background-blur-toggle {
