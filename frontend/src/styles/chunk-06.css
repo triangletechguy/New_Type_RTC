@@ -112,7 +112,7 @@
 
 .screen-expand-icon {
   position: absolute;
-  top: 12px;
+  top: 54px;
   right: 12px;
   z-index: 3;
   width: 36px;
@@ -148,6 +148,47 @@
   bottom: 9px;
   border-left: 2px solid;
   border-bottom: 2px solid;
+}
+
+.video-follow-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  min-width: 78px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  background: rgba(15, 23, 42, .76);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 1000;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+}
+
+.video-follow-button.following {
+  border-color: rgba(52, 211, 153, .55);
+  background: rgba(16, 185, 129, .78);
+  color: #ecfdf5;
+}
+
+.video-follow-button.requested,
+.video-follow-button.loading {
+  border-color: rgba(251, 191, 36, .5);
+  background: rgba(146, 64, 14, .78);
+  color: #fef3c7;
+}
+
+.video-follow-button.incoming {
+  border-color: rgba(96, 165, 250, .55);
+  background: rgba(37, 99, 235, .78);
+  color: #eff6ff;
+}
+
+.video-follow-button:disabled {
+  cursor: default;
+  opacity: .82;
 }
 
 .audio-element {
@@ -1500,4 +1541,75 @@
   border-color: rgba(148, 163, 184, .28);
   background: rgba(148, 163, 184, .1);
   color: #cbd5e1;
+}
+
+.follow-request-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(3, 7, 18, .62);
+  backdrop-filter: blur(8px);
+}
+
+.follow-request-modal {
+  position: relative;
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px 20px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, .26);
+  background: rgba(35, 34, 49, .98);
+  color: #f8fafc;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .46);
+}
+
+.follow-request-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border-color: rgba(148, 163, 184, .26);
+  background: rgba(15, 23, 42, .36);
+  color: #cbd5e1;
+}
+
+.follow-request-avatar {
+  width: 64px;
+  height: 64px;
+}
+
+.follow-request-modal > span {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.follow-request-modal h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.follow-request-modal p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.follow-request-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
 }

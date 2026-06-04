@@ -62,6 +62,10 @@ function registerSignaling(io) {
     return `${databaseRoomId}:${userId}`
   }
 
+  function userSocketRoom(userId) {
+    return `user:${Number(userId || 0)}`
+  }
+
   function cancelPendingPresenceClose(databaseRoomId, userId) {
     if (!databaseRoomId || !userId) return
 
@@ -191,6 +195,7 @@ function registerSignaling(io) {
       })
 
       socket.join(roomKey)
+      if (userId) socket.join(userSocketRoom(userId))
       cancelPendingPresenceClose(resolvedDatabaseRoomId, userId)
       if (resolvedDatabaseRoomId && userId) {
         touchActiveParticipant({

@@ -83,6 +83,25 @@ async function ensureChatSchema() {
         CONSTRAINT fk_user_follows_followed FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE
       )
       `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS user_follow_requests (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        requester_id BIGINT UNSIGNED NOT NULL,
+        recipient_id BIGINT UNSIGNED NOT NULL,
+        status ENUM('pending', 'accepted', 'rejected', 'cancelled') DEFAULT 'pending',
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        responded_at TIMESTAMP NULL DEFAULT NULL,
+        UNIQUE KEY unique_follow_request_pair (tenant_id, requester_id, recipient_id),
+        INDEX idx_follow_requests_recipient (tenant_id, recipient_id, status),
+        INDEX idx_follow_requests_requester (tenant_id, requester_id, status),
+        CONSTRAINT fk_follow_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_follow_requests_requester FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_follow_requests_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
     })().catch((error) => {
       chatSchemaPromise = null
       throw error
@@ -300,6 +319,101 @@ async function userFollowsPeer(followerId, peerId, tenantId) {
   return rows.length > 0
 }
 
+function userSocketRoom(userId) {
+  return `user:${Number(userId || 0)}`
+}
+
+function emitUserRealtime(req, userId, eventName, payload) {
+  const io = req.app?.get('io')
+  if (!io || !userId) return false
+  io.to(userSocketRoom(userId)).emit(eventName, payload)
+  return true
+}
+
+function mapFollowRequest(row) {
+  if (!row) return null
+
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    requester_id: Number(row.requester_id),
+    recipient_id: Number(row.recipient_id),
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    responded_at: row.responded_at,
+    requester: {
+      id: Number(row.requester_id),
+      name: row.requester_name,
+      avatar_url: row.requester_avatar_url,
+      gender: row.requester_gender,
+    },
+    recipient: {
+      id: Number(row.recipient_id),
+      name: row.recipient_name,
+      avatar_url: row.recipient_avatar_url,
+      gender: row.recipient_gender,
+    },
+  }
+}
+
+function followRequestSelectSql() {
+  return `
+    SELECT
+      fr.*,
+      requester.name AS requester_name,
+      requester.avatar_url AS requester_avatar_url,
+      requester.gender AS requester_gender,
+      recipient.name AS recipient_name,
+      recipient.avatar_url AS recipient_avatar_url,
+      recipient.gender AS recipient_gender
+    FROM user_follow_requests fr
+    LEFT JOIN users requester ON requester.id = fr.requester_id
+    LEFT JOIN users recipient ON recipient.id = fr.recipient_id
+  `
+}
+
+async function findFollowRequestById(requestId, tenantId) {
+  const rows = await query(
+    `
+    ${followRequestSelectSql()}
+    WHERE fr.id = :requestId
+    AND fr.tenant_id = :tenantId
+    LIMIT 1
+    `,
+    { requestId, tenantId }
+  )
+
+  return mapFollowRequest(rows[0])
+}
+
+async function createOrRefreshFollowRequest(requesterId, recipientId, tenantId) {
+  await query(
+    `
+    INSERT INTO user_follow_requests (tenant_id, requester_id, recipient_id, status, responded_at)
+    VALUES (:tenantId, :requesterId, :recipientId, 'pending', NULL)
+    ON DUPLICATE KEY UPDATE
+      status = IF(status = 'accepted', status, 'pending'),
+      responded_at = IF(status = 'accepted', responded_at, NULL),
+      updated_at = CURRENT_TIMESTAMP
+    `,
+    { tenantId, requesterId, recipientId }
+  )
+
+  const rows = await query(
+    `
+    ${followRequestSelectSql()}
+    WHERE fr.tenant_id = :tenantId
+    AND fr.requester_id = :requesterId
+    AND fr.recipient_id = :recipientId
+    LIMIT 1
+    `,
+    { tenantId, requesterId, recipientId }
+  )
+
+  return mapFollowRequest(rows[0])
+}
+
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
@@ -493,7 +607,7 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
   }
 })
 
-router.post('/users/:userId/follow', authMiddleware, async (req, res, next) => {
+async function requestFollow(req, res, next) {
   try {
     await ensureChatSchema()
 
@@ -504,24 +618,32 @@ router.post('/users/:userId/follow', authMiddleware, async (req, res, next) => {
     const peer = await findFollowableUser(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
 
-    await query(
-      `
-      INSERT INTO user_follows (tenant_id, follower_id, followed_user_id)
-      VALUES (:tenantId, :followerId, :peerId)
-      ON DUPLICATE KEY UPDATE created_at = created_at
-      `,
-      { tenantId: req.user.tenant_id, followerId: req.user.id, peerId }
-    )
+    const alreadyFollowing = await userFollowsPeer(req.user.id, peerId, req.user.tenant_id)
+    if (alreadyFollowing) {
+      return res.status(200).json({
+        message: 'Already following.',
+        following: true,
+        peer,
+      })
+    }
+
+    const request = await createOrRefreshFollowRequest(req.user.id, peerId, req.user.tenant_id)
+    emitUserRealtime(req, peerId, 'follow-request-received', { request })
 
     return res.status(201).json({
-      message: 'User followed.',
-      following: true,
+      message: 'Follow request sent.',
+      following: false,
+      requested: true,
       peer,
+      request,
     })
   } catch (error) {
     next(error)
   }
-})
+}
+
+router.post('/users/:userId/follow', authMiddleware, requestFollow)
+router.post('/users/:userId/follow-requests', authMiddleware, requestFollow)
 
 router.delete('/users/:userId/follow', authMiddleware, async (req, res, next) => {
   try {
@@ -544,6 +666,131 @@ router.delete('/users/:userId/follow', authMiddleware, async (req, res, next) =>
       message: 'User unfollowed.',
       following: false,
       peer_id: peerId,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/follow-requests', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const [requestRows, followingRows] = await Promise.all([
+      query(
+        `
+        ${followRequestSelectSql()}
+        WHERE fr.tenant_id = :tenantId
+        AND fr.status = 'pending'
+        AND (fr.requester_id = :userId OR fr.recipient_id = :userId)
+        ORDER BY fr.updated_at DESC, fr.id DESC
+        LIMIT 120
+        `,
+        { tenantId: req.user.tenant_id, userId: req.user.id }
+      ),
+      query(
+        `
+        SELECT followed_user_id
+        FROM user_follows
+        WHERE tenant_id = :tenantId
+        AND follower_id = :userId
+        `,
+        { tenantId: req.user.tenant_id, userId: req.user.id }
+      ),
+    ])
+
+    const requests = requestRows.map(mapFollowRequest).filter(Boolean)
+
+    return res.json({
+      incoming: requests.filter((request) => Number(request.recipient_id) === Number(req.user.id)),
+      outgoing: requests.filter((request) => Number(request.requester_id) === Number(req.user.id)),
+      following_user_ids: followingRows.map((row) => Number(row.followed_user_id)).filter(Boolean),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/follow-requests/:id/accept', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const requestId = parsePositiveInteger(req.params.id)
+    if (!requestId) return res.status(422).json({ message: 'Invalid follow request ID.' })
+
+    const request = await findFollowRequestById(requestId, req.user.tenant_id)
+    if (!request) return res.status(404).json({ message: 'Follow request not found.' })
+    if (Number(request.recipient_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Only the recipient can accept this request.' })
+    if (request.status !== 'pending') return res.status(409).json({ message: 'This follow request is no longer pending.' })
+
+    await query(
+      `
+      UPDATE user_follow_requests
+      SET status = 'accepted', responded_at = CURRENT_TIMESTAMP
+      WHERE id = :requestId
+      AND tenant_id = :tenantId
+      AND recipient_id = :recipientId
+      `,
+      { requestId, tenantId: req.user.tenant_id, recipientId: req.user.id }
+    )
+
+    await query(
+      `
+      INSERT INTO user_follows (tenant_id, follower_id, followed_user_id)
+      VALUES
+        (:tenantId, :requesterId, :recipientId),
+        (:tenantId, :recipientId, :requesterId)
+      ON DUPLICATE KEY UPDATE created_at = created_at
+      `,
+      {
+        tenantId: req.user.tenant_id,
+        requesterId: request.requester_id,
+        recipientId: request.recipient_id,
+      }
+    )
+
+    const acceptedRequest = await findFollowRequestById(requestId, req.user.tenant_id)
+    emitUserRealtime(req, request.requester_id, 'follow-request-accepted', { request: acceptedRequest })
+
+    return res.json({
+      message: 'Follow request accepted.',
+      request: acceptedRequest,
+      following_user_ids: [Number(request.requester_id)],
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/follow-requests/:id/reject', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const requestId = parsePositiveInteger(req.params.id)
+    if (!requestId) return res.status(422).json({ message: 'Invalid follow request ID.' })
+
+    const request = await findFollowRequestById(requestId, req.user.tenant_id)
+    if (!request) return res.status(404).json({ message: 'Follow request not found.' })
+    if (Number(request.recipient_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Only the recipient can reject this request.' })
+    if (request.status !== 'pending') return res.status(409).json({ message: 'This follow request is no longer pending.' })
+
+    await query(
+      `
+      UPDATE user_follow_requests
+      SET status = 'rejected', responded_at = CURRENT_TIMESTAMP
+      WHERE id = :requestId
+      AND tenant_id = :tenantId
+      AND recipient_id = :recipientId
+      `,
+      { requestId, tenantId: req.user.tenant_id, recipientId: req.user.id }
+    )
+
+    const rejectedRequest = await findFollowRequestById(requestId, req.user.tenant_id)
+    emitUserRealtime(req, request.requester_id, 'follow-request-rejected', { request: rejectedRequest })
+
+    return res.json({
+      message: 'Follow request rejected.',
+      request: rejectedRequest,
     })
   } catch (error) {
     next(error)

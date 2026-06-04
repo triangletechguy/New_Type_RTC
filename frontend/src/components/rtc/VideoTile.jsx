@@ -20,6 +20,8 @@ export function VideoTile({
   rtcMode = 'video',
   showMediaState = false,
   connectionState = '',
+  followStatus = '',
+  onFollowAction,
   onExpand,
   expandLabel = 'Open screen share full screen',
 }) {
@@ -30,6 +32,14 @@ export function VideoTile({
   const showVideo = Boolean(stream && hasVideo && (isScreenSharing || (cameraOn !== false && rtcMode === 'video')))
   const videoStateOn = isScreenSharing || (cameraOn && rtcMode === 'video')
   const canExpand = typeof onExpand === 'function'
+  const canUseFollowAction = Boolean(userId && typeof onFollowAction === 'function')
+  const followLabel = {
+    following: 'Message',
+    requested: 'Requested',
+    incoming: 'Respond',
+    loading: '...',
+  }[followStatus] || 'Follow'
+  const followDisabled = followStatus === 'requested' || followStatus === 'loading'
   const visualIndex = visualIndexFromLabel(label)
   const avatar = avatarForUser({ id: userId, gender, avatar_url: avatarUrl }, userId || visualIndex)
   const placeholderArt = rtcMode === 'audio'
@@ -68,6 +78,12 @@ export function VideoTile({
     onExpand()
   }
 
+  function handleFollowClick(event) {
+    event.stopPropagation()
+    if (followDisabled || !canUseFollowAction) return
+    onFollowAction()
+  }
+
   return (
     <div
       className={`video-tile${isScreenSharing ? ' screen-sharing-tile' : ''}${canExpand ? ' expandable' : ''}`}
@@ -79,6 +95,18 @@ export function VideoTile({
     >
       {badge && <div className="video-badge">{badge}</div>}
       {canExpand ? <span className="screen-expand-icon" aria-hidden="true"></span> : null}
+      {canUseFollowAction ? (
+        <button
+          type="button"
+          className={`video-follow-button ${followStatus || 'none'}`}
+          onClick={handleFollowClick}
+          disabled={followDisabled}
+          aria-label={`${followLabel} ${label}`}
+          title={`${followLabel} ${label}`}
+        >
+          {followLabel}
+        </button>
+      ) : null}
       {showVideo ? (
         <video ref={videoRef} autoPlay playsInline muted={muted} className="video-element" />
       ) : stream ? (

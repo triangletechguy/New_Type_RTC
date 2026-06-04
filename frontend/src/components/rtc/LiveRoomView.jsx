@@ -263,6 +263,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [chatFocusRequest, setChatFocusRequest] = useState(0)
   const [externalChatMessage, setExternalChatMessage] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
+  const [inboxPeerRequest, setInboxPeerRequest] = useState(null)
+  const [followRefreshKey, setFollowRefreshKey] = useState(0)
+  const [followRelations, setFollowRelations] = useState({ followingIds: [], outgoingIds: [], incoming: [] })
+  const [activeFollowRequestId, setActiveFollowRequestId] = useState(null)
+  const [followActionIds, setFollowActionIds] = useState({})
   const [screenSharing, setScreenSharing] = useState(false)
   const [expandedScreenShareId, setExpandedScreenShareId] = useState('')
   const [cameraFilter, setCameraFilter] = useState('normal')
@@ -856,6 +861,159 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setActiveToolPanel(null)
     setChatFocusRequest((request) => request + 1)
     setStatus(room?.chat_enabled === false ? 'Chat is disabled by owner controls.' : 'Chat composer is ready')
+  }
+
+  function uniqueIds(values = []) {
+    return Array.from(new Set(values.map((value) => Number(value || 0)).filter(Boolean)))
+  }
+
+  function upsertFollowRequest(requests = [], request) {
+    if (!request?.id) return requests
+    const requestId = Number(request.id)
+    return [request, ...requests.filter((item) => Number(item.id) !== requestId)]
+  }
+
+  function removeFollowRequest(requests = [], requestId) {
+    const normalizedId = Number(requestId || 0)
+    return requests.filter((request) => Number(request.id) !== normalizedId)
+  }
+
+  function peerFromFollowRequest(request, side = 'requester') {
+    const peer = side === 'recipient' ? request?.recipient : request?.requester
+    const fallbackId = side === 'recipient' ? request?.recipient_id : request?.requester_id
+
+    return {
+      id: Number(peer?.id || fallbackId || 0),
+      name: peer?.name || `User #${fallbackId}`,
+      avatar_url: peer?.avatar_url || '',
+      gender: peer?.gender || '',
+    }
+  }
+
+  async function loadFollowRelations({ quiet = false } = {}) {
+    if (!user?.id) return
+
+    try {
+      const data = await apiRequest('/follow-requests')
+      const incoming = Array.isArray(data.incoming) ? data.incoming : []
+      const outgoing = Array.isArray(data.outgoing) ? data.outgoing : []
+      setFollowRelations({
+        followingIds: uniqueIds(data.following_user_ids || []),
+        outgoingIds: uniqueIds(outgoing.map((request) => request.recipient_id)),
+        incoming,
+      })
+      if (!quiet && incoming.length) setActiveFollowRequestId(Number(incoming[0].id))
+    } catch (error) {
+      if (!quiet) setStatus(`Follow state failed: ${error.message}`)
+    }
+  }
+
+  function followStatusForPeer(peerId) {
+    const normalizedId = Number(peerId || 0)
+    if (!normalizedId || normalizedId === Number(user?.id || 0)) return ''
+    if (followActionIds[normalizedId]) return 'loading'
+    if (followRelations.followingIds.some((id) => Number(id) === normalizedId)) return 'following'
+    if (followRelations.outgoingIds.some((id) => Number(id) === normalizedId)) return 'requested'
+    if (followRelations.incoming.some((request) => Number(request.requester_id) === normalizedId)) return 'incoming'
+    return ''
+  }
+
+  function openPeerInbox(peer) {
+    if (!peer?.id) return
+    setInboxPeerRequest({ ...peer, key: Date.now() })
+    setActiveToolPanel(null)
+    setChatFocusRequest((request) => request + 1)
+  }
+
+  async function requestPeerFollow(peer) {
+    const peerId = Number(peer?.id || 0)
+    if (!peerId || peerId === Number(user?.id || 0) || followActionIds[peerId]) return
+
+    setFollowActionIds((previous) => ({ ...previous, [peerId]: true }))
+    setStatus('')
+
+    try {
+      const data = await apiRequest(`/users/${peerId}/follow-requests`, { method: 'POST' })
+      if (data.following) {
+        setFollowRelations((previous) => ({
+          ...previous,
+          followingIds: uniqueIds([...previous.followingIds, peerId]),
+          outgoingIds: previous.outgoingIds.filter((id) => Number(id) !== peerId),
+        }))
+        setFollowRefreshKey((key) => key + 1)
+        openPeerInbox(peer)
+      } else {
+        setFollowRelations((previous) => ({
+          ...previous,
+          outgoingIds: uniqueIds([...previous.outgoingIds, peerId]),
+        }))
+        setStatus(`Follow request sent to ${peer.name || `User #${peerId}`}.`)
+      }
+    } catch (error) {
+      setStatus(`Follow request failed: ${error.message}`)
+    } finally {
+      setFollowActionIds((previous) => {
+        const next = { ...previous }
+        delete next[peerId]
+        return next
+      })
+    }
+  }
+
+  function handlePeerFollowAction(peer) {
+    const peerId = Number(peer?.id || 0)
+    const status = followStatusForPeer(peerId)
+
+    if (status === 'following') {
+      openPeerInbox(peer)
+      return
+    }
+
+    if (status === 'incoming') {
+      const request = followRelations.incoming.find((item) => Number(item.requester_id) === peerId)
+      if (request?.id) setActiveFollowRequestId(Number(request.id))
+      return
+    }
+
+    if (status === 'requested' || status === 'loading') return
+    requestPeerFollow(peer)
+  }
+
+  async function respondToFollowRequest(request, action) {
+    if (!request?.id || !['accept', 'reject'].includes(action)) return
+
+    const peer = peerFromFollowRequest(request, 'requester')
+    const peerId = Number(peer.id || 0)
+    setFollowActionIds((previous) => ({ ...previous, [peerId]: true }))
+    setStatus('')
+
+    try {
+      const data = await apiRequest(`/follow-requests/${request.id}/${action}`, { method: 'POST' })
+      setFollowRelations((previous) => ({
+        ...previous,
+        incoming: removeFollowRequest(previous.incoming, request.id),
+        followingIds: action === 'accept' ? uniqueIds([...previous.followingIds, peerId]) : previous.followingIds,
+      }))
+      setActiveFollowRequestId(null)
+
+      if (action === 'accept') {
+        setFollowRefreshKey((key) => key + 1)
+        setStatus(`You accepted ${peer.name || 'this user'}. Private chat is open.`)
+        openPeerInbox(peer)
+      } else {
+        setStatus(`Follow request from ${peer.name || 'this user'} was declined.`)
+      }
+
+      if (data.request?.id) loadFollowRelations({ quiet: true })
+    } catch (error) {
+      setStatus(`Follow response failed: ${error.message}`)
+    } finally {
+      setFollowActionIds((previous) => {
+        const next = { ...previous }
+        delete next[peerId]
+        return next
+      })
+    }
   }
 
   function toggleToolPanel(panel) {
@@ -1588,6 +1746,37 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         if (!payload?.socketId) return
         setPeerMediaStates((previous) => ({ ...previous, [payload.socketId]: peerMediaFromSignal(payload) }))
       })
+      socket.on('follow-request-received', ({ request } = {}) => {
+        if (!request?.id) return
+        setFollowRelations((previous) => ({
+          ...previous,
+          incoming: upsertFollowRequest(previous.incoming, request),
+        }))
+        setActiveFollowRequestId(Number(request.id))
+        setStatus(`${request.requester?.name || 'A user'} sent a follow request.`)
+      })
+      socket.on('follow-request-accepted', ({ request } = {}) => {
+        if (!request?.recipient_id) return
+        const peer = peerFromFollowRequest(request, 'recipient')
+        const peerId = Number(peer.id || request.recipient_id || 0)
+        setFollowRelations((previous) => ({
+          ...previous,
+          followingIds: uniqueIds([...previous.followingIds, peerId]),
+          outgoingIds: previous.outgoingIds.filter((id) => Number(id) !== peerId),
+        }))
+        setFollowRefreshKey((key) => key + 1)
+        setStatus(`${peer.name || 'Your follow request'} accepted. Private chat is open.`)
+        openPeerInbox(peer)
+      })
+      socket.on('follow-request-rejected', ({ request } = {}) => {
+        if (!request?.recipient_id) return
+        const peerId = Number(request.recipient_id)
+        setFollowRelations((previous) => ({
+          ...previous,
+          outgoingIds: previous.outgoingIds.filter((id) => Number(id) !== peerId),
+        }))
+        setStatus(`${request.recipient?.name || 'The user'} declined your follow request.`)
+      })
       socket.on('moderation-action', (payload) => {
         if (!payload?.targetUserId) return
 
@@ -1914,6 +2103,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }, [expandedScreenShareId, expandedScreenShareTile])
 
+  useEffect(() => {
+    loadFollowRelations({ quiet: true })
+  }, [user?.id])
+
   const localAudioAvailable = hasLiveTrack(localStream, 'audio')
   const localVideoAvailable = hasLiveTrack(localStream, 'video')
   const micCanRetry = joined && !micOn && !localAudioAvailable
@@ -1951,6 +2144,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(normalizedBeautySettings[control.id] || 0) > 0).length + (mirrorEnabled ? 1 : 0)
   const cameraEffectsActive = cameraFilterActive || beautySettingsActive || backgroundEffectActive
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
+  const activeFollowRequest = followRelations.incoming.find((request) => Number(request.id) === Number(activeFollowRequestId))
+    || followRelations.incoming[0]
+    || null
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -2042,6 +2238,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
                     const screenShareOwner = mediaState.userName || 'remote user'
+                    const peer = {
+                      id: Number(mediaState.userId || 0),
+                      name: mediaState.userName || 'Remote User',
+                      avatar_url: mediaState.avatarUrl || '',
+                      gender: mediaState.gender || '',
+                    }
 
                     return (
                       <VideoTile
@@ -2057,6 +2259,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         rtcMode={mediaState.rtcMode || 'video'}
                         connectionState={peerState}
                         showMediaState
+                        followStatus={followStatusForPeer(peer.id)}
+                        onFollowAction={peer.id ? () => handlePeerFollowAction(peer) : undefined}
                         onExpand={canExpandScreenShare ? () => setExpandedScreenShareId(socketId) : undefined}
                         expandLabel={`Open ${screenShareOwner} screen share full screen`}
                       />
@@ -2301,6 +2505,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             room={room}
             focusRequest={chatFocusRequest}
             externalMessage={externalChatMessage}
+            inboxPeerRequest={inboxPeerRequest}
+            followRefreshKey={followRefreshKey}
             onMessagesChange={setChatMessages}
           />
           {isRoomOwner ? (
@@ -2319,6 +2525,27 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           ) : null}
         </aside>
       </main>
+      {activeFollowRequest ? (
+        <div className="follow-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="follow-request-title">
+          <section className="follow-request-modal">
+            <button type="button" className="follow-request-close" onClick={() => setActiveFollowRequestId(null)} aria-label="Close follow request">x</button>
+            <div className="follow-request-avatar image-avatar">
+              <img src={avatarForUser(activeFollowRequest.requester, activeFollowRequest.requester_id)} alt="" loading="lazy" />
+            </div>
+            <span>Follow request</span>
+            <h3 id="follow-request-title">{activeFollowRequest.requester?.name || 'A user'} wants to follow you</h3>
+            <p>Accept this request to unlock private chat between both of you.</p>
+            <div className="follow-request-actions">
+              <button type="button" className="secondary-button" onClick={() => respondToFollowRequest(activeFollowRequest, 'reject')}>
+                Decline
+              </button>
+              <button type="button" className="primary-button" onClick={() => respondToFollowRequest(activeFollowRequest, 'accept')}>
+                Accept
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {expandedScreenShareTile ? (
         <div className="screen-share-viewer" role="dialog" aria-modal="true" aria-label="Remote screen share">
           <div className="screen-share-viewer-backdrop" onClick={() => setExpandedScreenShareId('')}></div>

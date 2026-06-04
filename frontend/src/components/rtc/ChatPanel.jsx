@@ -188,7 +188,7 @@ async function optimizePhotoFile(file) {
   }
 }
 
-export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, onMessagesChange }) {
+export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, onMessagesChange }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
@@ -217,6 +217,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [sendingInbox, setSendingInbox] = useState(false)
   const [followedContactIds, setFollowedContactIds] = useState([])
   const [followingUserIds, setFollowingUserIds] = useState({})
+  const [requestedContactIds, setRequestedContactIds] = useState([])
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesRef = useRef(null)
@@ -694,7 +695,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     return Boolean(normalizedId && followedContactIds.some((id) => Number(id) === normalizedId))
   }
 
-  async function followUserFromMessage(message) {
+  async function requestFollowFromMessage(message) {
     const peerId = Number(message?.sender_id || 0)
     if (!peerId || isOwnMessage(message, user) || followingUserIds[peerId]) return
 
@@ -702,14 +703,21 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     setStatus('')
 
     try {
-      const data = await apiRequest(`/users/${peerId}/follow`, { method: 'POST' })
-      setFollowedContactIds((previous) => (
-        previous.some((id) => Number(id) === peerId) ? previous : [...previous, peerId]
-      ))
-      setStatus(`You are now following ${data.peer?.name || chatSenderName(message, user)}. Private messages are open.`)
+      const data = await apiRequest(`/users/${peerId}/follow-requests`, { method: 'POST' })
+      if (data.following) {
+        setFollowedContactIds((previous) => (
+          previous.some((id) => Number(id) === peerId) ? previous : [...previous, peerId]
+        ))
+        setStatus(`You are connected with ${data.peer?.name || chatSenderName(message, user)}. Private messages are open.`)
+      } else {
+        setRequestedContactIds((previous) => (
+          previous.some((id) => Number(id) === peerId) ? previous : [...previous, peerId]
+        ))
+        setStatus(`Follow request sent to ${data.peer?.name || chatSenderName(message, user)}.`)
+      }
       loadInboxThreads({ quiet: true })
     } catch (error) {
-      setStatus(`Follow failed: ${error.message}`)
+      setStatus(`Follow request failed: ${error.message}`)
     } finally {
       setFollowingUserIds((previous) => {
         const next = { ...previous }
@@ -939,6 +947,16 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [user?.id])
 
   useEffect(() => {
+    if (!followRefreshKey || !user?.id) return
+    loadInboxThreads({ quiet: true })
+  }, [followRefreshKey, user?.id])
+
+  useEffect(() => {
+    if (!inboxPeerRequest?.id) return
+    loadInboxConversation(inboxPeerRequest)
+  }, [inboxPeerRequest?.key])
+
+  useEffect(() => {
     if (!imagePreview) return undefined
 
     function handleKeyDown(event) {
@@ -1082,6 +1100,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const canFollow = !mine && Boolean(message.sender_id) && !followedSender
           const deleting = Boolean(deletingMessageIds[message.id])
           const following = Boolean(followingUserIds[Number(message.sender_id || 0)])
+          const requested = requestedContactIds.some((id) => Number(id) === Number(message.sender_id || 0))
           const editing = editingMessageId === message.id
           const savingEdit = savingEditId === message.id
           const photoCaption = imageMessage && !['sent a photo', 'sent an avatar'].includes(String(message.message_body || '').trim())
@@ -1147,8 +1166,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                 {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && (
                   <div className="chat-actions">
                     {canFollow ? (
-                      <button type="button" className="neutral" onClick={() => followUserFromMessage(message)} disabled={following}>
-                        {following ? 'Following' : 'Follow'}
+                      <button type="button" className="neutral" onClick={() => requestFollowFromMessage(message)} disabled={following || requested}>
+                        {following ? 'Requesting' : requested ? 'Requested' : 'Follow'}
                       </button>
                     ) : null}
                     {canMessage ? (
