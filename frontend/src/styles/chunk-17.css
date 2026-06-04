@@ -1063,3 +1063,91 @@
     white-space: nowrap !important;
   }
 }
+
+/* Final live chat panel polish: keep Room/Inbox as compact tabs and let only
+   the active message area consume the flexible height. */
+.buzzcast-live-side .chat-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+}
+
+.buzzcast-live-side .chat-mode-tabs {
+  grid-row: 1;
+  align-self: start;
+  min-height: 0 !important;
+  padding: 0 0 10px !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+
+.buzzcast-live-side .chat-mode-tabs button {
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  background: rgba(71, 85, 105, .18) !important;
+  border-color: rgba(148, 163, 184, .28) !important;
+  color: #cbd5e1 !important;
+}
+
+.buzzcast-live-side .chat-mode-tabs button.active {
+  background: rgba(96, 165, 250, .22) !important;
+  border-color: rgba(125, 211, 252, .48) !important;
+  color: #eff6ff !important;
+  box-shadow: inset 0 -2px 0 rgba(125, 211, 252, .72) !important;
+}
+
+.buzzcast-live-side .chat-mode-panel:not([hidden]) {
+  grid-row: 2;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-rows: minmax(0, 1fr) auto auto !important;
+}
+
+.buzzcast-live-side .chat-mode-panel[data-chat-mode="inbox"]:not([hidden]) {
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+
+.buzzcast-live-side .personal-inbox {
+  min-height: 0 !important;
+  height: 100% !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.buzzcast-live-side .chat-panel > .warning-text {
+  grid-row: 3;
+  margin-top: 8px;
+}
+
+@media (max-width: 820px) {
+  .buzzcast-live-side .chat-panel {
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+  }
+
+  .buzzcast-live-side .chat-panel-header {
+    grid-row: 1;
+  }
+
+  .buzzcast-live-side .chat-mode-tabs {
+    grid-row: 2;
+    padding-bottom: 8px !important;
+  }
+
+  .buzzcast-live-side .chat-mode-tabs button {
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  .buzzcast-live-side .chat-mode-panel:not([hidden]) {
+    grid-row: 3;
+  }
+
+  .buzzcast-live-side .chat-panel > .warning-text {
+    grid-row: 4;
+  }
+}
