@@ -267,7 +267,7 @@ function BuzzLogo() {
   )
 }
 
-function FeedCard({ card, featured, onOpen }) {
+function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deleting = false }) {
   const cover = cardCover(card)
   const avatarIndex = cardAvatarIndex(card)
   const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
@@ -301,6 +301,19 @@ function FeedCard({ card, featured, onOpen }) {
           <i></i>{compactNumber(card.viewers)}
         </span>
       </button>
+      {canDelete ? (
+        <button
+          type="button"
+          className="buzzcast-room-delete-button"
+          onClick={() => onDelete?.(card.room)}
+          disabled={deleting}
+          aria-label={`Delete ${card.title}`}
+          title="Delete room"
+        >
+          <span aria-hidden="true">{deleting ? '...' : 'x'}</span>
+          <small>{deleting ? 'Deleting' : 'Delete'}</small>
+        </button>
+      ) : null}
     </article>
   )
 }
@@ -323,6 +336,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [sort, setSort] = useState('newest')
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [deletingRoomId, setDeletingRoomId] = useState(null)
   const [openingRoom, setOpeningRoom] = useState(false)
   const [activeSection, setActiveSection] = useState('live')
   const [activeFeed, setActiveFeed] = useState('for_you')
@@ -571,6 +585,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (user) return true
     onAuthRequired?.(reason, mode)
     return false
+  }
+
+  function userOwnsRoom(room) {
+    return Boolean(room?.id && user?.id && Number(room.owner_id) === Number(user.id))
   }
 
   function isMobileViewport() {
@@ -1180,6 +1198,53 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }
 
+  async function deleteOwnedRoom(room) {
+    if (!room?.id) return
+    if (!requireAuth('Log in to delete your room.', 'login')) return
+    if (!userOwnsRoom(room)) {
+      setStatus('Only the room owner can delete this room.')
+      showMobileActionToast('Only the room owner can delete this room.')
+      return
+    }
+
+    const roomName = room.name || `Room #${room.id}`
+    const confirmed = typeof window === 'undefined' || window.confirm(`Delete ${roomName}? Usage history will be preserved.`)
+    if (!confirmed) return
+
+    try {
+      setDeletingRoomId(room.id)
+      setStatus(`Deleting ${roomName}...`)
+      await apiRequest(`/rooms/${room.id}`, { method: 'DELETE' })
+      setRooms((previous) => previous.filter((current) => Number(current.id) !== Number(room.id)))
+      setRoomMeta((previous) => ({
+        ...previous,
+        total: Math.max(0, Number(previous.total || 0) - 1),
+      }))
+      setRecentRoomIds((previous) => {
+        const roomCardId = `room-${room.id}`
+        const nextIds = previous.filter((id) => String(id) !== roomCardId)
+        saveRecentRoomIds(nextIds)
+        return nextIds
+      })
+      if (Number(createdRoom?.id) === Number(room.id)) setCreatedRoom(null)
+      if (String(roomId) === String(room.id)) {
+        setRoomId('')
+        setSelectedRoom(null)
+        setJoinPassword('')
+      }
+      if (activeThread === roomThreadId(room)) setActiveThread('')
+      setStatus(`Deleted ${roomName}.`)
+      showMobileActionToast('Room deleted')
+      await loadRooms({ page: 1, quiet: true, preserveStatus: true })
+    } catch (error) {
+      const message = error.message || 'Room could not be deleted.'
+      setStatus(message)
+      showMobileActionToast(message)
+    } finally {
+      setDeletingRoomId(null)
+    }
+  }
+
   async function joinSelectedRoom() {
     if (!roomId.trim()) return
     if (!requireAuth('Log in to open the RTC console.', 'login')) return
@@ -1484,7 +1549,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ) : null}
 
         <div className="buzzcast-match-banner">
-          <button type="button" className="buzzcast-create-room-button" onClick={() => openHostPanel()}>Create room</button>
+          <button type="button" className="buzzcast-create-room-button" onClick={() => openHostPanel()} aria-label="Create room">
+            <span className="buzzcast-create-room-plus" aria-hidden="true">+</span>
+            <span className="buzzcast-create-room-label">Create room</span>
+          </button>
         </div>
 
         <div className="buzzcast-feed-controls">
@@ -1523,6 +1591,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   card={card}
                   featured={index === 0 && activeFeed !== 'party'}
                   onOpen={openCard}
+                  onDelete={deleteOwnedRoom}
+                  canDelete={userOwnsRoom(card.room)}
+                  deleting={Number(deletingRoomId) === Number(card.room?.id)}
                 />
               ))}
             </div>

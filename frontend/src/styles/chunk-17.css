@@ -906,3 +906,154 @@
     display: none;
   }
 }
+
+/* Room feed actions: create combines the label button and plus button affordance;
+   delete is shown only by React for rooms owned by the signed-in user. */
+.buzzcast-match-banner .buzzcast-create-room-button {
+  width: auto !important;
+  min-width: 150px !important;
+  min-height: 44px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 5px 16px 5px 7px !important;
+  border: 1px solid rgba(255, 255, 255, .42) !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, .14) !important;
+  color: #fff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 10px 22px rgba(98, 52, 199, .14) !important;
+  font-size: 14px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.buzzcast-match-banner .buzzcast-create-room-button:not(:disabled):hover {
+  background: rgba(255, 255, 255, .2) !important;
+  transform: translateY(-1px);
+}
+
+.buzzcast-create-room-plus {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b4dff, #7048e8);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(64, 42, 170, .24);
+  font-size: 24px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.buzzcast-create-room-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buzzcast-room-card {
+  position: relative;
+}
+
+.buzzcast-room-delete-button {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 12px;
+  min-width: 86px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 999px;
+  background: rgba(25, 19, 31, .76);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+  font-size: 12px;
+  font-weight: 1000;
+  backdrop-filter: blur(10px);
+}
+
+.buzzcast-room-delete-button span {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 94, 124, .9);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.buzzcast-room-delete-button small {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.buzzcast-room-delete-button:not(:disabled):hover,
+.buzzcast-room-delete-button:not(:disabled):focus-visible {
+  border-color: rgba(255, 126, 148, .7);
+  background: rgba(126, 38, 61, .9);
+}
+
+.buzzcast-room-delete-button:disabled {
+  cursor: wait;
+  opacity: .68;
+}
+
+@media (max-width: 860px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-match-banner {
+    min-height: 48px !important;
+    padding: 0 10px !important;
+    background: linear-gradient(90deg, #ad54ff, #e455cf 48%, #ffad4a) !important;
+    border-radius: 0 !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-match-banner .buzzcast-create-room-button {
+    width: auto !important;
+    min-width: 146px !important;
+    min-height: 44px !important;
+    justify-self: start !important;
+    padding: 5px 14px 5px 6px !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, .14) !important;
+    font-size: 14px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-create-room-plus {
+    width: 34px !important;
+    height: 34px !important;
+    flex-basis: 34px !important;
+    font-size: 24px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-room-delete-button {
+    top: 14px !important;
+    right: 14px !important;
+    min-width: 34px !important;
+    width: 34px !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    background: rgba(18, 17, 27, .82) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-room-delete-button small {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+  }
+}

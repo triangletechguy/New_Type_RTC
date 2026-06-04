@@ -664,6 +664,125 @@ router.post('/', authMiddleware, async (req, res, next) => {
   }
 })
 
+router.delete('/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const result = await transaction(async (connection) => {
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        AND tenant_id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      if (Number(room.owner_id) !== Number(req.user.id)) {
+        throw createHttpError(403, 'Only the room owner can delete this room.')
+      }
+
+      if (room.status === 'ended') {
+        return {
+          room_id: room.id,
+          room_status: 'ended',
+          closed_participants: 0,
+          already_ended: true,
+        }
+      }
+
+      const [activeParticipants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND left_at IS NULL
+        FOR UPDATE
+        `,
+        [room.id]
+      )
+
+      let closedParticipants = 0
+      for (const activeParticipant of activeParticipants) {
+        const leaveResult = await closeParticipantSession(
+          connection,
+          room,
+          activeParticipant,
+          activeParticipant.user_id
+        )
+        closedParticipants += leaveResult.alreadyClosed ? 0 : 1
+
+        await connection.execute(
+          `
+          INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+          VALUES (?, ?, ?, ?, 'leave', ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            activeParticipant.session_id,
+            activeParticipant.user_id,
+            JSON.stringify({
+              duration_seconds: leaveResult.durationSeconds,
+              billable_minutes: leaveResult.billableMinutes,
+              usage_log_id: leaveResult.usageLogId,
+              rtc_provider: 'native_webrtc',
+              ended_by_user_id: req.user.id,
+              room_deleted: true,
+            }),
+          ]
+        )
+      }
+
+      await connection.execute(
+        `
+        UPDATE rooms
+        SET status = 'ended',
+            updated_at = NOW()
+        WHERE id = ?
+        AND tenant_id = ?
+        AND owner_id = ?
+        `,
+        [room.id, room.tenant_id, req.user.id]
+      )
+
+      await connection.execute(
+        `
+        UPDATE rtc_sessions
+        SET status = 'ended',
+            ended_at = COALESCE(ended_at, NOW()),
+            total_duration_seconds = COALESCE(total_duration_seconds, TIMESTAMPDIFF(SECOND, started_at, NOW())),
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND status = 'active'
+        `,
+        [room.id]
+      )
+
+      return {
+        room_id: room.id,
+        room_status: 'ended',
+        closed_participants: closedParticipants,
+        already_ended: false,
+      }
+    })
+
+    return res.json({
+      message: result.already_ended ? 'Room was already deleted.' : 'Room deleted. Usage history is preserved.',
+      ...result,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/:id', optionalAuthMiddleware, async (req, res, next) => {
   try {
     const roomId = parseInteger(req.params.id, null)
