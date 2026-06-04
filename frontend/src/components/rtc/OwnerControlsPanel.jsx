@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatDuration, getInitials } from '../../utils/formatters'
 import { roomFeatureOptions, roomPrivacyOptions, themeOptions } from '../../utils/roomConfig'
@@ -15,6 +16,7 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
   const participants = controls?.participants || []
   const role = controls?.role || (activeRoom.owner_id === user?.id ? 'owner' : 'end_user')
   const canManage = Boolean(controls?.can_manage)
+  const statusIsBusy = /^loading|^saving/i.test(status)
 
   async function loadControls({ quiet = false } = {}) {
     if (!roomId) return
@@ -218,7 +220,7 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
             />
           </label>
           <button type="button" onClick={updatePassword} disabled={!canManage || activeRoom.privacy_type !== 'password' || privacyPassword.trim().length < 4 || Boolean(savingFields.password)}>
-            {savingFields.password ? 'Saving' : 'Update Password'}
+            {savingFields.password ? <LoadingMovie label="Saving" inline /> : 'Update Password'}
           </button>
         </div>
       </div>
@@ -226,7 +228,9 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
       <div className="control-section">
         <div className="control-section-title">
           <strong>Room Settings</strong>
-          <button type="button" onClick={() => loadControls()} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+          <button type="button" onClick={() => loadControls()} disabled={loading}>
+            {loading ? <LoadingMovie label="Loading" inline /> : 'Refresh'}
+          </button>
         </div>
         <div className="owner-toggle-grid">
           {roomFeatureOptions.map((option) => (
@@ -240,7 +244,7 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
               <span className="toggle-switch"></span>
               <span>
                 <strong>{option.label}</strong>
-                <small>{savingFields[option.field] ? 'Saving...' : option.detail}</small>
+                <small>{savingFields[option.field] ? <LoadingMovie label="Saving" inline /> : option.detail}</small>
               </span>
             </label>
           ))}
@@ -311,7 +315,7 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
         </div>
       </div>
 
-      <div className="control-status">{status}</div>
+      <div className="control-status">{statusIsBusy ? <LoadingMovie label={status} inline /> : status}</div>
     </section>
   )
 }

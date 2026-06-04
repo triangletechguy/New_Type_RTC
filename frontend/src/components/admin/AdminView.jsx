@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { avatarForUser } from '../../assets/rtc/catalog'
+import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
 import { ActiveSessionsMonitor } from './ActiveSessionsMonitor'
@@ -1182,7 +1183,7 @@ function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
 
         <div className="service-plan-editor-actions">
           <button className="primary-button" type="submit" disabled={saving}>
-            {saving ? 'Saving...' : 'Save package'}
+            {saving ? <LoadingMovie label="Saving" inline /> : 'Save package'}
           </button>
           {message ? <div className="company-edit-message">{message}</div> : null}
         </div>
@@ -1715,7 +1716,7 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
                 <span>{client.phone || client.telegram_contact || client.whatsapp_contact || client.discord_contact || 'Contact details pending'}</span>
                 <span>{client.website_url || client.app_url || client.country || 'Website/app URL pending'}</span>
               </div>
-              <strong className="company-directory-open">{isLoading ? 'Loading...' : 'Open company dashboard'}</strong>
+              <strong className="company-directory-open">{isLoading ? <LoadingMovie label="Opening" inline /> : 'Open company dashboard'}</strong>
             </button>
           )
         })}
@@ -2103,9 +2104,9 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
           </div>
 
           <div className="company-edit-actions">
-            <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save company'}</button>
+            <button className="primary-button" type="submit" disabled={saving}>{saving ? <LoadingMovie label="Saving" inline /> : 'Save company'}</button>
             <button className="secondary-button" type="button" disabled={inviting || !form.primary_contact_email} onClick={sendInvite}>
-              {inviting ? 'Inviting...' : 'Create admin invite'}
+              {inviting ? <LoadingMovie label="Inviting" inline /> : 'Create admin invite'}
             </button>
           </div>
 
@@ -2854,6 +2855,13 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     if (nextPlan) setSelectedPackageId(String(nextPlan.id))
   }, [enterprise?.current_plan, enterprise?.plans, selectedPackageId])
 
+  const statusIsLoading = /^loading/i.test(status)
+  const statusLabel = loadingCompanyId
+    ? `${status} (#${loadingCompanyId})`
+    : loadingAdminId
+      ? `${status} (#${loadingAdminId})`
+      : status
+
   return (
     <div className="view-stack admin-dashboard-view">
       <header className="page-header glass-card">
@@ -2892,7 +2900,9 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
       </header>
 
       <div className="admin-status-bar status-bar glass-card">
-        <strong>Status:</strong> {loadingCompanyId ? `${status} (#${loadingCompanyId})` : loadingAdminId ? `${status} (#${loadingAdminId})` : status}
+        <strong>Status:</strong> {statusIsLoading || loadingCompanyId || loadingAdminId ? (
+          <LoadingMovie label={statusLabel} inline />
+        ) : statusLabel}
       </div>
 
       <DashboardTabs tabs={dashboardTabs} activeTab={activeTab} onChange={setActiveTab} />

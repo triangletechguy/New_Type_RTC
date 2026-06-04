@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { avatarForUser } from '../../assets/rtc/catalog'
 import { updateProfile } from '../../services/api'
+import { LoadingMovie } from '../common/LoadingMovie'
 
 const supportedAvatarTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const maxAvatarSourceBytes = 6 * 1024 * 1024
@@ -277,7 +278,7 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
           </div>
           <footer>
             <button type="button" className="secondary-button" onClick={cancelEdit} disabled={saving}>Cancel</button>
-            <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving...' : 'Save profile'}</button>
+            <button type="submit" className="primary-button" disabled={saving}>{saving ? <LoadingMovie label="Saving" inline /> : 'Save profile'}</button>
           </footer>
         </form>
       ) : (

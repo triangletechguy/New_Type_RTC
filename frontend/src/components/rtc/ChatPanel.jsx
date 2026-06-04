@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
+import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 
@@ -981,7 +982,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       <>
       <div className="messages" ref={messagesRef} role="log" aria-label="Room chat messages">
         {loading ? (
-          <div className="empty-chat">Loading chat...</div>
+          <LoadingMovie label="Loading chat" compact />
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
           const senderName = chatSenderName(message, user)
@@ -1025,7 +1026,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                     />
                     <div className="chat-edit-actions">
                       <button type="submit" disabled={savingEdit || !editText.trim()}>
-                        {savingEdit ? 'Saving' : 'Save'}
+                        {savingEdit ? <LoadingMovie label="Saving" inline /> : 'Save'}
                       </button>
                       <button type="button" className="secondary" onClick={cancelEdit} disabled={savingEdit}>
                         Cancel
@@ -1166,7 +1167,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       <div className="personal-inbox">
         <div className="inbox-thread-strip">
           {loadingInbox && !inboxThreads.length ? (
-            <span>Loading inbox...</span>
+            <LoadingMovie label="Loading inbox" inline />
           ) : inboxThreads.length ? inboxThreads.map((thread) => {
             const active = Number(inboxTarget?.id) === Number(thread.peer_id)
             const preview = thread.last_message?.message_type === 'voice'
@@ -1192,7 +1193,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               <span>Tap Message on a room comment to start a private chat.</span>
             </div>
           ) : loadingInbox ? (
-            <div className="empty-chat">Loading conversation...</div>
+            <LoadingMovie label="Loading conversation" compact />
           ) : inboxMessages.length === 0 ? (
             <div className="empty-chat">
               <strong>{inboxTarget.name}</strong>

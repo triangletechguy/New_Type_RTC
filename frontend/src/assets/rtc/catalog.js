@@ -32,6 +32,7 @@ import sidebarEmpty from './admin/sidebar-empty.png'
 import controlGrid from './admin/control-grid.png'
 import statusColors from './admin/status-colors.png'
 import emptySessions from './admin/empty-sessions.png'
+import loadingMovie from './loading (1).png'
 
 import mobileChat from './chat/mobile-chat.png'
 import messageStates from './chat/message-states.png'
@@ -117,6 +118,10 @@ export const roomAssets = {
   stageMoods,
   studioStage,
   videoRoom,
+}
+
+export const loadingAssets = {
+  movie: loadingMovie,
 }
 
 const coverRotation = [

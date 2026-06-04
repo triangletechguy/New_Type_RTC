@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { AUTH_EXPIRED_EVENT, clearSession, getUser, getToken, refreshCurrentUser, saveUser } from './services/api'
 import { Sidebar } from './components/layout/Sidebar'
+import { LoadingMovie } from './components/common/LoadingMovie'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
 import { canUseAdminDashboard } from './utils/roles'
 
@@ -12,7 +13,7 @@ const RoomsView = lazy(() => import('./components/rooms/RoomsView').then((module
 const SdkView = lazy(() => import('./components/sdk/SdkView'))
 
 function ViewFallback({ label }) {
-  return <div className="status-bar glass-card"><strong>Loading:</strong> {label}</div>
+  return <LoadingMovie label={`Loading ${label}`} className="view-loading" />
 }
 
 function AppProfileButton({ user, onClick }) {
@@ -230,7 +231,7 @@ export default function App() {
           />
         </Suspense>
         {profileOpen ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<LoadingMovie label="Loading profile" compact />}>
             <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
           </Suspense>
         ) : null}
@@ -255,7 +256,7 @@ export default function App() {
           />
         </Suspense>
         {authModalOpen ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<LoadingMovie label="Loading account" compact />}>
             <AuthModal
               open={authModalOpen}
               initialMode={authMode}
@@ -293,12 +294,12 @@ export default function App() {
         </div>
       )}
       {profileOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LoadingMovie label="Loading profile" compact />}>
           <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
         </Suspense>
       ) : null}
       {authModalOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<LoadingMovie label="Loading account" compact />}>
           <AuthModal
             open={authModalOpen}
             initialMode={authMode}

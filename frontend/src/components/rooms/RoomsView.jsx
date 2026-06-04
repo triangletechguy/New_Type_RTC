@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
+import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
@@ -529,9 +530,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }), [dmMessages, readThreadIds])
   const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0] || null
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
-  const searchPanelTitle = loadingRooms
-    ? 'Searching rooms...'
-    : search.trim()
+  const searchPanelTitle = search.trim()
       ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
       : `${activeFilterLabel} rooms`
   const activeThreadFollowed = Boolean(activeThread && followedThreadIds.includes(activeThread))
@@ -1328,7 +1327,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </div>
 
         <div className="buzzcast-feed-controls">
-          <span>{visibleCards.length} rooms - {loadingRooms ? 'Refreshing rooms...' : status}</span>
+          <span>
+            {visibleCards.length} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
+          </span>
           <div>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
               {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -1343,7 +1344,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </div>
 
         {loadingRooms && rooms.length === 0 ? (
-          <div className="buzzcast-empty-state">Loading rooms...</div>
+          <LoadingMovie label="Loading rooms" className="buzzcast-loading-state" />
         ) : visibleCards.length === 0 ? (
           <div className="buzzcast-empty-state visual">
             <img src={roomAssets.studioStage} alt="" loading="lazy" />
@@ -2240,7 +2241,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </button>
           {showSearchPanel ? (
             <div className="buzzcast-search-panel">
-              <span>{searchPanelTitle}</span>
+              <span>{loadingRooms ? <LoadingMovie label="Searching rooms" inline /> : searchPanelTitle}</span>
               {roomSearchResults.map((item, index) => (
                 <button
                   key={`${item.type}-${item.id}`}
