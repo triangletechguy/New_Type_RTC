@@ -196,6 +196,11 @@ function createRoomErrorMessage(error) {
   return error?.message || fieldMessages[0] || 'Room could not be created. Please try again.'
 }
 
+function defaultLiveRoomName(displayName) {
+  const ownerName = String(displayName || '').trim()
+  return ownerName ? `${ownerName} Live Room` : 'Enterprise Live Room'
+}
+
 function cardMatchesActiveFeed(card, activeFeed, activeExplore) {
   if (activeFeed === 'latest') return card.tab === 'latest' || card.room
   if (activeFeed === 'nearby') return card.tab === 'nearby' || card.room
@@ -1086,7 +1091,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     event.preventDefault()
     if (!requireAuth('Log in or sign up to create a live room.', 'register')) return
 
-    const nextErrors = validateRoomForm(roomForm)
+    const submitRoomForm = {
+      ...roomForm,
+      name: roomForm.name.trim() || defaultLiveRoomName(displayName),
+    }
+    const nextErrors = validateRoomForm(submitRoomForm)
     setFormErrors(nextErrors)
 
     if (Object.keys(nextErrors).length) {
@@ -1094,12 +1103,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return
     }
 
-    const payload = roomFormPayload(roomForm)
+    if (submitRoomForm.name !== roomForm.name) {
+      setRoomForm((previous) => ({ ...previous, name: submitRoomForm.name }))
+    }
+
+    const payload = roomFormPayload(submitRoomForm)
     const pendingDraft = {
       name: payload.name || 'New live room',
-      room_type: payload.room_type || roomForm.room_type,
-      privacy_type: payload.privacy_type || roomForm.privacy_type,
-      max_mic_count: payload.max_mic_count || roomForm.max_mic_count,
+      room_type: payload.room_type || submitRoomForm.room_type,
+      privacy_type: payload.privacy_type || submitRoomForm.privacy_type,
+      max_mic_count: payload.max_mic_count || submitRoomForm.max_mic_count,
     }
     const createdRoomAlreadyListed = (room) => rooms.some((current) => Number(current.id) === Number(room.id))
     setCreating(true)
