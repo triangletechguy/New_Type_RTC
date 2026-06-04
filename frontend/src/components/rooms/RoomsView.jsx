@@ -311,6 +311,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [roomForm, setRoomForm] = useState(defaultRoomForm)
   const [formErrors, setFormErrors] = useState({})
   const [createdRoom, setCreatedRoom] = useState(null)
+  const [pendingRoomDraft, setPendingRoomDraft] = useState(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [privacyFilter, setPrivacyFilter] = useState('all')
@@ -395,6 +396,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
+  const roomLaunchPreview = createdRoom || pendingRoomDraft
+  const roomLaunchPending = Boolean(pendingRoomDraft && !createdRoom)
+  const roomLaunchTitle = createdRoom ? 'Created Room' : roomLaunchPending ? 'Preparing Room' : 'Quick Join'
+  const roomLaunchButtonLabel = roomLaunchPending ? 'Preparing Room...' : openingRoom ? 'Opening...' : 'Open Room'
   const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
@@ -1090,11 +1095,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     const payload = roomFormPayload(roomForm)
+    const pendingDraft = {
+      name: payload.name || 'New live room',
+      room_type: payload.room_type || roomForm.room_type,
+      privacy_type: payload.privacy_type || roomForm.privacy_type,
+      max_mic_count: payload.max_mic_count || roomForm.max_mic_count,
+    }
     const createdRoomAlreadyListed = (room) => rooms.some((current) => Number(current.id) === Number(room.id))
     setCreating(true)
     setFormErrors({})
+    setCreatedRoom(null)
+    setPendingRoomDraft(pendingDraft)
+    setRoomId('')
+    setSelectedRoom(null)
+    setJoinPassword('')
+    setStatus(`Preparing ${pendingDraft.name}...`)
     try {
-      setStatus('Creating room...')
       const data = await apiRequest('/rooms', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -1103,6 +1119,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       if (!nextRoom?.id) throw new Error('Room was created, but the backend did not return a room ID.')
 
       const nextRoomId = String(nextRoom.id)
+      setPendingRoomDraft(null)
       setRoomId(nextRoomId)
       setSelectedRoom(nextRoom)
       setJoinPassword(nextRoom.privacy_type === 'password' ? (payload.password || '') : '')
@@ -1142,6 +1159,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       setRooms((previous) => upsertRoomById(previous, nextRoom))
     } catch (error) {
       const submitMessage = createRoomErrorMessage(error)
+      setPendingRoomDraft(null)
       setFormErrors({ ...(error.errors || {}), submit: submitMessage })
       setStatus(submitMessage)
     } finally {
@@ -2684,28 +2702,33 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   </label>
                 ))}
               </div>
-              <button className="buzzcast-submit" disabled={creating} type="submit">{creating ? 'Creating...' : 'Create Live Room'}</button>
+              <button className="buzzcast-submit" disabled={creating} type="submit">
+                {creating ? <LoadingMovie label="Creating room" inline /> : 'Create Live Room'}
+              </button>
               {formErrors.submit ? <small className="form-error submit">{formErrors.submit}</small> : null}
             </form>
 
             <div className="buzzcast-quick-join">
-              <h3>{createdRoom ? 'Created Room' : 'Quick Join'}</h3>
-              {createdRoom ? (
-                <div className="buzzcast-created-room-summary" role="status" aria-live="polite">
-                  <span>Ready to open</span>
-                  <strong>{createdRoom.name || `Room #${createdRoom.id}`}</strong>
+              <h3>{roomLaunchTitle}</h3>
+              {roomLaunchPreview ? (
+                <div className={roomLaunchPending ? 'buzzcast-created-room-summary pending' : 'buzzcast-created-room-summary'} role="status" aria-live="polite">
+                  <span>{roomLaunchPending ? 'Creating' : 'Ready to open'}</span>
+                  <strong>{roomLaunchPreview.name || `Room #${roomLaunchPreview.id}`}</strong>
+                  {roomLaunchPending ? (
+                    <p className="buzzcast-created-room-note">The request is running. The room ID will appear here automatically.</p>
+                  ) : null}
                   <dl>
                     <div>
                       <dt>Room ID</dt>
-                      <dd>{createdRoom.id}</dd>
+                      <dd>{createdRoom?.id || 'Creating...'}</dd>
                     </div>
                     <div>
                       <dt>Room Type</dt>
-                      <dd>{getRoomMeta(createdRoom.room_type).label}</dd>
+                      <dd>{getRoomMeta(roomLaunchPreview.room_type).label}</dd>
                     </div>
                     <div>
                       <dt>Privacy</dt>
-                      <dd>{createdRoom.privacy_type}</dd>
+                      <dd>{roomLaunchPreview.privacy_type}</dd>
                     </div>
                   </dl>
                 </div>
@@ -2715,13 +2738,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 {rtcModeOptions.map((option) => {
                   const disabled = option.value === 'video' && !selectedRoomSupportsVideo
                   return (
-                    <button key={option.value} type="button" className={joinRtcMode === option.value ? 'active' : ''} onClick={() => updateJoinRtcMode(option.value)} disabled={disabled}>
+                    <button key={option.value} type="button" className={joinRtcMode === option.value ? 'active' : ''} onClick={() => updateJoinRtcMode(option.value)} disabled={disabled || roomLaunchPending}>
                       {disabled ? 'Unavailable' : option.label}
                     </button>
                   )
                 })}
               </div>
-              {!createdRoom ? (
+              {!roomLaunchPreview ? (
                 <>
                   <label>Room ID</label>
                   <input
@@ -2743,7 +2766,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   />
                 </>
               ) : null}
-              <button className="buzzcast-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open Room'}</button>
+              <button className="buzzcast-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom || roomLaunchPending}>{roomLaunchButtonLabel}</button>
             </div>
           </section>
         </div>

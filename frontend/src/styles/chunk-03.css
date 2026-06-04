@@ -883,6 +883,11 @@
   background: linear-gradient(180deg, rgba(143, 98, 255, .16), rgba(76, 70, 116, .16));
 }
 
+.buzzcast-created-room-summary.pending {
+  border-color: rgba(96, 165, 250, .4);
+  background: linear-gradient(180deg, rgba(96, 165, 250, .14), rgba(76, 70, 116, .12));
+}
+
 .buzzcast-created-room-summary > span {
   width: fit-content;
   padding: 4px 9px;
@@ -894,10 +899,22 @@
   text-transform: uppercase;
 }
 
+.buzzcast-created-room-summary.pending > span {
+  background: rgba(96, 165, 250, .16);
+  color: #bfdbfe;
+}
+
 .buzzcast-created-room-summary > strong {
   color: #fff;
   font-size: 20px;
   line-height: 1.15;
+}
+
+.buzzcast-created-room-note {
+  margin: -2px 0 0;
+  color: #c7d2fe;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .buzzcast-created-room-summary dl {
