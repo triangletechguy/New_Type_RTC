@@ -2261,10 +2261,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               </button>
               <button
                 className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
-                onClick={() => setActiveToolPanel('filters')}
+                onClick={() => toggleToolPanel('filters')}
                 disabled={filterButtonDisabled}
-                aria-label="Open beauty and background controls"
-                aria-pressed={activeToolPanel === 'filters' || cameraEffectsActive}
+                aria-label={activeToolPanel === 'filters' ? 'Close beauty and background controls' : 'Open beauty and background controls'}
+                aria-pressed={activeToolPanel === 'filters'}
                 title="Beauty and background"
               >
                 <span className="control-glyph beauty"></span>
