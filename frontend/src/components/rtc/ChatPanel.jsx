@@ -215,6 +215,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const [inboxText, setInboxText] = useState('')
   const [loadingInbox, setLoadingInbox] = useState(false)
   const [sendingInbox, setSendingInbox] = useState(false)
+  const [followedContactIds, setFollowedContactIds] = useState([])
+  const [followingUserIds, setFollowingUserIds] = useState({})
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
   const messagesRef = useRef(null)
@@ -687,16 +689,48 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
-  async function loadInboxThreads() {
+  function isFollowedContact(userId) {
+    const normalizedId = Number(userId)
+    return Boolean(normalizedId && followedContactIds.some((id) => Number(id) === normalizedId))
+  }
+
+  async function followUserFromMessage(message) {
+    const peerId = Number(message?.sender_id || 0)
+    if (!peerId || isOwnMessage(message, user) || followingUserIds[peerId]) return
+
+    setFollowingUserIds((previous) => ({ ...previous, [peerId]: true }))
+    setStatus('')
+
     try {
-      setLoadingInbox(true)
+      const data = await apiRequest(`/users/${peerId}/follow`, { method: 'POST' })
+      setFollowedContactIds((previous) => (
+        previous.some((id) => Number(id) === peerId) ? previous : [...previous, peerId]
+      ))
+      setStatus(`You are now following ${data.peer?.name || chatSenderName(message, user)}. Private messages are open.`)
+      loadInboxThreads({ quiet: true })
+    } catch (error) {
+      setStatus(`Follow failed: ${error.message}`)
+    } finally {
+      setFollowingUserIds((previous) => {
+        const next = { ...previous }
+        delete next[peerId]
+        return next
+      })
+    }
+  }
+
+  async function loadInboxThreads({ quiet = false } = {}) {
+    try {
+      if (!quiet) setLoadingInbox(true)
       setStatus('')
       const data = await apiRequest('/direct-messages/contacts')
-      setInboxThreads(data.contacts || data.threads || [])
+      const contacts = data.contacts || data.threads || []
+      setInboxThreads(contacts)
+      setFollowedContactIds(contacts.map((contact) => Number(contact.peer_id)).filter(Boolean))
     } catch (error) {
       setStatus(`Inbox failed: ${error.message}`)
     } finally {
-      setLoadingInbox(false)
+      if (!quiet) setLoadingInbox(false)
     }
   }
 
@@ -901,6 +935,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [chatMode])
 
   useEffect(() => {
+    if (user?.id) loadInboxThreads({ quiet: true })
+  }, [user?.id])
+
+  useEffect(() => {
     if (!imagePreview) return undefined
 
     function handleKeyDown(event) {
@@ -1039,8 +1077,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
           const canBlock = canBlockMessage(message)
-          const canMessage = !mine && Boolean(message.sender_id)
+          const followedSender = !mine && isFollowedContact(message.sender_id)
+          const canMessage = !mine && Boolean(message.sender_id) && followedSender
+          const canFollow = !mine && Boolean(message.sender_id) && !followedSender
           const deleting = Boolean(deletingMessageIds[message.id])
+          const following = Boolean(followingUserIds[Number(message.sender_id || 0)])
           const editing = editingMessageId === message.id
           const savingEdit = savingEditId === message.id
           const photoCaption = imageMessage && !['sent a photo', 'sent an avatar'].includes(String(message.message_body || '').trim())
@@ -1103,8 +1144,13 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {(canModify || canDelete || canBlock || canMessage) && !editing && (
+                {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && (
                   <div className="chat-actions">
+                    {canFollow ? (
+                      <button type="button" className="neutral" onClick={() => followUserFromMessage(message)} disabled={following}>
+                        {following ? 'Following' : 'Follow'}
+                      </button>
+                    ) : null}
                     {canMessage ? (
                       <button type="button" className="neutral" onClick={() => openInboxFromMessage(message)}>
                         Message
@@ -1227,7 +1273,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               </button>
             )
           }) : (
-            <span>No contacts yet</span>
+            <span>No followed contacts yet</span>
           )}
         </div>
 
@@ -1235,7 +1281,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           {!inboxTarget ? (
             <div className="empty-chat">
               <strong>Personal inbox</strong>
-              <span>Tap Message on a room comment to start a private chat.</span>
+              <span>Follow a user first, then choose them here to start a private chat.</span>
             </div>
           ) : loadingInbox ? (
             <LoadingMovie label="Loading conversation" compact />

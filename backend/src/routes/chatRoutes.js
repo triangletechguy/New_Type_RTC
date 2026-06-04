@@ -67,6 +67,22 @@ async function ensureChatSchema() {
         CONSTRAINT fk_direct_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
       )
       `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS user_follows (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        follower_id BIGINT UNSIGNED NOT NULL,
+        followed_user_id BIGINT UNSIGNED NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_follow (tenant_id, follower_id, followed_user_id),
+        INDEX idx_user_follows_follower (tenant_id, follower_id),
+        INDEX idx_user_follows_followed (tenant_id, followed_user_id),
+        CONSTRAINT fk_user_follows_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_user_follows_follower FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_user_follows_followed FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
     })().catch((error) => {
       chatSchemaPromise = null
       throw error
@@ -248,6 +264,40 @@ async function findUserForDirectMessage(userId, tenantId) {
   )
 
   return users[0] || null
+}
+
+async function findFollowableUser(userId, tenantId) {
+  const users = await query(
+    `
+    SELECT id, name, avatar_url, gender
+    FROM users
+    WHERE id = :userId
+    AND tenant_id = :tenantId
+    AND status = 'active'
+    LIMIT 1
+    `,
+    { userId, tenantId }
+  )
+
+  return users[0] || null
+}
+
+async function userFollowsPeer(followerId, peerId, tenantId) {
+  if (!followerId || !peerId || Number(followerId) === Number(peerId)) return false
+
+  const rows = await query(
+    `
+    SELECT id
+    FROM user_follows
+    WHERE tenant_id = :tenantId
+    AND follower_id = :followerId
+    AND followed_user_id = :peerId
+    LIMIT 1
+    `,
+    { tenantId, followerId, peerId }
+  )
+
+  return rows.length > 0
 }
 
 router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
@@ -443,6 +493,63 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
   }
 })
 
+router.post('/users/:userId/follow', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const peerId = parsePositiveInteger(req.params.userId)
+    if (!peerId) return res.status(422).json({ message: 'Invalid user ID.' })
+    if (Number(peerId) === Number(req.user.id)) return res.status(422).json({ message: 'You cannot follow yourself.' })
+
+    const peer = await findFollowableUser(peerId, req.user.tenant_id)
+    if (!peer) return res.status(404).json({ message: 'User not found.' })
+
+    await query(
+      `
+      INSERT INTO user_follows (tenant_id, follower_id, followed_user_id)
+      VALUES (:tenantId, :followerId, :peerId)
+      ON DUPLICATE KEY UPDATE created_at = created_at
+      `,
+      { tenantId: req.user.tenant_id, followerId: req.user.id, peerId }
+    )
+
+    return res.status(201).json({
+      message: 'User followed.',
+      following: true,
+      peer,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/users/:userId/follow', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const peerId = parsePositiveInteger(req.params.userId)
+    if (!peerId) return res.status(422).json({ message: 'Invalid user ID.' })
+
+    await query(
+      `
+      DELETE FROM user_follows
+      WHERE tenant_id = :tenantId
+      AND follower_id = :followerId
+      AND followed_user_id = :peerId
+      `,
+      { tenantId: req.user.tenant_id, followerId: req.user.id, peerId }
+    )
+
+    return res.json({
+      message: 'User unfollowed.',
+      following: false,
+      peer_id: peerId,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/direct-messages/threads', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
@@ -474,6 +581,10 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
       ) latest
       INNER JOIN direct_messages dm ON dm.id = latest.last_message_id
       INNER JOIN users peer ON peer.id = latest.peer_id
+      INNER JOIN user_follows uf
+        ON uf.tenant_id = :tenantId
+        AND uf.follower_id = :userId
+        AND uf.followed_user_id = latest.peer_id
       ORDER BY dm.id DESC
       LIMIT 40
       `,
@@ -514,6 +625,10 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
         dm.created_at,
         dm.updated_at
       FROM users u
+      INNER JOIN user_follows uf
+        ON uf.tenant_id = :tenantId
+        AND uf.follower_id = :userId
+        AND uf.followed_user_id = u.id
       LEFT JOIN (
         SELECT paired.peer_id, MAX(paired.id) AS last_message_id
         FROM (
@@ -529,7 +644,6 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
       ) latest ON latest.peer_id = u.id
       LEFT JOIN direct_messages dm ON dm.id = latest.last_message_id
       WHERE u.tenant_id = :tenantId
-      AND u.id <> :userId
       AND u.status = 'active'
       ORDER BY
         CASE WHEN latest.last_message_id IS NULL THEN 1 ELSE 0 END,
@@ -566,6 +680,8 @@ router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) =>
 
     const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
+    const followsPeer = await userFollowsPeer(req.user.id, peerId, req.user.tenant_id)
+    if (!followsPeer) return res.status(403).json({ message: 'Follow this user before starting a private chat.' })
 
     const messages = await query(
       `
@@ -617,6 +733,8 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
 
     const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
+    const followsPeer = await userFollowsPeer(req.user.id, peerId, req.user.tenant_id)
+    if (!followsPeer) return res.status(403).json({ message: 'Follow this user before sending a private message.' })
 
     const result = await query(
       `
