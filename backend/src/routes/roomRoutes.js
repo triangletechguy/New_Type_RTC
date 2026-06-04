@@ -3,7 +3,6 @@ const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
 const { closeParticipantSession } = require('../services/rtcSessionLifecycle')
-const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 
 const router = express.Router()
 
@@ -618,8 +617,6 @@ router.post('/', authMiddleware, async (req, res, next) => {
     const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : null
 
     const roomId = await transaction(async (connection) => {
-      await assertTenantCanUseRoomConfig(connection, req.user.tenant_id, data)
-
       const [insertResult] = await connection.execute(
         `
         INSERT INTO rooms (
@@ -750,14 +747,12 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
       const updates = []
       const values = []
       const booleanFields = ['chat_enabled', 'gift_enabled', 'screen_share_enabled', 'ai_security_enabled']
-      const proposedRoom = { ...room }
 
       for (const field of booleanFields) {
         if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
           const nextValue = parseBoolean(req.body[field], Boolean(Number(room[field]))) ? 1 : 0
           updates.push(`${field} = ?`)
           values.push(nextValue)
-          proposedRoom[field] = nextValue
         }
       }
 
@@ -766,7 +761,6 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
         if (theme && !validControlThemes.has(theme)) throw createHttpError(422, 'Invalid room theme.')
         updates.push('theme = ?')
         values.push(theme || null)
-        proposedRoom.theme = theme || null
       }
 
       if (Object.prototype.hasOwnProperty.call(req.body || {}, 'privacy_type')) {
@@ -777,7 +771,6 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
 
         updates.push('privacy_type = ?')
         values.push(privacyType)
-        proposedRoom.privacy_type = privacyType
 
         if (privacyType === 'password') {
           if (password) {
@@ -789,7 +782,6 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
           }
         } else {
           updates.push('password_hash = NULL')
-          proposedRoom.password_hash = null
         }
       } else if (Object.prototype.hasOwnProperty.call(req.body || {}, 'password')) {
         const password = cleanString(req.body.password, 100)
@@ -806,12 +798,9 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
         }
         updates.push('max_mic_count = ?')
         values.push(maxMicCount)
-        proposedRoom.max_mic_count = maxMicCount
       }
 
       if (updates.length) {
-        await assertTenantCanUseRoomConfig(connection, req.user.tenant_id, proposedRoom, { skipRoomLimit: true })
-
         await connection.execute(
           `
           UPDATE rooms

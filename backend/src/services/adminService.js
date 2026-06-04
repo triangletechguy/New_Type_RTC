@@ -2,7 +2,6 @@ const crypto = require('crypto')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { hasAnyRole } = require('../middleware/auth')
-const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 const {
   ADMIN_ROLES,
   ADMIN_ROOM_PRIVACY,
@@ -1642,16 +1641,6 @@ async function createAdminRoom(user, payload) {
       error.status = 422
       throw error
     }
-
-    await assertTenantCanUseRoomConfig(connection, tenantId, {
-      room_type: payload.roomType,
-      privacy_type: payload.privacyType,
-      max_mic_count: payload.maxMicCount,
-      chat_enabled: payload.chatEnabled,
-      gift_enabled: payload.giftEnabled,
-      screen_share_enabled: payload.screenShareEnabled,
-      ai_security_enabled: payload.aiSecurityEnabled,
-    })
 
     const owner = await findRoomOwnerForTenant(
       connection,

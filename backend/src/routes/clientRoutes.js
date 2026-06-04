@@ -3,7 +3,6 @@ const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
 const jwt = require('jsonwebtoken')
 const { query, transaction } = require('../config/db')
-const { assertTenantCanUseRoomConfig } = require('../utils/tenantEntitlements')
 
 const router = express.Router()
 const EXTERNAL_USER_STATUSES = new Set(['active', 'inactive', 'banned'])
@@ -803,24 +802,10 @@ function normalizeClientRoomStatus(value) {
   return CLIENT_ROOM_STATUSES.has(status) ? status : 'active'
 }
 
-function activeRoomConfig(row = {}) {
-  return {
-    room_type: row.room_type,
-    privacy_type: row.privacy_type,
-    max_mic_count: Number(row.max_mic_count || 0),
-    theme: row.theme,
-    chat_enabled: Boolean(Number(row.chat_enabled)),
-    gift_enabled: Boolean(Number(row.gift_enabled)),
-    screen_share_enabled: Boolean(Number(row.screen_share_enabled)),
-    ai_security_enabled: Boolean(Number(row.ai_security_enabled)),
-  }
-}
-
 async function buildClientRoomUpdate(room, body = {}) {
   const updates = []
   const values = []
   const errors = {}
-  const proposedRoom = activeRoomConfig(room)
 
   if (hasBodyValue(body, 'name')) {
     const name = cleanString(readBodyValue(body, 'name'), 150)
@@ -847,7 +832,6 @@ async function buildClientRoomUpdate(room, body = {}) {
     else {
       updates.push('room_type = ?')
       values.push(roomType)
-      proposedRoom.room_type = roomType
     }
   }
 
@@ -859,7 +843,6 @@ async function buildClientRoomUpdate(room, body = {}) {
     else {
       updates.push('privacy_type = ?')
       values.push(privacyType)
-      proposedRoom.privacy_type = privacyType
 
       if (privacyType === 'password') {
         if (password) {
@@ -892,7 +875,6 @@ async function buildClientRoomUpdate(room, body = {}) {
     } else {
       updates.push('max_mic_count = ?')
       values.push(maxMicCount)
-      proposedRoom.max_mic_count = maxMicCount
     }
   }
 
@@ -902,7 +884,6 @@ async function buildClientRoomUpdate(room, body = {}) {
     else {
       updates.push('theme = ?')
       values.push(theme || null)
-      proposedRoom.theme = theme || null
     }
   }
 
@@ -918,11 +899,10 @@ async function buildClientRoomUpdate(room, body = {}) {
       const nextValue = parseBoolean(readBodyValue(body, snakeKey, camelKey), Boolean(Number(room[snakeKey]))) ? 1 : 0
       updates.push(`${snakeKey} = ?`)
       values.push(nextValue)
-      proposedRoom[snakeKey] = Boolean(nextValue)
     }
   }
 
-  return { errors, updates, values, proposedRoom }
+  return { errors, updates, values }
 }
 
 async function setClientRoomStatus(tenantId, roomId, status, appId = null) {
@@ -940,15 +920,6 @@ async function setClientRoomStatus(tenantId, roomId, status, appId = null) {
     const room = rooms[0]
 
     if (!room) throw createClientError(404, 'room_not_found', 'Room was not found for this client company.')
-
-    if (status === 'active') {
-      await assertTenantCanUseRoomConfig(
-        connection,
-        tenantId,
-        activeRoomConfig(room),
-        { skipRoomLimit: room.status !== 'ended' }
-      )
-    }
 
     await connection.execute(
       `
@@ -1859,17 +1830,6 @@ router.post('/rooms', async (req, res, next) => {
 
     const passwordHash = payload.password ? await bcrypt.hash(payload.password, 10) : null
     const roomId = await transaction(async (connection) => {
-      await assertTenantCanUseRoomConfig(connection, req.clientTenant.id, {
-        room_type: payload.roomType,
-        privacy_type: payload.privacyType,
-        max_mic_count: payload.maxMicCount,
-        theme: payload.theme,
-        chat_enabled: payload.chatEnabled,
-        gift_enabled: payload.giftEnabled,
-        screen_share_enabled: payload.screenShareEnabled,
-        ai_security_enabled: payload.aiSecurityEnabled,
-      })
-
       const [insertResult] = await connection.execute(
         `
         INSERT INTO rooms (
@@ -1955,7 +1915,7 @@ router.patch('/rooms/:roomId', async (req, res, next) => {
       if (!room) throw createClientError(404, 'room_not_found', 'Room was not found for this client company.')
       if (room.status === 'ended') throw createClientError(422, 'room_disabled', 'Ended rooms cannot be updated.')
 
-      const { errors, updates, values, proposedRoom } = await buildClientRoomUpdate(room, req.body || {})
+      const { errors, updates, values } = await buildClientRoomUpdate(room, req.body || {})
       if (Object.keys(errors).length) {
         const error = createHttpError(422, 'Check room update details.')
         error.errors = errors
@@ -1964,7 +1924,6 @@ router.patch('/rooms/:roomId', async (req, res, next) => {
 
       if (!updates.length) return room
 
-      await assertTenantCanUseRoomConfig(connection, req.clientTenant.id, proposedRoom, { skipRoomLimit: true })
       await connection.execute(
         `
         UPDATE rooms
