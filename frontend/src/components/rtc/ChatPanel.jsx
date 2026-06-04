@@ -1024,8 +1024,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         </button>
       </div>
 
-      {chatMode === 'comments' ? (
-      <>
+      <div className="chat-mode-panel" hidden={chatMode !== 'comments'} data-chat-mode="comments">
       <div className="messages" ref={messagesRef} role="log" aria-label="Room chat messages">
         {loading ? (
           <LoadingMovie label="Loading chat" compact />
@@ -1207,9 +1206,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           </div>
         </div>
       </form>
-      </>
-      ) : (
-      <>
+      </div>
+
+      <div className="chat-mode-panel" hidden={chatMode !== 'inbox'} data-chat-mode="inbox">
       <div className="personal-inbox">
         <div className="inbox-thread-strip">
           {loadingInbox && !inboxThreads.length ? (
@@ -1313,8 +1312,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           </div>
         </div>
       </form>
-      </>
-      )}
+      </div>
       {status && <small className="warning-text">{status}</small>}
 
       {deleteTarget ? (
