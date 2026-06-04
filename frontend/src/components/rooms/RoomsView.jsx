@@ -35,7 +35,6 @@ import {
   maxFeedbackAttachmentSize,
   policyDocuments,
   popularHelp,
-  regionAliases,
   regions,
   settingsCopy,
   settingsNav,
@@ -145,13 +144,6 @@ function copyForLanguage(_language, key, replacements = {}) {
 
 function validEmail(value) {
   return /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(String(value || '').trim())
-}
-
-function regionMatchesSearch(region, search) {
-  const normalizedSearch = search.trim().toLowerCase()
-  if (!normalizedSearch) return true
-  return [region, ...(regionAliases[region] || [])]
-    .some((value) => value.toLowerCase().includes(normalizedSearch))
 }
 
 function cardAvatarIndex(card, fallback = 0) {
@@ -1546,35 +1538,29 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     if (activeSettings === 'region') {
-      const regionSearch = settingsDraft.regionSearch || ''
-      const visibleRegions = regions.filter((item) => regionMatchesSearch(item, regionSearch))
+      const selectedRegion = settingsDraft.region || 'United States'
+      const regionOptions = regions.includes(selectedRegion)
+        ? regions
+        : [selectedRegion, ...regions]
 
       return (
         <div className="buzzcast-region-panel">
-          <input
-            placeholder={t('Search region')}
-            value={regionSearch}
-            onChange={(event) => setSettingsDraft((previous) => ({ ...previous, regionSearch: event.target.value }))}
-          />
-          <div className="buzzcast-settings-list compact">
-            {visibleRegions.map((item) => (
-              <label key={item} className={settingsDraft.region === item ? 'buzzcast-radio-row selected' : 'buzzcast-radio-row'}>
-                <span><strong>{item}</strong></span>
-                <input
-                  type="radio"
-                  name="region"
-                  checked={settingsDraft.region === item}
-                  onChange={() => {
-                    setSettingsDraft((previous) => ({ ...previous, region: item, regionSearch: '' }))
-                    setSettingsStatus(t('Region changed to {region}.', { region: item }))
-                  }}
-                />
-              </label>
+          <label className="sr-only" htmlFor="buzzcast-region-select">Region</label>
+          <select
+            id="buzzcast-region-select"
+            className="buzzcast-region-select"
+            value={selectedRegion}
+            onChange={(event) => {
+              const nextRegion = event.target.value
+              setSettingsDraft((previous) => ({ ...previous, region: nextRegion }))
+              setSettingsStatus(t('Region changed to {region}.', { region: nextRegion }))
+            }}
+          >
+            {regionOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
             ))}
-            {visibleRegions.length === 0 ? (
-              <div className="buzzcast-region-empty">No region matches this search.</div>
-            ) : null}
-          </div>
+          </select>
+          <p className="buzzcast-region-current">{selectedRegion}</p>
         </div>
       )
     }

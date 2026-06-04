@@ -1001,20 +1001,22 @@
   font-weight: 1000;
 }
 
-.buzzcast-region-panel > input {
-  height: 40px;
-  margin-bottom: 22px;
-  border-color: #504e64;
+.buzzcast-region-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 44px 0 14px;
+  border: 1px solid #504e64;
+  border-radius: 8px;
   background: #292839;
+  color: #fff;
+  font-weight: 800;
 }
 
-.buzzcast-region-empty {
-  min-height: 72px;
-  display: grid;
-  place-items: center start;
+.buzzcast-region-current {
+  margin: 14px 0 0;
   color: #aaa6bb;
   font-size: 13px;
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  font-weight: 800;
 }
 
 .buzzcast-help-shell {

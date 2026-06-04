@@ -367,14 +367,17 @@
     color: #111827 !important;
   }
 
-  .buzzcast-region-panel > input {
+  .buzzcast-region-select {
     width: 100% !important;
     min-height: 42px !important;
-    margin-bottom: 10px !important;
     border: 1px solid rgba(15, 23, 42, .12) !important;
     border-radius: 10px !important;
     background: #fff !important;
     color: #111827 !important;
+  }
+
+  .buzzcast-region-current {
+    color: #64748b !important;
   }
 
   .buzzcast-help-shell {

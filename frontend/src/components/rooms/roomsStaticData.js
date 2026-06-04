@@ -87,7 +87,6 @@ export const settingsCopy = {
   'All Modes': 'All Modes',
   'Show all room content that is available to your account.': 'Show all room content that is available to your account.',
   'selected.': 'selected.',
-  'Search region': 'Search region',
   'Region changed to {region}.': 'Region changed to {region}.',
   'Terms of Service': 'Terms of Service',
   'Privacy Policy': 'Privacy Policy',
@@ -348,31 +347,6 @@ export const regions = [
   'Zambia',
   'Zimbabwe',
 ]
-export const regionAliases = {
-  'Cote d\'Ivoire': ['Ivory Coast'],
-  'Czechia': ['Czech Republic'],
-  'Congo': ['Republic of the Congo'],
-  'Congo, Democratic Republic of the': ['DR Congo', 'Democratic Republic of Congo'],
-  'Eswatini': ['Swaziland'],
-  'Holy See': ['Vatican City', 'Vatican'],
-  'Iran': ['Islamic Republic of Iran'],
-  'Laos': ['Lao PDR'],
-  'Macao': ['Macau'],
-  'Myanmar': ['Burma'],
-  'North Korea': ['Korea DPR'],
-  'Palestine': ['Palestinian Territory'],
-  'Russia': ['Russian Federation'],
-  'South Korea': ['Korea', 'Republic of Korea'],
-  'Syria': ['Syrian Arab Republic'],
-  'Taiwan': ['Taiwan, Province of China'],
-  'Tanzania': ['United Republic of Tanzania'],
-  'Turkey': ['Turkiye'],
-  'United Arab Emirates': ['UAE'],
-  'United Kingdom': ['UK', 'Great Britain', 'Britain', 'England', 'Scotland', 'Wales', 'Northern Ireland'],
-  'United States': ['USA', 'US', 'United States of America', 'America'],
-  'Venezuela': ['Bolivarian Republic of Venezuela'],
-  'Vietnam': ['Viet Nam'],
-}
 export const feedbackCategories = ['Account', 'Room / RTC', 'Chat', 'Safety', 'Other']
 export const feedbackTypes = ['Bug report', 'Feature request', 'Access issue', 'Abuse report', 'Other']
 export const maxFeedbackAttachmentSize = 25 * 1024 * 1024
