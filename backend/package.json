@@ -12,6 +12,7 @@
     "db:seed": "node scripts/seedDemoData.js",
     "db:seed:demo": "node scripts/seedDemoData.js --demo",
     "db:cleanup-legacy-rooms": "node scripts/cleanupLegacyRooms.js",
+    "db:purge-rooms": "node scripts/purgeRooms.js",
     "rtc:readiness": "node scripts/rtcReadiness.js",
     "e2e": "node scripts/e2eSmoke.js"
   },

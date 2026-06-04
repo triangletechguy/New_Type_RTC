@@ -67,6 +67,18 @@ known seeded demo rooms. It does not create demo rooms.
 Run `npm run db:seed:demo` only in a local demonstration environment if you need
 sample rooms, seeded chat messages, moderation examples, and usage logs.
 
+To clear all room data and reset room IDs in a test/production cleanup window:
+
+```bash
+cd backend
+npm run db:purge-rooms -- --confirm --tenant-id=1
+```
+
+This permanently deletes room rows and cascaded room RTC/chat/usage rows. If all
+rooms are removed, `rooms` auto-increment is reset so the next room can start at
+ID `1`. If you keep an existing room with `--keep-room-id=50`, MySQL will keep
+counting above that existing ID.
+
 ## Email verification
 
 Signup creates a pending account and requires a 6-digit verification code before

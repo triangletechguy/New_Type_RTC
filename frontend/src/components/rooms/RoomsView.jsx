@@ -1208,7 +1208,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     const roomName = room.name || `Room #${room.id}`
-    const confirmed = typeof window === 'undefined' || window.confirm(`Delete ${roomName}? Usage history will be preserved.`)
+    const confirmed = typeof window === 'undefined' || window.confirm(`Delete ${roomName}? This removes the room from the database.`)
     if (!confirmed) return
 
     try {
