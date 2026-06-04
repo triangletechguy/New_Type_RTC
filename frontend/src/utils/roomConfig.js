@@ -73,6 +73,8 @@ export const stageLayoutOptions = [
   { value: 'side', label: 'Side' },
 ]
 
+const defaultRoomTheme = 'neon'
+
 export const defaultRoomForm = {
   name: '',
   description: 'A hosted room for live video, music, chat, and creator collaboration.',
@@ -80,9 +82,9 @@ export const defaultRoomForm = {
   privacy_type: 'public',
   password: '',
   max_mic_count: 8,
-  theme: 'neon',
+  theme: defaultRoomTheme,
   chat_enabled: true,
-  screen_share_enabled: true,
+  screen_share_enabled: false,
   ai_security_enabled: false,
 }
 
@@ -207,7 +209,7 @@ export function roomFormPayload(form) {
     privacy_type: form.privacy_type,
     password: form.privacy_type === 'password' ? form.password.trim() : undefined,
     max_mic_count: Number(form.max_mic_count),
-    theme: form.theme,
+    theme: form.theme === defaultRoomTheme ? undefined : form.theme,
     chat_enabled: form.chat_enabled,
     screen_share_enabled: form.screen_share_enabled,
     ai_security_enabled: form.ai_security_enabled,

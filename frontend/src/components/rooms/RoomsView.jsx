@@ -179,6 +179,23 @@ function roomToFeedCard(room, index) {
   }
 }
 
+function roomThreadId(room) {
+  return room?.id ? `room-thread-${room.id}` : ''
+}
+
+function upsertRoomById(roomList, nextRoom) {
+  if (!nextRoom?.id) return roomList
+  return [
+    nextRoom,
+    ...roomList.filter((room) => Number(room.id) !== Number(nextRoom.id)),
+  ]
+}
+
+function createRoomErrorMessage(error) {
+  const fieldMessages = Object.values(error?.errors || {}).flat().filter(Boolean)
+  return error?.message || fieldMessages[0] || 'Room could not be created. Please try again.'
+}
+
 function cardMatchesActiveFeed(card, activeFeed, activeExplore) {
   if (activeFeed === 'latest') return card.tab === 'latest' || card.room
   if (activeFeed === 'nearby') return card.tab === 'nearby' || card.room
@@ -890,9 +907,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function updateRoomForm(field, value) {
     setRoomForm((previous) => ({ ...previous, [field]: value }))
     setFormErrors((previous) => {
-      if (!previous[field]) return previous
+      if (!previous[field] && !previous.submit) return previous
       const next = { ...previous }
       delete next[field]
+      delete next.submit
       return next
     })
   }
@@ -1014,6 +1032,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     privacyValue = privacyFilter,
     sortValue = sort,
     quiet = false,
+    preserveStatus = false,
+    throwOnError = false,
   } = {}) {
     setLoadingRooms(true)
     const path = buildRoomsPath({
@@ -1028,24 +1048,30 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       const meta = data.rooms?.meta || { page, per_page: 24, total: 0, total_pages: 1 }
       setRooms(data.rooms?.data || [])
       setRoomMeta(meta)
-      setStatus(meta.total === 1 ? 'Showing 1 room' : `Showing ${meta.total} rooms`)
+      if (!preserveStatus) {
+        setStatus(meta.total === 1 ? 'Showing 1 room' : `Showing ${meta.total} rooms`)
+      }
     }
 
     try {
       if (!quiet) setStatus('Loading rooms...')
       applyRoomData(await apiRequest(path))
+      return true
     } catch (error) {
       if (error.status === 401) {
         try {
           applyRoomData(await apiRequest(path))
-          return
+          return true
         } catch (retryError) {
-          setStatus(retryError.message)
-          return
+          if (!preserveStatus) setStatus(retryError.message)
+          if (throwOnError) throw retryError
+          return false
         }
       }
 
-      setStatus(error.message)
+      if (!preserveStatus) setStatus(error.message)
+      if (throwOnError) throw error
+      return false
     } finally {
       setLoadingRooms(false)
     }
@@ -1064,7 +1090,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     const payload = roomFormPayload(roomForm)
+    const createdRoomAlreadyListed = (room) => rooms.some((current) => Number(current.id) === Number(room.id))
     setCreating(true)
+    setFormErrors({})
     try {
       setStatus('Creating room...')
       const data = await apiRequest('/rooms', {
@@ -1072,44 +1100,50 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         body: JSON.stringify(payload),
       })
       const nextRoom = data.room
-      setRoomId(String(data.room.id))
-      setSelectedRoom(data.room)
-      setJoinPassword(payload.password || '')
-      setJoinRtcMode(defaultRtcModeForRoom(data.room))
-      setCreatedRoom(data.room)
-      setStatus(`Created room #${data.room.id}`)
+      if (!nextRoom?.id) throw new Error('Room was created, but the backend did not return a room ID.')
+
+      const nextRoomId = String(nextRoom.id)
+      setRoomId(nextRoomId)
+      setSelectedRoom(nextRoom)
+      setJoinPassword(nextRoom.privacy_type === 'password' ? (payload.password || '') : '')
+      setJoinRtcMode(defaultRtcModeForRoom(nextRoom))
+      setCreatedRoom(nextRoom)
+      setActiveThread(roomThreadId(nextRoom))
+      setDmStatus(`Room #${nextRoom.id} is ready to open.`)
+      setStatus(`Created room #${nextRoom.id}. Open it when ready.`)
       setActiveSection('live')
       setActiveFeed('latest')
       setSearch('')
       setFilter('all')
       setPrivacyFilter('all')
       setSort('newest')
-      setRooms((previous) => [
-        nextRoom,
-        ...previous.filter((room) => Number(room.id) !== Number(nextRoom.id)),
-      ])
+      setRooms((previous) => upsertRoomById(previous, nextRoom))
       setRoomMeta((previous) => ({
         ...previous,
         page: 1,
-        total: Number(previous.total || 0) + 1,
+        total: createdRoomAlreadyListed(nextRoom) ? Number(previous.total || 0) : Number(previous.total || 0) + 1,
         total_pages: Math.max(1, Number(previous.total_pages || 1)),
       }))
       updateRoomForm('password', '')
-      await loadRooms({
-        page: 1,
-        searchValue: '',
-        filterValue: 'all',
-        privacyValue: 'all',
-        sortValue: 'newest',
-        quiet: true,
-      })
-      setRooms((previous) => [
-        nextRoom,
-        ...previous.filter((room) => Number(room.id) !== Number(nextRoom.id)),
-      ])
+      try {
+        await loadRooms({
+          page: 1,
+          searchValue: '',
+          filterValue: 'all',
+          privacyValue: 'all',
+          sortValue: 'newest',
+          quiet: true,
+          preserveStatus: true,
+          throwOnError: true,
+        })
+      } catch (refreshError) {
+        setStatus(`Created room #${nextRoom.id}. Refresh failed: ${refreshError.message}`)
+      }
+      setRooms((previous) => upsertRoomById(previous, nextRoom))
     } catch (error) {
-      if (error.errors && Object.keys(error.errors).length) setFormErrors(error.errors)
-      setStatus(error.message)
+      const submitMessage = createRoomErrorMessage(error)
+      setFormErrors({ ...(error.errors || {}), submit: submitMessage })
+      setStatus(submitMessage)
     } finally {
       setCreating(false)
     }
@@ -2651,6 +2685,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 ))}
               </div>
               <button className="buzzcast-submit" disabled={creating} type="submit">{creating ? 'Creating...' : 'Create Live Room'}</button>
+              {formErrors.submit ? <small className="form-error submit">{formErrors.submit}</small> : null}
             </form>
 
             <div className="buzzcast-quick-join">
