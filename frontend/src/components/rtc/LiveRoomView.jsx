@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
-import { createLocalMediaStream, getLocalMediaPermissionStates, requestLocalMediaTrack, stopMediaStream, watchLocalMediaPermissions } from '../../services/media'
+import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
 import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
 import {
@@ -39,6 +39,8 @@ import { VideoTile } from './VideoTile'
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
 const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
+const RTC_CAMERA_TARGET_KBPS = 300
+const RTC_SCREEN_TARGET_KBPS = 600
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function compactNumber(value) {
@@ -72,7 +74,7 @@ function worstRtcQuality(statsList) {
   }, 'good')
 }
 
-function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) {
+function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode = 'video', cameraOn = false, screenSharing = false }) {
   if (!joined) {
     return {
       quality: 'idle',
@@ -80,6 +82,8 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
       detail: 'Connect to start media diagnostics',
       incoming: '0 kb/s',
       outgoing: '0 kb/s',
+      videoIncoming: '0 kb/s',
+      videoOutgoing: '0 kb/s',
       rtt: '--',
       loss: '0%',
     }
@@ -93,6 +97,8 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
       detail: 'Waiting for another user',
       incoming: '0 kb/s',
       outgoing: '0 kb/s',
+      videoIncoming: '0 kb/s',
+      videoOutgoing: '0 kb/s',
       rtt: '--',
       loss: '0%',
     }
@@ -106,6 +112,8 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
       detail: `${expectedPeers} peer${expectedPeers === 1 ? '' : 's'} negotiating`,
       incoming: '0 kb/s',
       outgoing: '0 kb/s',
+      videoIncoming: '0 kb/s',
+      videoOutgoing: '0 kb/s',
       rtt: '--',
       loss: '0%',
     }
@@ -113,17 +121,22 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
 
   const incomingKbps = statsList.reduce((total, stats) => total + Number(stats.incomingKbps || 0), 0)
   const outgoingKbps = statsList.reduce((total, stats) => total + Number(stats.outgoingKbps || 0), 0)
+  const inboundVideoKbps = sumMediaBitrate(statsList, 'inbound', 'video')
+  const outboundVideoKbps = sumMediaBitrate(statsList, 'outbound', 'video')
   const packetLossPct = Math.max(...statsList.map((stats) => Number(stats.packetLossPct || 0)))
   const latencySamples = statsList.map((stats) => Number(stats.rttMs || 0)).filter((value) => value > 0)
   const rttMs = latencySamples.length
     ? latencySamples.reduce((total, value) => total + value, 0) / latencySamples.length
     : 0
-  const quality = worstRtcQuality(statsList)
+  const videoTargetKbps = screenSharing ? RTC_SCREEN_TARGET_KBPS : RTC_CAMERA_TARGET_KBPS
+  const expectsOutboundVideo = rtcMode === 'video' && (cameraOn || screenSharing)
+  const videoBelowTarget = expectsOutboundVideo && outboundVideoKbps < videoTargetKbps
+  const quality = videoBelowTarget ? 'fair' : worstRtcQuality(statsList)
   const qualityLabel = {
     failed: 'RTC failed',
     poor: 'RTC poor',
     degraded: 'RTC degraded',
-    fair: 'RTC fair',
+    fair: videoBelowTarget ? 'RTC video low' : 'RTC fair',
     connecting: 'RTC connecting',
     idle: 'RTC idle',
     unknown: 'RTC measuring',
@@ -133,9 +146,13 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats }) 
   return {
     quality,
     label: qualityLabel,
-    detail: `${statsList.length}/${expectedPeers} peer${expectedPeers === 1 ? '' : 's'} measured`,
+    detail: videoBelowTarget
+      ? `Video out ${formatRtcBitrate(outboundVideoKbps)} / target ${formatRtcBitrate(videoTargetKbps)}`
+      : `${statsList.length}/${expectedPeers} peer${expectedPeers === 1 ? '' : 's'} measured`,
     incoming: formatRtcBitrate(incomingKbps),
     outgoing: formatRtcBitrate(outgoingKbps),
+    videoIncoming: formatRtcBitrate(inboundVideoKbps),
+    videoOutgoing: formatRtcBitrate(outboundVideoKbps),
     rtt: formatRtcLatency(rttMs),
     loss: formatRtcLoss(packetLossPct),
   }
@@ -221,8 +238,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [signalingPeerCount, setSignalingPeerCount] = useState(0)
   const [signalingState, setSignalingState] = useState(autoConnect ? 'connecting' : 'idle')
   const [mediaState, setMediaState] = useState('idle')
-  const [mediaPermissions, setMediaPermissions] = useState({ audio: 'unknown', video: 'unknown' })
-  const [mediaRecoveryDismissed, setMediaRecoveryDismissed] = useState(false)
   const [mediaUpdating, setMediaUpdating] = useState({ mic: false, camera: false })
   const [mediaMode, setMediaMode] = useState(getInitialMediaMode)
   const [rtcMode, setRtcMode] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom))
@@ -568,12 +583,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  async function syncMediaPermissions(mode = rtcModeRef.current) {
-    const states = await getLocalMediaPermissionStates(mode)
-    setMediaPermissions(states)
-    return states
-  }
-
   async function attachCapturedLocalTrack(kind, track, { publish = true } = {}) {
     if (!track || track.readyState === 'ended') return null
 
@@ -644,74 +653,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function attachNewLocalTrack(kind, options = {}) {
     const { track } = await requestLocalMediaTrack(kind)
     return attachCapturedLocalTrack(kind, track, options)
-  }
-
-  async function retryLocalMediaAccess({ microphone = true, camera = true } = {}) {
-    if (!joined || mediaUpdating.mic || mediaUpdating.camera) return
-
-    const wantsMicrophone = Boolean(microphone)
-    const wantsCamera = Boolean(camera && rtcModeRef.current === 'video' && !screenSharing)
-
-    setMediaRecoveryDismissed(false)
-    setMediaUpdating((state) => ({
-      ...state,
-      mic: wantsMicrophone || state.mic,
-      camera: wantsCamera || state.camera,
-    }))
-
-    try {
-      setStatus('Checking browser media permissions...')
-      const permissionStates = await syncMediaPermissions()
-      const blocked = [
-        wantsCamera && permissionStates.video === 'denied' ? 'Camera' : '',
-        wantsMicrophone && permissionStates.audio === 'denied' ? 'Microphone' : '',
-      ].filter(Boolean)
-
-      if (blocked.length) {
-        setStatus(`${blocked.join(' and ')} is still blocked in the browser. Set it to Allow for this site, then retry.`)
-        return
-      }
-
-      if (wantsMicrophone && !hasLiveLocalTrack('audio')) {
-        setStatus('Requesting microphone permission...')
-        await attachNewLocalTrack('audio', { publish: false })
-      }
-
-      if (wantsCamera && !hasLiveLocalTrack('video')) {
-        setStatus('Requesting camera permission...')
-        await attachNewLocalTrack('video', { publish: false })
-      }
-
-      const nextMicOn = wantsMicrophone ? hasLiveLocalTrack('audio') : micOnRef.current
-      const nextCameraOn = wantsCamera ? hasLiveLocalTrack('video') : cameraOnRef.current
-
-      applyLocalMediaState(nextMicOn, nextCameraOn)
-      setMicOn(nextMicOn)
-      setCameraOn(nextCameraOn)
-
-      const synced = await publishMediaState(nextMicOn, nextCameraOn)
-      await syncMediaPermissions()
-
-      if (synced.micOn || synced.cameraOn) {
-        setMediaRecoveryDismissed(true)
-        setStatus([
-          synced.cameraOn ? 'camera live' : '',
-          synced.micOn ? 'microphone live' : '',
-        ].filter(Boolean).join(' and ') || 'Media state updated')
-        return
-      }
-
-      setStatus('No local camera or microphone track could be started. Check browser permissions and device availability.')
-    } catch (error) {
-      await syncMediaPermissions().catch(() => {})
-      setStatus(`Media retry failed: ${error.message}`)
-    } finally {
-      setMediaUpdating((state) => ({
-        ...state,
-        mic: wantsMicrophone ? false : state.mic,
-        camera: wantsCamera ? false : state.camera,
-      }))
-    }
   }
 
   async function publishMediaState(nextMicOn, nextCameraOn, options = {}) {
@@ -996,9 +937,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           cursor: 'always',
-          width: { max: 1280 },
-          height: { max: 720 },
-          frameRate: { ideal: 10, max: 15 },
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 15, max: 20 },
         },
         audio: false,
       })
@@ -1360,7 +1301,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setRtcConfigState(null)
       setSignalingState('idle')
       setMediaState('idle')
-      setMediaRecoveryDismissed(false)
       setShowPasswordRecovery(false)
       resetRtcState()
       setConnectStep('backend')
@@ -1371,7 +1311,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
         return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
       })
-      const permissionPromise = syncMediaPermissions(selectedRtcMode).catch(() => null)
       const mediaPromise = createLocalMediaStream(
         mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto',
         selectedRtcMode,
@@ -1427,7 +1366,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       setConnectStep('media')
       setStatus('Finishing fast media path...')
-      await permissionPromise
       const [mediaResult, rtcConfig] = await Promise.all([mediaPromise, rtcConfigPromise])
       if (mediaResult?.error) throw mediaResult.error
       const media = mediaResult
@@ -1441,7 +1379,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       streamRef.current = localMediaStream
       setLocalStream(localMediaStream)
       setMediaState(media.warning ? 'warning' : 'ready')
-      await syncMediaPermissions(joinedRtcMode)
 
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
@@ -1798,12 +1735,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const synced = await publishMediaState(next, cameraOn)
       setMicOn(synced.micOn)
       applyLocalMediaState(synced.micOn, cameraOn)
-      if (synced.micOn) setMediaRecoveryDismissed(true)
       setStatus(synced.micOn ? 'Microphone is live' : 'Microphone muted')
     } catch (error) {
       setMicOn(previous)
       applyLocalMediaState(previous, cameraOn)
-      await syncMediaPermissions().catch(() => {})
       setStatus(`Mic update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, mic: false }))
@@ -1832,12 +1767,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const synced = await publishMediaState(micOn, next)
       setCameraOn(synced.cameraOn)
       applyLocalMediaState(micOn, synced.cameraOn)
-      if (synced.cameraOn) setMediaRecoveryDismissed(true)
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
       setCameraOn(previous)
       applyLocalMediaState(micOn, previous)
-      await syncMediaPermissions().catch(() => {})
       setStatus(`Camera update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, camera: false }))
@@ -1933,33 +1866,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }, [joined])
 
-  useEffect(() => {
-    syncMediaPermissions(rtcMode).catch(() => {})
-  }, [rtcMode, joined])
-
-  useEffect(() => {
-    let cancelled = false
-    let cleanup = () => {}
-
-    watchLocalMediaPermissions(rtcMode, (states) => {
-      setMediaPermissions(states)
-      if (states.audio !== 'denied' && states.video !== 'denied') {
-        setMediaRecoveryDismissed(false)
-      }
-    }).then((permissionCleanup) => {
-      if (cancelled) {
-        permissionCleanup()
-        return
-      }
-      cleanup = permissionCleanup
-    }).catch(() => {})
-
-    return () => {
-      cancelled = true
-      cleanup()
-    }
-  }, [rtcMode])
-
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
     if (activeRoomIdRef.current) {
@@ -2005,18 +1911,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraButtonTitle = cameraCanRetry
     ? 'Start camera'
     : screenSharing ? 'Stop screen share before changing camera' : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
-  const mediaStatusText = String(status || '')
-  const cameraPermissionDenied = mediaPermissions.video === 'denied'
-  const microphonePermissionDenied = mediaPermissions.audio === 'denied'
-  const blockedMediaLabels = [
-    cameraPermissionDenied && rtcMode === 'video' ? 'Camera' : '',
-    microphonePermissionDenied ? 'Microphone' : '',
-  ].filter(Boolean)
-  const mediaPermissionBlocked = /permission denied|notallowed|camera permission|microphone permission|allow camera|allow microphone|browser permission is blocked/i.test(mediaStatusText)
-    || blockedMediaLabels.length > 0
-  const showMediaPermissionRecovery = joined && !mediaRecoveryDismissed && (mediaPermissionBlocked || micCanRetry || cameraCanRetry)
-  const canRequestCamera = joined && rtcMode === 'video' && !cameraOn && !screenSharing && !mediaUpdating.camera
-  const canRequestMicrophone = joined && !micOn && !mediaUpdating.mic
   const guardFindings = chatMessages
     .filter((message) => message.message_type === 'text')
     .map((message) => {
@@ -2030,7 +1924,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
-  const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats })
+  const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const cameraFilterActive = isVideoFilterActive(cameraFilter)
@@ -2106,36 +2000,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <small>{rtcHealth.detail}</small>
                 <span>In {rtcHealth.incoming}</span>
                 <span>Out {rtcHealth.outgoing}</span>
+                <span>Video Out {rtcHealth.videoOutgoing}</span>
                 <span>RTT {rtcHealth.rtt}</span>
                 <span>Loss {rtcHealth.loss}</span>
-              </div>
-            ) : null}
-
-            {showMediaPermissionRecovery ? (
-              <div className="buzzcast-media-permission-card" role="alert">
-                <strong>{blockedMediaLabels.length ? `${blockedMediaLabels.join(' and ')} permission is blocked` : 'Camera or microphone permission needs attention'}</strong>
-                <p>{blockedMediaLabels.length ? `Your browser currently has ${blockedMediaLabels.join(' and ')} set to Block for this site. Change it to Allow, then retry.` : mediaStatusText || 'Allow this site to use your camera and microphone, then retry.'}</p>
-                <div>
-                  <button type="button" className="primary" onClick={() => retryLocalMediaAccess({ microphone: true, camera: rtcMode === 'video' })} disabled={mediaUpdating.mic || mediaUpdating.camera}>
-                    Retry camera & mic
-                  </button>
-                  <button type="button" onClick={() => retryLocalMediaAccess({ microphone: false, camera: true })} disabled={!canRequestCamera}>
-                    {cameraOn ? 'Camera live' : 'Retry camera'}
-                  </button>
-                  <button type="button" onClick={() => retryLocalMediaAccess({ microphone: true, camera: false })} disabled={!canRequestMicrophone}>
-                    {micOn ? 'Mic live' : 'Retry microphone'}
-                  </button>
-                  <button type="button" onClick={() => syncMediaPermissions().catch(() => {})}>
-                    Check permissions
-                  </button>
-                  <button type="button" className="ghost" onClick={() => {
-                    setMediaRecoveryDismissed(true)
-                    setStatus('Connected receive-only. Camera and microphone stay off until you enable them.')
-                  }}>
-                    Stay receive-only
-                  </button>
-                </div>
-                <small>Click the lock/camera icon in the browser address bar, set Camera and Microphone to Allow for this site, then press the retry button.</small>
               </div>
             ) : null}
 

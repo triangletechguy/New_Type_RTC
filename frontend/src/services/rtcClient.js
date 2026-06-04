@@ -37,11 +37,27 @@ function buildIceServers() {
 const RTC_STATS_INTERVAL_MS = 2000
 const ICE_RESTART_DELAY_MS = 1400
 const ICE_RESTART_MAX_ATTEMPTS = 3
-const AUDIO_MAX_BITRATE = 32000
-const CAMERA_MAX_BITRATE = 650000
+const AUDIO_MAX_BITRATE = 48000
+const CAMERA_MIN_BITRATE = 300000
+const CAMERA_START_BITRATE = 700000
+const CAMERA_MAX_BITRATE = 1500000
 const CAMERA_MAX_FRAMERATE = 24
-const SCREEN_MAX_BITRATE = 1200000
-const SCREEN_MAX_FRAMERATE = 12
+const SCREEN_MIN_BITRATE = 600000
+const SCREEN_START_BITRATE = 1200000
+const SCREEN_MAX_BITRATE = 2500000
+const SCREEN_MAX_FRAMERATE = 18
+
+const SDP_CAMERA_BITRATE = {
+  min: Math.round(CAMERA_MIN_BITRATE / 1000),
+  start: Math.round(CAMERA_START_BITRATE / 1000),
+  max: Math.round(CAMERA_MAX_BITRATE / 1000),
+}
+
+const SDP_SCREEN_BITRATE = {
+  min: Math.round(SCREEN_MIN_BITRATE / 1000),
+  start: Math.round(SCREEN_START_BITRATE / 1000),
+  max: Math.round(SCREEN_MAX_BITRATE / 1000),
+}
 
 function emptyMediaStats() {
   return {
@@ -152,13 +168,112 @@ function senderLimitsForTrack(track) {
 
   return isScreenTrack(track)
     ? {
+        minBitrate: SCREEN_MIN_BITRATE,
+        startBitrate: SCREEN_START_BITRATE,
         maxBitrate: SCREEN_MAX_BITRATE,
         maxFramerate: SCREEN_MAX_FRAMERATE,
+        scaleResolutionDownBy: 1,
+        priority: 'high',
+        networkPriority: 'high',
       }
     : {
+        minBitrate: CAMERA_MIN_BITRATE,
+        startBitrate: CAMERA_START_BITRATE,
         maxBitrate: CAMERA_MAX_BITRATE,
         maxFramerate: CAMERA_MAX_FRAMERATE,
+        scaleResolutionDownBy: 1,
+        priority: 'high',
+        networkPriority: 'high',
       }
+}
+
+function mergeFmtpBitrate(line, bitrate) {
+  const match = line.match(/^a=fmtp:(\d+)\s*(.*)$/)
+  if (!match) return line
+
+  const params = match[2]
+    .split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => !/^x-google-(min|start|max)-bitrate=/i.test(item))
+
+  params.push(
+    `x-google-min-bitrate=${bitrate.min}`,
+    `x-google-start-bitrate=${bitrate.start}`,
+    `x-google-max-bitrate=${bitrate.max}`,
+  )
+
+  return `a=fmtp:${match[1]} ${params.join(';')}`
+}
+
+function bitrateFmtpLine(payloadType, bitrate) {
+  return `a=fmtp:${payloadType} x-google-min-bitrate=${bitrate.min};x-google-start-bitrate=${bitrate.start};x-google-max-bitrate=${bitrate.max}`
+}
+
+function preferVideoBitrateInSection(section, bitrate = SDP_CAMERA_BITRATE) {
+  if (!section.startsWith('m=video')) return section
+
+  const lines = section.split('\r\n')
+  const videoPayloads = new Set()
+  const fmtpPayloads = new Set()
+  let bandwidthInserted = false
+  const nextLines = []
+
+  lines.forEach((line) => {
+    const match = line.match(/^a=rtpmap:(\d+)\s+([^/\s]+)/i)
+    const codec = match?.[2]?.toLowerCase() || ''
+    if (['vp8', 'vp9', 'h264', 'av1'].includes(codec)) {
+      videoPayloads.add(match[1])
+    }
+  })
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!line) continue
+
+    if (/^b=(AS|TIAS):/i.test(line)) {
+      continue
+    }
+
+    const fmtpPayload = line.match(/^a=fmtp:(\d+)/)?.[1]
+    nextLines.push(line.startsWith('a=fmtp:') && videoPayloads.has(fmtpPayload) ? mergeFmtpBitrate(line, bitrate) : line)
+
+    if (fmtpPayload && videoPayloads.has(fmtpPayload)) {
+      fmtpPayloads.add(fmtpPayload)
+    }
+
+    if (!bandwidthInserted && (line.startsWith('c=') || (line.startsWith('m=video') && !lines[index + 1]?.startsWith('c=')))) {
+      nextLines.push(`b=AS:${bitrate.max}`, `b=TIAS:${bitrate.max * 1000}`)
+      bandwidthInserted = true
+    }
+  }
+
+  for (const payload of Array.from(videoPayloads)) {
+    if (!fmtpPayloads.has(payload)) nextLines.push(bitrateFmtpLine(payload, bitrate))
+  }
+
+  return nextLines.join('\r\n')
+}
+
+function preferVideoBitrate(description, bitrate = SDP_CAMERA_BITRATE) {
+  if (!description?.sdp) return description
+
+  const sections = description.sdp.split(/\r\n(?=m=)/)
+  const tunedSdp = sections
+    .map((section) => preferVideoBitrateInSection(section, bitrate))
+    .join('\r\n')
+
+  return {
+    type: description.type,
+    sdp: tunedSdp,
+  }
+}
+
+function bitrateForPeerConnection(peerConnection) {
+  const hasScreenTrack = peerConnection?.getSenders?.()
+    .some((sender) => sender?.track?.kind === 'video' && isScreenTrack(sender.track))
+
+  return hasScreenTrack ? SDP_SCREEN_BITRATE : SDP_CAMERA_BITRATE
 }
 
 function buildStatsSnapshot(remoteSocketId, peerConnection, reportMap, previous) {
@@ -497,7 +612,7 @@ export class NativeRtcClient {
         peerConnection.restartIce()
       }
       const offer = await peerConnection.createOffer(iceRestart ? { iceRestart: true } : undefined)
-      await peerConnection.setLocalDescription(offer)
+      await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection)))
 
       this.socket.emit('webrtc-offer', {
         targetSocketId: remoteSocketId,
@@ -533,7 +648,7 @@ export class NativeRtcClient {
     await this.flushPendingCandidates(fromSocketId)
 
     const answer = await peerConnection.createAnswer()
-    await peerConnection.setLocalDescription(answer)
+    await peerConnection.setLocalDescription(preferVideoBitrate(answer, bitrateForPeerConnection(peerConnection)))
 
     this.socket.emit('webrtc-answer', {
       targetSocketId: fromSocketId,

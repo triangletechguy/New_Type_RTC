@@ -5,9 +5,9 @@ const audioConstraints = {
 }
 
 const videoConstraints = {
-  width: { ideal: 640, max: 960 },
-  height: { ideal: 360, max: 540 },
-  frameRate: { ideal: 20, max: 24 },
+  width: { ideal: 1280, max: 1280 },
+  height: { ideal: 720, max: 720 },
+  frameRate: { ideal: 24, max: 30 },
 }
 
 const permissionNames = {
