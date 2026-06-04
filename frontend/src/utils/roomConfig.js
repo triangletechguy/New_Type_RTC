@@ -75,6 +75,8 @@ export const stageLayoutOptions = [
 
 const defaultRoomTheme = 'neon'
 
+export const MAX_ROOM_SEATS = 20
+
 export const defaultRoomForm = {
   name: '',
   description: 'A hosted room for live video, music, chat, and creator collaboration.',
@@ -191,8 +193,8 @@ export function validateRoomForm(form) {
   if (name && name.length < 3) errors.name = 'Use at least 3 characters.'
   if (name.length > 150) errors.name = 'Keep the room name under 150 characters.'
   if (form.description.length > 700) errors.description = 'Keep the description under 700 characters.'
-  if (!Number.isInteger(maxMicCount) || maxMicCount < 1 || maxMicCount > 16) {
-    errors.max_mic_count = 'Choose 1 to 16 mic seats.'
+  if (!Number.isInteger(maxMicCount) || maxMicCount < 1 || maxMicCount > MAX_ROOM_SEATS) {
+    errors.max_mic_count = `Choose 1 to ${MAX_ROOM_SEATS} mic seats.`
   }
   if (form.privacy_type === 'password' && password.length < 4) {
     errors.password = 'Use at least 4 characters.'

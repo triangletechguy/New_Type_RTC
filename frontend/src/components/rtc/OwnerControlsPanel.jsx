@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatDuration, getInitials } from '../../utils/formatters'
-import { roomFeatureOptions, roomPrivacyOptions, themeOptions } from '../../utils/roomConfig'
+import { MAX_ROOM_SEATS, roomFeatureOptions, roomPrivacyOptions, themeOptions } from '../../utils/roomConfig'
 
 export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, socket, onRoomUpdate }) {
   const [controls, setControls] = useState(null)
@@ -263,7 +263,7 @@ export function OwnerControlsPanel({ roomId, room, user, joined, signalingRoom, 
           <input
             type="number"
             min="1"
-            max="16"
+            max={MAX_ROOM_SEATS}
             value={activeRoom.max_mic_count || 1}
             onChange={(event) => updateControl('max_mic_count', event.target.value)}
             disabled={!canManage || Boolean(savingFields.max_mic_count)}

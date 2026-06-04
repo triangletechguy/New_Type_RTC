@@ -10,6 +10,7 @@ const PLAN_STATUSES = new Set(['active', 'inactive'])
 const ADMIN_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
 const ADMIN_ROOM_PRIVACY = new Set(['public', 'private', 'password'])
 const ADMIN_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
+const MAX_ADMIN_ROOM_SEATS = 20
 const DEFAULT_SERVICE_PLANS = [
   {
     code: 'free',
@@ -274,7 +275,7 @@ function parseAdminRoomPayload(body = {}) {
   if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
   if (!ADMIN_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
   if (!ADMIN_ROOM_PRIVACY.has(privacyType)) errors.privacy_type = 'Choose a valid privacy type.'
-  if (maxMicCount < 1 || maxMicCount > 16) errors.max_mic_count = 'Max mic count must be between 1 and 16.'
+  if (maxMicCount < 1 || maxMicCount > MAX_ADMIN_ROOM_SEATS) errors.max_mic_count = `Max mic count must be between 1 and ${MAX_ADMIN_ROOM_SEATS}.`
   if (privacyType === 'password' && password.length < 4) errors.password = 'Password rooms need a password of at least 4 characters.'
 
   return {

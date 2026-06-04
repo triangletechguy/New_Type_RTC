@@ -40,6 +40,10 @@ const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const RTC_CAMERA_TARGET_KBPS = 300
 const RTC_SCREEN_TARGET_KBPS = 600
+const RTC_GROUP_CAMERA_TARGET_KBPS = 240
+const RTC_LARGE_CAMERA_TARGET_KBPS = 180
+const RTC_FULL_ROOM_CAMERA_TARGET_KBPS = 120
+const RTC_LARGE_SCREEN_TARGET_KBPS = 450
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function compactNumber(value) {
@@ -53,6 +57,15 @@ function formatRtcBitrate(value) {
   const number = Number(value || 0)
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)} Mb/s`
   return `${Math.max(0, Math.round(number))} kb/s`
+}
+
+function rtcVideoTargetKbps({ expectedPeers, screenSharing }) {
+  const peerCount = Number(expectedPeers || 0)
+  if (screenSharing) return peerCount >= 12 ? RTC_LARGE_SCREEN_TARGET_KBPS : RTC_SCREEN_TARGET_KBPS
+  if (peerCount >= 18) return RTC_FULL_ROOM_CAMERA_TARGET_KBPS
+  if (peerCount >= 12) return RTC_LARGE_CAMERA_TARGET_KBPS
+  if (peerCount >= 6) return RTC_GROUP_CAMERA_TARGET_KBPS
+  return RTC_CAMERA_TARGET_KBPS
 }
 
 function formatRtcLatency(value) {
@@ -127,7 +140,7 @@ function summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rt
   const rttMs = latencySamples.length
     ? latencySamples.reduce((total, value) => total + value, 0) / latencySamples.length
     : 0
-  const videoTargetKbps = screenSharing ? RTC_SCREEN_TARGET_KBPS : RTC_CAMERA_TARGET_KBPS
+  const videoTargetKbps = rtcVideoTargetKbps({ expectedPeers, screenSharing })
   const expectsOutboundVideo = rtcMode === 'video' && (cameraOn || screenSharing)
   const videoBelowTarget = expectsOutboundVideo && outboundVideoKbps < videoTargetKbps
   const quality = videoBelowTarget ? 'fair' : worstRtcQuality(statsList)

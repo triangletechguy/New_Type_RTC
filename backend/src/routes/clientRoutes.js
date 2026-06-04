@@ -12,6 +12,7 @@ const CLIENT_PRIVACY_TYPES = new Set(['public', 'private', 'password'])
 const CLIENT_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
 const CLIENT_ROOM_THEMES = new Set(['neon', 'midnight', 'studio', 'mint'])
 const RTC_TOKEN_TTL_SECONDS = Number(process.env.CLIENT_RTC_TOKEN_TTL_SECONDS || 900)
+const MAX_CLIENT_ROOM_SEATS = 20
 let clientSchemaPromise = null
 
 function cleanString(value, maxLength = 255) {
@@ -733,7 +734,7 @@ function parseClientRoomPayload(body = {}) {
   if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
   if (!CLIENT_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
   if (!CLIENT_PRIVACY_TYPES.has(privacyType)) errors.privacy_type = 'Choose a valid privacy type.'
-  if (!maxMicCount || maxMicCount < 1 || maxMicCount > 16) errors.max_mic_count = 'max_mic_count must be between 1 and 16.'
+  if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_CLIENT_ROOM_SEATS) errors.max_mic_count = `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
   if (privacyType === 'password' && password.length < 4) errors.password = 'Password rooms need a password of at least 4 characters.'
 
   return {
@@ -904,8 +905,8 @@ async function buildClientRoomUpdate(room, body = {}) {
 
   if (hasBodyValue(body, 'max_mic_count', 'maxMicCount')) {
     const maxMicCount = parseInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), null)
-    if (!maxMicCount || maxMicCount < 1 || maxMicCount > 16) {
-      errors.max_mic_count = 'max_mic_count must be between 1 and 16.'
+    if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_CLIENT_ROOM_SEATS) {
+      errors.max_mic_count = `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
     } else {
       updates.push('max_mic_count = ?')
       values.push(maxMicCount)

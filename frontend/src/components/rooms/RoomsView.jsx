@@ -10,6 +10,7 @@ import {
   defaultRoomForm,
   defaultRtcModeForRoom,
   getRoomMeta,
+  MAX_ROOM_SEATS,
   normalizeRtcMode,
   privacyFilterOptions,
   roomFeatureOptions,
@@ -2771,7 +2772,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div className="buzzcast-host-fields">
                 <div>
                   <label>Stage Seats</label>
-                  <input type="number" min="1" max="16" value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} aria-invalid={Boolean(formErrors.max_mic_count)} />
+                  <input type="number" min="1" max={MAX_ROOM_SEATS} value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} aria-invalid={Boolean(formErrors.max_mic_count)} />
                 </div>
                 <div>
                   <label>Theme</label>

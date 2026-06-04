@@ -3,6 +3,7 @@ import { avatarForUser } from '../../assets/rtc/catalog'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatElapsed, formatMinutes, formatNumber, formatUsageDate, getInitials } from '../../utils/formatters'
+import { MAX_ROOM_SEATS } from '../../utils/roomConfig'
 import { ActiveSessionsMonitor } from './ActiveSessionsMonitor'
 import { DashboardMetrics } from './DashboardMetrics'
 import { RtcQualityPanel } from './RtcQualityPanel'
@@ -2404,7 +2405,7 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
           <input
             type="number"
             min="1"
-            max="16"
+            max={MAX_ROOM_SEATS}
             value={form.max_mic_count}
             onChange={(event) => change('max_mic_count', event.target.value)}
           />

@@ -15,6 +15,7 @@ const validControlThemes = new Set(['neon', 'midnight', 'studio', 'mint'])
 const validModerationActions = new Set(['mute', 'mute_mic', 'disable_camera', 'kick', 'ban'])
 const validBanTypes = new Set(['temporary', 'permanent'])
 const roomManagerRoles = new Set(['owner', 'admin', 'moderator'])
+const MAX_ROOM_SEATS = 20
 const roomRoleRank = {
   end_user: 0,
   moderator: 1,
@@ -364,8 +365,8 @@ function validateRoomPayload(payload) {
   if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
   if (!validRoomTypes.has(roomType)) errors.room_type = 'Invalid room type.'
   if (!validPrivacyTypes.has(privacyType)) errors.privacy_type = 'Invalid privacy type.'
-  if (maxMicCount === null || maxMicCount < 1 || maxMicCount > 16) {
-    errors.max_mic_count = 'Max mic count must be between 1 and 16.'
+  if (maxMicCount === null || maxMicCount < 1 || maxMicCount > MAX_ROOM_SEATS) {
+    errors.max_mic_count = `Max mic count must be between 1 and ${MAX_ROOM_SEATS}.`
   }
   if (privacyType === 'password' && password.length < 4) {
     errors.password = 'Password-protected rooms need a password of at least 4 characters.'
@@ -846,8 +847,8 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
 
       if (Object.prototype.hasOwnProperty.call(req.body || {}, 'max_mic_count')) {
         const maxMicCount = parseInteger(req.body.max_mic_count, null)
-        if (!maxMicCount || maxMicCount < 1 || maxMicCount > 16) {
-          throw createHttpError(422, 'Max mic count must be between 1 and 16.')
+        if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_ROOM_SEATS) {
+          throw createHttpError(422, `Max mic count must be between 1 and ${MAX_ROOM_SEATS}.`)
         }
         updates.push('max_mic_count = ?')
         values.push(maxMicCount)

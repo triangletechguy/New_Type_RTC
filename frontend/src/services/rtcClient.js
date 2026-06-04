@@ -42,10 +42,30 @@ const CAMERA_MIN_BITRATE = 300000
 const CAMERA_START_BITRATE = 700000
 const CAMERA_MAX_BITRATE = 1500000
 const CAMERA_MAX_FRAMERATE = 24
+const CAMERA_GROUP_MIN_BITRATE = 180000
+const CAMERA_GROUP_START_BITRATE = 320000
+const CAMERA_GROUP_MAX_BITRATE = 620000
+const CAMERA_GROUP_MAX_FRAMERATE = 18
+const CAMERA_LARGE_MIN_BITRATE = 120000
+const CAMERA_LARGE_START_BITRATE = 220000
+const CAMERA_LARGE_MAX_BITRATE = 420000
+const CAMERA_LARGE_MAX_FRAMERATE = 12
+const CAMERA_FULL_ROOM_MIN_BITRATE = 90000
+const CAMERA_FULL_ROOM_START_BITRATE = 160000
+const CAMERA_FULL_ROOM_MAX_BITRATE = 260000
+const CAMERA_FULL_ROOM_MAX_FRAMERATE = 10
 const SCREEN_MIN_BITRATE = 600000
 const SCREEN_START_BITRATE = 1200000
 const SCREEN_MAX_BITRATE = 2500000
 const SCREEN_MAX_FRAMERATE = 18
+const SCREEN_LARGE_MIN_BITRATE = 350000
+const SCREEN_LARGE_START_BITRATE = 650000
+const SCREEN_LARGE_MAX_BITRATE = 1200000
+const SCREEN_LARGE_MAX_FRAMERATE = 12
+// Native WebRTC is mesh here, so every extra peer adds another outbound video stream.
+const MESH_GROUP_PEER_COUNT = 6
+const MESH_LARGE_PEER_COUNT = 12
+const MESH_FULL_ROOM_PEER_COUNT = 18
 
 const SDP_CAMERA_BITRATE = {
   min: Math.round(CAMERA_MIN_BITRATE / 1000),
@@ -57,6 +77,74 @@ const SDP_SCREEN_BITRATE = {
   min: Math.round(SCREEN_MIN_BITRATE / 1000),
   start: Math.round(SCREEN_START_BITRATE / 1000),
   max: Math.round(SCREEN_MAX_BITRATE / 1000),
+}
+
+function sdpBitrateFromLimits(limits) {
+  return {
+    min: Math.round(Number(limits.minBitrate || limits.maxBitrate || 0) / 1000),
+    start: Math.round(Number(limits.startBitrate || limits.maxBitrate || 0) / 1000),
+    max: Math.round(Number(limits.maxBitrate || 0) / 1000),
+  }
+}
+
+function cameraLimitsForPeerCount(peerCount = 1) {
+  if (peerCount >= MESH_FULL_ROOM_PEER_COUNT) {
+    return {
+      minBitrate: CAMERA_FULL_ROOM_MIN_BITRATE,
+      startBitrate: CAMERA_FULL_ROOM_START_BITRATE,
+      maxBitrate: CAMERA_FULL_ROOM_MAX_BITRATE,
+      maxFramerate: CAMERA_FULL_ROOM_MAX_FRAMERATE,
+      scaleResolutionDownBy: 2.5,
+    }
+  }
+
+  if (peerCount >= MESH_LARGE_PEER_COUNT) {
+    return {
+      minBitrate: CAMERA_LARGE_MIN_BITRATE,
+      startBitrate: CAMERA_LARGE_START_BITRATE,
+      maxBitrate: CAMERA_LARGE_MAX_BITRATE,
+      maxFramerate: CAMERA_LARGE_MAX_FRAMERATE,
+      scaleResolutionDownBy: 2,
+    }
+  }
+
+  if (peerCount >= MESH_GROUP_PEER_COUNT) {
+    return {
+      minBitrate: CAMERA_GROUP_MIN_BITRATE,
+      startBitrate: CAMERA_GROUP_START_BITRATE,
+      maxBitrate: CAMERA_GROUP_MAX_BITRATE,
+      maxFramerate: CAMERA_GROUP_MAX_FRAMERATE,
+      scaleResolutionDownBy: 1.4,
+    }
+  }
+
+  return {
+    minBitrate: CAMERA_MIN_BITRATE,
+    startBitrate: CAMERA_START_BITRATE,
+    maxBitrate: CAMERA_MAX_BITRATE,
+    maxFramerate: CAMERA_MAX_FRAMERATE,
+    scaleResolutionDownBy: 1,
+  }
+}
+
+function screenLimitsForPeerCount(peerCount = 1) {
+  if (peerCount >= MESH_LARGE_PEER_COUNT) {
+    return {
+      minBitrate: SCREEN_LARGE_MIN_BITRATE,
+      startBitrate: SCREEN_LARGE_START_BITRATE,
+      maxBitrate: SCREEN_LARGE_MAX_BITRATE,
+      maxFramerate: SCREEN_LARGE_MAX_FRAMERATE,
+      scaleResolutionDownBy: 1,
+    }
+  }
+
+  return {
+    minBitrate: SCREEN_MIN_BITRATE,
+    startBitrate: SCREEN_START_BITRATE,
+    maxBitrate: SCREEN_MAX_BITRATE,
+    maxFramerate: SCREEN_MAX_FRAMERATE,
+    scaleResolutionDownBy: 1,
+  }
 }
 
 function emptyMediaStats() {
@@ -161,29 +249,25 @@ function isScreenTrack(track) {
   return hint === 'detail' || hint === 'text' || label.includes('screen') || label.includes('display') || label.includes('window')
 }
 
-function senderLimitsForTrack(track) {
+function senderLimitsForTrack(track, peerCount = 1) {
   if (!track) return null
   if (track.kind === 'audio') return { maxBitrate: AUDIO_MAX_BITRATE }
   if (track.kind !== 'video') return null
 
+  const limits = isScreenTrack(track)
+    ? screenLimitsForPeerCount(peerCount)
+    : cameraLimitsForPeerCount(peerCount)
+
   return isScreenTrack(track)
     ? {
-        minBitrate: SCREEN_MIN_BITRATE,
-        startBitrate: SCREEN_START_BITRATE,
-        maxBitrate: SCREEN_MAX_BITRATE,
-        maxFramerate: SCREEN_MAX_FRAMERATE,
-        scaleResolutionDownBy: 1,
+        ...limits,
         priority: 'high',
         networkPriority: 'high',
       }
     : {
-        minBitrate: CAMERA_MIN_BITRATE,
-        startBitrate: CAMERA_START_BITRATE,
-        maxBitrate: CAMERA_MAX_BITRATE,
-        maxFramerate: CAMERA_MAX_FRAMERATE,
-        scaleResolutionDownBy: 1,
-        priority: 'high',
-        networkPriority: 'high',
+        ...limits,
+        priority: peerCount >= MESH_LARGE_PEER_COUNT ? 'medium' : 'high',
+        networkPriority: peerCount >= MESH_LARGE_PEER_COUNT ? 'medium' : 'high',
       }
 }
 
@@ -269,11 +353,13 @@ function preferVideoBitrate(description, bitrate = SDP_CAMERA_BITRATE) {
   }
 }
 
-function bitrateForPeerConnection(peerConnection) {
+function bitrateForPeerConnection(peerConnection, peerCount = 1) {
   const hasScreenTrack = peerConnection?.getSenders?.()
     .some((sender) => sender?.track?.kind === 'video' && isScreenTrack(sender.track))
 
-  return hasScreenTrack ? SDP_SCREEN_BITRATE : SDP_CAMERA_BITRATE
+  if (hasScreenTrack) return sdpBitrateFromLimits(screenLimitsForPeerCount(peerCount))
+  if (peerCount < MESH_GROUP_PEER_COUNT) return SDP_CAMERA_BITRATE
+  return sdpBitrateFromLimits(cameraLimitsForPeerCount(peerCount))
 }
 
 function buildStatsSnapshot(remoteSocketId, peerConnection, reportMap, previous) {
@@ -380,8 +466,12 @@ export class NativeRtcClient {
     if (this.onPeerRecovery) this.onPeerRecovery(remoteSocketId, status, detail)
   }
 
-  async tuneSenderForTrack(sender, track) {
-    const limits = senderLimitsForTrack(track)
+  meshPeerCount(additionalPeers = 0) {
+    return Math.max(1, Object.keys(this.peerConnections || {}).length + Number(additionalPeers || 0))
+  }
+
+  async tuneSenderForTrack(sender, track, peerCount = this.meshPeerCount()) {
+    const limits = senderLimitsForTrack(track, peerCount)
     if (!sender || !limits || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return
 
     try {
@@ -401,8 +491,20 @@ export class NativeRtcClient {
     }
   }
 
-  addTunedTrack(peerConnection, track, stream) {
-    const limits = senderLimitsForTrack(track)
+  async tuneAllSenders() {
+    const peerCount = this.meshPeerCount()
+    const peerConnections = Object.values(this.peerConnections || {})
+
+    for (const peerConnection of peerConnections) {
+      const senders = peerConnection?.getSenders?.() || []
+      for (const sender of senders) {
+        if (sender?.track) await this.tuneSenderForTrack(sender, sender.track, peerCount)
+      }
+    }
+  }
+
+  addTunedTrack(peerConnection, track, stream, peerCount = this.meshPeerCount()) {
+    const limits = senderLimitsForTrack(track, peerCount)
 
     if (limits && typeof peerConnection.addTransceiver === 'function') {
       try {
@@ -411,7 +513,7 @@ export class NativeRtcClient {
           streams: stream ? [stream] : [],
           sendEncodings: [limits],
         })
-        this.tuneSenderForTrack(transceiver.sender, track).catch(() => {})
+        this.tuneSenderForTrack(transceiver.sender, track, peerCount).catch(() => {})
         return transceiver.sender
       } catch {
         // Fall back to addTrack for browsers that reject sendEncodings.
@@ -419,7 +521,7 @@ export class NativeRtcClient {
     }
 
     const sender = stream ? peerConnection.addTrack(track, stream) : peerConnection.addTrack(track)
-    this.tuneSenderForTrack(sender, track).catch(() => {})
+    this.tuneSenderForTrack(sender, track, peerCount).catch(() => {})
     return sender
   }
 
@@ -486,9 +588,11 @@ export class NativeRtcClient {
     const hasLocalAudio = localTracks.some((track) => track.kind === 'audio')
     const hasLocalVideo = localTracks.some((track) => track.kind === 'video')
 
+    const projectedPeerCount = this.meshPeerCount(1)
+
     if (this.localStream) {
       localTracks.forEach((track) => {
-        this.addTunedTrack(peerConnection, track, this.localStream)
+        this.addTunedTrack(peerConnection, track, this.localStream, projectedPeerCount)
       })
     }
 
@@ -539,6 +643,7 @@ export class NativeRtcClient {
     this.peerConnections[remoteSocketId] = peerConnection
     this.emitPeerState(remoteSocketId, peerConnection)
     this.startStats(remoteSocketId)
+    this.tuneAllSenders().catch(() => {})
     return peerConnection
   }
 
@@ -612,7 +717,7 @@ export class NativeRtcClient {
         peerConnection.restartIce()
       }
       const offer = await peerConnection.createOffer(iceRestart ? { iceRestart: true } : undefined)
-      await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection)))
+      await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
 
       this.socket.emit('webrtc-offer', {
         targetSocketId: remoteSocketId,
@@ -648,7 +753,7 @@ export class NativeRtcClient {
     await this.flushPendingCandidates(fromSocketId)
 
     const answer = await peerConnection.createAnswer()
-    await peerConnection.setLocalDescription(preferVideoBitrate(answer, bitrateForPeerConnection(peerConnection)))
+    await peerConnection.setLocalDescription(preferVideoBitrate(answer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
 
     this.socket.emit('webrtc-answer', {
       targetSocketId: fromSocketId,
@@ -729,6 +834,7 @@ export class NativeRtcClient {
       }
     }
 
+    await this.tuneAllSenders()
     await this.renegotiateAll()
   }
 
@@ -763,6 +869,7 @@ export class NativeRtcClient {
       }
     }
 
+    await this.tuneAllSenders()
     await this.renegotiateAll()
   }
 
@@ -799,6 +906,7 @@ export class NativeRtcClient {
     delete this.ignoredOffers[remoteSocketId]
     delete this.pendingOffers[remoteSocketId]
     this.resetIceRestart(remoteSocketId)
+    this.tuneAllSenders().catch(() => {})
   }
 
   closeAll() {
