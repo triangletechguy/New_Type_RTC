@@ -156,6 +156,17 @@ function createClientError(status, code, message, errors = null) {
   return error
 }
 
+function clientBillingPolicy(tenant = {}) {
+  return {
+    payer: 'client_company',
+    user_pays: false,
+    billing_scope: 'client_company',
+    tenant_id: tenant.id ? Number(tenant.id) : tenant.tenant_id ? Number(tenant.tenant_id) : null,
+    tenant_name: tenant.name || tenant.tenant_name || null,
+    note: 'The client company is billed for invited user RTC usage. Synced external users are not charged by this platform.',
+  }
+}
+
 async function ensureClientSchema() {
   if (!clientSchemaPromise) {
     clientSchemaPromise = (async () => {
@@ -171,6 +182,8 @@ async function ensureClientSchema() {
           avatar_url VARCHAR(255) NULL,
           email VARCHAR(180) NULL,
           phone VARCHAR(60) NULL,
+          billing_scope ENUM('client_company') DEFAULT 'client_company',
+          user_pays TINYINT(1) DEFAULT 0,
           metadata_json JSON NULL,
           status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
           last_synced_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -185,6 +198,23 @@ async function ensureClientSchema() {
         )
         `
       )
+
+      const externalUserColumns = await query(
+        `
+        SELECT COLUMN_NAME AS column_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'client_external_users'
+        `
+      )
+      const externalUserColumnNames = new Set(externalUserColumns.map((row) => row.column_name))
+      if (!externalUserColumnNames.has('billing_scope')) {
+        await query("ALTER TABLE client_external_users ADD COLUMN billing_scope ENUM('client_company') DEFAULT 'client_company' AFTER phone")
+      }
+      if (!externalUserColumnNames.has('user_pays')) {
+        await query('ALTER TABLE client_external_users ADD COLUMN user_pays TINYINT(1) DEFAULT 0 AFTER billing_scope')
+      }
+      await query("UPDATE client_external_users SET billing_scope = 'client_company', user_pays = 0 WHERE billing_scope IS NULL OR user_pays IS NULL OR user_pays <> 0")
 
       const appRows = await query(
         `
@@ -637,6 +667,9 @@ function formatExternalUser(row) {
     name: row.display_name,
     email: row.email,
     phone: row.phone,
+    billing_scope: row.billing_scope || 'client_company',
+    user_pays: false,
+    billing: clientBillingPolicy(row),
     avatar_url: row.avatar_url,
     status: row.status,
     metadata: parseJsonObject(row.metadata_json),
@@ -729,6 +762,7 @@ function formatClientRoom(row) {
   return {
     id: Number(row.id),
     tenant_id: Number(row.tenant_id),
+    billing: clientBillingPolicy(row),
     owner: {
       user_id: row.owner_id ? Number(row.owner_id) : null,
       name: row.owner_name || null,
@@ -1049,6 +1083,9 @@ function signRtcToken({ app, tenant, externalUser, room, tokenPayload }) {
         room_id: room.id,
         rtc_role: tokenPayload.role,
         permissions: tokenPayload.permissions,
+        billing_payer: 'client_company',
+        billing_scope: 'client_company',
+        user_pays: false,
         token_use: 'rtc_room',
         iat: now,
       },
@@ -1326,7 +1363,7 @@ async function startClientRtcSession(clientApp, clientTenant, payload) {
     )
     const activeCount = Number(activeCountRows[0]?.active_count || 0)
     const maxParticipants = Math.max(1, Number(room.max_mic_count || 1))
-    if (activeCount >= maxParticipants) throw createClientError(409, 'package_limit_reached', 'Room is full. Increase the room seat limit or end another participant session.')
+    if (activeCount >= maxParticipants) throw createClientError(409, 'room_capacity_reached', 'Room is full. Increase the room seat limit or end another participant session.')
 
     const [insertParticipant] = await connection.execute(
       `
@@ -1634,6 +1671,7 @@ router.get('/me', (req, res) => {
   return res.json({
     tenant: req.clientTenant,
     app: req.clientApp,
+    billing: clientBillingPolicy(req.clientTenant),
     auth: 'api_key',
   })
 })
@@ -1674,6 +1712,8 @@ router.post('/users/sync', async (req, res, next) => {
               avatar_url = ?,
               email = ?,
               phone = ?,
+              billing_scope = 'client_company',
+              user_pays = 0,
               metadata_json = ?,
               status = ?,
               last_synced_at = NOW(),
@@ -1696,10 +1736,10 @@ router.post('/users/sync', async (req, res, next) => {
           `
           INSERT INTO client_external_users (
             tenant_id, app_id, user_id, external_user_id, display_name,
-            avatar_url, email, phone, metadata_json, status,
+            avatar_url, email, phone, billing_scope, user_pays, metadata_json, status,
             last_synced_at, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'client_company', 0, ?, ?, NOW(), NOW(), NOW())
           `,
           [
             req.clientTenant.id,
@@ -2048,15 +2088,19 @@ router.post('/rtc/token', async (req, res, next) => {
       rtc_token: signed.token,
       expires_in: signed.expiresIn,
       expires_at: signed.expiresAt,
+      billing: clientBillingPolicy(req.clientTenant),
       external_user: {
         external_user_id: externalUser.external_user_id,
         user_id: externalUser.user_id,
         name: externalUser.name,
         avatar_url: externalUser.avatar_url,
+        user_pays: false,
+        billing_scope: 'client_company',
       },
       room: {
         id: room.id,
         tenant_id: room.tenant_id,
+        billing: clientBillingPolicy(req.clientTenant),
         name: room.name,
         room_type: room.room_type,
         privacy_type: room.privacy_type,
@@ -2090,11 +2134,13 @@ router.post('/rtc/session/start', async (req, res, next) => {
 
     return res.status(result.alreadyStarted ? 200 : 201).json({
       message: result.alreadyStarted ? 'RTC session already active.' : 'RTC session started.',
+      billing: clientBillingPolicy(req.clientTenant),
       session: result.session,
       participant: result.participant,
       room: {
         id: result.room.id,
         tenant_id: result.room.tenant_id,
+        billing: clientBillingPolicy(req.clientTenant),
         name: result.room.name,
         room_type: result.room.room_type,
         signaling_room: `webrtc_tenant_${result.room.tenant_id}_room_${result.room.id}`,
@@ -2103,6 +2149,8 @@ router.post('/rtc/session/start', async (req, res, next) => {
         external_user_id: result.externalUser.external_user_id,
         user_id: result.externalUser.user_id,
         name: result.externalUser.name,
+        user_pays: false,
+        billing_scope: 'client_company',
       },
     })
   } catch (error) {
@@ -2127,10 +2175,12 @@ router.post('/rtc/session/end', async (req, res, next) => {
       duration_seconds: result.duration_seconds,
       billable_minutes: result.billable_minutes,
       room_minutes: result.room_minutes,
+      billing: clientBillingPolicy(req.clientTenant),
       active_participants: result.active_participants,
       room: {
         id: result.room.id,
         tenant_id: result.room.tenant_id,
+        billing: clientBillingPolicy(req.clientTenant),
         name: result.room.name,
         room_type: result.room.room_type,
       },
@@ -2138,6 +2188,8 @@ router.post('/rtc/session/end', async (req, res, next) => {
         external_user_id: result.externalUser.external_user_id,
         user_id: result.externalUser.user_id,
         name: result.externalUser.name,
+        user_pays: false,
+        billing_scope: 'client_company',
       },
     })
   } catch (error) {

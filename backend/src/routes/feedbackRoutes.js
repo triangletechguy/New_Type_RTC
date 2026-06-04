@@ -4,8 +4,8 @@ const { sendFeedbackEmail } = require('../utils/email')
 
 const router = express.Router()
 
-const feedbackCategories = new Set(['Account', 'Room / RTC', 'Payment', 'Chat', 'Safety'])
-const feedbackTypes = new Set(['Bug report', 'Feature request', 'Payment issue', 'Abuse report', 'Other'])
+const feedbackCategories = new Set(['Account', 'Room / RTC', 'Chat', 'Safety', 'Other'])
+const feedbackTypes = new Set(['Bug report', 'Feature request', 'Access issue', 'Abuse report', 'Other'])
 const maxAttachmentBytes = 25 * 1024 * 1024
 const allowedAttachmentTypes = /^(image\/(png|jpe?g|gif|webp)|video\/(mp4|webm|quicktime))$/i
 

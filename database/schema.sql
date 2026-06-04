@@ -210,6 +210,8 @@ CREATE TABLE IF NOT EXISTS client_external_users (
     avatar_url VARCHAR(255) NULL,
     email VARCHAR(180) NULL,
     phone VARCHAR(60) NULL,
+    billing_scope ENUM('client_company') DEFAULT 'client_company',
+    user_pays TINYINT(1) DEFAULT 0,
     metadata_json JSON NULL,
     status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
     last_synced_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -609,7 +611,7 @@ VALUES
 (
     'starter',
     'Starter RTC',
-    'Low package for one app with core audio, video, chat, moderation, and limited room admins.',
+    'Starter company-paid package for invited RTC users with core audio, video, chat, moderation, and basic room controls.',
     299.00,
     0.0100,
     25000,
@@ -622,7 +624,7 @@ VALUES
 (
     'growth',
     'Growth RTC',
-    'High package for production apps with advanced live video, screen share, filters, and more room admins.',
+    'Growth company-paid package for invited RTC users with live video, screen share, filters, analytics, and more capacity.',
     799.00,
     0.0080,
     100000,
@@ -635,7 +637,7 @@ VALUES
 (
     'enterprise',
     'Enterprise RTC',
-    'Full multi-app RTC service with AI security, SDK controls, billing analytics, moderation history, and global monitoring.',
+    'Full multi-app RTC service with AI security, SDK controls, client-company billing analytics, moderation history, and global monitoring.',
     1999.00,
     0.0060,
     500000,

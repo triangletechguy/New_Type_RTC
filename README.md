@@ -7,6 +7,14 @@ TalkEachOther video and music room platform using native WebRTC:
 - Socket.IO signaling
 - MySQL database
 
+## Client-paid usage model
+
+Client companies can invite users from their own platform into TalkEachOther RTC.
+Those invited users are synced as external RTC users and do not pay this
+platform directly. RTC usage is logged against the client tenant/app, and admin
+or superadmin dashboards calculate package usage, overage, and invoice estimates
+for the client company.
+
 ## Local Windows run order
 
 1. Start XAMPP MySQL.

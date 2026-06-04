@@ -124,6 +124,7 @@ app.post('/my-app/rtc-token', requireUser, async (req, res) => {
   res.json({
     token: data.rtc_token,
     expires_at: data.expires_at,
+    billing: data.billing,
     room: data.room,
     user: data.external_user,
   })
@@ -153,22 +154,22 @@ rtc.on('error', (error) => {
 ]
 
 const flowSteps = [
-  ['1', 'Create company app', 'Generate app key, API key, allowed origins, package limits, and app status.'],
-  ['2', 'Sync shadow user', 'Map a client app user to tenant-scoped RTC records with no platform signup.'],
+  ['1', 'Create company app', 'Generate app key, API key, allowed origins, billing scope, and app status.'],
+  ['2', 'Sync free shadow user', 'Map a client app user to tenant-scoped RTC records with no platform signup or invited-user charge.'],
   ['3', 'Create or select room', 'Use tenant room APIs for audio, video, live, private, or password rooms.'],
   ['4', 'Issue RTC token', 'Return a short-lived token scoped to one tenant, app, user, room, and role.'],
   ['5', 'Join signaling and media', 'The browser or mobile SDK uses the RTC token, never the client API key.'],
-  ['6', 'Record usage', 'Start/end sessions and aggregate participant minutes for billing and limits.'],
+  ['6', 'Bill the client company', 'Start/end sessions and aggregate participant minutes to the client company invoice.'],
 ]
 
 const apiMethods = [
   ['GET /api/client/me', 'Verifies API key, app status, tenant status, and package context.'],
-  ['POST /api/client/users/sync', 'Creates or updates the tenant-scoped shadow user before RTC access.'],
-  ['POST /api/client/rooms', 'Creates an app-scoped room while enforcing package features and limits.'],
+  ['POST /api/client/users/sync', 'Creates or updates a free tenant-scoped shadow user before RTC access.'],
+  ['POST /api/client/rooms', 'Creates an app-scoped room for the synced external user.'],
   ['PATCH /api/client/rooms/:id', 'Updates room name, privacy, seats, and feature flags.'],
   ['POST /api/client/rtc/token', 'Issues a short-lived room token for one synced user and one room.'],
   ['POST /api/client/rtc/session/start', 'Starts usage tracking when a user joins RTC.'],
-  ['POST /api/client/rtc/session/end', 'Closes usage tracking and calculates participant minutes.'],
+  ['POST /api/client/rtc/session/end', 'Closes usage tracking and calculates client-company billable minutes.'],
   ['authenticate(token)', 'Stores the bearer token used for room and RTC requests.'],
   ['joinRoom(roomId, options)', 'Creates or joins an RTC session and returns signaling metadata.'],
   ['setAudioEnabled(enabled)', 'Toggles local audio and syncs participant media state.'],
@@ -192,7 +193,7 @@ const buildMilestones = [
   ['3', 'Shadow users', 'External user sync keeps client users inside the client company app.'],
   ['4', 'RTC token API', 'Short-lived JWTs carry tenant, app, room, role, and permission claims.'],
   ['5', 'Room API', 'Client backends create/list/update/disable/delete tenant rooms.'],
-  ['6', 'Usage and billing', 'Participant minutes, room minutes, peak concurrency, invoice state.'],
+  ['6', 'Company usage and billing', 'Participant minutes, room minutes, peak concurrency, and client-company invoice state.'],
   ['7', 'Developer docs', 'Quickstart, route map, SDK examples, errors, webhooks, and test console.'],
   ['8', 'SFU upgrade', 'Add mediasoup, Janus, or LiveKit-style media when room scale demands it.'],
 ]
@@ -200,10 +201,11 @@ const buildMilestones = [
 const tokenClaims = [
   ['tenant_id', 'Prevents cross-company room access.'],
   ['app_id', 'Connects usage and permissions to one client app.'],
-  ['external_user_id', 'Maps the RTC session to the client company user.'],
+  ['external_user_id', 'Maps the RTC session to the client company user without charging that user.'],
   ['room_id', 'Limits the token to one room/channel.'],
   ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
   ['permissions', 'Controls join, publish_audio, publish_video, screen_share, chat, mute, kick.'],
+  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
   ['exp / iat', 'Keeps tokens short-lived. Fifteen minutes is the default target.'],
 ]
 
@@ -212,7 +214,7 @@ const routeGroups = [
     title: 'Platform Owner APIs',
     rows: [
       ['GET /api/admin/companies', 'List client companies and operational status.'],
-      ['POST /api/admin/companies', 'Create tenant, contacts, package, limits, and billing scope.'],
+      ['POST /api/admin/companies', 'Create tenant, contacts, package, and client-company billing scope.'],
       ['PATCH /api/admin/companies/:id', 'Edit tenant identity, contacts, package, limits, and status.'],
       ['POST /api/admin/client-apps', 'Generate app key, API key, SDK token, and allowed origins.'],
       ['POST /api/admin/apps/:id/api-keys', 'Rotate credentials and show the raw key once.'],
@@ -222,8 +224,8 @@ const routeGroups = [
   {
     title: 'Client Company APIs',
     rows: [
-      ['GET /api/client/me', 'Verify API key and tenant/app/package state.'],
-      ['POST /api/client/users/sync', 'Create or update a tenant-scoped shadow user.'],
+      ['GET /api/client/me', 'Verify API key and tenant/app/client billing state.'],
+      ['POST /api/client/users/sync', 'Create or update a free tenant-scoped shadow user.'],
       ['GET /api/client/users/:external_user_id', 'Read one synced external user.'],
       ['POST /api/client/rooms', 'Create a tenant/app-scoped RTC room.'],
       ['GET /api/client/rooms', 'List rooms owned by this client app.'],
@@ -232,7 +234,7 @@ const routeGroups = [
       ['DELETE /api/client/rooms/:id', 'End/archive a room and preserve usage records.'],
       ['POST /api/client/rtc/token', 'Issue a room-scoped RTC token.'],
       ['POST /api/client/rtc/session/start', 'Start usage tracking for a user entering RTC.'],
-      ['POST /api/client/rtc/session/end', 'End usage tracking and calculate billable minutes.'],
+      ['POST /api/client/rtc/session/end', 'End usage tracking and calculate client-company billable minutes.'],
     ],
   },
 ]
@@ -246,7 +248,7 @@ const errorRows = [
   ['room_not_found', 'The room does not exist inside this tenant/app scope.'],
   ['user_not_synced', 'The external user must be synced before token generation.'],
   ['permission_denied', 'Requested role or permission is not allowed.'],
-  ['package_limit_reached', 'The company has reached a hard package limit.'],
+  ['room_capacity_reached', 'The room has reached its configured participant capacity.'],
 ]
 
 const webhookEvents = [
@@ -257,8 +259,8 @@ const webhookEvents = [
   'participant.left',
   'participant.reconnected',
   'usage.updated',
-  'package.limit_warning',
-  'package.limit_reached',
+  'billing.usage_warning',
+  'billing.invoice_ready',
 ]
 
 const mediaUpgradeRows = [

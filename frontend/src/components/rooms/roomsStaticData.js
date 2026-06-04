@@ -35,7 +35,7 @@ export const settingsCopy = {
   'Terms and Policies': 'Terms and Policies',
   'Changes are applied immediately for this session.': 'Changes are applied immediately for this session.',
   'Binding cell phone': 'Binding cell phone',
-  'Recommended for account recovery and high-value payments.': 'Recommended for account recovery and high-value payments.',
+  'Recommended for account recovery and high-value account changes.': 'Recommended for account recovery and high-value account changes.',
   'Binding email': 'Binding email',
   'Used for login recovery and security notices.': 'Used for login recovery and security notices.',
   'Set login password': 'Set login password',

@@ -135,10 +135,11 @@ export const FEATURE_CATALOG = [
 export const CLIENT_API_TOKEN_CLAIMS = [
   ['tenant_id', 'Prevents cross-company access.'],
   ['app_id', 'Connects usage and room access to the correct client app.'],
-  ['external_user_id', 'Maps the RTC session back to the client company user.'],
+  ['external_user_id', 'Maps the RTC session back to the client company user without charging that user.'],
   ['room_id', 'Limits the token to one room/channel.'],
   ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
   ['permissions', 'Controls join, media publish, screen share, chat, mute, and kick.'],
+  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
   ['exp / iat', 'Keeps tokens short-lived; 15 minutes is the default target.'],
 ]
 
@@ -151,7 +152,7 @@ export const CLIENT_API_ERROR_CODES = [
   ['room_not_found', 'The room does not exist inside this tenant/app scope.'],
   ['user_not_synced', 'The external user must be synced before token generation.'],
   ['permission_denied', 'Requested role or permissions are not allowed.'],
-  ['package_limit_reached', 'The company has reached a hard package limit.'],
+  ['room_capacity_reached', 'The room has reached its configured participant capacity.'],
 ]
 
 export const CLIENT_API_WEBHOOK_EVENTS = [
@@ -162,8 +163,8 @@ export const CLIENT_API_WEBHOOK_EVENTS = [
   'participant.left',
   'participant.reconnected',
   'usage.updated',
-  'package.limit_warning',
-  'package.limit_reached',
+  'billing.usage_warning',
+  'billing.invoice_ready',
 ]
 
 export function buildDashboardTabs(mode) {

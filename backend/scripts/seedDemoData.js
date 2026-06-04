@@ -67,7 +67,7 @@ const planConfigs = [
   {
     code: 'starter',
     name: 'Starter RTC',
-    description: 'Low package for one app with core audio, video, chat, moderation, and limited room admins.',
+    description: 'Starter company-paid package for invited RTC users with core audio, video, chat, moderation, and basic room controls.',
     monthly_base_price: 299,
     minute_rate: 0.01,
     monthly_minute_allowance: 25000,
@@ -89,7 +89,7 @@ const planConfigs = [
   {
     code: 'growth',
     name: 'Growth RTC',
-    description: 'High package for production apps with advanced live video, screen share, filters, and more room admins.',
+    description: 'Growth company-paid package for invited RTC users with live video, screen share, filters, analytics, and more capacity.',
     monthly_base_price: 799,
     minute_rate: 0.008,
     monthly_minute_allowance: 100000,
@@ -121,7 +121,7 @@ const planConfigs = [
   {
     code: 'enterprise',
     name: 'Enterprise RTC',
-    description: 'Full multi-app RTC service with AI security, SDK controls, billing analytics, moderation history, and global monitoring.',
+    description: 'Full multi-app RTC service with AI security, SDK controls, client-company billing analytics, moderation history, and global monitoring.',
     monthly_base_price: 1999,
     minute_rate: 0.006,
     monthly_minute_allowance: 500000,

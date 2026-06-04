@@ -14,7 +14,7 @@ const DEFAULT_SERVICE_PLANS = [
   {
     code: 'free',
     name: 'Free RTC',
-    description: 'Trial package for validating one app with core audio, video, chat, and basic room controls.',
+    description: 'Trial package for validating one client app with company-paid invited users, core audio, video, chat, and basic room controls.',
     monthly_base_price: 0,
     minute_rate: 0.012,
     monthly_minute_allowance: 1000,
@@ -27,7 +27,7 @@ const DEFAULT_SERVICE_PLANS = [
   {
     code: 'basic',
     name: 'Basic RTC',
-    description: 'Small production package for one app with standard RTC rooms, chat, and moderation roles.',
+    description: 'Small production package for one client app where the company pays for invited user RTC usage.',
     monthly_base_price: 199,
     minute_rate: 0.01,
     monthly_minute_allowance: 20000,
@@ -40,7 +40,7 @@ const DEFAULT_SERVICE_PLANS = [
   {
     code: 'pro',
     name: 'Pro RTC',
-    description: 'Growth package for live apps with screen share, room themes, filters, analytics, and more capacity.',
+    description: 'Growth package for live client apps with company-paid invited users, screen share, room themes, filters, analytics, and more capacity.',
     monthly_base_price: 799,
     minute_rate: 0.008,
     monthly_minute_allowance: 100000,
@@ -53,7 +53,7 @@ const DEFAULT_SERVICE_PLANS = [
   {
     code: 'enterprise',
     name: 'Enterprise RTC',
-    description: 'Full RTC service with multi-app SDK controls, AI security, billing analytics, moderation history, and global monitoring.',
+    description: 'Full RTC service with multi-app SDK controls, AI security, client-company billing analytics, moderation history, and global monitoring.',
     monthly_base_price: 1999,
     minute_rate: 0.006,
     monthly_minute_allowance: 500000,
@@ -400,17 +400,17 @@ const SERVICE_FLOW = [
   {
     title: 'Configure package controls',
     owner: 'Superadmin or Client Admin',
-    output: 'Feature flags, room-admin limits, app count, room count, and RTC tools.',
+    output: 'Feature flags, admin limits, app count, and RTC tools used for client-company billing review.',
   },
   {
     title: 'Client integrates SDK',
     owner: 'Developer client app',
-    output: 'Create/join room, authenticate token, start audio/video/chat, and receive RTC events.',
+    output: 'Invite/sync platform users, create/join rooms, authenticate tokens, start audio/video/chat, and receive RTC events.',
   },
   {
     title: 'Track usage and billing',
     owner: 'Platform',
-    output: 'Participant minutes, room records, join/exit dates, reports, and monthly invoice estimate.',
+    output: 'Participant minutes, room records, join/exit dates, reports, and client-company monthly invoice estimate.',
   },
 ]
 

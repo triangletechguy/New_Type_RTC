@@ -1684,7 +1684,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       {
         field: 'phoneBound',
         labelKey: 'Binding cell phone',
-        helperKey: 'Recommended for account recovery and high-value payments.',
+        helperKey: 'Recommended for account recovery and high-value account changes.',
         onKey: 'Bound',
         offKey: 'Bind cell phone',
       },

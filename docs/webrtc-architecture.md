@@ -90,7 +90,7 @@ Database
   User-facing room APIs. Includes room list, create/update room, join room, leave room, media state updates, and session persistence.
 
 - `backend/src/routes/clientRoutes.js`
-  Client-company integration API. It supports syncing external users, creating/listing rooms, issuing RTC tokens, starting sessions, ending sessions, usage tracking, audit logs, and webhook events.
+  Client-company integration API. It supports syncing external users, creating/listing rooms, issuing RTC tokens, starting sessions, ending sessions, usage tracking, audit logs, and webhook events. Invited external users are free participants; usage is billed to the client company.
 
 - `database/schema.sql`
   Database model for tenants, client apps, users, rooms, RTC sessions, participants, events, chat, billing, and usage.

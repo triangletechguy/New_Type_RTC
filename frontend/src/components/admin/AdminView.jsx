@@ -666,24 +666,29 @@ await rtc.joinRoom(123, {
           <strong>Never expose the API key</strong>
           <small>Browser apps receive only the short-lived RTC token.</small>
         </div>
+        <div>
+          <span>Billing rule</span>
+          <strong>Client company pays</strong>
+          <small>Invited external users are synced as free RTC participants.</small>
+        </div>
       </div>
 
       <div className="client-api-flow-grid">
         <div><b>1</b><strong>Verify key</strong><span>Call `/me` from the company backend.</span></div>
-        <div><b>2</b><strong>Sync app user</strong><span>Map the client app user to an RTC shadow user.</span></div>
+        <div><b>2</b><strong>Sync app user</strong><span>Map the client app user to a free RTC shadow user.</span></div>
         <div><b>3</b><strong>Manage room</strong><span>Create, list, update, or end rooms from the client backend.</span></div>
         <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
         <div><b>5</b><strong>Join RTC</strong><span>Use the room token in the web/mobile SDK.</span></div>
       </div>
 
       <div className="api-snippet-grid">
-        <ApiSnippetCard eyebrow="GET" title="/api/client/me" detail="Checks tenant, app, package, and API key status." code={verifyCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Run this whenever your app user logs in or profile changes." code={syncCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates a room for the synced external user and enforces the company package." code={createRoomCurl} />
+        <ApiSnippetCard eyebrow="GET" title="/api/client/me" detail="Checks tenant, app, billing scope, and API key status." code={verifyCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Run this whenever your app user logs in or profile changes; the user remains free." code={syncCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates a room for the synced external user; usage is billed to the client company." code={createRoomCurl} />
         <ApiSnippetCard eyebrow="PATCH" title="/api/client/rooms/:id" detail="Updates room name, privacy, password, seats, theme, and enabled features." code={updateRoomCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/token" detail="Use the returned `room.id`; returns `rtc_token`, controls, grants, and expiry." code={tokenCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and returns billable minutes." code={endSessionCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and returns client-company billable minutes." code={endSessionCurl} />
         <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Ends a room, disconnects active sessions, and keeps usage history." code={endRoomCurl} />
         <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="The browser uses your backend token response, not the API key." code={webSample} />
       </div>
@@ -693,10 +698,11 @@ await rtc.joinRoom(123, {
         <div><span>Allowed origins</span><strong>Checked on browser-origin calls</strong><small>Server-to-server calls can omit the Origin header.</small></div>
         <div><span>Token ledger</span><strong>Hashed RTC token records</strong><small>Issued room tokens are recorded without storing the raw bearer token.</small></div>
         <div><span>Usage ledger</span><strong>Daily aggregates</strong><small>Session start/end updates token count, participant minutes, room minutes, and peak concurrency.</small></div>
+        <div><span>Billing owner</span><strong>Client company</strong><small>External users can be invited from the client platform without paying this platform.</small></div>
         <div><span>Webhook queue</span><strong>Pending delivery events</strong><small>Room, participant, and usage events are queued for the delivery worker.</small></div>
         <div><span>Token TTL</span><strong>15 minutes default</strong><small>Configurable with CLIENT_RTC_TOKEN_TTL_SECONDS.</small></div>
         <div><span>User statuses</span><strong>active, inactive, banned</strong><small>Inactive or banned external users cannot receive room tokens.</small></div>
-        <div><span>Room creation</span><strong>Package enforced</strong><small>Room type, privacy, seats, and features follow the assigned service plan.</small></div>
+        <div><span>Room creation</span><strong>Open to synced users</strong><small>Package data is used for company billing/admin review, not to charge invited users.</small></div>
         <div><span>Room lifecycle</span><strong>Update or end by API</strong><small>Ending a room closes active sessions but preserves billing history.</small></div>
         <div><span>Roles</span><strong>audience, publisher, moderator, admin, owner</strong><small>Publisher includes media publish and chat permissions.</small></div>
         <div><span>Room access</span><strong>Room-scoped token</strong><small>Password/private checks are satisfied only for that exact room.</small></div>

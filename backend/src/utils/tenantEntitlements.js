@@ -48,6 +48,10 @@ function roomTypeFeature(roomType) {
   return 'normal_video_group_chat'
 }
 
+function allFeatureKeys() {
+  return Object.keys(FEATURE_LABELS)
+}
+
 function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null)
 }
@@ -119,7 +123,6 @@ async function getTenantEntitlements(connection, tenantId) {
 
   const row = rows[0]
   if (!row) throw createEntitlementError(404, 'company_suspended', 'Client company was not found.')
-  if (!row.plan_id) throw createEntitlementError(422, 'package_limit_reached', 'Assign a service package before creating RTC rooms.')
   if (!['active', 'pending'].includes(row.tenant_status)) {
     throw createEntitlementError(422, 'company_suspended', 'RTC rooms are disabled while this company is suspended or cancelled.')
   }
@@ -130,10 +133,10 @@ async function getTenantEntitlements(connection, tenantId) {
     tenant_status: row.tenant_status,
     plan_id: row.plan_id,
     plan_code: row.plan_code,
-    plan_name: row.plan_name,
+    plan_name: row.plan_name || 'Client-company billing',
     room_limit: Number(row.default_room_limit || row.max_rooms || 0),
     participant_limit: Number(row.default_participant_limit || row.max_participants_per_room || 0),
-    features: new Set(parseJsonArray(row.included_features)),
+    features: new Set(row.plan_id ? parseJsonArray(row.included_features) : allFeatureKeys()),
   }
 }
 
@@ -142,16 +145,16 @@ async function assertTenantCanUseRoomConfig(connection, tenantId, config, option
   const room = normalizeRoomConfig(config)
   const missing = requiredFeatureKeysForRoom(room).filter((feature) => !entitlements.features.has(feature))
 
-  if (missing.length) {
+  if (options.enforceFeatureAccess && missing.length) {
     const labels = missing.map((feature) => FEATURE_LABELS[feature] || feature).join(', ')
-    throw createEntitlementError(422, 'permission_denied', `${entitlements.plan_name} does not include ${labels}. Edit the package or choose another room setup.`)
+    throw createEntitlementError(422, 'permission_denied', `${entitlements.plan_name} does not include ${labels}. Update company billing access or choose another room setup.`)
   }
 
-  if (entitlements.participant_limit > 0 && room.max_mic_count > entitlements.participant_limit) {
-    throw createEntitlementError(422, 'package_limit_reached', `${entitlements.plan_name} allows up to ${entitlements.participant_limit} stage seats per room.`)
+  if (options.enforceSeatLimit && entitlements.participant_limit > 0 && room.max_mic_count > entitlements.participant_limit) {
+    throw createEntitlementError(422, 'room_capacity_reached', `${entitlements.plan_name} is configured for up to ${entitlements.participant_limit} stage seats per room.`)
   }
 
-  if (!options.skipRoomLimit && entitlements.room_limit > 0) {
+  if (options.enforceRoomLimit && !options.skipRoomLimit && entitlements.room_limit > 0) {
     const [counts] = await connection.execute(
       `
       SELECT COUNT(*) AS count
@@ -163,7 +166,7 @@ async function assertTenantCanUseRoomConfig(connection, tenantId, config, option
     )
     const activeRoomCount = Number(counts[0]?.count || 0)
     if (activeRoomCount >= entitlements.room_limit) {
-      throw createEntitlementError(422, 'package_limit_reached', `${entitlements.plan_name} allows ${entitlements.room_limit} available room${entitlements.room_limit === 1 ? '' : 's'}. Upgrade the package or remove an old room first.`)
+      throw createEntitlementError(422, 'room_capacity_reached', `${entitlements.plan_name} is configured for ${entitlements.room_limit} available room${entitlements.room_limit === 1 ? '' : 's'}. Admins can review company billing capacity.`)
     }
   }
 

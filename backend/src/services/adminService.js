@@ -753,7 +753,7 @@ async function createClientAppForTenant(user, body = {}) {
     const appLimit = positiveInteger(tenant.default_app_limit, positiveInteger(tenant.max_apps, 1))
 
     if (appLimit > 0 && activeAppCount >= appLimit) {
-      const error = new Error(`This package allows ${appLimit} active app${appLimit === 1 ? '' : 's'}. Upgrade the package or suspend an app first.`)
+      const error = new Error(`Current company package is configured for ${appLimit} active app${appLimit === 1 ? '' : 's'}. Request more app capacity or suspend an app first.`)
       error.status = 422
       throw error
     }
@@ -1433,7 +1433,7 @@ async function updateClientAppForTenant(user, appId, body = {}) {
       const activeAppCount = Number(counts[0]?.count || 0)
 
       if (appLimit > 0 && activeAppCount >= appLimit) {
-        const error = new Error(`${limit?.plan_name || 'Current package'} allows ${appLimit} active app${appLimit === 1 ? '' : 's'}. Upgrade the package or suspend another app first.`)
+        const error = new Error(`${limit?.plan_name || 'Current company package'} is configured for ${appLimit} active app${appLimit === 1 ? '' : 's'}. Request more app capacity or suspend another app first.`)
         error.status = 422
         throw error
       }
