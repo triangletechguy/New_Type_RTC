@@ -3,39 +3,16 @@ import { brandAssets } from '../../assets/rtc/catalog'
 import {
   login as loginApi,
   register as registerApi,
-  resendVerification,
-  verifyEmail,
 } from '../../services/api'
 import { getPasswordError, normalizeEmail, validateAuthFields } from '../../utils/authValidation'
 
 function titleForMode(mode) {
-  if (mode === 'verify') return 'Verify your email'
   if (mode === 'register') return 'Create your account'
   return 'Welcome back'
 }
 
 function messageForAuthError(error) {
   const rawMessage = String(error?.message || error?.data?.message || '')
-
-  if (error?.data?.email_delivery?.setup_required || error?.data?.email_delivery?.provider === 'email_not_configured') {
-    return 'Email delivery is not connected on the server yet. Add Resend or SMTP settings, then click Resend code.'
-  }
-
-  if (
-    error?.data?.email_delivery?.provider === 'email_provider_invalid_key'
-    || /api key is invalid/i.test(rawMessage)
-    || /"statusCode"\s*:\s*401/i.test(rawMessage)
-  ) {
-    return 'Email delivery is connected, but the Resend API key is invalid. Add a valid key on the server, then click Resend code.'
-  }
-
-  if (
-    error?.data?.email_delivery?.provider_rejected
-    || error?.data?.email_delivery?.provider === 'email_provider_rejected'
-    || /validation_error|resend email failed|email provider rejected/i.test(rawMessage)
-  ) {
-    return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings, then click Resend code.'
-  }
 
   return rawMessage || 'Request failed. Please try again.'
 }
@@ -49,7 +26,6 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
   const [birthday, setBirthday] = useState('')
   const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
-  const [code, setCode] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [status, setStatus] = useState('')
@@ -66,22 +42,18 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     setBirthday('')
     setEmail(initialEmail || '')
     setPassword('')
-    setCode('')
     setFieldErrors({})
     setStatus(reason || (initialMode === 'register'
-      ? 'Create your account, then verify your email code.'
+      ? 'Create your account to enter immediately.'
       : 'Log in or create an account to continue.'))
   }, [open, initialMode, initialEmail, reason])
 
   function switchMode(nextMode) {
     setMode(nextMode)
     setFieldErrors({})
-    setCode('')
     setStatus(nextMode === 'register'
-      ? 'Create your account, then verify your email code.'
-      : nextMode === 'verify'
-        ? 'Enter the 6-digit code sent to your email.'
-        : 'Log in to unlock rooms, chat, and profile tools.')
+      ? 'Create your account to enter immediately.'
+      : 'Log in to unlock rooms, chat, and profile tools.')
   }
 
   function updateField(field, value) {
@@ -92,7 +64,6 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     if (field === 'birthday') setBirthday(value)
     if (field === 'email') setEmail(value)
     if (field === 'password') setPassword(value)
-    if (field === 'code') setCode(value.replace(/\D/g, '').slice(0, 6))
 
     setFieldErrors((previous) => {
       if (!previous[field]) return previous
@@ -121,10 +92,6 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
       const data = await loginApi(normalizeEmail(email), password)
       finishAuth(data)
     } catch (error) {
-      if (error.requires_verification) {
-        setEmail(error.email || normalizeEmail(email))
-        switchMode('verify')
-      }
       setStatus(messageForAuthError(error))
     } finally {
       setSubmitting(false)
@@ -151,7 +118,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
     setSubmitting(true)
     try {
       const normalizedEmail = normalizeEmail(email)
-      setStatus('Creating account and sending code...')
+      setStatus('Creating account...')
       const data = await registerApi({
         name: name.trim(),
         gender,
@@ -161,59 +128,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
         email: normalizedEmail,
         password,
       })
-      setEmail(data.email || normalizedEmail)
-      switchMode('verify')
-      setCode('')
-      setStatus(data.verification_code
-        ? `Email delivery is not configured. Use code ${data.verification_code} to verify this test account.`
-        : data.message || 'Verification code sent. Check your email inbox.')
-    } catch (error) {
-      if (error.requires_verification) {
-        setEmail(error.email || normalizeEmail(email))
-        switchMode('verify')
-      }
-      setStatus(messageForAuthError(error))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleVerify() {
-    const normalizedEmail = normalizeEmail(email)
-    const nextErrors = {}
-    if (!normalizedEmail) nextErrors.email = 'Email is required.'
-    if (code.length !== 6) nextErrors.code = 'Enter the 6-digit code.'
-    setFieldErrors(nextErrors)
-    if (Object.keys(nextErrors).length) {
-      setStatus('Please enter the verification code from your email.')
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      setStatus('Verifying email...')
-      const data = await verifyEmail(normalizedEmail, code)
       finishAuth(data)
-    } catch (error) {
-      setStatus(messageForAuthError(error))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleResend() {
-    const normalizedEmail = normalizeEmail(email)
-    if (!normalizedEmail) {
-      setFieldErrors({ email: 'Email is required.' })
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      setStatus('Sending a new code...')
-      const data = await resendVerification(normalizedEmail)
-      setCode('')
-      setStatus(data.message || 'A new verification code was sent. Check your email inbox.')
     } catch (error) {
       setStatus(messageForAuthError(error))
     } finally {
@@ -224,7 +139,6 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
   async function handleSubmit(event) {
     event.preventDefault()
     if (mode === 'register') return handleRegister()
-    if (mode === 'verify') return handleVerify()
     return handleLogin()
   }
 
@@ -245,9 +159,9 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
         </header>
 
         <div className="auth-heading">
-          <span className="eyebrow">{mode === 'verify' ? 'Email code' : 'Account access'}</span>
+          <span className="eyebrow">Account access</span>
           <h1 id="auth-modal-title">{titleForMode(mode)}</h1>
-          <p>{mode === 'verify' ? `We sent a 6-digit code to ${email || 'your email address'}.` : 'Log in or sign up to join rooms, chat, create rooms, and manage your profile.'}</p>
+          <p>Log in or sign up to join rooms, chat, create rooms, and manage your profile.</p>
         </div>
 
         <div className="auth-tabs">
@@ -314,49 +228,34 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
             inputMode="email"
             placeholder="name@gmail.com or name@company.com"
             aria-invalid={Boolean(fieldErrors.email)}
-            disabled={mode === 'verify' && submitting}
           />
           {fieldErrors.email && <small className="form-error">{fieldErrors.email}</small>}
 
-          {mode === 'verify' ? (
-            <>
-              <label>Verification code</label>
-              <input className="auth-code-input" value={code} onChange={(event) => updateField('code', event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" aria-invalid={Boolean(fieldErrors.code)} />
-              {fieldErrors.code && <small className="form-error">{fieldErrors.code}</small>}
-            </>
-          ) : (
-            <>
-              <label>Password</label>
-              <div className="password-field">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(event) => updateField('password', event.target.value)}
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  placeholder={mode === 'register' ? '10+ chars, upper, lower, number, symbol' : 'Password'}
-                  aria-invalid={Boolean(fieldErrors.password)}
-                />
-                <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-pressed={showPassword}>
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {fieldErrors.password && <small className="form-error">{fieldErrors.password}</small>}
-              {mode === 'register' && (
-                <div className={passwordStrong ? 'password-strength strong' : 'password-strength'}>
-                  <span>{passwordStrong ? 'Strong password' : 'Use 10+ characters with uppercase, lowercase, number, and symbol.'}</span>
-                </div>
-              )}
-            </>
+          <label>Password</label>
+          <div className="password-field">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(event) => updateField('password', event.target.value)}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              placeholder={mode === 'register' ? '10+ chars, upper, lower, number, symbol' : 'Password'}
+              aria-invalid={Boolean(fieldErrors.password)}
+            />
+            <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-pressed={showPassword}>
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {fieldErrors.password && <small className="form-error">{fieldErrors.password}</small>}
+          {mode === 'register' && (
+            <div className={passwordStrong ? 'password-strength strong' : 'password-strength'}>
+              <span>{passwordStrong ? 'Strong password' : 'Use 10+ characters with uppercase, lowercase, number, and symbol.'}</span>
+            </div>
           )}
 
           <button className="primary-button full-width" disabled={submitting} type="submit">
-            {submitting ? 'Please wait...' : mode === 'verify' ? 'Verify and enter' : mode === 'register' ? 'Create account' : 'Login'}
+            {submitting ? 'Please wait...' : mode === 'register' ? 'Create account' : 'Login'}
           </button>
         </form>
-
-        {mode === 'verify' ? (
-          <button className="auth-resend-button" type="button" onClick={handleResend} disabled={submitting}>Resend code</button>
-        ) : null}
 
         <div className="status-box">{status}</div>
       </section>

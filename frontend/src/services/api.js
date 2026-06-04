@@ -40,11 +40,11 @@ function cleanApiErrorMessage(data, status) {
   const message = String(data?.message || `Request failed with status ${status}`)
 
   if (/api key is invalid/i.test(message) || /"statusCode"\s*:\s*401/i.test(message)) {
-    return 'Email delivery is connected, but the email API key is invalid. Add a valid key on the server, then request a new code.'
+    return 'Email delivery is connected, but the email API key is invalid. Update the server email settings and try again.'
   }
 
-  if (/validation_error|email provider rejected|resend email failed/i.test(message)) {
-    return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings, then request a new code.'
+  if (/validation_error|email provider rejected/i.test(message)) {
+    return 'Email delivery is connected, but the email provider rejected the request. Check the sender domain/settings and try again.'
   }
 
   return message
@@ -108,9 +108,6 @@ export async function apiRequest(path, options = {}) {
     requestError.errors = data.errors || {}
     requestError.data = data
     requestError.email = data.email
-    requestError.requires_verification = Boolean(data.requires_verification)
-    requestError.verification_code = data.verification_code
-    requestError.email_delivery = data.email_delivery
     if (response.status === 401) notifyAuthExpired()
     throw requestError
   }
@@ -138,10 +135,16 @@ export async function refreshCurrentUser() {
 }
 
 export async function register({ name, gender, age, current_residence, birthday, email, password }) {
-  return apiRequest('/auth/register', {
+  const data = await apiRequest('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name, gender, age, current_residence, birthday, email, password }),
   })
+
+  if (data.access_token && data.user) {
+    saveSession(data.access_token, data.user)
+  }
+  data.user = normalizeUserForClient(data.user)
+  return data
 }
 
 export async function updateProfile(profile) {
@@ -153,24 +156,6 @@ export async function updateProfile(profile) {
   saveUser(data.user)
   data.user = normalizeUserForClient(data.user)
   return data
-}
-
-export async function verifyEmail(email, code) {
-  const data = await apiRequest('/auth/verify-email', {
-    method: 'POST',
-    body: JSON.stringify({ email, code }),
-  })
-
-  saveSession(data.access_token, data.user)
-  data.user = normalizeUserForClient(data.user)
-  return data
-}
-
-export async function resendVerification(email) {
-  return apiRequest('/auth/resend-verification', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  })
 }
 
 export async function getRtcConfig() {

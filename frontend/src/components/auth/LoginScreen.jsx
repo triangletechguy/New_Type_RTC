@@ -52,8 +52,13 @@ export function LoginScreen({ onLogin }) {
 
       if (mode === 'register') {
         setStatus('Creating account...')
-        await registerApi(name.trim(), normalizedEmail, password)
-        setStatus('Account created. Logging in...')
+        const data = await registerApi({
+          name: name.trim(),
+          email: normalizedEmail,
+          password,
+        })
+        onLogin(data.access_token, data.user)
+        return
       } else {
         setStatus('Logging in...')
       }

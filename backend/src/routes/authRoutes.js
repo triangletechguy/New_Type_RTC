@@ -1,15 +1,11 @@
 const express = require('express')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
-const crypto = require('crypto')
 const { query, transaction } = require('../config/db')
 const { verifyPassword } = require('../utils/password')
-const { sendVerificationEmail } = require('../utils/email')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
-const VERIFICATION_CODE_TTL_MINUTES = 15
-const MAX_VERIFICATION_ATTEMPTS = 5
 const MAX_AVATAR_DATA_URL_LENGTH = 650000
 const SUPERADMIN_TENANT_ID = 1
 const SUPERADMIN_EMAIL = 'admin@gmail.com'
@@ -132,24 +128,6 @@ async function ensureAuthSchema() {
 
       await migrateLegacySuperadminEmail()
 
-      await query(
-        `
-        CREATE TABLE IF NOT EXISTS email_verification_codes (
-          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-          user_id BIGINT UNSIGNED NOT NULL,
-          email VARCHAR(180) NOT NULL,
-          code_hash VARCHAR(255) NOT NULL,
-          expires_at TIMESTAMP NOT NULL,
-          used_at TIMESTAMP NULL,
-          attempt_count INT DEFAULT 0,
-          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-          INDEX idx_email_verification_user_id (user_id),
-          INDEX idx_email_verification_email (email),
-          INDEX idx_email_verification_expires_at (expires_at),
-          CONSTRAINT fk_email_verification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-        `
-      )
     })().catch((error) => {
       authSchemaPromise = null
       throw error
@@ -175,10 +153,6 @@ async function addColumnIfMissing(tableName, columnName, alterSql) {
   if (!columns.length) await query(alterSql)
 }
 
-function generateVerificationCode() {
-  return String(crypto.randomInt(100000, 1000000))
-}
-
 async function getEndUserRoleId(connection) {
   const [roles] = await connection.execute(
     `
@@ -191,122 +165,6 @@ async function getEndUserRoleId(connection) {
 
   if (!roles.length) throw createHttpError(500, 'End user role is missing from the database.')
   return roles[0].id
-}
-
-async function createVerificationCode(connection, userId, email) {
-  const code = generateVerificationCode()
-  const codeHash = await bcrypt.hash(code, 10)
-
-  await connection.execute(
-    `
-    UPDATE email_verification_codes
-    SET used_at = NOW()
-    WHERE user_id = ?
-    AND used_at IS NULL
-    `,
-    [userId]
-  )
-
-  await connection.execute(
-    `
-    INSERT INTO email_verification_codes (
-      user_id,
-      email,
-      code_hash,
-      expires_at,
-      created_at
-    )
-    VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), NOW())
-    `,
-    [userId, email, codeHash, VERIFICATION_CODE_TTL_MINUTES]
-  )
-
-  return code
-}
-
-function verificationDeliveryPayload(delivery) {
-  if (!delivery) return null
-
-  return {
-    provider: delivery.provider || 'unknown',
-    skipped: Boolean(delivery.skipped),
-  }
-}
-
-function verificationResponse({ message, email, delivery }) {
-  const response = {
-    message,
-    requires_verification: true,
-    email,
-  }
-  const emailDelivery = verificationDeliveryPayload(delivery)
-
-  if (emailDelivery) response.email_delivery = emailDelivery
-  if (delivery?.verification_code) response.verification_code = delivery.verification_code
-
-  return response
-}
-
-function classifyEmailDeliveryError(error) {
-  const rawMessage = String(error?.message || '')
-  const invalidKey = error.code === 'email_provider_invalid_key'
-    || /api key is invalid/i.test(rawMessage)
-    || /"statusCode"\s*:\s*401/i.test(rawMessage)
-  const setupRequired = error.code === 'email_not_configured'
-  const providerRejected = invalidKey
-    || ['email_provider_rejected', 'smtp_provider_rejected'].includes(error.code)
-    || /validation_error|resend email failed|provider rejected/i.test(rawMessage)
-
-  if (setupRequired) {
-    return {
-      code: 'email_not_configured',
-      message: 'Verification code was created, but email delivery is not connected yet. Add email settings on the server, then request a new code.',
-      providerRejected: false,
-      setupRequired: true,
-    }
-  }
-
-  if (invalidKey) {
-    return {
-      code: 'email_provider_invalid_key',
-      message: 'Verification code was created, but the email provider rejected the API key. Add a valid email API key on the server, then request a new code.',
-      providerRejected: true,
-      setupRequired: false,
-    }
-  }
-
-  if (providerRejected) {
-    return {
-      code: 'email_provider_rejected',
-      message: error.message || 'Verification code was created, but the email provider rejected the request. Check sender/domain/settings, then request a new code.',
-      providerRejected: true,
-      setupRequired: false,
-    }
-  }
-
-  return {
-    code: error.code || 'failed',
-    message: 'Verification code was created, but email delivery failed. Check the email provider settings, then request a new code.',
-    providerRejected: false,
-    setupRequired: false,
-  }
-}
-
-function emailDeliveryFailureResponse(res, error, email) {
-  const status = error.status || 502
-  const deliveryError = classifyEmailDeliveryError(error)
-
-  return res.status(status).json({
-    message: deliveryError.message,
-    requires_verification: true,
-    email,
-    email_delivery: {
-      provider: deliveryError.code,
-      skipped: false,
-      setup_required: deliveryError.setupRequired,
-      provider_rejected: deliveryError.providerRejected,
-    },
-  })
 }
 
 function signAccessToken(user) {
@@ -531,11 +389,16 @@ router.post('/login', async (req, res, next) => {
     }
 
     if (user.status === 'pending_verification') {
-      return res.status(403).json({
-        message: 'Please verify your email before logging in.',
-        requires_verification: true,
-        email: user.email,
-      })
+      await query(
+        `
+        UPDATE users
+        SET status = 'active',
+            updated_at = NOW()
+        WHERE id = :id
+        `,
+        { id: user.id }
+      )
+      user.status = 'active'
     }
 
     if (user.status !== 'active') {
@@ -617,7 +480,7 @@ router.post('/register', async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 10)
     let userId = existing[0]?.id || null
 
-    const code = await transaction(async (connection) => {
+    await transaction(async (connection) => {
       if (userId) {
         await connection.execute(
           `
@@ -628,7 +491,7 @@ router.post('/register', async (req, res, next) => {
               birthday = ?,
               current_residence = ?,
               password_hash = ?,
-              status = 'pending_verification',
+              status = 'active',
               updated_at = NOW()
           WHERE id = ?
           `,
@@ -659,7 +522,7 @@ router.post('/register', async (req, res, next) => {
             ?,
             ?,
             ?,
-            'pending_verification',
+            'active',
             NOW(),
             NOW()
           )
@@ -685,146 +548,19 @@ router.post('/register', async (req, res, next) => {
         `,
         [userId, roleId, userId, roleId]
       )
-
-      return createVerificationCode(connection, userId, email)
     })
-
-    let delivery
-    try {
-      delivery = await sendVerificationEmail({ to: email, name, code })
-    } catch (error) {
-      return emailDeliveryFailureResponse(res, error, email)
-    }
-
-    return res.status(201).json(verificationResponse({
-      message: 'Verification code sent. Check your email inbox to finish signup.',
-      email,
-      delivery,
-    }))
-  } catch (error) {
-    next(error)
-  }
-})
-
-router.post('/verify-email', async (req, res, next) => {
-  try {
-    await ensureAuthSchema()
-
-    const email = normalizeEmail(req.body?.email)
-    const code = String(req.body?.code || '').replace(/\D/g, '').slice(0, 6)
-
-    if (!validateEmail(email) || code.length !== 6) {
-      return res.status(422).json({ message: 'Enter a valid email and 6-digit verification code.' })
-    }
-
-    const rows = await query(
-      `
-      SELECT
-        verification.id AS verification_id,
-        verification.code_hash,
-        verification.expires_at,
-        verification.attempt_count,
-        users.*
-      FROM email_verification_codes verification
-      JOIN users ON users.id = verification.user_id
-      WHERE verification.email = :email
-      AND verification.used_at IS NULL
-      ORDER BY verification.created_at DESC, verification.id DESC
-      LIMIT 1
-      `,
-      { email }
-    )
-
-    const verification = rows[0]
-    if (!verification || verification.status !== 'pending_verification') {
-      return res.status(422).json({ message: 'No pending verification was found for this email.' })
-    }
-
-    if (Number(verification.attempt_count || 0) >= MAX_VERIFICATION_ATTEMPTS) {
-      return res.status(429).json({ message: 'Too many verification attempts. Request a new code.' })
-    }
-
-    if (new Date(verification.expires_at).getTime() < Date.now()) {
-      return res.status(422).json({ message: 'Verification code expired. Request a new code.' })
-    }
-
-    const codeOk = await bcrypt.compare(code, verification.code_hash)
-    if (!codeOk) {
-      await query(
-        `
-        UPDATE email_verification_codes
-        SET attempt_count = attempt_count + 1
-        WHERE id = :id
-        `,
-        { id: verification.verification_id }
-      )
-
-      return res.status(422).json({ message: 'Verification code is incorrect.' })
-    }
-
-    await transaction(async (connection) => {
-      await connection.execute(
-        `
-        UPDATE users
-        SET status = 'active',
-            updated_at = NOW()
-        WHERE id = ?
-        `,
-        [verification.id]
-      )
-
-      await connection.execute(
-        `
-        UPDATE email_verification_codes
-        SET used_at = NOW()
-        WHERE id = ?
-        `,
-        [verification.verification_id]
-      )
-    })
-
-    return res.json(await loginResponse({ ...verification, status: 'active' }, 'Email verified successfully'))
-  } catch (error) {
-    next(error)
-  }
-})
-
-router.post('/resend-verification', async (req, res, next) => {
-  try {
-    await ensureAuthSchema()
-
-    const email = normalizeEmail(req.body?.email)
-    if (!validateEmail(email)) return res.status(422).json({ message: 'Enter a valid email address.' })
 
     const users = await query(
       `
       SELECT *
       FROM users
-      WHERE email = :email
-      AND status = 'pending_verification'
+      WHERE id = :id
       LIMIT 1
       `,
-      { email }
+      { id: userId }
     )
 
-    const user = users[0]
-    if (!user) {
-      return res.status(422).json({ message: 'No pending verification was found for this email.' })
-    }
-
-    const code = await transaction((connection) => createVerificationCode(connection, user.id, email))
-    let delivery
-    try {
-      delivery = await sendVerificationEmail({ to: email, name: user.name, code })
-    } catch (error) {
-      return emailDeliveryFailureResponse(res, error, email)
-    }
-
-    return res.json(verificationResponse({
-      message: 'A new verification code was sent. Check your email inbox.',
-      email,
-      delivery,
-    }))
+    return res.status(201).json(await loginResponse(users[0], 'Account created successfully'))
   } catch (error) {
     next(error)
   }

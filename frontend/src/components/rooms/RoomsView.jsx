@@ -180,6 +180,22 @@ function clientCompanyNameForCard(card) {
   ).trim()
 }
 
+function companyNameForUser(user) {
+  const explicitName = String(
+    user?.tenant_name
+      || user?.tenantName
+      || user?.company_name
+      || user?.companyName
+      || user?.client_company_name
+      || user?.clientCompanyName
+      || ''
+  ).trim()
+  if (explicitName) return explicitName
+  if (Number(user?.tenant_id) === 1) return 'TalkEachOther'
+  if (user?.tenant_id) return `Company #${user.tenant_id}`
+  return 'TalkEachOther'
+}
+
 function buildClientCompanyCards(cards) {
   const clientMap = new Map()
 
@@ -345,6 +361,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [joinPassword, setJoinPassword] = useState('')
   const [joinRtcMode, setJoinRtcMode] = useState('video')
   const [roomForm, setRoomForm] = useState(defaultRoomForm)
+  const [selectedCompanyName, setSelectedCompanyName] = useState(() => companyNameForUser(user))
   const [formErrors, setFormErrors] = useState({})
   const [createdRoom, setCreatedRoom] = useState(null)
   const [search, setSearch] = useState('')
@@ -435,6 +452,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
   const clientCompanyCards = useMemo(() => buildClientCompanyCards(roomCards), [roomCards])
+  const companyOptions = useMemo(() => {
+    const options = new Map()
+    const addCompany = (name, detail = '') => {
+      const label = String(name || '').trim()
+      if (!label) return
+      const key = label.toLowerCase()
+      if (!options.has(key)) options.set(key, { name: label, detail })
+    }
+
+    addCompany(companyNameForUser(user), user?.tenant_id ? `Tenant ${user.tenant_id}` : 'Current company')
+    clientCompanyCards.forEach((client) => addCompany(client.name, client.detail))
+    if (createdRoom?.tenant_name) addCompany(createdRoom.tenant_name, `Tenant ${createdRoom.tenant_id}`)
+    if (selectedCompanyName) addCompany(selectedCompanyName, 'Selected company')
+
+    return Array.from(options.values())
+  }, [clientCompanyCards, createdRoom?.tenant_id, createdRoom?.tenant_name, selectedCompanyName, user])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
@@ -592,6 +625,118 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       window.clearTimeout(showMobileActionToast.timeoutId)
       showMobileActionToast.timeoutId = window.setTimeout(() => setMobileToast(''), 1600)
     }
+  }
+
+  function closeMobileRoomSheets() {
+    setShowMobileRoomProfile(false)
+    setShowMobileRoomTools(false)
+    setShowMobileRoomLock(false)
+    setShowMobileRoomSettings(false)
+    setShowMobileMembers(false)
+  }
+
+  function openMobileRoomOrCreate(card) {
+    if (card?.room) {
+      openCard(card)
+      return
+    }
+
+    if (card?.isOwnRoom) {
+      openHostPanel('Create a live room first, then the mobile room controls will connect to the real RTC room.')
+      return
+    }
+
+    openCard(card)
+  }
+
+  function handleMobileJoinCard(card, options = {}) {
+    if (card?.room) {
+      closeMobileRoomSheets()
+      joinRoomFromCard(card.room, options)
+      return true
+    }
+
+    if (card?.isOwnRoom) {
+      openHostPanel('Create a live room first, then join from mobile.')
+      return false
+    }
+
+    showMobileActionToast('Select a live room first.')
+    return false
+  }
+
+  async function shareMobileRoom(card) {
+    const roomPath = card?.room?.id ? `/rooms/${card.room.id}` : '/'
+    const url = typeof window !== 'undefined'
+      ? new URL(roomPath, window.location.origin).toString()
+      : roomPath
+    const title = card?.title || 'TalkEachOther room'
+
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({ title, text: `Join ${title} on TalkEachOther`, url })
+        showMobileActionToast('Share sheet opened')
+        return
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+        showMobileActionToast('Room link copied')
+        return
+      }
+
+      showMobileActionToast(url)
+    } catch {
+      showMobileActionToast('Share cancelled')
+    }
+  }
+
+  async function refreshMobileRooms() {
+    await loadRooms({ page: 1, quiet: true })
+    showMobileActionToast('Rooms refreshed')
+  }
+
+  async function updateMobileRoomControls(card, payload, successMessage) {
+    if (!card?.room) {
+      if (card?.isOwnRoom) {
+        openHostPanel('Create a live room first, then mobile tools can update it.')
+      } else {
+        showMobileActionToast('Join a real room before changing controls.')
+      }
+      return
+    }
+
+    try {
+      setStatus('Updating room controls...')
+      await apiRequest(`/rooms/${card.room.id}/controls`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+      setStatus(successMessage)
+      showMobileActionToast(successMessage)
+      setShowMobileRoomTools(false)
+      await loadRooms({ page: roomMeta.page, quiet: true })
+    } catch (error) {
+      const message = error.message || 'Room controls could not be updated.'
+      setStatus(message)
+      showMobileActionToast(message)
+    }
+  }
+
+  function nextThemeValue(currentTheme) {
+    const currentIndex = themeOptions.findIndex((option) => option.value === currentTheme)
+    return themeOptions[(currentIndex + 1 + themeOptions.length) % themeOptions.length]?.value || themeOptions[0]?.value || 'neon'
+  }
+
+  function confirmMobileRoomLock(card) {
+    const password = mobileRoomLockCode.trim()
+    if (password.length < 4) {
+      showMobileActionToast('Use 4 digits for the lock code.')
+      return
+    }
+
+    setShowMobileRoomLock(false)
+    updateMobileRoomControls(card, { privacy_type: 'password', password }, 'Room locked with password.')
   }
 
   function pushSectionHistory(section, options = {}) {
@@ -978,16 +1123,30 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         method: 'POST',
         body: JSON.stringify(payload),
       })
+      const nextRoom = data.room
+      setSelectedCompanyName(nextRoom.tenant_name || selectedCompanyName)
       setRoomId(String(data.room.id))
       setSelectedRoom(data.room)
       setJoinPassword(payload.password || '')
       setJoinRtcMode(defaultRtcModeForRoom(data.room))
       setCreatedRoom(data.room)
       setStatus(`Created room #${data.room.id}`)
+      setActiveSection('live')
+      setActiveFeed('latest')
       setSearch('')
       setFilter('all')
       setPrivacyFilter('all')
       setSort('newest')
+      setRooms((previous) => [
+        nextRoom,
+        ...previous.filter((room) => Number(room.id) !== Number(nextRoom.id)),
+      ])
+      setRoomMeta((previous) => ({
+        ...previous,
+        page: 1,
+        total: Number(previous.total || 0) + 1,
+        total_pages: Math.max(1, Number(previous.total_pages || 1)),
+      }))
       updateRoomForm('password', '')
       await loadRooms({
         page: 1,
@@ -997,6 +1156,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         sortValue: 'newest',
         quiet: true,
       })
+      setRooms((previous) => [
+        nextRoom,
+        ...previous.filter((room) => Number(room.id) !== Number(nextRoom.id)),
+      ])
     } catch (error) {
       if (error.errors && Object.keys(error.errors).length) setFormErrors(error.errors)
       setStatus(error.message)
@@ -1043,18 +1206,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }
 
-  function joinRoomFromCard(room) {
+  function joinRoomFromCard(room, options = {}) {
     if (!requireAuth('Log in to join live rooms.', 'login')) return
 
     if (room.privacy_type === 'password') {
       selectRoom(room)
+      if (options.rtcMode) setJoinRtcMode(normalizeRtcMode(options.rtcMode, room))
       setShowHostPanel(false)
       setShowJoinPanel(true)
       return
     }
 
     setShowJoinPanel(false)
-    onEnterRoom(String(room.id), { room, rtcMode: defaultRtcModeForRoom(room), autoConnect: true })
+    onEnterRoom(String(room.id), {
+      room,
+      rtcMode: normalizeRtcMode(options.rtcMode || defaultRtcModeForRoom(room), room),
+      autoConnect: true,
+    })
   }
 
   function rememberRecentRoom(card) {
@@ -1248,7 +1416,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </div>
             </div>
           ) : null}
-          <button type="button" className="mp4-feature-room" onClick={() => openCard(featuredMobileCard)}>
+          <button type="button" className="mp4-feature-room" onClick={() => openMobileRoomOrCreate(featuredMobileCard)}>
             <span className="mp4-feature-avatar">
               <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
             </span>
@@ -1804,7 +1972,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <strong>{card.title}</strong>
               <small>ID:{roomIdLabel} - {memberCount}</small>
             </button>
-            <button type="button" onClick={() => showMobileActionToast('Room link copied')} aria-label="Share">↗</button>
+            <button type="button" onClick={() => shareMobileRoom(card)} aria-label="Share">↗</button>
             <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="More room tools">...</button>
             <button type="button" onClick={openLiveSection} aria-label="Leave room">⏻</button>
           </header>
@@ -1823,9 +1991,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
 
           <div className="buzzcast-mobile-live-actions">
-            <button type="button" onClick={() => showMobileActionToast('Room refreshed')}>Refresh</button>
-            <button type="button" onClick={() => showMobileActionToast('Voice mode ready')}>Voice</button>
-            <button type="button" onClick={() => showMobileActionToast('Playlist opened')}>Playlist</button>
+            <button type="button" onClick={refreshMobileRooms}>Refresh</button>
+            <button type="button" onClick={() => handleMobileJoinCard(card, { rtcMode: 'audio' })}>Voice</button>
+            <button type="button" onClick={() => showMobileActionToast('Playlist opens after joining the room.')}>Playlist</button>
             <button type="button" onClick={() => setShowMobileRoomTools(true)}>Tools</button>
           </div>
 
@@ -1838,7 +2006,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <strong>{card.title}</strong>
               <em>{card.host} · Live topic</em>
             </div>
-            <button type="button" onClick={() => card.room ? joinRoomFromCard(card.room) : showMobileActionToast('Preview room selected')}>
+            <button type="button" onClick={() => handleMobileJoinCard(card)}>
               Join
             </button>
           </section>
@@ -1849,7 +2017,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 key={seat}
                 type="button"
                 className={seat === 1 ? 'active' : ''}
-                onClick={() => seat === 1 ? setShowMobileRoomTools(true) : setShowMobileRoomLock(true)}
+                onClick={() => seat === 1 ? handleMobileJoinCard(card, { rtcMode: 'audio' }) : setShowMobileRoomLock(true)}
               >
                 <span><img src={seat === 1 ? liveRoomAssets.seatMic : liveRoomAssets.seatLock} alt="" loading="lazy" /></span>
                 <small>No.{seat}</small>
@@ -1858,7 +2026,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
           <div className="buzzcast-mobile-pk-badge">PK</div>
 
-          <button type="button" className="buzzcast-mobile-mic-line">
+          <button type="button" className="buzzcast-mobile-mic-line" onClick={() => handleMobileJoinCard(card, { rtcMode: 'audio' })}>
             <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
             <span>Come on mic and chat together~</span>
           </button>
@@ -1957,16 +2125,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           {showMobileRoomTools ? (
             <div className="buzzcast-mobile-room-tools-backdrop" role="dialog" aria-modal="true" aria-label="Room tools">
               <section className="buzzcast-mobile-room-tools-sheet">
-                <button type="button" onClick={() => setShowMobileRoomTools(false)}>
+                <button
+                  type="button"
+                  onClick={() => updateMobileRoomControls(card, { max_mic_count: mobileSeats.length }, `${mobileSeats.length} mic seats enabled.`)}
+                >
                   <i className="mic"></i>
                   <span>Number of Mic</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowMobileRoomTools(false)
-                    setShowMobileRoomLock(true)
-                  }}
+                  onClick={() => updateMobileRoomControls(card, { privacy_type: 'public' }, 'Room unlocked.')}
                 >
                   <i className="unlock"></i>
                   <span>Unlock</span>
@@ -1981,11 +2149,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <i className="password"></i>
                   <span>Password</span>
                 </button>
-                <button type="button">
+                <button
+                  type="button"
+                  onClick={() => updateMobileRoomControls(card, { theme: nextThemeValue(card.room?.theme || roomForm.theme) }, 'Room theme updated.')}
+                >
                   <i className="theme"></i>
                   <span>Theme</span>
                 </button>
-                <button type="button">
+                <button type="button" onClick={() => shareMobileRoom(card)}>
                   <i className="share"></i>
                   <span>Share</span>
                 </button>
@@ -1999,11 +2170,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <i className="admin"></i>
                   <span>Admin</span>
                 </button>
-                <button type="button">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLiveChatMessages([])
+                    setShowMobileRoomTools(false)
+                    showMobileActionToast('Comments cleared on this device.')
+                  }}
+                >
                   <i className="clear"></i>
                   <span>Clear comments history</span>
                 </button>
-                <button type="button" onClick={() => setShowMobileRoomTools(false)}>
+                <button type="button" onClick={() => { setShowMobileRoomTools(false); openRankings() }}>
                   <i className="gather"></i>
                   <span>Gather</span>
                 </button>
@@ -2034,7 +2212,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   ))}
                 </div>
                 <p>Please set 4 digits password</p>
-                <button type="button" className="confirm" onClick={() => { setShowMobileRoomLock(false); showMobileActionToast('Lock the room successfully.') }}>Confirm</button>
+                <button type="button" className="confirm" onClick={() => confirmMobileRoomLock(card)}>Confirm</button>
                 <button type="button" className="cancel" onClick={() => setShowMobileRoomLock(false)}>Cancel</button>
               </section>
             </div>
@@ -2062,43 +2240,43 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </button>
           </div>
           <div className="buzzcast-mobile-room-group">
-            <button type="button">
+            <button type="button" onClick={() => card.room ? showMobileActionToast('Room name is managed from the owner room settings.') : openHostPanel('Create a live room first to set the room name.')}>
               <span>Room Name</span>
               <span className="buzzcast-mobile-room-value"><em>{card.title}</em><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => card.room ? showMobileActionToast('Announcement is visible in the room profile.') : openHostPanel('Create a live room first to add an announcement.')}>
               <span>Announcement</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
           </div>
           <div className="buzzcast-mobile-room-group">
-            <button type="button">
+            <button type="button" onClick={() => showMobileActionToast(`${roomMeta.label} selected.`)}>
               <span>Room Title</span>
               <span className="buzzcast-mobile-room-value"><em>{roomMeta.label}</em><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => setSettingsStatus('Use Block in the chat panel to hide a user and remove their messages from your view.')}>
               <span>Blocked List</span>
               <span className="buzzcast-mobile-room-value"><em>{blockedCount}</em><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => showMobileActionToast('Kick history appears after owner moderation actions.')}>
               <span>Kick History</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => showMobileActionToast('Remove history appears after room cleanup actions.')}>
               <span>Remove History</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => showMobileActionToast('Operate history appears after room owner changes.')}>
               <span>Operate History</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
           </div>
           <div className="buzzcast-mobile-room-group">
-            <button type="button">
+            <button type="button" onClick={openRankings}>
               <span>Live Record and Balance</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
-            <button type="button">
+            <button type="button" onClick={() => setActiveSection('help')}>
               <span>Live Guidance</span>
               <span className="buzzcast-mobile-room-value"><b>›</b></span>
             </button>
@@ -2124,7 +2302,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <>
               <div className="buzzcast-room-summary" aria-label="Room summary">
                 <strong title={card.title}>{card.title}</strong>
-                <span>Room ID: {card.id}</span>
+                <span>Room ID: {card.room?.id || card.id}</span>
                 <small>{compactNumber(card.viewers || 0)} user{Number(card.viewers || 0) === 1 ? '' : 's'}</small>
               </div>
             </>
@@ -2366,7 +2544,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
                     {activeThreadFollowed ? 'Following' : 'Follow'}
                   </button>
-                  <button type="button" className="buzzcast-dm-more" aria-label="More options">...</button>
+                  <button type="button" className="buzzcast-dm-more" onClick={() => setDmStatus('Private chat options are available after a conversation is active.')} aria-label="More options">...</button>
                 </header>
                 <p className="buzzcast-dm-intro">Private messages appear here when conversations are available.</p>
                 <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
@@ -2386,7 +2564,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   ))}
                 </div>
                 <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
-                  <button type="button" className="buzzcast-dm-composer-icon mic" aria-label="Voice message" title="Voice message">
+                  <button type="button" className="buzzcast-dm-composer-icon mic" onClick={() => setDmStatus('Voice messages are available inside live RTC rooms.')} aria-label="Voice message" title="Voice message">
                     <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
                   </button>
                   <input
@@ -2394,7 +2572,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     onChange={(event) => setDmInput(event.target.value)}
                     placeholder="Type a message..."
                   />
-                  <button type="button" className="buzzcast-dm-composer-icon photo" aria-label="Photo" title="Photo">
+                  <button type="button" className="buzzcast-dm-composer-icon photo" onClick={() => setDmStatus('Use room chat attachment controls for photos.')} aria-label="Photo" title="Photo">
                     <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
                   </button>
                   <button type="submit" aria-label="Send message">send</button>
@@ -2482,9 +2660,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <h2>Create Live Room</h2>
               <button type="button" onClick={() => setShowHostPanel(false)}>x</button>
             </header>
-            <form onSubmit={createRoom}>
+            <form onSubmit={createRoom} autoComplete="off">
+              <label>Company Name</label>
+              <select
+                name="room-company-name"
+                value={selectedCompanyName}
+                onChange={(event) => setSelectedCompanyName(event.target.value)}
+                autoComplete="off"
+              >
+                {companyOptions.map((company) => (
+                  <option key={company.name} value={company.name}>{company.name}</option>
+                ))}
+              </select>
               <label>Room Name</label>
-              <input value={roomForm.name} onChange={(event) => updateRoomForm('name', event.target.value)} aria-invalid={Boolean(formErrors.name)} />
+              <input name="new-live-room-name" autoComplete="off" value={roomForm.name} onChange={(event) => updateRoomForm('name', event.target.value)} aria-invalid={Boolean(formErrors.name)} />
               {formErrors.name && <small className="form-error">{formErrors.name}</small>}
               <label>Description</label>
               <textarea value={roomForm.description} onChange={(event) => updateRoomForm('description', event.target.value)} rows={3} aria-invalid={Boolean(formErrors.description)} />
@@ -2532,7 +2721,31 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </form>
 
             <div className="buzzcast-quick-join">
-              <h3>Quick Join</h3>
+              <h3>{createdRoom ? 'Created Room' : 'Quick Join'}</h3>
+              {createdRoom ? (
+                <div className="buzzcast-created-room-summary" role="status" aria-live="polite">
+                  <span>Ready to open</span>
+                  <strong>{createdRoom.name || `Room #${createdRoom.id}`}</strong>
+                  <dl>
+                    <div>
+                      <dt>Company</dt>
+                      <dd>{createdRoom.tenant_name || selectedCompanyName}</dd>
+                    </div>
+                    <div>
+                      <dt>Room ID</dt>
+                      <dd>{createdRoom.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Room Type</dt>
+                      <dd>{getRoomMeta(createdRoom.room_type).label}</dd>
+                    </div>
+                    <div>
+                      <dt>Privacy</dt>
+                      <dd>{createdRoom.privacy_type}</dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : null}
               <label>RTC Mode</label>
               <div className="buzzcast-choice-grid">
                 {rtcModeOptions.map((option) => {
@@ -2544,28 +2757,29 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   )
                 })}
               </div>
-              <label>Room ID</label>
-              <input value={roomId} onChange={(event) => clearSelectedRoomIfManual(event.target.value)} placeholder="Select room or enter ID" />
-              <label>Room Password</label>
-              <input type="password" value={joinPassword} onChange={(event) => setJoinPassword(event.target.value)} placeholder="Only needed for locked rooms" autoComplete="current-password" />
-              <button className="buzzcast-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open RTC Console'}</button>
-              {createdRoom ? (
-                <button
-                  className="buzzcast-submit"
-                  type="button"
-                  onClick={() => {
-                    if (!requireAuth('Log in to open the RTC console.', 'login')) return
-                    onEnterRoom(String(createdRoom.id), {
-                      password: joinPassword.trim(),
-                      room: createdRoom,
-                      rtcMode: defaultRtcModeForRoom(createdRoom),
-                      autoConnect: true,
-                    })
-                  }}
-                >
-                  Open Created Room #{createdRoom.id}
-                </button>
+              {!createdRoom ? (
+                <>
+                  <label>Room ID</label>
+                  <input
+                    name="rtc-room-id"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={roomId}
+                    onChange={(event) => clearSelectedRoomIfManual(event.target.value)}
+                    placeholder="Select room or enter ID"
+                  />
+                  <label>Room Password</label>
+                  <input
+                    name="rtc-room-password"
+                    type="password"
+                    value={joinPassword}
+                    onChange={(event) => setJoinPassword(event.target.value)}
+                    placeholder="Only needed for locked rooms"
+                    autoComplete="new-password"
+                  />
+                </>
               ) : null}
+              <button className="buzzcast-submit secondary" type="button" onClick={joinSelectedRoom} disabled={!canJoinRoom}>{openingRoom ? 'Opening...' : 'Open Room'}</button>
             </div>
           </section>
         </div>
@@ -2606,7 +2820,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 autoFocus
               />
               <button className="buzzcast-submit secondary" type="submit" disabled={!canJoinRoom}>
-                {openingRoom ? 'Opening...' : 'Open RTC Room'}
+                {openingRoom ? 'Opening...' : 'Open Room'}
               </button>
             </form>
           </section>
