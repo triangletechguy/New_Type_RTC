@@ -154,7 +154,7 @@ async function captureAvailableMedia(rtcMode, options = {}) {
   const pendingKinds = []
   const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
   const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
-  const captureKinds = rtcMode === 'video' ? ['video', 'audio'] : ['audio']
+  const captureKinds = rtcMode === 'video' ? ['audio', 'video'] : ['audio']
 
   for (const kind of captureKinds) {
     const capture = startMediaCapture(
@@ -175,7 +175,6 @@ async function captureAvailableMedia(rtcMode, options = {}) {
         }
       }).catch(() => {})
 
-      if (capture.kind === 'video') break
       continue
     }
 
