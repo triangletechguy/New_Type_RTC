@@ -2512,7 +2512,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
           <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
-          <IconButton label="Create live room" className="accent" onClick={() => openHostPanel()}>+</IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
               <img src={profileAvatar} alt={profileInitials} loading="lazy" />

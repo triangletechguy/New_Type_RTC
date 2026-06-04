@@ -929,6 +929,10 @@
   white-space: nowrap !important;
 }
 
+.buzzcast-match-banner {
+  justify-content: flex-end !important;
+}
+
 .buzzcast-match-banner .buzzcast-create-room-button:not(:disabled):hover {
   background: rgba(255, 255, 255, .2) !important;
   transform: translateY(-1px);
@@ -1014,6 +1018,8 @@
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-match-banner {
     min-height: 48px !important;
     padding: 0 10px !important;
+    justify-content: end !important;
+    justify-items: end !important;
     background: linear-gradient(90deg, #ad54ff, #e455cf 48%, #ffad4a) !important;
     border-radius: 0 !important;
   }
@@ -1022,7 +1028,7 @@
     width: auto !important;
     min-width: 146px !important;
     min-height: 44px !important;
-    justify-self: start !important;
+    justify-self: end !important;
     padding: 5px 14px 5px 6px !important;
     border-radius: 10px !important;
     background: rgba(255, 255, 255, .14) !important;
