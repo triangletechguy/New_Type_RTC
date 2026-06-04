@@ -221,15 +221,14 @@ function roomSelectSql() {
   `
 }
 
-async function findPublicRoomById(roomId, tenantId) {
+async function findPublicRoomById(roomId) {
   const rows = await query(
     `
     ${roomSelectSql()}
     WHERE r.id = :roomId
-    AND r.tenant_id = :tenantId
     LIMIT 1
     `,
-    { roomId, tenantId }
+    { roomId }
   )
 
   return serializeRoom(rows[0])
@@ -276,12 +275,9 @@ function getRoomListOptions(req) {
 function buildRoomListWhere(options, tenantId, userId, user) {
   const roles = Array.isArray(user?.roles) ? user.roles : []
   const isPlatformAdmin = roles.includes('super_admin')
+  const canAuditOwnTenant = roles.includes('client_admin')
   const conditions = []
   const params = { tenantId }
-
-  if (!isPlatformAdmin) {
-    conditions.push('r.tenant_id = :tenantId')
-  }
 
   if (!userId) {
     conditions.push("r.status = 'active'")
@@ -302,13 +298,14 @@ function buildRoomListWhere(options, tenantId, userId, user) {
 
   if (!userId) {
     conditions.push("r.privacy_type IN ('public', 'password')")
-  } else if (options.canSeePrivateRooms) {
-    // Tenant admins can audit every published room in the tenant.
+  } else if (isPlatformAdmin) {
+    // Platform admins can audit every room.
   } else if (options.privacy === 'private') {
     params.viewerUserId = userId
     conditions.push(`
       (
         r.owner_id = :viewerUserId
+        ${canAuditOwnTenant ? 'OR r.tenant_id = :tenantId' : ''}
         OR EXISTS (
           SELECT 1
           FROM room_roles viewer_roles
@@ -323,6 +320,7 @@ function buildRoomListWhere(options, tenantId, userId, user) {
       (
         r.privacy_type <> 'private'
         OR r.owner_id = :viewerUserId
+        ${canAuditOwnTenant ? 'OR r.tenant_id = :tenantId' : ''}
         OR EXISTS (
           SELECT 1
           FROM room_roles viewer_roles
@@ -353,9 +351,12 @@ function buildRoomListWhere(options, tenantId, userId, user) {
   return { whereSql: conditions.length ? conditions.join(' AND ') : '1 = 1', params }
 }
 
-function canSeeAllTenantRooms(user) {
+function canSeePrivateRoom(user, room) {
+  if (!user || !room) return false
   const roles = Array.isArray(user?.roles) ? user.roles : []
-  return roles.includes('client_admin') || roles.includes('super_admin')
+  if (roles.includes('super_admin')) return true
+  if (roles.includes('client_admin') && Number(room.tenant_id) === Number(user.tenant_id)) return true
+  return false
 }
 
 function validateRoomPayload(payload) {
@@ -552,10 +553,7 @@ router.get('/', optionalAuthMiddleware, async (req, res, next) => {
     if (options.error) return res.status(422).json({ message: options.error })
     const tenantId = req.user?.tenant_id || 1
 
-    const { whereSql, params } = buildRoomListWhere({
-      ...options,
-      canSeePrivateRooms: canSeeAllTenantRooms(req.user),
-    }, tenantId, req.user?.id || null, req.user)
+    const { whereSql, params } = buildRoomListWhere(options, tenantId, req.user?.id || null, req.user)
     const offset = (options.page - 1) * options.perPage
     const limitSql = Number(options.perPage)
     const offsetSql = Number(offset)
@@ -661,7 +659,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
       return insertResult.insertId
     })
 
-    const room = await findPublicRoomById(roomId, req.user.tenant_id)
+    const room = await findPublicRoomById(roomId)
 
     return res.status(201).json({ message: 'Room created successfully', room })
   } catch (error) {
@@ -674,7 +672,7 @@ router.get('/:id', optionalAuthMiddleware, async (req, res, next) => {
     const roomId = parseInteger(req.params.id, null)
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
 
-    const room = await findPublicRoomById(roomId, req.user?.tenant_id || 1)
+    const room = await findPublicRoomById(roomId)
     if (!room) return res.status(404).json({ message: 'Room not found.' })
     if (!req.user && room.status !== 'active') return res.status(404).json({ message: 'Room not found.' })
     if (room.privacy_type === 'private' && !req.user) {
@@ -682,7 +680,7 @@ router.get('/:id', optionalAuthMiddleware, async (req, res, next) => {
     }
     if (
       room.privacy_type === 'private'
-      && !canSeeAllTenantRooms(req.user)
+      && !canSeePrivateRoom(req.user, room)
       && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))
     ) {
       return res.status(403).json({ message: 'This room is private.' })
@@ -862,10 +860,9 @@ async function applyModerationAction({ roomId, targetUserId, action, actor, body
       SELECT *
       FROM rooms
       WHERE id = ?
-      AND tenant_id = ?
       LIMIT 1
       `,
-      [roomId, actor.tenant_id]
+      [roomId]
     )
 
     if (!rooms.length) throw createHttpError(404, 'Room not found.')
@@ -877,10 +874,9 @@ async function applyModerationAction({ roomId, targetUserId, action, actor, body
       SELECT id, name, email
       FROM users
       WHERE id = ?
-      AND tenant_id = ?
       LIMIT 1
       `,
-      [targetUserId, actor.tenant_id]
+      [targetUserId]
     )
 
     if (!targetUsers.length) throw createHttpError(404, 'Target user not found.')
@@ -1134,17 +1130,16 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
       SELECT *
       FROM rooms
       WHERE id = :roomId
-      AND tenant_id = :tenantId
       AND status = 'active'
       LIMIT 1
       `,
-      { roomId, tenantId: req.user.tenant_id }
+      { roomId }
     )
 
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
 
     const room = rooms[0]
-    const publicRoom = await findPublicRoomById(room.id, req.user.tenant_id)
+    const publicRoom = await findPublicRoomById(room.id)
 
     if (await isUserBanned(room.id, req.user.id)) {
       return res.status(403).json({ message: 'You are banned from this room.' })
@@ -1152,7 +1147,12 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
 
     const hasIssuedRoomToken = tokenGrantsRoomJoin(req.user, room.id)
 
-    if (room.privacy_type === 'private' && !hasIssuedRoomToken && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))) {
+    if (
+      room.privacy_type === 'private'
+      && !hasIssuedRoomToken
+      && !canSeePrivateRoom(req.user, room)
+      && !(await canAccessPrivateRoom(room.id, req.user.id, room.owner_id))
+    ) {
       return res.status(403).json({ message: 'This room is private.' })
     }
 
@@ -1350,11 +1350,10 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       SELECT *
       FROM rooms
       WHERE id = :roomId
-      AND tenant_id = :tenantId
       AND status = 'active'
       LIMIT 1
       `,
-      { roomId, tenantId: req.user.tenant_id }
+      { roomId }
     )
 
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
@@ -1466,11 +1465,10 @@ router.post('/:id/quality', authMiddleware, async (req, res, next) => {
       SELECT *
       FROM rooms
       WHERE id = :roomId
-      AND tenant_id = :tenantId
       AND status = 'active'
       LIMIT 1
       `,
-      { roomId, tenantId: req.user.tenant_id }
+      { roomId }
     )
 
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
@@ -1570,10 +1568,9 @@ router.post('/:id/leave', authMiddleware, async (req, res, next) => {
       SELECT *
       FROM rooms
       WHERE id = :roomId
-      AND tenant_id = :tenantId
       LIMIT 1
       `,
-      { roomId, tenantId: req.user.tenant_id }
+      { roomId }
     )
 
     if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })

@@ -3,6 +3,7 @@ import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverFor
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
+import { formatChatTime } from '../../utils/formatters'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
   buildRoomsPath,
@@ -23,7 +24,6 @@ import {
   validateRoomForm,
 } from '../../utils/roomConfig'
 import {
-  defaultClientCompanies,
   dmThreads,
   exploreFilters,
   faqAnswers,
@@ -167,67 +167,6 @@ function cardCover(card, fallback = 0) {
   return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
 }
 
-function clientCompanyNameForCard(card) {
-  const room = card?.room || {}
-  return String(
-    room.tenant_name
-      || room.company_name
-      || room.client_company_name
-      || room.client_name
-      || card?.clientCompany
-      || card?.company
-      || ''
-  ).trim()
-}
-
-function companyNameForUser(user) {
-  const explicitName = String(
-    user?.tenant_name
-      || user?.tenantName
-      || user?.company_name
-      || user?.companyName
-      || user?.client_company_name
-      || user?.clientCompanyName
-      || ''
-  ).trim()
-  if (explicitName) return explicitName
-  if (Number(user?.tenant_id) === 1) return 'TalkEachOther'
-  if (user?.tenant_id) return `Company #${user.tenant_id}`
-  return 'TalkEachOther'
-}
-
-function buildClientCompanyCards(cards) {
-  const clientMap = new Map()
-
-  defaultClientCompanies.forEach((client) => {
-    clientMap.set(client.name.toLowerCase(), { ...client, viewers: 0 })
-  })
-
-  cards.forEach((card, index) => {
-    const name = clientCompanyNameForCard(card)
-    if (!name) return
-
-    const key = name.toLowerCase()
-    const current = clientMap.get(key) || {
-      id: `client-${key.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
-      name,
-      detail: 'Client company',
-      roomCount: 0,
-      viewers: 0,
-      avatarIndex: cardAvatarIndex(card, index),
-    }
-
-    current.roomCount += 1
-    current.viewers += Number(card.viewers || 0)
-    clientMap.set(key, current)
-  })
-
-  const clients = Array.from(clientMap.values())
-    .sort((a, b) => b.roomCount - a.roomCount || a.name.localeCompare(b.name))
-
-  return clients
-}
-
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
   return {
@@ -361,7 +300,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [joinPassword, setJoinPassword] = useState('')
   const [joinRtcMode, setJoinRtcMode] = useState('video')
   const [roomForm, setRoomForm] = useState(defaultRoomForm)
-  const [selectedCompanyName, setSelectedCompanyName] = useState(() => companyNameForUser(user))
   const [formErrors, setFormErrors] = useState({})
   const [createdRoom, setCreatedRoom] = useState(null)
   const [search, setSearch] = useState('')
@@ -451,23 +389,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
 
   const roomCards = useMemo(() => rooms.map(roomToFeedCard), [rooms])
-  const clientCompanyCards = useMemo(() => buildClientCompanyCards(roomCards), [roomCards])
-  const companyOptions = useMemo(() => {
-    const options = new Map()
-    const addCompany = (name, detail = '') => {
-      const label = String(name || '').trim()
-      if (!label) return
-      const key = label.toLowerCase()
-      if (!options.has(key)) options.set(key, { name: label, detail })
-    }
-
-    addCompany(companyNameForUser(user), user?.tenant_id ? `Tenant ${user.tenant_id}` : 'Current company')
-    clientCompanyCards.forEach((client) => addCompany(client.name, client.detail))
-    if (createdRoom?.tenant_name) addCompany(createdRoom.tenant_name, `Tenant ${createdRoom.tenant_id}`)
-    if (selectedCompanyName) addCompany(selectedCompanyName, 'Selected company')
-
-    return Array.from(options.values())
-  }, [clientCompanyCards, createdRoom?.tenant_id, createdRoom?.tenant_name, selectedCompanyName, user])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
@@ -551,16 +472,33 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
-  const messageThreads = useMemo(() => dmThreads.map((thread, index) => {
+  const roomMessageThreads = useMemo(() => roomCards.slice(0, 24).map((card, index) => ({
+    id: `room-thread-${card.room?.id || card.id}`,
+    kind: 'room',
+    room: card.room,
+    name: card.title,
+    peerId: card.room?.id || card.id,
+    preview: `Room #${card.room?.id || card.id} is ready to open`,
+    previewText: `Room #${card.room?.id || card.id} - ${getRoomMeta(card.roomType).label}`,
+    time: 'Live',
+    unread: 0,
+    avatarIndex: cardAvatarIndex(card, index),
+  })), [roomCards])
+  const directMessageThreads = useMemo(() => dmThreads.map((thread, index) => {
     const messages = dmMessages[thread.id] || []
     const unread = readThreadIds.includes(thread.id) ? 0 : Number(thread.unread || 0)
     return {
       ...thread,
+      kind: 'dm',
       avatarIndex: index,
       previewText: threadPreview(thread, messages),
       unread,
     }
   }), [dmMessages, readThreadIds])
+  const messageThreads = useMemo(() => [
+    ...roomMessageThreads,
+    ...directMessageThreads,
+  ], [directMessageThreads, roomMessageThreads])
   const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0] || null
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
   const searchPanelTitle = search.trim()
@@ -571,7 +509,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const sentBeforeFollowCount = activeThread ? (dmMessages[activeThread] || []).filter((message) => message.mine).length : 0
   const dmNotice = !activeThreadData
     ? 'No private conversations yet.'
-    : activeThreadFollowed
+    : activeThreadData.kind === 'room'
+      ? 'Open this room to use live chat, mic, camera, and stage controls.'
+      : activeThreadFollowed
       ? 'You follow each other. Private messages are open.'
       : 'Follow this user to keep sending and receiving private messages.'
   const rankingRows = useMemo(() => {
@@ -924,6 +864,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function toggleThreadFollow(threadId = activeThread) {
     if (!threadId) return
+    const currentThread = messageThreads.find((item) => item.id === threadId)
+    if (currentThread?.kind === 'room') {
+      setDmStatus('Open the room to use live chat.')
+      return
+    }
 
     setFollowedThreadIds((previous) => {
       const following = previous.includes(threadId)
@@ -1124,7 +1069,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         body: JSON.stringify(payload),
       })
       const nextRoom = data.room
-      setSelectedCompanyName(nextRoom.tenant_name || selectedCompanyName)
       setRoomId(String(data.room.id))
       setSelectedRoom(data.room)
       setJoinPassword(payload.password || '')
@@ -1272,6 +1216,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (!requireAuth('Log in to send chat messages.', 'login')) return
     if (!activeThreadData || !activeThread) {
       setDmStatus('No private conversation is selected.')
+      return
+    }
+    if (activeThreadData.kind === 'room') {
+      setDmStatus('Open the room to use live chat.')
       return
     }
     const body = dmInput.trim()
@@ -1468,29 +1416,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ) : null}
 
         <div className="buzzcast-match-banner">
-          <div className="buzzcast-client-strip" aria-label="Client companies">
-            {clientCompanyCards.slice(0, 6).map((client) => (
-              <button
-                key={client.id}
-                type="button"
-                className="buzzcast-client-card"
-                onClick={() => {
-                  setSearch(client.name)
-                  setActiveFeed('for_you')
-                  setStatus(`Showing ${client.name} client rooms`)
-                }}
-              >
-                <span className="buzzcast-client-avatar image-avatar">
-                  <img src={avatarForIndex(client.avatarIndex)} alt="" loading="lazy" />
-                </span>
-                <span className="buzzcast-client-copy">
-                  <strong>{client.name}</strong>
-                  <small>{client.roomCount ? `${client.roomCount} rooms - ${compactNumber(client.viewers)} watching` : client.detail}</small>
-                </span>
-                <span className="buzzcast-client-pill">Client</span>
-              </button>
-            ))}
-          </div>
           <button type="button" className="buzzcast-create-room-button" onClick={() => openHostPanel()}>Create room</button>
         </div>
 
@@ -2358,6 +2283,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [settingsDraft])
 
   useEffect(() => {
+    if (!messageThreads.length) {
+      if (activeThread) setActiveThread('')
+      return
+    }
+
+    if (!activeThread || !messageThreads.some((thread) => thread.id === activeThread)) {
+      setActiveThread(messageThreads[0].id)
+    }
+  }, [activeThread, messageThreads])
+
+  useEffect(() => {
     const timeout = setTimeout(() => {
       loadRooms({
         page: 1,
@@ -2541,12 +2477,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   </span>
                   <strong>{activeThreadData.name}</strong>
                   <span className="buzzcast-dm-peer-id">( ID: {activeThreadData.peerId})</span>
-                  <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
-                    {activeThreadFollowed ? 'Following' : 'Follow'}
-                  </button>
+                  {activeThreadData.kind === 'room' ? (
+                    <button type="button" className="follow" onClick={() => {
+                      setShowMessages(false)
+                      if (activeThreadData.room) joinRoomFromCard(activeThreadData.room)
+                    }}>
+                      Open Room
+                    </button>
+                  ) : (
+                    <button type="button" className={activeThreadFollowed ? 'following' : 'follow'} onClick={() => toggleThreadFollow(activeThread)}>
+                      {activeThreadFollowed ? 'Following' : 'Follow'}
+                    </button>
+                  )}
                   <button type="button" className="buzzcast-dm-more" onClick={() => setDmStatus('Private chat options are available after a conversation is active.')} aria-label="More options">...</button>
                 </header>
-                <p className="buzzcast-dm-intro">Private messages appear here when conversations are available.</p>
+                <p className="buzzcast-dm-intro">
+                  {activeThreadData.kind === 'room' ? 'Live room entries appear here as soon as they are created.' : 'Private messages appear here when conversations are available.'}
+                </p>
                 <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
                   {dmStatus || dmNotice}
                 </div>
@@ -2661,17 +2608,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <button type="button" onClick={() => setShowHostPanel(false)}>x</button>
             </header>
             <form onSubmit={createRoom} autoComplete="off">
-              <label>Company Name</label>
-              <select
-                name="room-company-name"
-                value={selectedCompanyName}
-                onChange={(event) => setSelectedCompanyName(event.target.value)}
-                autoComplete="off"
-              >
-                {companyOptions.map((company) => (
-                  <option key={company.name} value={company.name}>{company.name}</option>
-                ))}
-              </select>
               <label>Room Name</label>
               <input name="new-live-room-name" autoComplete="off" value={roomForm.name} onChange={(event) => updateRoomForm('name', event.target.value)} aria-invalid={Boolean(formErrors.name)} />
               {formErrors.name && <small className="form-error">{formErrors.name}</small>}
@@ -2727,10 +2663,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <span>Ready to open</span>
                   <strong>{createdRoom.name || `Room #${createdRoom.id}`}</strong>
                   <dl>
-                    <div>
-                      <dt>Company</dt>
-                      <dd>{createdRoom.tenant_name || selectedCompanyName}</dd>
-                    </div>
                     <div>
                       <dt>Room ID</dt>
                       <dd>{createdRoom.id}</dd>

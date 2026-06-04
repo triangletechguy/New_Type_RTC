@@ -15,8 +15,6 @@ export const exploreFilters = [
   { value: 'pk', label: 'PK', filter: 'pk' },
 ]
 
-export const defaultClientCompanies = []
-
 export const dmThreads = []
 
 export const initialDmMessages = {}

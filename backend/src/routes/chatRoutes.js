@@ -176,43 +176,41 @@ async function canDeleteMessageForEveryone(message, user) {
   return roles.length > 0
 }
 
-async function findRoomForChat(roomId, tenantId) {
+async function findRoomForChat(roomId) {
   const rooms = await query(
     `
     SELECT *
     FROM rooms
     WHERE id = :roomId
-    AND tenant_id = :tenantId
     LIMIT 1
     `,
-    { roomId, tenantId }
+    { roomId }
   )
 
   return rooms[0] || null
 }
 
-async function findActiveSignalingRoom(roomId, tenantId) {
+async function findActiveSignalingRoom(roomId) {
   const sessions = await query(
     `
     SELECT signaling_room
     FROM rtc_sessions
     WHERE room_id = :roomId
-    AND tenant_id = :tenantId
     AND status = 'active'
     ORDER BY id DESC
     LIMIT 1
     `,
-    { roomId, tenantId }
+    { roomId }
   )
 
   return sessions[0]?.signaling_room || ''
 }
 
-async function broadcastRoomChatMessage(req, roomId, tenantId, message) {
+async function broadcastRoomChatMessage(req, roomId, message) {
   const io = req.app?.get('io')
   if (!io || !message?.id) return false
 
-  const signalingRoom = await findActiveSignalingRoom(roomId, tenantId)
+  const signalingRoom = await findActiveSignalingRoom(roomId)
   if (!signalingRoom) return false
 
   io.to(String(signalingRoom)).emit('chat-message', {
@@ -262,21 +260,11 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
 
-    const rooms = await query(
-      `
-      SELECT id, chat_enabled
-      FROM rooms
-      WHERE id = :roomId
-      AND tenant_id = :tenantId
-      LIMIT 1
-      `,
-      { roomId, tenantId: req.user.tenant_id }
-    )
-
-    if (!rooms.length) return res.status(404).json({ message: 'Room not found.' })
+    const room = await findRoomForChat(roomId)
+    if (!room) return res.status(404).json({ message: 'Room not found.' })
     const blockedUserIds = await blockedUserIdsForRoom(roomId, req.user.id)
 
-    const params = { tenantId: req.user.tenant_id, roomId, userId: req.user.id }
+    const params = { tenantId: room.tenant_id, roomId, userId: req.user.id }
     if (afterId) params.afterId = afterId
 
     const messages = await query(
@@ -310,7 +298,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       messages: messages.reverse(),
       meta: {
         limit,
-        chat_enabled: Boolean(Number(rooms[0].chat_enabled)),
+        chat_enabled: Boolean(Number(room.chat_enabled)),
         blocked_user_ids: blockedUserIds,
       },
     })
@@ -344,7 +332,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       return res.status(422).json({ message: 'Message body is required.' })
     }
 
-    const room = await findRoomForChat(roomId, req.user.tenant_id)
+    const room = await findRoomForChat(roomId)
 
     if (!room) return res.status(404).json({ message: 'Room not found.' })
 
@@ -365,7 +353,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       )
       `,
       {
-        tenantId: req.user.tenant_id,
+        tenantId: room.tenant_id,
         roomId,
         senderId: req.user.id,
         parentMessageId,
@@ -385,7 +373,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     let realtimeBroadcasted = false
 
     try {
-      realtimeBroadcasted = await broadcastRoomChatMessage(req, roomId, req.user.tenant_id, chatMessage)
+      realtimeBroadcasted = await broadcastRoomChatMessage(req, roomId, chatMessage)
     } catch (broadcastError) {
       console.error('[chat] realtime broadcast failed', broadcastError)
     }
@@ -413,7 +401,7 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
       return res.status(422).json({ message: 'You cannot block yourself.' })
     }
 
-    const room = await findRoomForChat(roomId, req.user.tenant_id)
+    const room = await findRoomForChat(roomId)
     if (!room) return res.status(404).json({ message: 'Room not found.' })
 
     const users = await query(
@@ -421,10 +409,9 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
       SELECT id
       FROM users
       WHERE id = :blockedUserId
-      AND tenant_id = :tenantId
       LIMIT 1
       `,
-      { blockedUserId, tenantId: req.user.tenant_id }
+      { blockedUserId }
     )
 
     if (!users.length) return res.status(404).json({ message: 'User not found.' })
@@ -439,7 +426,7 @@ router.post('/rooms/:id/blocks', authMiddleware, async (req, res, next) => {
       )
       `,
       {
-        tenantId: req.user.tenant_id,
+        tenantId: room.tenant_id,
         roomId,
         blockerId: req.user.id,
         blockedUserId,

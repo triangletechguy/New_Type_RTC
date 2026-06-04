@@ -480,7 +480,7 @@ router.get('/dashboard', async (req, res, next) => {
   try {
     const roomIds = hasAnyRole(req.user, ['super_admin'])
       ? null
-      : await getScopedRoomIds(req.user.id, req.user.tenant_id)
+      : await getTenantRoomIds(req.user.tenant_id)
 
     return res.json({ dashboard: await getDashboard(roomIds) })
   } catch (error) {
@@ -509,7 +509,7 @@ router.get('/overview', async (req, res, next) => {
     }
 
     const adminRow = await getAdminUser(req.user.id)
-    const roomIds = await getScopedRoomIds(req.user.id, req.user.tenant_id)
+    const roomIds = await getTenantRoomIds(req.user.tenant_id)
     const payload = await buildScopePayload({
       adminRow,
       roomIds,
