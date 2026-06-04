@@ -1,9 +1,3 @@
-const referenceAssetBase = '/rtc-reference-assets'
-
-export function referenceAsset(number) {
-  return `${referenceAssetBase}/asset-(${number}).png`
-}
-
 export const feedTabs = [
   { value: 'following', label: 'Following', mobileLabel: 'Mine', filter: 'all' },
   { value: 'for_you', label: 'For You', mobileLabel: 'Popular', filter: 'all' },

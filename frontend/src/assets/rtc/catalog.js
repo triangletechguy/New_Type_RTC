@@ -1,7 +1,4 @@
-import appIcon from './brand/app-icon.png'
 import appScreenshots from './brand/app-screenshots.png'
-import brandGuide from './brand/brand-guide.png'
-import logoWordmark from './brand/logo-wordmark.png'
 
 import assetImage2Bars from './asset-image2/smart-bars.png'
 import assetImage2CreatorCard from './asset-image2/smart-creator-avatar.png'
@@ -13,8 +10,6 @@ import assetImage2SearchIcon from './asset-image2/smart-search-icon.png'
 
 import liveComposerMic from './live-ui/composer-mic.svg'
 import liveComposerPhoto from './live-ui/photo.svg'
-import liveRailLive from './live-ui/rail-live.svg'
-import liveRailMoments from './live-ui/rail-moments.svg'
 import liveSeatLock from './live-ui/seat-lock.svg'
 import liveSeatMic from './live-ui/seat-mic.svg'
 import liveSend from './live-ui/send.svg'
@@ -29,21 +24,13 @@ import avatar07 from './avatars/avatar-07.png'
 import avatar08 from './avatars/avatar-08.png'
 
 import sidebarEmpty from './admin/sidebar-empty.png'
-import controlGrid from './admin/control-grid.png'
-import statusColors from './admin/status-colors.png'
 import emptySessions from './admin/empty-sessions.png'
-import loadingMovie from './loading (1).png'
-
-import mobileChat from './chat/mobile-chat.png'
-import messageStates from './chat/message-states.png'
-import reactions from './chat/reactions.png'
+import loadingMovie from './loading.gif'
 
 import audioDuet from './rooms/audio-duet.png'
 import audioStage from './rooms/audio-stage.png'
 import avatarGrid from './rooms/avatar-grid.png'
 import cameraOff from './rooms/camera-off.png'
-import connectionStatus from './rooms/connection-status.png'
-import mediaStates from './rooms/media-states.png'
 import musicRoom from './rooms/music-room.png'
 import passwordRoom from './rooms/password-room.png'
 import privateRoom from './rooms/private-room.png'
@@ -53,11 +40,8 @@ import studioStage from './rooms/studio-stage.png'
 import videoRoom from './rooms/video-room.png'
 
 export const brandAssets = {
-  appIcon,
   appIconSmall: assetImage2GroupIcon,
   appScreenshots,
-  brandGuide,
-  logoWordmark,
 }
 
 export const assetImage2Assets = {
@@ -73,8 +57,6 @@ export const assetImage2Assets = {
 export const liveRoomAssets = {
   composerMic: liveComposerMic,
   composerPhoto: liveComposerPhoto,
-  railLive: liveRailLive,
-  railMoments: liveRailMoments,
   seatLock: liveSeatLock,
   seatMic: liveSeatMic,
   send: liveSend,
@@ -92,16 +74,7 @@ export const avatarAssets = [
 ]
 
 export const adminAssets = {
-  controlGrid,
   emptySessions,
-  sidebarEmpty,
-  statusColors,
-}
-
-export const chatAssets = {
-  messageStates,
-  mobileChat,
-  reactions,
 }
 
 export const roomAssets = {
@@ -109,11 +82,10 @@ export const roomAssets = {
   audioStage,
   avatarGrid,
   cameraOff,
-  connectionStatus,
-  mediaStates,
   musicRoom,
   passwordRoom,
   privateRoom,
+  sidebarEmpty,
   soloLive,
   stageMoods,
   studioStage,
@@ -144,7 +116,6 @@ const toneCovers = {
   ember: stageMoods,
   game: videoRoom,
   mid: audioStage,
-  mono: connectionStatus,
   night: studioStage,
   ocean: videoRoom,
   olive: musicRoom,
