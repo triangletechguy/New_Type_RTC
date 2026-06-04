@@ -927,8 +927,48 @@ pre {
 }
 
 .loading-movie.view-loading {
-  min-height: min(72vh, 620px);
-  margin: 16px;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(125, 92, 255, .2), rgba(15, 23, 42, 0) 34%),
+    linear-gradient(180deg, rgba(8, 10, 20, .96), rgba(12, 15, 28, .94));
+  box-shadow: none;
+}
+
+.loading-movie.buzzcast-loading-state {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(125, 92, 255, .2), rgba(15, 23, 42, 0) 34%),
+    linear-gradient(180deg, rgba(8, 10, 20, .96), rgba(12, 15, 28, .94));
+  box-shadow: none;
+}
+
+.loading-movie.view-loading .loading-movie-icon,
+.loading-movie.buzzcast-loading-state .loading-movie-icon {
+  grid-area: 1 / 1;
+  align-self: center;
+  justify-self: center;
+}
+
+.loading-movie.view-loading > span,
+.loading-movie.buzzcast-loading-state > span {
+  grid-area: 1 / 1;
+  align-self: center;
+  justify-self: center;
+  transform: translateY(74px);
 }
 
 @media (prefers-reduced-motion: reduce) {
