@@ -42,9 +42,13 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
         }
   }
 
+  if (requestedMediaMode === 'real') {
+    return createRealMediaStream(requestedRtcMode)
+  }
+
   const recovered = await captureAvailableMedia(requestedRtcMode, options)
 
-  if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
+  if (recovered.stream.getTracks().length) {
     return recovered
   }
 
@@ -52,6 +56,40 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
     stream: createMockMediaStream(requestedRtcMode),
     mode: 'mock',
     warning: `${formatMediaError(recovered.primaryError, requestedRtcMode)} Mock media started instead.`,
+  }
+}
+
+async function createRealMediaStream(rtcMode) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: audioConstraints,
+      video: rtcMode === 'video' ? videoConstraints : false,
+    })
+
+    prepareCapturedStream(stream)
+
+    const hasAudio = stream.getAudioTracks().some((track) => track.readyState !== 'ended')
+    const hasVideo = stream.getVideoTracks().some((track) => track.readyState !== 'ended')
+
+    if (!hasAudio || (rtcMode === 'video' && !hasVideo)) {
+      stopMediaStream(stream)
+      throw new Error(`No ${rtcMode === 'video' ? 'camera/microphone' : 'microphone'} track was returned by the browser.`)
+    }
+
+    return {
+      stream,
+      mode: 'real',
+      warning: null,
+      primaryError: null,
+    }
+  } catch (error) {
+    const recovered = await captureAvailableMedia(rtcMode, { timeoutMs: 0 })
+
+    return {
+      ...recovered,
+      warning: recovered.warning || formatMediaError(error, rtcMode),
+      primaryError: recovered.primaryError || error,
+    }
   }
 }
 
@@ -244,6 +282,11 @@ function prepareCapturedTrack(track, kind) {
   } catch {
     // contentHint is optional and browser-dependent.
   }
+}
+
+function prepareCapturedStream(stream) {
+  stream?.getAudioTracks?.().forEach((track) => prepareCapturedTrack(track, 'audio'))
+  stream?.getVideoTracks?.().forEach((track) => prepareCapturedTrack(track, 'video'))
 }
 
 function stopCapturedStream(stream) {
