@@ -3102,8 +3102,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <span>Room ID: {room?.id || roomId}</span>
               <small>{displayUserCount} user{viewerCount === 1 ? '' : 's'}</small>
             </div>
-            <div className="buzzcast-room-status live-rtc-status" title={rtcStageStatusText}>
-              <span className={rtcStageStatusTone} aria-hidden="true"></span>
+            <div className={`live-rtc-status-card ${rtcStageStatusTone}`} title={rtcStageStatusText}>
+              <span className="live-rtc-status-dot" aria-hidden="true"></span>
               <strong>{rtcStageStatusLabel}</strong>
               <small>{rtcStageStatusText}</small>
             </div>
@@ -3201,6 +3201,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   <img src={roomAvatar} alt="" />
                   <strong>{roomTitle}</strong>
                   <span>Press Connect RTC to start</span>
+                  {connectAttempted || joining ? (
+                    <small className={`waiting-rtc-status ${rtcStageStatusTone}`}>{rtcStageStatusText}</small>
+                  ) : null}
                 </div>
               )}
             </div>
