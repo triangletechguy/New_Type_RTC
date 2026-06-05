@@ -149,6 +149,54 @@ export async function watchLocalMediaPermissions(rtcMode = 'video', onChange = (
 }
 
 async function captureAvailableMedia(rtcMode, options = {}) {
+  if (rtcMode === 'video') {
+    const combined = await captureCombinedVideoMedia(options)
+    if (combined) return combined
+  }
+
+  return captureSeparateMedia(rtcMode, options)
+}
+
+async function captureCombinedVideoMedia(options = {}) {
+  const stream = createEmptyMediaStream()
+  const failures = {}
+  const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
+  const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
+  const capture = startCombinedMediaCapture()
+  const result = timeoutMs > 0 ? await waitForCapture(capture, timeoutMs) : await capture.promise
+
+  if (result?.timedOut) {
+    capture.promise.then((lateResult) => {
+      if (lateResult?.tracks?.length && onLateTrack) {
+        lateResult.tracks.forEach((lateTrack) => onLateTrack(lateTrack))
+      } else if (lateResult?.stream) {
+        stopMediaStream(lateResult.stream)
+      }
+    }).catch(() => {})
+
+    return {
+      stream,
+      mode: 'receive-only',
+      warning: buildMediaWarning(stream, failures, null, 'video', ['audio', 'video']),
+      primaryError: null,
+    }
+  }
+
+  if (result?.tracks?.length) {
+    result.tracks.forEach(({ track }) => stream.addTrack(track))
+
+    return {
+      stream,
+      mode: 'real',
+      warning: buildMediaWarning(stream, failures, null, 'video', []),
+      primaryError: null,
+    }
+  }
+
+  return null
+}
+
+async function captureSeparateMedia(rtcMode, options = {}) {
   const stream = createEmptyMediaStream()
   const failures = {}
   const pendingKinds = []
@@ -197,6 +245,56 @@ async function captureAvailableMedia(rtcMode, options = {}) {
     warning: buildMediaWarning(stream, failures, primaryError, rtcMode, pendingKinds),
     primaryError,
   }
+}
+
+function startCombinedMediaCapture() {
+  const promise = Promise.all([
+    getLocalMediaPermissionState('audio'),
+    getLocalMediaPermissionState('video'),
+  ])
+    .then(([audioPermissionState, videoPermissionState]) => {
+      if (audioPermissionState === 'denied') {
+        return { kind: 'media', error: createPermissionBlockedError('audio') }
+      }
+
+      if (videoPermissionState === 'denied') {
+        return { kind: 'media', error: createPermissionBlockedError('video') }
+      }
+
+      return navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: videoConstraints,
+      })
+    })
+    .then((stream) => {
+      if (stream?.error) return stream
+
+      const audioTracks = stream.getAudioTracks()
+      const videoTracks = stream.getVideoTracks()
+      const tracks = []
+
+      audioTracks.forEach((track) => {
+        prepareCapturedTrack(track, 'audio')
+        tracks.push({ kind: 'audio', stream, track })
+      })
+      videoTracks.forEach((track) => {
+        prepareCapturedTrack(track, 'video')
+        tracks.push({ kind: 'video', stream, track })
+      })
+
+      if (!tracks.length) {
+        stopMediaStream(stream)
+        return {
+          kind: 'media',
+          error: new Error('No microphone or camera track was returned by the browser.'),
+        }
+      }
+
+      return { kind: 'media', stream, tracks }
+    })
+    .catch((error) => ({ kind: 'media', error }))
+
+  return { kind: 'media', promise }
 }
 
 function startMediaCapture(kind, constraints) {
