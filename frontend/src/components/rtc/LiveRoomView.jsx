@@ -2501,6 +2501,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             socket={socketRef.current}
             user={user}
             room={room}
+            localStream={localStream}
             focusRequest={chatFocusRequest}
             externalMessage={externalChatMessage}
             inboxPeerRequest={inboxPeerRequest}

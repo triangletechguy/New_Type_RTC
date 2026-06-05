@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { avatarForUser, roomAssets } from '../../assets/rtc/catalog'
 
 function visualIndexFromLabel(label) {
@@ -27,7 +27,9 @@ export function VideoTile({
 }) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)
+  const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false)
   const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
+  const hasAudio = stream?.getAudioTracks?.().some((track) => track.readyState !== 'ended')
   const isScreenSharing = badge === 'screen'
   const showVideo = Boolean(stream && hasVideo && (isScreenSharing || (cameraOn !== false && rtcMode === 'video')))
   const videoStateOn = isScreenSharing || (cameraOn && rtcMode === 'video')
@@ -53,6 +55,7 @@ export function VideoTile({
 
     if (video && stream && showVideo) {
       if (video.srcObject !== stream) video.srcObject = stream
+      video.muted = true
       const playPromise = video.play()
       if (playPromise?.catch) playPromise.catch(() => {})
     } else if (video) {
@@ -61,14 +64,33 @@ export function VideoTile({
 
     const audio = audioRef.current
 
-    if (audio && stream && !showVideo) {
+    if (audio && stream && hasAudio) {
       if (audio.srcObject !== stream) audio.srcObject = stream
+      audio.muted = Boolean(muted)
       const playPromise = audio.play()
-      if (playPromise?.catch) playPromise.catch(() => {})
+      if (playPromise?.then) {
+        playPromise
+          .then(() => setAudioPlaybackBlocked(false))
+          .catch(() => {
+            if (!muted) setAudioPlaybackBlocked(true)
+          })
+      }
     } else if (audio) {
       audio.srcObject = null
+      setAudioPlaybackBlocked(false)
     }
-  }, [stream, showVideo])
+  }, [stream, showVideo, hasAudio, muted])
+
+  function playRemoteAudio(event) {
+    event.stopPropagation()
+    const audio = audioRef.current
+    if (!audio) return
+
+    audio.muted = false
+    audio.play()
+      .then(() => setAudioPlaybackBlocked(false))
+      .catch(() => setAudioPlaybackBlocked(true))
+  }
 
   function handleKeyDown(event) {
     if (!canExpand) return
@@ -107,11 +129,18 @@ export function VideoTile({
           {followLabel}
         </button>
       ) : null}
+      {stream && hasAudio ? (
+        <audio ref={audioRef} autoPlay muted={muted} className="audio-element" />
+      ) : null}
+      {audioPlaybackBlocked && !muted ? (
+        <button type="button" className="video-audio-button" onClick={playRemoteAudio}>
+          Play audio
+        </button>
+      ) : null}
       {showVideo ? (
-        <video ref={videoRef} autoPlay playsInline muted={muted} className="video-element" />
+        <video ref={videoRef} autoPlay playsInline muted className="video-element" />
       ) : stream ? (
         <>
-          <audio ref={audioRef} autoPlay muted={muted} className="audio-element" />
           <div className="video-placeholder media-avatar-panel">
             <img className="video-placeholder-art" src={placeholderArt} alt="" />
             <div className="avatar-stage">

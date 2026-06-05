@@ -10,6 +10,11 @@ const maxPhotoInputBytes = 12 * 1024 * 1024
 const photoMaxDimension = 1280
 const photoCompressionQuality = 0.72
 const audioBitsPerSecond = 32000
+const recordingAudioConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+}
 const roomChatSyncIntervalMs = 5000
 const inboxSyncIntervalMs = 5000
 
@@ -75,6 +80,25 @@ function directMessagePeerId(message, currentUser) {
   if (senderId === currentUserId) return recipientId
   if (recipientId === currentUserId) return senderId
   return 0
+}
+
+function liveAudioTrackFromStream(stream) {
+  return stream?.getAudioTracks?.().find((track) => track.readyState === 'live') || null
+}
+
+async function createAudioRecordingStream(localStream) {
+  const activeRoomMicTrack = liveAudioTrackFromStream(localStream)
+
+  if (activeRoomMicTrack) {
+    const recordingTrack = activeRoomMicTrack.clone()
+    recordingTrack.enabled = true
+    return new MediaStream([recordingTrack])
+  }
+
+  return navigator.mediaDevices.getUserMedia({
+    audio: recordingAudioConstraints,
+    video: false,
+  })
 }
 
 function inboxEditKey(message) {
@@ -213,7 +237,7 @@ async function optimizePhotoFile(file) {
   }
 }
 
-export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, onMessagesChange }) {
+export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStream = null, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, onMessagesChange }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
@@ -486,7 +510,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       setStatus('')
       setAudioDraft(null)
       setPhotoDraft(null)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await createAudioRecordingStream(localStream)
       const mimeType = preferredAudioMimeType()
       const recorderOptions = {
         audioBitsPerSecond,
