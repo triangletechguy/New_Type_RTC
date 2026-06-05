@@ -39,6 +39,8 @@ const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const RTC_VIDEO_WATCHDOG_DELAY_MS = 7000
 const RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS = 7000
+const RTC_NEGOTIATION_RETRY_DELAY_MS = 2000
+const RTC_NEGOTIATION_RETRY_MAX_ATTEMPTS = 3
 const RTC_LOCAL_SENDER_WATCHDOG_DELAY_MS = 8000
 const RTC_LOCAL_SENDER_WATCHDOG_INTERVAL_MS = 6000
 const RTC_LOCAL_SENDER_WATCHDOG_MAX_ATTEMPTS = 2
@@ -384,6 +386,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const peerVideoWatchdogStatesRef = useRef(peerVideoWatchdogStates)
   const videoWatchdogTimersRef = useRef({})
   const videoWatchdogAttemptsRef = useRef({})
+  const negotiationRetryTimersRef = useRef({})
+  const negotiationRetryAttemptsRef = useRef({})
   const localSenderWatchdogAttemptsRef = useRef({ audio: 0, video: 0 })
   const localSenderRepairingRef = useRef({})
   const localTrackCleanupRef = useRef(new Map())
@@ -802,6 +806,91 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
+  function clearNegotiationRetryTimer(socketId) {
+    const timer = negotiationRetryTimersRef.current[socketId]
+    if (timer) window.clearTimeout(timer)
+    delete negotiationRetryTimersRef.current[socketId]
+  }
+
+  function resetPeerNegotiationRetry(socketId) {
+    clearNegotiationRetryTimer(socketId)
+    delete negotiationRetryAttemptsRef.current[socketId]
+  }
+
+  function clearAllNegotiationRetries() {
+    Object.keys(negotiationRetryTimersRef.current).forEach((socketId) => clearNegotiationRetryTimer(socketId))
+    negotiationRetryAttemptsRef.current = {}
+  }
+
+  function peerNeedsNegotiationRetry(socketId, rtcClient = rtcRef.current) {
+    if (!joinedRef.current || !socketId || !rtcClient) return false
+    if (String(socketId) === String(localSocketIdRef.current || '')) return false
+
+    const peerConnection = rtcClient.peerConnections?.[socketId]
+    if (!peerConnection || peerConnection.signalingState === 'closed') return false
+
+    const connectionState = peerConnection.connectionState === 'new' && peerConnection.iceConnectionState !== 'new'
+      ? peerConnection.iceConnectionState
+      : peerConnection.connectionState
+
+    if (['connected', 'completed'].includes(connectionState)) return false
+    if (['connected', 'completed'].includes(peerConnection.iceConnectionState)) return false
+
+    return (
+      !peerConnection.localDescription
+      || !peerConnection.remoteDescription
+      || ['new', 'connecting', 'checking', 'disconnected', 'failed'].includes(connectionState)
+    )
+  }
+
+  function scheduleNegotiationRetry(socketId, rtcClient, label = 'peer') {
+    if (!socketId || !rtcClient || negotiationRetryTimersRef.current[socketId]) return
+
+    const attempt = Number(negotiationRetryAttemptsRef.current[socketId] || 0)
+    if (attempt >= RTC_NEGOTIATION_RETRY_MAX_ATTEMPTS) return
+
+    const delayMs = RTC_NEGOTIATION_RETRY_DELAY_MS + (attempt * 1000)
+    negotiationRetryTimersRef.current[socketId] = window.setTimeout(async () => {
+      delete negotiationRetryTimersRef.current[socketId]
+
+      if (rtcRef.current !== rtcClient || !peerNeedsNegotiationRetry(socketId, rtcClient)) {
+        delete negotiationRetryAttemptsRef.current[socketId]
+        return
+      }
+
+      negotiationRetryAttemptsRef.current[socketId] = attempt + 1
+      negotiatedPeersRef.current.delete(socketId)
+
+      setPeerStates((previous) => {
+        const next = { ...previous, [socketId]: 'negotiating' }
+        peerStatesRef.current = next
+        return next
+      })
+
+      try {
+        const offerSent = await rtcClient.createOffer(socketId)
+        if (offerSent === false) {
+          setPeerStates((previous) => {
+            const next = { ...previous, [socketId]: 'waiting' }
+            peerStatesRef.current = next
+            return next
+          })
+        } else {
+          negotiatedPeersRef.current.add(socketId)
+        }
+      } catch (error) {
+        setConnectionIssue(`${label} negotiation retry failed: ${error.message}`)
+        setStatus(`${label} negotiation retry failed: ${error.message}`)
+      }
+
+      if (peerNeedsNegotiationRetry(socketId, rtcClient)) {
+        scheduleNegotiationRetry(socketId, rtcClient, label)
+      } else {
+        delete negotiationRetryAttemptsRef.current[socketId]
+      }
+    }, delayMs)
+  }
+
   function peerLabelForVideoWatchdog(socketId) {
     return peerMediaStatesRef.current?.[socketId]?.userName || `peer ${String(socketId).slice(0, 6)}`
   }
@@ -929,6 +1018,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcRef.current.closeAll()
       rtcRef.current = null
     }
+    clearAllNegotiationRetries()
     stopCameraFilterPipeline({ stopSource: true })
     stopMediaStream(streamRef.current)
     if (screenShareTrackRef.current) {
@@ -1209,26 +1299,31 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     rtcClient.createPeerConnection(remoteSocketId)
 
-    if (!shouldInitiateOffer(remoteSocketId)) {
-      setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'waiting' }))
-      return
-    }
-
     if (negotiatedPeersRef.current.has(remoteSocketId)) return
 
     negotiatedPeersRef.current.add(remoteSocketId)
-    setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'negotiating' }))
+    setPeerStates((previous) => {
+      const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'negotiating' }
+      peerStatesRef.current = next
+      return next
+    })
 
     try {
       const offerSent = await rtcClient.createOffer(remoteSocketId)
       if (offerSent === false) {
         negotiatedPeersRef.current.delete(remoteSocketId)
-        setPeerStates((previous) => ({ ...previous, [remoteSocketId]: 'waiting' }))
+        setPeerStates((previous) => {
+          const next = { ...previous, [remoteSocketId]: 'waiting' }
+          peerStatesRef.current = next
+          return next
+        })
       }
+      scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
     } catch (error) {
       negotiatedPeersRef.current.delete(remoteSocketId)
       setConnectionIssue(`${label} negotiation failed: ${error.message}`)
       setStatus(`${label} negotiation failed: ${error.message}`)
+      scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
     }
   }
 
@@ -1236,6 +1331,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     rtcClient?.closeAll?.()
     negotiatedPeersRef.current.clear()
     clearAllVideoWatchdogs()
+    clearAllNegotiationRetries()
     remoteStreamsRef.current = {}
     peerStatesRef.current = {}
     peerStatsRef.current = {}
@@ -1931,12 +2027,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  function shouldInitiateOffer(remoteSocketId) {
-    const localSocketId = localSocketIdRef.current
-    if (!localSocketId || !remoteSocketId) return false
-    return String(localSocketId) < String(remoteSocketId)
-  }
-
   function isPolitePeer(remoteSocketId) {
     const localSocketId = localSocketIdRef.current
     if (!localSocketId || !remoteSocketId) return true
@@ -1944,6 +2034,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function handleRemoteStream(remoteSocketId, remoteStream) {
+    resetPeerNegotiationRetry(remoteSocketId)
     setRemoteStreams((previous) => {
       const next = { ...previous, [remoteSocketId]: remoteStream }
       remoteStreamsRef.current = next
@@ -2127,7 +2218,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         iceTransportPolicy: rtcConfig.iceTransportPolicy,
         onRemoteStream: handleRemoteStream,
         onPeerState: (remoteSocketId, state) => {
-          setPeerStates((previous) => ({ ...previous, [remoteSocketId]: state }))
+          setPeerStates((previous) => {
+            const next = { ...previous, [remoteSocketId]: state }
+            peerStatesRef.current = next
+            return next
+          })
+          if (['connected', 'completed'].includes(String(state || '').toLowerCase())) {
+            resetPeerNegotiationRetry(remoteSocketId)
+          }
           if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
         },
         onPeerStats: (remoteSocketId, stats) => {
@@ -2227,17 +2325,25 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           negotiatedPeersRef.current.add(fromSocketId)
           const accepted = await rtcClient.handleOffer(fromSocketId, offer, { polite: isPolitePeer(fromSocketId) })
           if (accepted === false) setPeerStates((previous) => ({ ...previous, [fromSocketId]: 'glare' }))
+          scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
         } catch (error) {
           setConnectionIssue(`Offer failed: ${error.message}`)
           setStatus(`Offer failed: ${error.message}`)
+          scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
         }
       })
       socket.on('webrtc-answer', async ({ fromSocketId, answer }) => {
         try {
           await rtcClient.handleAnswer(fromSocketId, answer)
+          if (peerNeedsNegotiationRetry(fromSocketId, rtcClient)) {
+            scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
+          } else {
+            resetPeerNegotiationRetry(fromSocketId)
+          }
         } catch (error) {
           setConnectionIssue(`Answer failed: ${error.message}`)
           setStatus(`Answer failed: ${error.message}`)
+          scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
         }
       })
       socket.on('webrtc-ice-candidate', async ({ fromSocketId, candidate }) => {
@@ -2251,6 +2357,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.on('user-left', ({ socketId }) => {
         setSignalingPeerCount((count) => Math.max(0, count - 1))
         resetPeerVideoWatchdog(socketId)
+        resetPeerNegotiationRetry(socketId)
         rtcClient.closePeer(socketId)
         setRemoteStreams((previous) => {
           const copy = { ...previous }
@@ -2683,6 +2790,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     if (!joined) {
       clearAllVideoWatchdogs()
+      clearAllNegotiationRetries()
       resetLocalSenderWatchdog()
       return undefined
     }
