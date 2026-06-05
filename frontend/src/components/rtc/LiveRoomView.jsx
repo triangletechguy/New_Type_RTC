@@ -2088,8 +2088,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(`Joining room #${roomId}...`)
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
-      const requestedMicIntent = true
-      const requestedCameraIntent = selectedRtcMode === 'video'
+      const requestedMicIntent = Boolean(micOnRef.current)
+      const requestedCameraIntent = selectedRtcMode === 'video' && Boolean(cameraOnRef.current)
       desiredMicOnRef.current = requestedMicIntent
       desiredCameraOnRef.current = requestedCameraIntent
       const rtcConfigPromise = getRtcConfig().catch((error) => {
@@ -2176,7 +2176,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
       let actualMicOn = requestedMicOn && hasLiveTrack(localMediaStream, 'audio')
-      let actualCameraOn = requestedCameraOn && hasLiveTrack(localMediaStream, 'video')
+      let actualCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
 
       micOnRef.current = actualMicOn
       cameraOnRef.current = actualCameraOn
@@ -2202,8 +2202,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       setRtcConfigState(rtcConfig)
 
-      if (joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured) {
-        throw new Error('TURN is not configured on the backend. Remote camera cannot work reliably on this deployed server until TURN_URLS and TURN_SHARED_SECRET are set and PM2 is restarted.')
+      const missingProductionTurn = joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured
+      const productionTurnWarning = 'TURN is not configured. Your local camera can start, but remote video may fail on some networks until TURN_URLS and TURN_SHARED_SECRET are set and PM2 is restarted.'
+      if (missingProductionTurn) {
+        setConnectionIssue(productionTurnWarning)
       }
 
       setConnectStep('signaling')
@@ -2250,7 +2252,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       await flushPendingLocalTracks({ publish: false })
 
       const latestMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const latestCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
+      const latestCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
 
       if (latestMicOn !== actualMicOn || latestCameraOn !== actualCameraOn) {
         actualMicOn = latestMicOn
@@ -2486,7 +2488,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       if (!socketReady.ok) throw socketReady.error
       if (socket.id) localSocketIdRef.current = socket.id
       const signalingMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const signalingCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
+      const signalingCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
 
       if (signalingMicOn !== actualMicOn || signalingCameraOn !== actualCameraOn) {
         actualMicOn = signalingMicOn
@@ -2519,7 +2521,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       let connectedMediaWarning = ''
       const connectedMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const connectedCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
+      const connectedCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
       if (connectedMicOn !== actualMicOn || connectedCameraOn !== actualCameraOn) {
         actualMicOn = connectedMicOn
         actualCameraOn = connectedCameraOn
@@ -2531,8 +2533,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       }
 
       setSignalingState('connected')
-      setConnectionIssue('')
-      setStatus(media.warning || connectedMediaWarning || `Connected to ${joinData.rtc.signaling_room}`)
+      setConnectionIssue(missingProductionTurn ? productionTurnWarning : '')
+      setStatus(media.warning || connectedMediaWarning || (missingProductionTurn ? `Connected without TURN to ${joinData.rtc.signaling_room}` : `Connected to ${joinData.rtc.signaling_room}`))
     } catch (error) {
       console.error(error)
       startupCancelled = true

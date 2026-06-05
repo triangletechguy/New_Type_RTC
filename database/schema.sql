@@ -692,7 +692,7 @@ VALUES (
     '8ec7afdda66983158994e5be7748299f28adc7fd496cf66daa9c3ae0a97ad03f',
     'teo_token_accenture_demo',
     NOW(),
-    JSON_ARRAY('https://152-228-135-87.sslip.io', 'https://funint.site'),
+    JSON_ARRAY('https://chadnichok.com', 'https://www.chadnichok.com', 'https://funint.site'),
     'active',
     NOW(),
     NOW()

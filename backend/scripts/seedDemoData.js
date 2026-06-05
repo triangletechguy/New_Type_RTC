@@ -467,7 +467,7 @@ async function ensureClientApp(connection, planId) {
     api_key: 'teo_api_accenture_demo',
     api_key_hash: hashSecret('teo_api_accenture_demo'),
     sdk_token: 'teo_token_accenture_demo',
-    allowed_origins: ['https://152-228-135-87.sslip.io', 'https://funint.site'],
+    allowed_origins: ['https://chadnichok.com', 'https://www.chadnichok.com', 'https://funint.site'],
   }
   const existing = await fetchOne(
     connection,

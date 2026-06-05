@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-$HOME/rtc-enterprise}"
 REPO_URL="${REPO_URL:-https://github.com/triangletechguy/New_Type_RTC.git}"
-DOMAIN_HOST="${DOMAIN_HOST:-152-228-135-87.sslip.io}"
+DOMAIN_HOST="${DOMAIN_HOST:-chadnichok.com}"
 DOMAIN="https://$DOMAIN_HOST"
 PUBLIC_IP="${PUBLIC_IP:-152.228.135.87}"
 WEB_ROOT="${WEB_ROOT:-/var/www/rtc-enterprise}"
