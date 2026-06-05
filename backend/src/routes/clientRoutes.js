@@ -1314,7 +1314,7 @@ async function startClientRtcSession(clientApp, clientTenant, payload) {
       [session.id, externalUser.user_id]
     )
 
-    const cameraEnabled = room.room_type.includes('video') || room.room_type.includes('live')
+    const cameraEnabled = CLIENT_ROOM_TYPES.has(room.room_type)
       ? payload.cameraEnabled
       : false
 

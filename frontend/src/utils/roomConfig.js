@@ -115,8 +115,12 @@ export function roomSupportsVideo(roomType) {
   return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
 }
 
+export function roomAllowsCamera(roomType) {
+  return ['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+}
+
 export function defaultRtcModeForRoom(room) {
-  return roomSupportsVideo(room?.room_type) ? 'video' : 'audio'
+  return roomAllowsCamera(room?.room_type) ? 'video' : 'audio'
 }
 
 export function getRoomFlowLabel(roomType) {
@@ -134,7 +138,7 @@ export function getSeatLabel(roomType, count) {
 
 export function normalizeRtcMode(value, room) {
   const nextMode = value === 'audio' ? 'audio' : 'video'
-  if (room && !roomSupportsVideo(room.room_type)) return 'audio'
+  if (room && !roomAllowsCamera(room.room_type)) return 'audio'
   return nextMode
 }
 

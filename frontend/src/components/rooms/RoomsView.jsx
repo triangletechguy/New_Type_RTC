@@ -16,6 +16,7 @@ import {
   roomFeatureOptions,
   roomFormPayload,
   roomFilterOptions,
+  roomAllowsCamera,
   roomPrivacyOptions,
   roomSortOptions,
   roomSupportsVideo,
@@ -443,7 +444,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const profileAvatar = avatarForUser(user, displayId)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
-  const selectedRoomSupportsVideo = !selectedRoom || roomSupportsVideo(selectedRoom.room_type)
+  const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
   const canJoinRoom = Boolean(roomId.trim()) && !openingRoom && (!selectedRoomNeedsPassword || Boolean(joinPassword.trim()))
   const roomLaunchPreview = createdRoom || pendingRoomDraft
   const roomLaunchPending = Boolean(pendingRoomDraft && !createdRoom)
@@ -2037,7 +2038,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const roomAvatar = card.avatarUrl || previewAvatar
     const commentAvatar = card.avatarUrl || avatarForIndex(cardAvatarIndex(card) + 2)
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
-    const isVideoRoom = roomSupportsVideo(card.room?.room_type || card.roomType)
+    const isVideoRoom = roomAllowsCamera(card.room?.room_type || card.roomType)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
     const roomIdLabel = card.room?.id || 50741761
     const memberCount = Math.max(1, Math.min(999, Math.round(Number(card.viewers || 0) / 18)))
