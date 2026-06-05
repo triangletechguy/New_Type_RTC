@@ -69,6 +69,19 @@ async function ensureChatSchema() {
       `)
 
       await query(`
+      CREATE TABLE IF NOT EXISTS direct_message_hides (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        hidden_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_direct_message_hide (message_id, user_id),
+        INDEX idx_direct_message_hides_user_id (user_id),
+        CONSTRAINT fk_direct_message_hides_message FOREIGN KEY (message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
       CREATE TABLE IF NOT EXISTS user_follows (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         tenant_id BIGINT UNSIGNED NOT NULL,
@@ -328,6 +341,35 @@ function emitUserRealtime(req, userId, eventName, payload) {
   if (!io || !userId) return false
   io.to(userSocketRoom(userId)).emit(eventName, payload)
   return true
+}
+
+function emitDirectMessageRealtime(req, message, eventName, payload = {}) {
+  if (!message?.sender_id || !message?.recipient_id) return false
+
+  emitUserRealtime(req, message.sender_id, eventName, payload)
+  emitUserRealtime(req, message.recipient_id, eventName, payload)
+  return true
+}
+
+async function findDirectMessageForUser(messageId, user) {
+  const messages = await query(
+    `
+    SELECT *
+    FROM direct_messages
+    WHERE id = :messageId
+    AND tenant_id = :tenantId
+    AND (sender_id = :userId OR recipient_id = :userId)
+    LIMIT 1
+    `,
+    { messageId, tenantId: user.tenant_id, userId: user.id }
+  )
+
+  return messages[0] || null
+}
+
+async function fetchDirectMessageById(messageId) {
+  const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, { id: messageId })
+  return messages[0] || null
 }
 
 function mapFollowRequest(row) {
@@ -824,6 +866,12 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
         WHERE tenant_id = :tenantId
         AND is_deleted = 0
         AND (sender_id = :userId OR recipient_id = :userId)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM direct_message_hides hidden
+          WHERE hidden.message_id = direct_messages.id
+          AND hidden.user_id = :userId
+        )
         GROUP BY peer_id
       ) latest
       INNER JOIN direct_messages dm ON dm.id = latest.last_message_id
@@ -886,6 +934,12 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
           WHERE tenant_id = :tenantId
           AND is_deleted = 0
           AND (sender_id = :userId OR recipient_id = :userId)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM direct_message_hides hidden
+            WHERE hidden.message_id = direct_messages.id
+            AND hidden.user_id = :userId
+          )
         ) paired
         GROUP BY paired.peer_id
       ) latest ON latest.peer_id = u.id
@@ -916,6 +970,112 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
   }
 })
 
+router.patch('/direct-messages/messages/:id', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const body = cleanMessageBody(req.body?.message_body).trim()
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    if (!body) return res.status(422).json({ message: 'Message body is required.' })
+    if (body.length > 1200) return res.status(422).json({ message: 'Message body must be 1200 characters or fewer.' })
+
+    const message = await findDirectMessageForUser(messageId, req.user)
+    if (!message) return res.status(404).json({ message: 'Message not found.' })
+    if (Number(message.sender_id) !== Number(req.user.id)) {
+      return res.status(403).json({ message: 'You can only edit your own message.' })
+    }
+    if (Number(message.is_deleted)) {
+      return res.status(422).json({ message: 'Deleted messages cannot be edited.' })
+    }
+    if (message.message_type !== 'text') {
+      return res.status(422).json({ message: 'Only text messages can be edited.' })
+    }
+
+    await query(
+      `
+      UPDATE direct_messages
+      SET message_body = :messageBody,
+          updated_at = NOW()
+      WHERE id = :messageId
+      `,
+      { messageBody: body, messageId }
+    )
+
+    const directMessage = await fetchDirectMessageById(messageId)
+    emitDirectMessageRealtime(req, directMessage, 'direct-message-edited', {
+      direct_message: directMessage,
+    })
+
+    return res.json({
+      message: 'Direct message updated successfully.',
+      direct_message: directMessage,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/direct-messages/messages/:id', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const deleteForEveryone = req.body?.for_everyone !== false
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+
+    const message = await findDirectMessageForUser(messageId, req.user)
+    if (!message) return res.status(404).json({ message: 'Message not found.' })
+
+    if (!deleteForEveryone) {
+      await query(
+        `
+        INSERT IGNORE INTO direct_message_hides (message_id, user_id, hidden_at)
+        VALUES (:messageId, :userId, NOW())
+        `,
+        { messageId, userId: req.user.id }
+      )
+
+      return res.json({
+        message: 'Message hidden from your inbox.',
+        message_id: message.id,
+        deleted_for_everyone: false,
+      })
+    }
+
+    if (Number(message.sender_id) !== Number(req.user.id)) {
+      return res.status(403).json({ message: 'Only the sender can delete this message for everyone.' })
+    }
+
+    await query(
+      `
+      UPDATE direct_messages
+      SET is_deleted = 1,
+          message_body = NULL,
+          media_url = NULL,
+          updated_at = NOW()
+      WHERE id = :messageId
+      `,
+      { messageId }
+    )
+
+    emitDirectMessageRealtime(req, message, 'direct-message-deleted', {
+      message_id: message.id,
+      deleted_for_everyone: true,
+    })
+
+    return res.json({
+      message: 'Direct message deleted successfully.',
+      message_id: message.id,
+      deleted_for_everyone: true,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
@@ -935,6 +1095,12 @@ router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) =>
       ${directMessageSelectSql()}
       WHERE dm.tenant_id = :tenantId
       AND dm.is_deleted = 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM direct_message_hides hidden
+        WHERE hidden.message_id = dm.id
+        AND hidden.user_id = :userId
+      )
       AND (
         (dm.sender_id = :userId AND dm.recipient_id = :peerId)
         OR (dm.sender_id = :peerId AND dm.recipient_id = :userId)

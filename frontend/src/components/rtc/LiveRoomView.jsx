@@ -32,7 +32,6 @@ import {
   peerMediaMapFromUsers,
 } from '../../utils/roomConfig'
 import { ChatPanel } from './ChatPanel'
-import { OwnerControlsPanel } from './OwnerControlsPanel'
 import { VideoTile } from './VideoTile'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
@@ -334,7 +333,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomVisualIndex = Number(room?.id || roomId || 0)
   const roomAvatar = avatarForIndex(roomVisualIndex)
   const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
-  const isRoomOwner = Number(room?.owner_id || initialRoom?.owner_id) === Number(user?.id)
 
   function isLiveTrack(track) {
     return Boolean(track && track.readyState === 'live')
@@ -2301,7 +2299,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
                       {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
                     </button>
-                    <small>{room?.screen_share_enabled === false ? 'Owner controls have Screen share turned off.' : 'Presenter tools are available for this room.'}</small>
+                    <small>{room?.screen_share_enabled === false ? 'Screen share is turned off for this room.' : 'Presenter tools are available for this room.'}</small>
                   </div>
                 ) : activeToolPanel === 'filters' ? (
                   <div className="tool-status-panel camera-filter-panel">
@@ -2509,20 +2507,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             followRefreshKey={followRefreshKey}
             onMessagesChange={setChatMessages}
           />
-          {isRoomOwner ? (
-            <details className="buzzcast-owner-panel">
-              <summary>Owner controls</summary>
-              <OwnerControlsPanel
-                roomId={roomId}
-                room={room}
-                user={user}
-                joined={joined}
-                signalingRoom={signalingRoomRef.current}
-                socket={socketRef.current}
-                onRoomUpdate={setRoom}
-              />
-            </details>
-          ) : null}
         </aside>
       </main>
       {activeFollowRequest ? (

@@ -77,6 +77,14 @@ function directMessagePeerId(message, currentUser) {
   return 0
 }
 
+function inboxEditKey(message) {
+  return `inbox-${messageIdValue(message)}`
+}
+
+function messageActionKey(message) {
+  return message?.__scope === 'inbox' ? inboxEditKey(message) : String(messageIdValue(message))
+}
+
 function roleNames(user) {
   return (Array.isArray(user?.roles) ? user.roles : [])
     .map((role) => (typeof role === 'string' ? role : role?.name))
@@ -242,7 +250,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   const inboxMessagesRef = useRef(null)
   const inboxEndRef = useRef(null)
   const composerRef = useRef(null)
-  const photoInputRef = useRef(null)
+  const roomPhotoInputRef = useRef(null)
+  const inboxPhotoInputRef = useRef(null)
   const recorderRef = useRef(null)
   const recordingChunksRef = useRef([])
   const recordingStreamRef = useRef(null)
@@ -260,6 +269,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     .filter((typingUser) => typingUser.id !== user?.id)
     .map((typingUser) => typingUser.name || 'Someone')
   const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft) || Boolean(audioDraft)) && !sending && !recording
+  const canSendInbox = Boolean(inboxTarget?.id)
+    && (Boolean(inboxText.trim()) || Boolean(photoDraft) || Boolean(audioDraft))
+    && !sendingInbox
+    && !recording
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
   const typingText = typingNames.length
@@ -320,7 +333,19 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   function removeMessage(messageId) {
     setMessages((previous) => previous.filter((message) => message.id !== messageId))
-    if (editingMessageId === messageId) cancelEdit()
+    if (editingMessageId === String(messageId)) cancelEdit()
+  }
+
+  function replaceInboxMessage(updatedMessage) {
+    if (!updatedMessage?.id) return
+    setInboxMessages((previous) => previous.map((message) => (
+      message.id === updatedMessage.id ? { ...message, ...updatedMessage } : message
+    )))
+  }
+
+  function removeInboxMessage(messageId) {
+    setInboxMessages((previous) => previous.filter((message) => message.id !== messageId))
+    if (editingMessageId === inboxEditKey({ id: messageId })) cancelEdit()
   }
 
   function wasEdited(message) {
@@ -387,8 +412,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }
 
   function openPhotoPicker() {
-    if (!chatEnabled || sending) return
-    photoInputRef.current?.click()
+    if (chatMode === 'comments' && (!chatEnabled || sending)) return
+    if (chatMode === 'inbox' && (!inboxTarget?.id || sendingInbox)) return
+    const input = chatMode === 'inbox' ? inboxPhotoInputRef.current : roomPhotoInputRef.current
+    input?.click()
   }
 
   async function stagePhotoDraft(event) {
@@ -447,7 +474,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }
 
   async function startAudioRecording() {
-    if (!chatEnabled || sending || recording) return
+    if (chatMode === 'comments' && (!chatEnabled || sending)) return
+    if (chatMode === 'inbox' && (!inboxTarget?.id || sendingInbox)) return
+    if (recording) return
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setStatus('Audio recording is not supported in this browser.')
       return
@@ -530,6 +559,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     setAudioDraft(null)
   }
 
+  function clearComposerDrafts() {
+    clearPhotoDraft()
+    cancelAudioDraft()
+  }
+
   async function sendMessage(event) {
     event.preventDefault()
     const value = text.trim()
@@ -577,7 +611,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   function startEdit(message) {
     if (!message?.id || !isOwnMessage(message, user) || message.is_deleted) return
-    setEditingMessageId(message.id)
+    setEditingMessageId(String(message.id))
+    setEditText(message.message_body || '')
+    setStatus('')
+  }
+
+  function startInboxEdit(message) {
+    if (!message?.id || !isOwnMessage(message, user) || message.is_deleted || message.message_type !== 'text') return
+    setEditingMessageId(inboxEditKey(message))
     setEditText(message.message_body || '')
     setStatus('')
   }
@@ -604,7 +645,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
 
     const previousMessage = message
-    setSavingEditId(message.id)
+    setSavingEditId(String(message.id))
     setStatus('')
     replaceMessage({ ...message, message_body: value, updated_at: new Date().toISOString() })
 
@@ -636,6 +677,43 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
+  async function saveInboxEdit(message, event) {
+    event?.preventDefault()
+    const value = editText.trim()
+    const editKey = inboxEditKey(message)
+
+    if (!message?.id || !isOwnMessage(message, user) || savingEditId || message.message_type !== 'text') return
+    if (!value) {
+      setStatus('Edited message cannot be empty.')
+      return
+    }
+
+    if (value === String(message.message_body || '').trim()) {
+      cancelEdit()
+      return
+    }
+
+    const previousMessage = message
+    setSavingEditId(editKey)
+    setStatus('')
+    replaceInboxMessage({ ...message, message_body: value, updated_at: new Date().toISOString() })
+
+    try {
+      const data = await apiRequest(`/direct-messages/messages/${message.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ message_body: value }),
+      })
+      replaceInboxMessage(data.direct_message)
+      cancelEdit()
+      loadInboxThreads({ quiet: true })
+    } catch (error) {
+      replaceInboxMessage(previousMessage)
+      setStatus(`Edit failed: ${error.message}`)
+    } finally {
+      setSavingEditId(null)
+    }
+  }
+
   function handleEditKeyDown(message, event) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -648,6 +726,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
+  function handleInboxEditKeyDown(message, event) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelEdit()
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      saveInboxEdit(message, event)
+    }
+  }
+
   function canDeleteMessage(message) {
     if (!message?.id || message.is_deleted) return false
     return Boolean(user?.id)
@@ -655,6 +745,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
 
   function canDeleteMessageForEveryone(message) {
     if (!message?.id || message.is_deleted) return false
+    if (message.__scope === 'inbox') return isOwnMessage(message, user)
     return isOwnMessage(message, user) || canModerate
   }
 
@@ -670,8 +761,16 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     setStatus('')
   }
 
+  function requestDeleteInboxMessage(message) {
+    if (!canDeleteMessage(message)) return
+    const target = { ...message, __scope: 'inbox' }
+    setDeleteTarget(target)
+    setDeleteForEveryone(canDeleteMessageForEveryone(target))
+    setStatus('')
+  }
+
   function closeDeleteModal() {
-    if (deleteTarget && deletingMessageIds[deleteTarget.id]) return
+    if (deleteTarget && deletingMessageIds[messageActionKey(deleteTarget)]) return
     setDeleteTarget(null)
   }
 
@@ -827,6 +926,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     setChatMode('comments')
     setLoadingInbox(false)
     setStatus('')
+    if (!recording) clearComposerDrafts()
     previousRoomMessageCountRef.current = 0
 
     window.requestAnimationFrame(() => {
@@ -845,22 +945,30 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
 
     setChatMode('inbox')
+    if (!recording) clearComposerDrafts()
   }
 
   async function sendInboxMessage(event) {
     event.preventDefault()
     const value = inboxText.trim()
-    if (!value || !inboxTarget?.id || sendingInbox) return
+    if ((!value && !photoDraft && !audioDraft) || !inboxTarget?.id || sendingInbox || recording) return
 
     try {
       setSendingInbox(true)
       setStatus('')
+      const messageType = audioDraft ? 'voice' : photoDraft ? 'image' : 'text'
       const data = await apiRequest(`/direct-messages/${inboxTarget.id}`, {
         method: 'POST',
-        body: JSON.stringify({ message_body: value, message_type: 'text' }),
+        body: JSON.stringify({
+          message_body: photoDraft && !value ? 'sent a photo' : value,
+          message_type: messageType,
+          ...(photoDraft ? { media_url: photoDraft.dataUrl } : {}),
+          ...(audioDraft ? { media_url: audioDraft.dataUrl } : {}),
+        }),
       })
       upsertInboxMessage(data.direct_message)
       setInboxText('')
+      clearComposerDrafts()
       loadInboxThreads({ quiet: true })
     } catch (error) {
       setStatus(`Send failed: ${error.message}`)
@@ -874,18 +982,25 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     if (!canDeleteMessage(message)) return
 
     const shouldDeleteForEveryone = deleteForEveryone && canDeleteMessageForEveryone(message)
+    const deleteKey = messageActionKey(message)
     const previousMessages = messages
-    setDeletingMessageIds((previous) => ({ ...previous, [message.id]: true }))
+    const previousInboxMessages = inboxMessages
+    setDeletingMessageIds((previous) => ({ ...previous, [deleteKey]: true }))
     setStatus('')
-    removeMessage(message.id)
+
+    if (message.__scope === 'inbox') removeInboxMessage(message.id)
+    else removeMessage(message.id)
 
     try {
-      const data = await apiRequest(`/messages/${message.id}`, {
+      const endpoint = message.__scope === 'inbox'
+        ? `/direct-messages/messages/${message.id}`
+        : `/messages/${message.id}`
+      const data = await apiRequest(endpoint, {
         method: 'DELETE',
         body: JSON.stringify({ for_everyone: shouldDeleteForEveryone }),
       })
 
-      if (data.deleted_for_everyone && socket && signalingRoom) {
+      if (message.__scope !== 'inbox' && data.deleted_for_everyone && socket && signalingRoom) {
         socket.timeout(3000).emit(
           'chat-message-deleted',
           {
@@ -897,14 +1012,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           }
         )
       }
+
+      if (message.__scope === 'inbox') loadInboxThreads({ quiet: true })
     } catch (error) {
-      setMessages(previousMessages)
+      if (message.__scope === 'inbox') setInboxMessages(previousInboxMessages)
+      else setMessages(previousMessages)
       setStatus(`Delete failed: ${error.message}`)
     } finally {
       setDeleteTarget(null)
       setDeletingMessageIds((previous) => {
         const next = { ...previous }
-        delete next[message.id]
+        delete next[deleteKey]
         return next
       })
     }
@@ -1097,6 +1215,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         setStatus(`New private message from ${directMessage.sender_name || `User #${directMessage.sender_id}`}.`)
       }
     }
+    const handleDirectMessageEdited = ({ direct_message: directMessage } = {}) => {
+      const peerId = directMessagePeerId(directMessage, user)
+      if (!peerId) return
+      if (Number(inboxTarget?.id || 0) === peerId) replaceInboxMessage(directMessage)
+      loadInboxThreads({ quiet: true })
+    }
+    const handleDirectMessageDeleted = ({ message_id: messageId } = {}) => {
+      if (!messageId) return
+      removeInboxMessage(messageId)
+      loadInboxThreads({ quiet: true })
+    }
 
     socket.on('connect', syncAfterReconnect)
     socket.on('chat-message', handleMessage)
@@ -1104,6 +1233,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     socket.on('chat-message-deleted', handleMessageDeleted)
     socket.on('chat-message-unsent', handleMessageUnsent)
     socket.on('direct-message', handleDirectMessage)
+    socket.on('direct-message-edited', handleDirectMessageEdited)
+    socket.on('direct-message-deleted', handleDirectMessageDeleted)
     socket.on('typing-start', handleTypingStart)
     socket.on('typing-stop', handleTypingStop)
     socket.io?.on('reconnect', syncAfterReconnect)
@@ -1115,6 +1246,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       socket.off('chat-message-deleted', handleMessageDeleted)
       socket.off('chat-message-unsent', handleMessageUnsent)
       socket.off('direct-message', handleDirectMessage)
+      socket.off('direct-message-edited', handleDirectMessageEdited)
+      socket.off('direct-message-deleted', handleDirectMessageDeleted)
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
       socket.io?.off('reconnect', syncAfterReconnect)
@@ -1182,11 +1315,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           const followedSender = !mine && isFollowedContact(message.sender_id)
           const canMessage = !mine && Boolean(message.sender_id) && followedSender
           const canFollow = !mine && Boolean(message.sender_id) && !followedSender
-          const deleting = Boolean(deletingMessageIds[message.id])
+          const deleting = Boolean(deletingMessageIds[messageActionKey(message)])
           const following = Boolean(followingUserIds[Number(message.sender_id || 0)])
           const requested = requestedContactIds.some((id) => Number(id) === Number(message.sender_id || 0))
-          const editing = editingMessageId === message.id
-          const savingEdit = savingEditId === message.id
+          const editing = editingMessageId === String(message.id)
+          const savingEdit = savingEditId === String(message.id)
           const photoCaption = imageMessage && !['sent a photo', 'sent an avatar'].includes(String(message.message_body || '').trim())
             ? String(message.message_body || '').trim()
             : ''
@@ -1322,12 +1455,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
           rows={2}
           disabled={!chatEnabled || sending || recording}
         />
-        {!chatEnabled ? <small className="chat-disabled-note">Owner controls currently have Chat turned off.</small> : null}
+        {!chatEnabled ? <small className="chat-disabled-note">Chat is turned off for this room.</small> : null}
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
           <div className="chat-form-actions">
             <input
-              ref={photoInputRef}
+              ref={roomPhotoInputRef}
               className="chat-photo-input"
               type="file"
               accept="image/*"
@@ -1399,6 +1532,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
             const imageMessage = message.message_type === 'image'
             const voiceMessage = message.message_type === 'voice'
             const body = message.message_body || ''
+            const editKey = inboxEditKey(message)
+            const canModify = mine && message.message_type === 'text'
+            const canDelete = canDeleteMessage(message)
+            const editing = editingMessageId === editKey
+            const savingEdit = savingEditId === editKey
+            const deleting = Boolean(deletingMessageIds[editKey])
 
             return (
               <div className={mine ? 'chat-row mine' : 'chat-row'} key={`dm-${message.id}`}>
@@ -1408,9 +1547,28 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                 <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
                   <div className="chat-meta">
                     <strong>{senderName}</strong>
-                    <time>{formatChatTime(message.created_at)}</time>
+                    <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
                   </div>
-                  {imageMessage ? (
+                  {editing ? (
+                    <form className="chat-edit-form" onSubmit={(event) => saveInboxEdit(message, event)}>
+                      <textarea
+                        value={editText}
+                        onChange={(event) => setEditText(event.target.value)}
+                        onKeyDown={(event) => handleInboxEditKeyDown(message, event)}
+                        maxLength={1200}
+                        rows={2}
+                        autoFocus
+                      />
+                      <div className="chat-edit-actions">
+                        <button type="submit" disabled={savingEdit || !editText.trim()}>
+                          {savingEdit ? <LoadingMovie label="Saving" inline /> : 'Save'}
+                        </button>
+                        <button type="button" className="secondary" onClick={cancelEdit} disabled={savingEdit}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : imageMessage ? (
                     <div className="chat-image-message">
                       <button
                         type="button"
@@ -1435,6 +1593,20 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
                   ) : (
                     <p>{body}</p>
                   )}
+                  {(canModify || canDelete) && !editing ? (
+                    <div className="chat-actions">
+                      {canModify ? (
+                        <button type="button" className="neutral" onClick={() => startInboxEdit(message)} disabled={deleting}>
+                          Edit
+                        </button>
+                      ) : null}
+                      {canDelete ? (
+                        <button type="button" className="danger" onClick={() => requestDeleteInboxMessage(message)} disabled={deleting}>
+                          {deleting ? 'Deleting' : 'Delete'}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )
@@ -1444,19 +1616,65 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       </div>
 
       <form className="chat-form" onSubmit={sendInboxMessage}>
+        {photoDraft ? (
+          <div className="chat-photo-draft">
+            <img src={photoDraft.dataUrl} alt="" />
+            <span>
+              <strong>Photo</strong>
+              <small>{photoDraft.name || 'Ready to send'}</small>
+            </span>
+            <button type="button" onClick={clearPhotoDraft} disabled={sendingInbox} aria-label="Remove photo">x</button>
+          </div>
+        ) : null}
+        {audioDraft ? (
+          <div className="chat-audio-draft">
+            <audio controls src={audioDraft.dataUrl}></audio>
+            <span>{formatDuration(audioDraft.durationMs)} voice note</span>
+            <button type="button" onClick={cancelAudioDraft} disabled={sendingInbox} aria-label="Remove audio">x</button>
+          </div>
+        ) : null}
+        {recording ? (
+          <div className="chat-recording-line">
+            <span>{formatDuration(recordingMs)}</span>
+            <b>Recording voice message</b>
+          </div>
+        ) : null}
         <textarea
           value={inboxText}
           onChange={(event) => setInboxText(event.target.value)}
           onKeyDown={handleInboxComposerKeyDown}
-          placeholder={inboxTarget ? `Message ${inboxTarget.name}` : 'Choose a private chat'}
+          placeholder={inboxTarget ? ((photoDraft || audioDraft) ? 'Add a caption' : `Message ${inboxTarget.name}`) : 'Choose a private chat'}
           maxLength={1200}
           rows={2}
-          disabled={!inboxTarget || sendingInbox}
+          disabled={!inboxTarget || sendingInbox || recording}
         />
         <div className="chat-form-footer">
           <span>{inboxText.length}/1200</span>
           <div className="chat-form-actions">
-            <button className="primary-button" type="submit" disabled={!inboxTarget || !inboxText.trim() || sendingInbox}>
+            <input
+              ref={inboxPhotoInputRef}
+              className="chat-photo-input"
+              type="file"
+              accept="image/*"
+              onChange={stagePhotoDraft}
+              disabled={!inboxTarget || sendingInbox}
+            />
+            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!inboxTarget || sendingInbox} aria-label="Photo" title="Photo">
+              <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
+              <span>Photo</span>
+            </button>
+            <button
+              type="button"
+              className={recording ? 'secondary-button chat-audio-button recording' : 'secondary-button chat-audio-button'}
+              onClick={recording ? stopAudioRecording : startAudioRecording}
+              disabled={!inboxTarget || sendingInbox}
+              aria-label={recording ? 'Stop recording' : 'Audio'}
+              title={recording ? 'Stop recording' : 'Audio'}
+            >
+              <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
+              <span>{recording ? 'Stop' : 'Audio'}</span>
+            </button>
+            <button className="primary-button" type="submit" disabled={!canSendInbox}>
               {sendingInbox ? 'Sending' : 'Send'}
             </button>
           </div>
@@ -1474,12 +1692,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               <input
                 type="checkbox"
                 checked={deleteForEveryone && canDeleteMessageForEveryone(deleteTarget)}
-                disabled={!canDeleteMessageForEveryone(deleteTarget) || Boolean(deletingMessageIds[deleteTarget.id])}
+                disabled={!canDeleteMessageForEveryone(deleteTarget) || Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}
                 onChange={(event) => setDeleteForEveryone(event.target.checked)}
               />
               <span>
                 {canDeleteMessageForEveryone(deleteTarget)
-                  ? 'Delete for everyone in this room'
+                  ? (deleteTarget.__scope === 'inbox' ? 'Delete for everyone in this chat' : 'Delete for everyone in this room')
                   : 'Delete only for me'}
               </span>
             </label>
@@ -1487,9 +1705,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
               <small className="chat-delete-hint">{deleteForEveryone ? 'Everyone will lose this message.' : 'Only your chat will hide this message.'}</small>
             ) : null}
             <footer>
-              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>CANCEL</button>
-              <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[deleteTarget.id])}>
-                {deletingMessageIds[deleteTarget.id] ? 'DELETING...' : 'DELETE'}
+              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}>CANCEL</button>
+              <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}>
+                {deletingMessageIds[messageActionKey(deleteTarget)] ? 'DELETING...' : 'DELETE'}
               </button>
             </footer>
           </section>
