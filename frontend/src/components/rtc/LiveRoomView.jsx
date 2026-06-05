@@ -441,7 +441,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       track
       && track !== screenShareTrackRef.current
       && track.readyState === 'live'
-      && track.muted !== true
     )
   }
 
@@ -491,17 +490,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setStatus(`Camera ended; sync warning: ${error.message}`)
       })
     }
-    const handleMute = () => {
-      handleLocalCameraTrackUnavailable(track, 'muted').catch((error) => {
-        setStatus(`Camera muted; sync warning: ${error.message}`)
-      })
-    }
-
     track.addEventListener('ended', handleEnded)
-    track.addEventListener('mute', handleMute)
     localTrackCleanupRef.current.set(track, () => {
       track.removeEventListener('ended', handleEnded)
-      track.removeEventListener('mute', handleMute)
     })
   }
 
@@ -513,7 +504,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function handleLocalCameraTrackUnavailable(track, reason) {
     if (!isCurrentLocalCameraTrack(track)) return
-    if (track?.readyState === 'live' && track.muted !== true) return
+    if (track?.readyState === 'live') return
     if (cameraUnavailablePublishRef.current) return
 
     cameraUnavailablePublishRef.current = true
@@ -537,9 +528,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await publishMediaState(micOnRef.current, false)
       }
 
-      setStatus(reason === 'muted'
-        ? 'Camera stopped sending video; camera state synced off.'
-        : 'Camera track ended; camera state synced off.')
+      setStatus(reason === 'ended'
+        ? 'Camera track ended; camera state synced off.'
+        : 'Camera stopped; camera state synced off.')
     } finally {
       cameraUnavailablePublishRef.current = false
     }

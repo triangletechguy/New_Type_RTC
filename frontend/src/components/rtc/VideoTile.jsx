@@ -122,6 +122,22 @@ export function VideoTile({
     }
   }, [stream, showVideo, hasAudio, muted])
 
+  useEffect(() => {
+    if (!audioPlaybackBlocked || muted || !hasAudio) return undefined
+
+    function retryPlayback() {
+      playRemoteAudio()
+    }
+
+    window.addEventListener('pointerdown', retryPlayback, { capture: true })
+    window.addEventListener('keydown', retryPlayback, { capture: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', retryPlayback, { capture: true })
+      window.removeEventListener('keydown', retryPlayback, { capture: true })
+    }
+  }, [audioPlaybackBlocked, hasAudio, muted, stream])
+
   function handleKeyDown(event) {
     if (!canExpand) return
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -165,7 +181,7 @@ export function VideoTile({
         </button>
       ) : null}
       {stream && hasAudio ? (
-        <audio ref={audioRef} autoPlay muted={muted} className="audio-element" />
+        <audio ref={audioRef} autoPlay playsInline muted={muted} className="audio-element" />
       ) : null}
       {audioPlaybackBlocked && !muted ? (
         <button type="button" className="video-audio-button" onClick={(event) => {
