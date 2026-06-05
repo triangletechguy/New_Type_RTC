@@ -39,6 +39,9 @@ const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const RTC_VIDEO_WATCHDOG_DELAY_MS = 7000
 const RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS = 7000
+const RTC_LOCAL_SENDER_WATCHDOG_DELAY_MS = 8000
+const RTC_LOCAL_SENDER_WATCHDOG_INTERVAL_MS = 6000
+const RTC_LOCAL_SENDER_WATCHDOG_MAX_ATTEMPTS = 2
 const RTC_CAMERA_TARGET_KBPS = 300
 const RTC_SCREEN_TARGET_KBPS = 600
 const RTC_GROUP_CAMERA_TARGET_KBPS = 240
@@ -374,10 +377,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const latestRtcQualityRef = useRef(null)
   const remoteStreamsRef = useRef(remoteStreams)
   const peerStatesRef = useRef(peerStates)
+  const peerStatsRef = useRef(peerStats)
   const peerMediaStatesRef = useRef(peerMediaStates)
   const peerVideoWatchdogStatesRef = useRef(peerVideoWatchdogStates)
   const videoWatchdogTimersRef = useRef({})
   const videoWatchdogAttemptsRef = useRef({})
+  const localSenderWatchdogAttemptsRef = useRef({ audio: 0, video: 0 })
+  const localSenderRepairingRef = useRef({})
   const localTrackCleanupRef = useRef(new Map())
   const cameraUnavailablePublishRef = useRef(false)
 
@@ -939,7 +945,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     negotiatedPeersRef.current.clear()
     remoteStreamsRef.current = {}
     peerStatesRef.current = {}
+    peerStatsRef.current = {}
     peerMediaStatesRef.current = {}
+    localSenderWatchdogAttemptsRef.current = { audio: 0, video: 0 }
+    localSenderRepairingRef.current = {}
     if (clearState) {
       setLocalStream(null)
       setRemoteStreams({})
@@ -963,6 +972,83 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   function hasLiveLocalTrack(kind) {
     return hasLiveTrack(streamRef.current, kind)
+  }
+
+  function localTrackForSender(kind) {
+    if (kind === 'audio') {
+      return streamRef.current?.getAudioTracks?.().find((track) => isLiveTrack(track)) || null
+    }
+
+    return currentCameraTrack()
+  }
+
+  function hasActivePeerConnection() {
+    const peerConnections = rtcRef.current?.peerConnections || {}
+    if (Object.values(peerConnections).some((peerConnection) => peerConnection?.signalingState !== 'closed')) return true
+
+    const statsCount = Object.keys(peerStatsRef.current || {}).length
+    if (statsCount > 0) return true
+
+    return Object.values(peerStatesRef.current || {}).some((state) => {
+      const normalizedState = String(state || '').toLowerCase()
+      return normalizedState && !['closed', 'failed', 'no-video'].includes(normalizedState)
+    })
+  }
+
+  function localOutboundKbps(kind) {
+    const statsList = Object.values(peerStatsRef.current || {}).filter(Boolean)
+    return sumMediaBitrate(statsList, 'outbound', kind)
+  }
+
+  function resetLocalSenderWatchdog() {
+    localSenderWatchdogAttemptsRef.current = { audio: 0, video: 0 }
+    localSenderRepairingRef.current = {}
+  }
+
+  function shouldRepairLocalSender(kind) {
+    if (!joinedRef.current || !hasActivePeerConnection()) return false
+
+    if (kind === 'audio') {
+      return Boolean(micOnRef.current && hasLiveLocalTrack('audio'))
+    }
+
+    return Boolean(
+      rtcModeRef.current === 'video'
+      && cameraOnRef.current
+      && !screenShareTrackRef.current
+      && hasLiveLocalCameraTrack()
+    )
+  }
+
+  async function repairLocalSender(kind) {
+    if (localSenderRepairingRef.current[kind]) return
+
+    const attempts = Number(localSenderWatchdogAttemptsRef.current[kind] || 0)
+    if (attempts >= RTC_LOCAL_SENDER_WATCHDOG_MAX_ATTEMPTS) return
+
+    const track = localTrackForSender(kind)
+    if (!isLiveTrack(track)) return
+
+    localSenderRepairingRef.current[kind] = true
+    localSenderWatchdogAttemptsRef.current[kind] = attempts + 1
+
+    try {
+      applyLocalMediaState(micOnRef.current, cameraOnRef.current)
+      setStatus(kind === 'video' ? 'Republishing camera track...' : 'Republishing microphone track...')
+      await rtcRef.current?.replaceLocalTrack(kind, track, streamRef.current)
+
+      if (joinedRef.current) {
+        await publishMediaState(micOnRef.current, cameraOnRef.current).catch((error) => {
+          setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} republished; state sync warning: ${error.message}`)
+        })
+      }
+
+      setStatus(kind === 'video' ? 'Camera republished to RTC.' : 'Microphone republished to RTC.')
+    } catch (error) {
+      setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} republish failed: ${error.message}`)
+    } finally {
+      delete localSenderRepairingRef.current[kind]
+    }
   }
 
   function applyLocalMediaState(nextMicOn, nextCameraOn) {
@@ -1137,6 +1223,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     clearAllVideoWatchdogs()
     remoteStreamsRef.current = {}
     peerStatesRef.current = {}
+    peerStatsRef.current = {}
     peerMediaStatesRef.current = {}
     setRemoteStreams({})
     setPeerStates({})
@@ -2021,7 +2108,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
         },
         onPeerStats: (remoteSocketId, stats) => {
-          setPeerStats((previous) => ({ ...previous, [remoteSocketId]: stats }))
+          setPeerStats((previous) => {
+            const next = { ...previous, [remoteSocketId]: stats }
+            peerStatsRef.current = next
+            return next
+          })
         },
         onPeerRecovery: (remoteSocketId, recoveryState, detail) => {
           if (['scheduled', 'waiting', 'restarting'].includes(recoveryState)) {
@@ -2153,6 +2244,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setPeerStats((previous) => {
           const copy = { ...previous }
           delete copy[socketId]
+          peerStatsRef.current = copy
           return copy
         })
         setPeerMediaStates((previous) => {
@@ -2467,6 +2559,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [peerStates])
 
   useEffect(() => {
+    peerStatsRef.current = peerStats
+  }, [peerStats])
+
+  useEffect(() => {
     peerMediaStatesRef.current = peerMediaStates
   }, [peerMediaStates])
 
@@ -2543,6 +2639,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     if (!joined) {
       clearAllVideoWatchdogs()
+      resetLocalSenderWatchdog()
       return undefined
     }
 
@@ -2560,6 +2657,43 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     return undefined
   }, [joined, peerMediaStates, peerStates, remoteStreams])
+
+  useEffect(() => {
+    if (!joined) {
+      resetLocalSenderWatchdog()
+      return undefined
+    }
+
+    let cancelled = false
+
+    function checkLocalSender(kind) {
+      if (cancelled || !shouldRepairLocalSender(kind)) {
+        localSenderWatchdogAttemptsRef.current[kind] = 0
+        return
+      }
+
+      if (localOutboundKbps(kind) > 0) {
+        localSenderWatchdogAttemptsRef.current[kind] = 0
+        return
+      }
+
+      repairLocalSender(kind)
+    }
+
+    const check = () => {
+      checkLocalSender('audio')
+      checkLocalSender('video')
+    }
+
+    const firstCheck = window.setTimeout(check, RTC_LOCAL_SENDER_WATCHDOG_DELAY_MS)
+    const timer = window.setInterval(check, RTC_LOCAL_SENDER_WATCHDOG_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(firstCheck)
+      window.clearInterval(timer)
+    }
+  }, [joined, remotePeerCount, micOn, cameraOn, rtcMode, screenSharing])
 
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)

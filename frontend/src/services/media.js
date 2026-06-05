@@ -5,9 +5,9 @@ const audioConstraints = {
 }
 
 const videoConstraints = {
-  width: { ideal: 960, max: 1280 },
-  height: { ideal: 540, max: 720 },
-  frameRate: { ideal: 20, max: 24 },
+  width: { ideal: 640, max: 1280 },
+  height: { ideal: 360, max: 720 },
+  frameRate: { ideal: 24, max: 30 },
 }
 
 const permissionNames = {
@@ -42,13 +42,9 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
         }
   }
 
-  if (requestedMediaMode === 'real') {
-    return createRealMediaStream(requestedRtcMode)
-  }
-
   const recovered = await captureAvailableMedia(requestedRtcMode, options)
 
-  if (recovered.stream.getTracks().length) {
+  if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
     return recovered
   }
 
@@ -56,40 +52,6 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
     stream: createMockMediaStream(requestedRtcMode),
     mode: 'mock',
     warning: `${formatMediaError(recovered.primaryError, requestedRtcMode)} Mock media started instead.`,
-  }
-}
-
-async function createRealMediaStream(rtcMode) {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: audioConstraints,
-      video: rtcMode === 'video' ? videoConstraints : false,
-    })
-
-    prepareCapturedStream(stream)
-
-    const hasAudio = stream.getAudioTracks().some((track) => track.readyState !== 'ended')
-    const hasVideo = stream.getVideoTracks().some((track) => track.readyState !== 'ended')
-
-    if (!hasAudio || (rtcMode === 'video' && !hasVideo)) {
-      stopMediaStream(stream)
-      throw new Error(`No ${rtcMode === 'video' ? 'camera/microphone' : 'microphone'} track was returned by the browser.`)
-    }
-
-    return {
-      stream,
-      mode: 'real',
-      warning: null,
-      primaryError: null,
-    }
-  } catch (error) {
-    const recovered = await captureAvailableMedia(rtcMode, { timeoutMs: 0 })
-
-    return {
-      ...recovered,
-      warning: recovered.warning || formatMediaError(error, rtcMode),
-      primaryError: recovered.primaryError || error,
-    }
   }
 }
 
@@ -193,15 +155,18 @@ async function captureAvailableMedia(rtcMode, options = {}) {
   const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
   const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
   const captureKinds = rtcMode === 'video' ? ['audio', 'video'] : ['audio']
+  const captures = captureKinds.map((kind) => startMediaCapture(
+    kind,
+    kind === 'audio'
+      ? { audio: audioConstraints, video: false }
+      : { audio: false, video: videoConstraints }
+  ))
+  const results = await Promise.all(captures.map((capture) => (
+    timeoutMs > 0 ? waitForCapture(capture, timeoutMs) : capture.promise
+  )))
 
-  for (const kind of captureKinds) {
-    const capture = startMediaCapture(
-      kind,
-      kind === 'audio'
-        ? { audio: audioConstraints, video: false }
-        : { audio: false, video: videoConstraints }
-    )
-    const result = timeoutMs > 0 ? await waitForCapture(capture, timeoutMs) : await capture.promise
+  results.forEach((result, index) => {
+    const capture = captures[index]
 
     if (result?.timedOut) {
       pendingKinds.push(capture.kind)
@@ -213,16 +178,16 @@ async function captureAvailableMedia(rtcMode, options = {}) {
         }
       }).catch(() => {})
 
-      continue
+      return
     }
 
     if (result?.track) {
       stream.addTrack(result.track)
-      continue
+      return
     }
 
     if (result?.error) failures[result.kind || capture.kind] = result.error
-  }
+  })
 
   const primaryError = failures.video || failures.audio || null
 
@@ -282,11 +247,6 @@ function prepareCapturedTrack(track, kind) {
   } catch {
     // contentHint is optional and browser-dependent.
   }
-}
-
-function prepareCapturedStream(stream) {
-  stream?.getAudioTracks?.().forEach((track) => prepareCapturedTrack(track, 'audio'))
-  stream?.getVideoTracks?.().forEach((track) => prepareCapturedTrack(track, 'video'))
 }
 
 function stopCapturedStream(stream) {
