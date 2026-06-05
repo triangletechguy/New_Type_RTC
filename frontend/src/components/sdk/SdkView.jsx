@@ -203,7 +203,7 @@ const tokenClaims = [
   ['app_id', 'Connects usage and permissions to one client app.'],
   ['external_user_id', 'Maps the RTC session to the client company user without charging that user.'],
   ['room_id', 'Limits the token to one room/channel.'],
-  ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
+  ['role', 'Controls audience, publisher, moderator, and admin behavior.'],
   ['permissions', 'Controls join, publish_audio, publish_video, screen_share, chat, mute, kick.'],
   ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
   ['exp / iat', 'Keeps tokens short-lived. Fifteen minutes is the default target.'],
@@ -211,7 +211,7 @@ const tokenClaims = [
 
 const routeGroups = [
   {
-    title: 'Platform Owner APIs',
+    title: 'Platform Admin APIs',
     rows: [
       ['GET /api/admin/companies', 'List client companies and operational status.'],
       ['POST /api/admin/companies', 'Create tenant, contacts, package, and client-company billing scope.'],
