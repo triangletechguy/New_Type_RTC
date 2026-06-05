@@ -1128,6 +1128,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return hasLiveTrack(streamRef.current, kind)
   }
 
+  async function publishCurrentCameraTrack() {
+    if (rtcModeRef.current === 'audio' || screenShareTrackRef.current) return null
+
+    const track = currentCameraTrack()
+    if (!isPublishableCameraTrack(track)) return null
+
+    const nextStream = replaceCameraTrackInLocalStream(track)
+    await rtcRef.current?.replaceLocalTrack('video', track, nextStream)
+    return track
+  }
+
+  async function unpublishCameraTrack() {
+    if (rtcModeRef.current === 'audio' || screenShareTrackRef.current) return
+    const nextStream = replaceCameraTrackInLocalStream(null)
+    await rtcRef.current?.replaceLocalTrack('video', null, nextStream)
+  }
+
   function localTrackForSender(kind) {
     if (kind === 'audio') {
       return streamRef.current?.getAudioTracks?.().find((track) => isLiveTrack(track)) || null
@@ -2703,6 +2720,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const next = !cameraOn
     const previous = cameraOn
     const currentlyJoined = joinedRef.current
+    let attachedFreshTrack = false
 
     cameraOnRef.current = next
     desiredCameraOnRef.current = next
@@ -2715,10 +2733,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       if (currentlyJoined && next && !hasLiveLocalCameraTrack()) {
         setStatus('Requesting camera permission...')
         await attachNewLocalTrack('video', { publish: false })
+        attachedFreshTrack = true
         applyLocalMediaState(micOn, next)
       }
 
       if (!currentlyJoined) return
+
+      if (next) {
+        if (!attachedFreshTrack) await publishCurrentCameraTrack()
+        if (!hasLiveLocalCameraTrack()) throw new Error('No live camera track is available.')
+      } else {
+        await unpublishCameraTrack()
+      }
 
       const synced = await publishMediaState(micOn, next)
       micOnRef.current = synced.micOn
@@ -2728,6 +2754,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       applyLocalMediaState(synced.micOn, synced.cameraOn)
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
+      if (currentlyJoined && previous && !screenShareTrackRef.current) {
+        await publishCurrentCameraTrack().catch(() => {
+          const track = currentCameraTrack()
+          if (isPublishableCameraTrack(track)) replaceCameraTrackInLocalStream(track)
+        })
+      } else if (currentlyJoined && !previous && !screenShareTrackRef.current) {
+        await unpublishCameraTrack().catch(() => {
+          replaceCameraTrackInLocalStream(null)
+        })
+      }
+
       cameraOnRef.current = previous
       desiredCameraOnRef.current = previous
       setCameraOn(previous)
