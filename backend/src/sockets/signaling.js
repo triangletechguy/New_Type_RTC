@@ -1,7 +1,7 @@
 const { query } = require('../config/db')
 const { closeActiveParticipantForUser, touchActiveParticipant } = require('../services/rtcSessionLifecycle')
 
-const PRESENCE_CLOSE_GRACE_MS = Math.max(10000, Number(process.env.RTC_PRESENCE_CLOSE_GRACE_MS || 45000))
+const PRESENCE_CLOSE_GRACE_MS = Math.max(5000, Number(process.env.RTC_PRESENCE_CLOSE_GRACE_MS || 15000))
 
 function registerSignaling(io) {
   const rooms = new Map()
@@ -102,6 +102,20 @@ function registerSignaling(io) {
     pendingPresenceCloseTimers.set(key, timer)
   }
 
+  function closePresenceNow(databaseRoomId, user, eventType, reason) {
+    if (!databaseRoomId || !user?.userId) return
+
+    cancelPendingPresenceClose(databaseRoomId, user.userId)
+    closeActiveParticipantForUser({
+      roomId: databaseRoomId,
+      userId: user.userId,
+      eventType,
+      reason,
+    }).catch((error) => {
+      console.error('[signaling] participant close failed', error)
+    })
+  }
+
   async function fetchOwnedChatMessage(messageId, userId) {
     const messages = await query(
       `
@@ -144,6 +158,28 @@ function registerSignaling(io) {
     return rooms.get(String(roomId))?.get(socketId) || null
   }
 
+  function removeDuplicateUserSockets(roomKey, users, userId, keepSocketId) {
+    const normalizedUserId = Number(userId || 0)
+    if (!normalizedUserId) return []
+
+    const removedUsers = []
+
+    for (const [socketId, roomUser] of users.entries()) {
+      if (socketId === keepSocketId || Number(roomUser?.userId || 0) !== normalizedUserId) continue
+
+      users.delete(socketId)
+      removedUsers.push({ socketId, user: roomUser })
+
+      const duplicateSocket = io.sockets.sockets.get(socketId)
+      if (duplicateSocket) {
+        duplicateSocket.leave(roomKey)
+        duplicateSocket.emit('room-session-replaced', { roomId: roomKey })
+      }
+    }
+
+    return removedUsers
+  }
+
   function removeSocketFromRooms(socket, reason = 'disconnect') {
     for (const [roomId, users] of rooms.entries()) {
       if (users.has(socket.id)) {
@@ -160,7 +196,9 @@ function registerSignaling(io) {
           userName: user.userName,
         })
 
-        if (reason === 'disconnect' && !userStillPresent) {
+        if (reason === 'leave-room' && !userStillPresent) {
+          closePresenceNow(databaseRoomId, user, 'leave', reason)
+        } else if (reason === 'disconnect' && !userStillPresent) {
           schedulePresenceClose(databaseRoomId, user, reason)
         }
 
@@ -183,8 +221,17 @@ function registerSignaling(io) {
       const roomKey = String(roomId)
       const users = getRoomUsers(roomKey)
       const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, {}, { databaseRoomId, roomDbId })
+      const replacedUsers = removeDuplicateUserSockets(roomKey, users, userId, socket.id)
 
       const existingUsers = Array.from(users.entries()).map(([socketId, user]) => serializeUser(socketId, user))
+
+      replacedUsers.forEach(({ socketId, user }) => {
+        socket.to(roomKey).emit('user-left', {
+          socketId,
+          userId: user.userId,
+          userName: user.userName,
+        })
+      })
 
       users.set(socket.id, {
         userId: userId || null,

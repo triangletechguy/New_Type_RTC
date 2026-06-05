@@ -813,6 +813,7 @@ function clientRoomSelectSql() {
       LEFT JOIN rtc_session_participants active_participants
         ON active_participants.session_id = active_sessions.id
         AND active_participants.left_at IS NULL
+        AND active_participants.updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
       WHERE active_sessions.status = 'active'
       GROUP BY active_sessions.room_id
     ) active_counts ON active_counts.room_id = r.id
@@ -1360,6 +1361,7 @@ async function startClientRtcSession(clientApp, clientTenant, payload) {
       FROM rtc_session_participants
       WHERE session_id = ?
       AND left_at IS NULL
+      AND updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
       `,
       [session.id]
     )

@@ -2523,6 +2523,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           clearNoVideoPeerState(payload.socketId)
         }
       })
+      socket.on('room-session-replaced', () => {
+        if (socketRef.current !== socket) return
+
+        activeRoomIdRef.current = null
+        resetRtcState()
+        updateJoined(false)
+        setConnectStep('ready')
+        setConnectionIssue('')
+        setStatus('This room session moved to another tab or device.')
+      })
       socket.on('follow-request-received', ({ request } = {}) => {
         if (!request?.id) return
         setFollowRelations((previous) => ({
