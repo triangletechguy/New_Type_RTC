@@ -81,11 +81,7 @@ function formatRtcLoss(value) {
 
 function mediaTrackCount(stream, kind) {
   const tracks = stream?.getTracks?.().filter((track) => track.kind === kind) || []
-  const live = tracks.filter((track) => (
-    track.readyState === 'live'
-    && track.enabled !== false
-    && track.muted !== true
-  )).length
+  const live = tracks.filter((track) => track.readyState === 'live').length
 
   return { live, total: tracks.length }
 }

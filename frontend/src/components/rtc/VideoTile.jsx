@@ -11,8 +11,6 @@ function hasLiveMediaTrack(stream, kind) {
   return stream?.getTracks?.().some((track) => (
     track.kind === kind
     && track.readyState === 'live'
-    && track.enabled !== false
-    && track.muted !== true
   )) || false
 }
 
