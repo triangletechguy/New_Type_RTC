@@ -851,7 +851,7 @@ export class NativeRtcClient {
       }
 
       try {
-        await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
+        await peerConnection.setLocalDescription(offer)
       } catch (error) {
         if (peerConnection.signalingState !== 'stable' || error?.name === 'InvalidStateError') {
           this.pendingOffers[remoteSocketId] = true
@@ -896,7 +896,7 @@ export class NativeRtcClient {
     await this.flushPendingCandidates(fromSocketId)
 
     const answer = await peerConnection.createAnswer()
-    await peerConnection.setLocalDescription(preferVideoBitrate(answer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
+    await peerConnection.setLocalDescription(answer)
 
     this.socket.emit('webrtc-answer', {
       targetSocketId: fromSocketId,
