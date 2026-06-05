@@ -845,7 +845,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   function scheduleNegotiationRetry(socketId, rtcClient, label = 'peer') {
     if (!socketId || !rtcClient || negotiationRetryTimersRef.current[socketId]) return
-    if (!shouldInitiateInitialOffer(socketId)) return
 
     const attempt = Number(negotiationRetryAttemptsRef.current[socketId] || 0)
     if (attempt >= RTC_NEGOTIATION_RETRY_MAX_ATTEMPTS) return
@@ -1387,22 +1386,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
-  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer', options = {}) {
+  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
     if (!remoteSocketId || !rtcClient) return
 
     rtcClient.createPeerConnection(remoteSocketId)
 
     if (negotiatedPeersRef.current.has(remoteSocketId)) return
-
-    if (options.initiateOffer === false) {
-      setPeerStates((previous) => {
-        const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'waiting' }
-        peerStatesRef.current = next
-        return next
-      })
-      scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
-      return
-    }
 
     negotiatedPeersRef.current.add(remoteSocketId)
     setPeerStates((previous) => {
@@ -2136,12 +2125,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return String(localSocketId) > String(remoteSocketId)
   }
 
-  function shouldInitiateInitialOffer(remoteSocketId) {
-    const localSocketId = localSocketIdRef.current
-    if (!localSocketId || !remoteSocketId) return true
-    return String(localSocketId) < String(remoteSocketId)
-  }
-
   function handleRemoteStream(remoteSocketId, remoteStream) {
     resetPeerNegotiationRetry(remoteSocketId)
     setRemoteStreams((previous) => {
@@ -2190,9 +2173,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setStatus(`Found ${peers.length} peer connection${peers.length === 1 ? '' : 's'}...`)
 
     for (const remoteUser of peers) {
-      await beginPeerNegotiation(remoteUser?.socketId, rtcClient, 'Peer', {
-        initiateOffer: shouldInitiateInitialOffer(remoteUser?.socketId),
-      })
+      await beginPeerNegotiation(remoteUser?.socketId, rtcClient, 'Peer')
     }
   }
 
@@ -2459,9 +2440,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         })
         setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
         triggerJoinEffect(payload.userName)
-        await beginPeerNegotiation(socketId, rtcClient, 'Peer', {
-          initiateOffer: shouldInitiateInitialOffer(socketId),
-        })
+        await beginPeerNegotiation(socketId, rtcClient, 'Peer')
       })
       socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
         try {
