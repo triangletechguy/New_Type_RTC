@@ -37,6 +37,8 @@ import { VideoTile } from './VideoTile'
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
 const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
+const RTC_VIDEO_WATCHDOG_DELAY_MS = 7000
+const RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS = 7000
 const RTC_CAMERA_TARGET_KBPS = 300
 const RTC_SCREEN_TARGET_KBPS = 600
 const RTC_GROUP_CAMERA_TARGET_KBPS = 240
@@ -90,6 +92,15 @@ function mediaTrackCount(stream, kind) {
 
 function formatTrackCount(count) {
   return `${count.live}/${count.total}`
+}
+
+function hasInboundVideoTrack(stream) {
+  return stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended') || false
+}
+
+function remoteVideoExpectedFromState(mediaState = {}) {
+  if (mediaState.screenShared === true) return true
+  return String(mediaState.rtcMode || 'video') !== 'audio' && mediaState.cameraOn !== false
 }
 
 function aggregateRemoteTrackCounts(remoteStreams = {}, kind) {
@@ -257,7 +268,7 @@ function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerSt
   }
 }
 
-function buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates }) {
+function buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates, peerVideoWatchdogStates }) {
   const statsList = Object.values(peerStats || {}).filter(Boolean)
   const socketIds = Array.from(new Set([
     ...Object.keys(peerStates || {}),
@@ -276,14 +287,21 @@ function buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats
     peers: socketIds.map((socketId) => {
       const stats = peerStats?.[socketId] || {}
       const mediaState = peerMediaStates?.[socketId] || {}
-      const state = stats.connectionState || peerStates?.[socketId] || 'waiting'
+      const watchdogState = peerVideoWatchdogStates?.[socketId] || {}
+      const rawState = stats.connectionState || peerStates?.[socketId] || 'waiting'
+      const state = watchdogState.status === 'failed' ? 'no-video' : rawState
       const iceState = stats.iceConnectionState || ''
+      const watchdogLabel = watchdogState.status === 'failed'
+        ? 'No video received'
+        : watchdogState.message || ''
 
       return {
         socketId,
         label: mediaState.userName || `Peer ${String(socketId).slice(0, 6)}`,
         state,
+        stateLabel: watchdogLabel || state,
         iceState,
+        watchdogStatus: watchdogState.status || '',
         inboundVideoKbps: numericStat(stats.media?.inbound?.video?.bitrateKbps),
         outboundVideoKbps: numericStat(stats.media?.outbound?.video?.bitrateKbps),
       }
@@ -305,6 +323,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [peerStates, setPeerStates] = useState({})
   const [peerStats, setPeerStats] = useState({})
   const [peerMediaStates, setPeerMediaStates] = useState({})
+  const [peerVideoWatchdogStates, setPeerVideoWatchdogStates] = useState({})
   const [signalingPeerCount, setSignalingPeerCount] = useState(0)
   const [signalingState, setSignalingState] = useState(autoConnect ? 'connecting' : 'idle')
   const [mediaState, setMediaState] = useState('idle')
@@ -357,6 +376,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const joinEffectTimerRef = useRef(null)
   const rejoiningSignalingRef = useRef(false)
   const latestRtcQualityRef = useRef(null)
+  const remoteStreamsRef = useRef(remoteStreams)
+  const peerStatesRef = useRef(peerStates)
+  const peerMediaStatesRef = useRef(peerMediaStates)
+  const peerVideoWatchdogStatesRef = useRef(peerVideoWatchdogStates)
+  const videoWatchdogTimersRef = useRef({})
+  const videoWatchdogAttemptsRef = useRef({})
 
   function updateJoined(nextJoined) {
     joinedRef.current = Boolean(nextJoined)
@@ -372,18 +397,25 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     return Array.from(socketIds).map((socketId) => {
       const mediaState = peerMediaStates[socketId] || {}
-      const peerState = peerStates[socketId] || (remoteStreams[socketId] ? 'connected' : 'waiting')
+      const watchdogState = peerVideoWatchdogStates[socketId] || {}
+      const rawPeerState = peerStates[socketId] || (remoteStreams[socketId] ? 'connected' : 'waiting')
+      const peerState = watchdogState.status === 'failed'
+        ? 'no-video'
+        : ['restarting', 'verifying'].includes(watchdogState.status)
+          ? 'reconnecting'
+          : rawPeerState
+      const peerStateLabel = watchdogState.status === 'failed' ? 'No video received' : peerState
 
       return {
         socketId,
         stream: remoteStreams[socketId],
         mediaState,
         peerState,
-        label: `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerState}`,
+        label: `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerStateLabel}`,
         badge: mediaState.screenShared ? 'screen' : '',
       }
     })
-  }, [peerMediaStates, peerStates, remoteStreams])
+  }, [peerMediaStates, peerStates, peerVideoWatchdogStates, remoteStreams])
   const expandedScreenShareTile = useMemo(() => {
     if (!expandedScreenShareId) return null
 
@@ -595,8 +627,179 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return nextStream
   }
 
+  function clearVideoWatchdogTimer(socketId) {
+    const timer = videoWatchdogTimersRef.current[socketId]
+    if (timer) window.clearTimeout(timer)
+    delete videoWatchdogTimersRef.current[socketId]
+  }
+
+  function setPeerVideoWatchdog(socketId, nextState) {
+    setPeerVideoWatchdogStates((previous) => {
+      const next = {
+        ...previous,
+        [socketId]: {
+          ...(previous[socketId] || {}),
+          ...nextState,
+          updatedAt: Date.now(),
+        },
+      }
+      peerVideoWatchdogStatesRef.current = next
+      return next
+    })
+  }
+
+  function resetPeerVideoWatchdog(socketId, { clearState = true } = {}) {
+    clearVideoWatchdogTimer(socketId)
+    delete videoWatchdogAttemptsRef.current[socketId]
+
+    if (!clearState) {
+      const next = { ...peerVideoWatchdogStatesRef.current }
+      delete next[socketId]
+      peerVideoWatchdogStatesRef.current = next
+      return
+    }
+
+    setPeerVideoWatchdogStates((previous) => {
+      if (!previous[socketId]) {
+        peerVideoWatchdogStatesRef.current = previous
+        return previous
+      }
+
+      const next = { ...previous }
+      delete next[socketId]
+      peerVideoWatchdogStatesRef.current = next
+      return next
+    })
+  }
+
+  function clearAllVideoWatchdogs({ clearState = true } = {}) {
+    Object.keys(videoWatchdogTimersRef.current).forEach((socketId) => clearVideoWatchdogTimer(socketId))
+    videoWatchdogAttemptsRef.current = {}
+
+    if (clearState) {
+      peerVideoWatchdogStatesRef.current = {}
+      setPeerVideoWatchdogStates({})
+    } else {
+      peerVideoWatchdogStatesRef.current = {}
+    }
+  }
+
+  function peerLabelForVideoWatchdog(socketId) {
+    return peerMediaStatesRef.current?.[socketId]?.userName || `peer ${String(socketId).slice(0, 6)}`
+  }
+
+  function peerNeedsInboundVideo(socketId) {
+    if (!socketId || String(socketId) === String(localSocketIdRef.current || '')) return false
+
+    const peerState = String(peerStatesRef.current?.[socketId] || '').toLowerCase()
+    if (['closed', 'disconnected', 'failed'].includes(peerState)) return false
+
+    return remoteVideoExpectedFromState(peerMediaStatesRef.current?.[socketId] || {})
+  }
+
+  function peerHasInboundVideo(socketId) {
+    return hasInboundVideoTrack(remoteStreamsRef.current?.[socketId])
+  }
+
+  function scheduleVideoWatchdog(socketId, delayMs) {
+    clearVideoWatchdogTimer(socketId)
+    videoWatchdogTimersRef.current[socketId] = window.setTimeout(() => {
+      runVideoWatchdog(socketId)
+    }, delayMs)
+  }
+
+  async function runVideoWatchdog(socketId) {
+    clearVideoWatchdogTimer(socketId)
+
+    if (!joinedRef.current || !peerNeedsInboundVideo(socketId)) {
+      resetPeerVideoWatchdog(socketId)
+      return
+    }
+
+    if (peerHasInboundVideo(socketId)) {
+      resetPeerVideoWatchdog(socketId)
+      return
+    }
+
+    const attempt = Number(videoWatchdogAttemptsRef.current[socketId] || 0)
+    const peerLabel = peerLabelForVideoWatchdog(socketId)
+
+    if (attempt < 1) {
+      videoWatchdogAttemptsRef.current[socketId] = attempt + 1
+      setPeerVideoWatchdog(socketId, {
+        status: 'restarting',
+        message: 'Restarting ICE for missing video',
+      })
+      setPeerStates((previous) => ({ ...previous, [socketId]: 'reconnecting' }))
+      setStatus(`No video from ${peerLabel}; restarting RTC video...`)
+
+      try {
+        const rtcClient = rtcRef.current
+        if (typeof rtcClient?.restartIce === 'function') {
+          await rtcClient.restartIce(socketId, 'remote-video-missing')
+        } else if (typeof rtcClient?.createOffer === 'function') {
+          await rtcClient.createOffer(socketId)
+        }
+      } catch (error) {
+        setPeerVideoWatchdog(socketId, {
+          status: 'verifying',
+          message: `Video restart failed: ${error.message}`,
+        })
+      }
+
+      if (!joinedRef.current || !peerNeedsInboundVideo(socketId)) {
+        resetPeerVideoWatchdog(socketId)
+        return
+      }
+
+      if (peerHasInboundVideo(socketId)) {
+        resetPeerVideoWatchdog(socketId)
+        return
+      }
+
+      setPeerVideoWatchdog(socketId, {
+        status: 'verifying',
+        message: 'Checking video after ICE restart',
+      })
+      scheduleVideoWatchdog(socketId, RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS)
+      return
+    }
+
+    setPeerVideoWatchdog(socketId, {
+      status: 'failed',
+      message: 'No video received',
+    })
+    setPeerStates((previous) => ({ ...previous, [socketId]: 'no-video' }))
+    setStatus(`No video received from ${peerLabel}`)
+  }
+
+  function reconcileVideoWatchdog(socketId) {
+    if (!joinedRef.current || !peerNeedsInboundVideo(socketId)) {
+      resetPeerVideoWatchdog(socketId)
+      return
+    }
+
+    if (peerHasInboundVideo(socketId)) {
+      resetPeerVideoWatchdog(socketId)
+      return
+    }
+
+    const watchdogState = peerVideoWatchdogStatesRef.current?.[socketId]
+    if (watchdogState?.status === 'failed' || videoWatchdogTimersRef.current[socketId]) return
+
+    const attempt = Number(videoWatchdogAttemptsRef.current[socketId] || 0)
+    setPeerVideoWatchdog(socketId, attempt > 0
+      ? { status: 'verifying', message: 'Checking video after ICE restart' }
+      : { status: 'waiting', message: 'Waiting for inbound video track' })
+    scheduleVideoWatchdog(
+      socketId,
+      attempt > 0 ? RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS : RTC_VIDEO_WATCHDOG_DELAY_MS
+    )
+  }
+
   function resetRtcState({ clearState = true } = {}) {
     joinedRef.current = false
+    clearAllVideoWatchdogs({ clearState })
     if (socketRef.current) {
       const socket = socketRef.current
       socketRef.current = null
@@ -623,6 +826,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     rejoiningSignalingRef.current = false
     latestRtcQualityRef.current = null
     negotiatedPeersRef.current.clear()
+    remoteStreamsRef.current = {}
+    peerStatesRef.current = {}
+    peerMediaStatesRef.current = {}
     if (clearState) {
       setLocalStream(null)
       setRemoteStreams({})
@@ -808,6 +1014,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function clearPeerConnectionState(rtcClient = rtcRef.current) {
     rtcClient?.closeAll?.()
     negotiatedPeersRef.current.clear()
+    clearAllVideoWatchdogs()
+    remoteStreamsRef.current = {}
+    peerStatesRef.current = {}
+    peerMediaStatesRef.current = {}
     setRemoteStreams({})
     setPeerStates({})
     setPeerStats({})
@@ -1511,11 +1721,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function handleRemoteStream(remoteSocketId, remoteStream) {
-    setRemoteStreams((previous) => ({ ...previous, [remoteSocketId]: remoteStream }))
+    setRemoteStreams((previous) => {
+      const next = { ...previous, [remoteSocketId]: remoteStream }
+      remoteStreamsRef.current = next
+      return next
+    })
     setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }))
 
-    const hasVideoTrack = remoteStream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
+    const hasVideoTrack = hasInboundVideoTrack(remoteStream)
     if (hasVideoTrack) {
+      resetPeerVideoWatchdog(remoteSocketId)
       setPeerMediaStates((previous) => ({
         ...previous,
         [remoteSocketId]: {
@@ -1792,15 +2007,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('user-left', ({ socketId }) => {
         setSignalingPeerCount((count) => Math.max(0, count - 1))
+        resetPeerVideoWatchdog(socketId)
         rtcClient.closePeer(socketId)
         setRemoteStreams((previous) => {
           const copy = { ...previous }
           delete copy[socketId]
+          remoteStreamsRef.current = copy
           return copy
         })
         setPeerStates((previous) => {
           const copy = { ...previous }
           delete copy[socketId]
+          peerStatesRef.current = copy
           return copy
         })
         setPeerStats((previous) => {
@@ -1811,12 +2029,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setPeerMediaStates((previous) => {
           const copy = { ...previous }
           delete copy[socketId]
+          peerMediaStatesRef.current = copy
           return copy
         })
       })
       socket.on('media-state-change', (payload) => {
         if (!payload?.socketId) return
-        setPeerMediaStates((previous) => ({ ...previous, [payload.socketId]: peerMediaFromSignal(payload) }))
+        setPeerMediaStates((previous) => {
+          const next = { ...previous, [payload.socketId]: peerMediaFromSignal(payload) }
+          peerMediaStatesRef.current = next
+          return next
+        })
       })
       socket.on('follow-request-received', ({ request } = {}) => {
         if (!request?.id) return
@@ -2091,6 +2314,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [rtcMode])
 
   useEffect(() => {
+    remoteStreamsRef.current = remoteStreams
+  }, [remoteStreams])
+
+  useEffect(() => {
+    peerStatesRef.current = peerStates
+  }, [peerStates])
+
+  useEffect(() => {
+    peerMediaStatesRef.current = peerMediaStates
+  }, [peerMediaStates])
+
+  useEffect(() => {
+    peerVideoWatchdogStatesRef.current = peerVideoWatchdogStates
+  }, [peerVideoWatchdogStates])
+
+  useEffect(() => {
     cameraFilterRef.current = normalizeVideoFilterId(cameraFilter)
   }, [cameraFilter])
 
@@ -2156,6 +2395,27 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }, [joined])
 
+  useEffect(() => {
+    if (!joined) {
+      clearAllVideoWatchdogs()
+      return undefined
+    }
+
+    const socketIds = new Set([
+      ...Object.keys(peerMediaStates || {}),
+      ...Object.keys(peerStates || {}),
+      ...Object.keys(remoteStreams || {}),
+    ])
+
+    socketIds.forEach((socketId) => reconcileVideoWatchdog(socketId))
+
+    Object.keys(videoWatchdogTimersRef.current).forEach((socketId) => {
+      if (!socketIds.has(socketId)) resetPeerVideoWatchdog(socketId)
+    })
+
+    return undefined
+  }, [joined, peerMediaStates, peerStates, remoteStreams])
+
   useEffect(() => () => {
     window.clearTimeout(joinEffectTimerRef.current)
     if (activeRoomIdRef.current) {
@@ -2219,7 +2479,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
-  const rtcDiagnostics = buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates })
+  const rtcDiagnostics = buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates, peerVideoWatchdogStates })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -2317,9 +2577,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
                 <div className="rtc-peer-diagnostics" aria-label="Peer connection states">
                   {rtcDiagnostics.peers.length ? rtcDiagnostics.peers.map((peer) => (
-                    <span key={peer.socketId} className={`rtc-peer-diagnostic ${peer.state || 'waiting'}`}>
+                    <span key={peer.socketId} className={`rtc-peer-diagnostic ${peer.state || 'waiting'} ${peer.watchdogStatus || ''}`}>
                       <b>{peer.label}</b>
-                      <em>{peer.state}{peer.iceState && peer.iceState !== peer.state ? ` / ${peer.iceState}` : ''}</em>
+                      <em>{peer.stateLabel}{peer.iceState && peer.iceState !== peer.state ? ` / ${peer.iceState}` : ''}</em>
                       <small>V in {formatRtcBitrate(peer.inboundVideoKbps)} - out {formatRtcBitrate(peer.outboundVideoKbps)}</small>
                     </span>
                   )) : (

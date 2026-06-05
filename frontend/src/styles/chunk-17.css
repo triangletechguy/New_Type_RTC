@@ -758,26 +758,32 @@
 }
 
 .rtc-peer-diagnostic.failed,
-.rtc-peer-diagnostic.disconnected {
+.rtc-peer-diagnostic.disconnected,
+.rtc-peer-diagnostic.no-video {
   border-color: rgba(248, 113, 113, .3);
 }
 
 .rtc-peer-diagnostic.failed em,
-.rtc-peer-diagnostic.disconnected em {
+.rtc-peer-diagnostic.disconnected em,
+.rtc-peer-diagnostic.no-video em {
   color: #fca5a5;
 }
 
 .rtc-peer-diagnostic.waiting,
 .rtc-peer-diagnostic.negotiating,
 .rtc-peer-diagnostic.connecting,
-.rtc-peer-diagnostic.reconnecting {
+.rtc-peer-diagnostic.reconnecting,
+.rtc-peer-diagnostic.restarting,
+.rtc-peer-diagnostic.verifying {
   border-color: rgba(251, 191, 36, .26);
 }
 
 .rtc-peer-diagnostic.waiting em,
 .rtc-peer-diagnostic.negotiating em,
 .rtc-peer-diagnostic.connecting em,
-.rtc-peer-diagnostic.reconnecting em {
+.rtc-peer-diagnostic.reconnecting em,
+.rtc-peer-diagnostic.restarting em,
+.rtc-peer-diagnostic.verifying em {
   color: #fde68a;
 }
 
