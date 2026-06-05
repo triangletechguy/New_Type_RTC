@@ -3037,6 +3037,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const activeFollowRequest = followRelations.incoming.find((request) => Number(request.id) === Number(activeFollowRequestId))
     || followRelations.incoming[0]
     || null
+  const rtcStageStatusText = connectionIssue || status || (joined ? 'Connected' : 'Ready to connect')
+  const rtcStageStatusTone = connectionIssue || (connectAttempted && !joined && !joining)
+    ? 'error'
+    : joined ? 'online' : joining ? 'connecting' : 'idle'
+  const rtcStageStatusLabel = joined
+    ? 'RTC connected'
+    : joining ? 'RTC connecting' : connectAttempted ? 'RTC issue' : 'RTC ready'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -3094,6 +3101,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong title={roomTitle}>{roomTitle}</strong>
               <span>Room ID: {room?.id || roomId}</span>
               <small>{displayUserCount} user{viewerCount === 1 ? '' : 's'}</small>
+            </div>
+            <div className="buzzcast-room-status live-rtc-status" title={rtcStageStatusText}>
+              <span className={rtcStageStatusTone} aria-hidden="true"></span>
+              <strong>{rtcStageStatusLabel}</strong>
+              <small>{rtcStageStatusText}</small>
             </div>
 
             {joined ? (

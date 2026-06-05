@@ -198,6 +198,14 @@
   font-weight: 900;
 }
 
+.buzzcast-room-status.live-rtc-status {
+  top: 106px;
+  max-width: min(520px, calc(100vw - 116px));
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  background: rgba(8, 7, 30, .72);
+}
+
 .buzzcast-room-status span {
   width: 9px;
   height: 9px;
@@ -214,8 +222,21 @@
   background: #f59e0b;
 }
 
+.buzzcast-room-status span.error {
+  background: #fb7185;
+  box-shadow: 0 0 0 6px rgba(251, 113, 133, .14);
+}
+
+.buzzcast-room-status strong {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, .9);
+  font-size: 12px;
+  font-weight: 1000;
+}
+
 .buzzcast-room-status small {
-  max-width: 210px;
+  min-width: 0;
+  max-width: 340px;
   overflow: hidden;
   color: rgba(255, 255, 255, .6);
   text-overflow: ellipsis;
