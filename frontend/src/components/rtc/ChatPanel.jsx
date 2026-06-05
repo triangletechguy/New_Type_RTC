@@ -878,6 +878,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
+  function handleInboxComposerKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return
+    event.preventDefault()
+    sendInboxMessage(event)
+  }
+
   function stopTyping() {
     window.clearTimeout(typingTimeoutRef.current)
     emitTyping(false)
@@ -1363,6 +1369,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         <textarea
           value={inboxText}
           onChange={(event) => setInboxText(event.target.value)}
+          onKeyDown={handleInboxComposerKeyDown}
           placeholder={inboxTarget ? `Message ${inboxTarget.name}` : 'Choose a private chat'}
           maxLength={1200}
           rows={2}
