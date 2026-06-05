@@ -1467,8 +1467,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     try {
       setSignalingState('reconnecting')
-      setStatus('Restoring signaling room...')
-      clearPeerConnectionState(rtcClient)
+      setStatus('Restoring signaling room without dropping media...')
 
       const response = await joinSignalingRoom(socket, signalingJoinPayload())
       localSocketIdRef.current = response.socketId || socket.id
@@ -1480,7 +1479,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         await negotiateExistingUsers(peers, rtcClient)
       } else {
         setSignalingPeerCount(0)
-        setPeerMediaStates({})
       }
 
       setStatus(peers.length
@@ -2380,8 +2378,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.on('connect', () => {
         if (socketRef.current === socket) {
           localSocketIdRef.current = socket.id
-          setSignalingState('connected')
-          setConnectionIssue('')
+          if (joinedRef.current && signalingRoomRef.current) {
+            rejoinSignalingRoom(socket, rtcClient).catch((error) => {
+              setSignalingState('error')
+              setConnectionIssue(`Signaling recovery failed: ${error.message}`)
+              setStatus(`Signaling recovery failed: ${error.message}`)
+            })
+          } else {
+            setSignalingState('connected')
+            setConnectionIssue('')
+          }
         }
       })
       socket.on('connect_error', (error) => {
@@ -2392,19 +2398,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.io.on('reconnect_attempt', () => {
         if (socketRef.current === socket) {
           setSignalingState('reconnecting')
-          setPeerStates((previous) => Object.fromEntries(
-            Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
-          ))
         }
       })
       socket.io.on('reconnect', () => {
         if (socketRef.current === socket) {
           localSocketIdRef.current = socket.id
-          rejoinSignalingRoom(socket, rtcClient).catch((error) => {
-            setSignalingState('error')
-            setConnectionIssue(`Signaling recovery failed: ${error.message}`)
-            setStatus(`Signaling recovery failed: ${error.message}`)
-          })
         }
       })
       socket.io.on('reconnect_error', (error) => {
@@ -2608,18 +2606,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('disconnect', (reason) => {
         if (socketRef.current === socket) {
-          setSignalingState(joinedRef.current ? 'disconnected' : 'idle')
+          setSignalingState(joinedRef.current ? 'reconnecting' : 'idle')
           if (joinedRef.current) {
-            setPeerStates((previous) => {
-              const next = Object.fromEntries(
-                Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
-              )
-              peerStatesRef.current = next
-              return next
-            })
+            setStatus(`Signaling reconnecting; media stays active (${reason})`)
+          } else {
+            setStatus(`Signaling disconnected: ${reason}`)
           }
-          if (joinedRef.current) setConnectionIssue(`Signaling disconnected: ${reason}`)
-          setStatus(`Signaling disconnected: ${reason}`)
         }
       })
 

@@ -18,9 +18,12 @@ const SIGNALING_SERVER_URL = import.meta.env.VITE_SIGNALING_SERVER_URL || defaul
 export function createSignalingSocket() {
   return io(SIGNALING_SERVER_URL, {
     autoConnect: false,
-    transports: ['polling', 'websocket'],
-    reconnectionAttempts: 5,
-    timeout: 8000,
+    transports: ['websocket', 'polling'],
+    tryAllTransports: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 5000,
+    timeout: 15000,
   })
 }
 

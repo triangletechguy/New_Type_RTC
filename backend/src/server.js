@@ -263,6 +263,9 @@ const io = new Server(server, {
   },
   maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_SIZE,
   perMessageDeflate: false,
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  connectTimeout: 45000,
 })
 
 app.set('io', io)
