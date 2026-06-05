@@ -228,6 +228,13 @@ export function isPasswordJoinError(error) {
   return error?.status === 403 && String(error.message || '').toLowerCase().includes('password')
 }
 
+function signalBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null) return defaultValue
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+  return ['true', '1', 'yes', 'on'].includes(String(value).trim().toLowerCase())
+}
+
 export function peerMediaFromSignal(user) {
   const rtcMode = user?.rtcMode === 'audio' ? 'audio' : 'video'
   return {
@@ -236,9 +243,9 @@ export function peerMediaFromSignal(user) {
     gender: user?.userGender || user?.gender || '',
     avatarUrl: user?.userAvatarUrl || user?.avatarUrl || user?.avatar_url || '',
     rtcMode,
-    micOn: user?.micEnabled !== false,
-    cameraOn: rtcMode === 'video' && user?.cameraEnabled === true,
-    screenShared: user?.screenShared === true,
+    micOn: signalBoolean(user?.micEnabled, true),
+    cameraOn: rtcMode === 'video' && signalBoolean(user?.cameraEnabled, false),
+    screenShared: signalBoolean(user?.screenShared, false),
   }
 }
 

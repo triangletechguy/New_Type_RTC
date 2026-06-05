@@ -908,6 +908,45 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return hasInboundVideoTrack(remoteStreamsRef.current?.[socketId])
   }
 
+  function peerReadyForVideoFailure(socketId) {
+    const peerConnection = rtcRef.current?.peerConnections?.[socketId]
+    const connectionState = peerConnection?.connectionState === 'new' && peerConnection?.iceConnectionState !== 'new'
+      ? peerConnection.iceConnectionState
+      : peerConnection?.connectionState
+    const peerState = String(connectionState || peerStatesRef.current?.[socketId] || '').toLowerCase()
+    return ['connected', 'completed'].includes(peerState)
+      || ['connected', 'completed'].includes(String(peerConnection?.iceConnectionState || '').toLowerCase())
+  }
+
+  function setPeerStateValue(socketId, state) {
+    if (!socketId) return
+
+    setPeerStates((previous) => {
+      const next = { ...previous, [socketId]: state }
+      peerStatesRef.current = next
+      return next
+    })
+  }
+
+  function clearNoVideoPeerState(socketId) {
+    if (!socketId) return
+
+    setPeerStates((previous) => {
+      const currentState = String(previous[socketId] || '').toLowerCase()
+      if (currentState !== 'no-video') {
+        peerStatesRef.current = previous
+        return previous
+      }
+
+      const next = {
+        ...previous,
+        [socketId]: remoteStreamsRef.current?.[socketId] ? 'connected' : 'waiting',
+      }
+      peerStatesRef.current = next
+      return next
+    })
+  }
+
   function scheduleVideoWatchdog(socketId, delayMs) {
     clearVideoWatchdogTimer(socketId)
     videoWatchdogTimersRef.current[socketId] = window.setTimeout(() => {
@@ -925,6 +964,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     if (peerHasInboundVideo(socketId)) {
       resetPeerVideoWatchdog(socketId)
+      clearNoVideoPeerState(socketId)
+      return
+    }
+
+    if (!peerReadyForVideoFailure(socketId)) {
+      setPeerVideoWatchdog(socketId, {
+        status: 'waiting',
+        message: 'Waiting for peer connection',
+      })
+      scheduleNegotiationRetry(socketId, rtcRef.current, 'Peer')
+      scheduleVideoWatchdog(socketId, RTC_VIDEO_WATCHDOG_DELAY_MS)
       return
     }
 
@@ -937,7 +987,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         status: 'restarting',
         message: 'Restarting ICE for missing video',
       })
-      setPeerStates((previous) => ({ ...previous, [socketId]: 'reconnecting' }))
+      setPeerStateValue(socketId, 'reconnecting')
       setStatus(`No video from ${peerLabel}; restarting RTC video...`)
 
       try {
@@ -961,6 +1011,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       if (peerHasInboundVideo(socketId)) {
         resetPeerVideoWatchdog(socketId)
+        clearNoVideoPeerState(socketId)
         return
       }
 
@@ -972,11 +1023,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return
     }
 
+    if (!peerReadyForVideoFailure(socketId)) {
+      setPeerVideoWatchdog(socketId, {
+        status: 'waiting',
+        message: 'Waiting for peer connection',
+      })
+      scheduleNegotiationRetry(socketId, rtcRef.current, 'Peer')
+      scheduleVideoWatchdog(socketId, RTC_VIDEO_WATCHDOG_DELAY_MS)
+      return
+    }
+
     setPeerVideoWatchdog(socketId, {
       status: 'failed',
       message: 'No video received',
     })
-    setPeerStates((previous) => ({ ...previous, [socketId]: 'no-video' }))
+    setPeerStateValue(socketId, 'no-video')
     setStatus(`No video received from ${peerLabel}`)
   }
 
@@ -988,6 +1049,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     if (peerHasInboundVideo(socketId)) {
       resetPeerVideoWatchdog(socketId)
+      clearNoVideoPeerState(socketId)
       return
     }
 
@@ -2040,11 +2102,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       remoteStreamsRef.current = next
       return next
     })
-    setPeerStates((previous) => ({ ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }))
 
     const hasVideoTrack = hasInboundVideoTrack(remoteStream)
     if (hasVideoTrack) {
       resetPeerVideoWatchdog(remoteSocketId)
+      setPeerStateValue(remoteSocketId, 'connected')
       setPeerMediaStates((previous) => ({
         ...previous,
         [remoteSocketId]: {
@@ -2053,6 +2115,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           rtcMode: 'video',
         },
       }))
+    } else {
+      setPeerStates((previous) => {
+        const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }
+        peerStatesRef.current = next
+        return next
+      })
     }
   }
 
@@ -2388,11 +2456,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('media-state-change', (payload) => {
         if (!payload?.socketId) return
+        const nextMediaState = peerMediaFromSignal(payload)
         setPeerMediaStates((previous) => {
-          const next = { ...previous, [payload.socketId]: peerMediaFromSignal(payload) }
+          const next = { ...previous, [payload.socketId]: nextMediaState }
           peerMediaStatesRef.current = next
           return next
         })
+        if (!remoteVideoExpectedFromState(nextMediaState)) {
+          resetPeerVideoWatchdog(payload.socketId)
+          clearNoVideoPeerState(payload.socketId)
+        }
       })
       socket.on('follow-request-received', ({ request } = {}) => {
         if (!request?.id) return
