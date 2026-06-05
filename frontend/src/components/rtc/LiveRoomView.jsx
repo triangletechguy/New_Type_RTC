@@ -3,7 +3,7 @@ import { avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '..
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
-import { createSignalingSocket, emitMediaState, joinSignalingRoom, waitForSocketConnection } from '../../services/signaling'
+import { createSignalingSocket, emitMediaState, joinSignalingRoom, requestSignalingPeers, waitForSocketConnection } from '../../services/signaling'
 import {
   BEAUTY_CONTROLS,
   CameraFilterPipeline,
@@ -879,8 +879,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           negotiatedPeersRef.current.add(socketId)
         }
       } catch (error) {
-        setConnectionIssue(`${label} negotiation retry failed: ${error.message}`)
-        setStatus(`${label} negotiation retry failed: ${error.message}`)
+        if (isStalePeerSignalError(error)) {
+          forgetRemotePeer(socketId, rtcClient)
+          refreshSignalingPeers(rtcClient, 'stale peer').catch((refreshError) => {
+            setStatus(`Peer refresh failed: ${refreshError.message}`)
+          })
+        } else {
+          setConnectionIssue(`${label} negotiation retry failed: ${error.message}`)
+          setStatus(`${label} negotiation retry failed: ${error.message}`)
+        }
       }
 
       if (peerNeedsNegotiationRetry(socketId, rtcClient)) {
@@ -992,12 +999,31 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       try {
         const rtcClient = rtcRef.current
+        await refreshSignalingPeers(rtcClient, 'missing video').catch(() => {})
+
+        if (!joinedRef.current || !peerNeedsInboundVideo(socketId)) {
+          resetPeerVideoWatchdog(socketId)
+          return
+        }
+
+        if (peerHasInboundVideo(socketId)) {
+          resetPeerVideoWatchdog(socketId)
+          clearNoVideoPeerState(socketId)
+          return
+        }
+
         if (typeof rtcClient?.restartIce === 'function') {
           await rtcClient.restartIce(socketId, 'remote-video-missing')
         } else if (typeof rtcClient?.createOffer === 'function') {
           await rtcClient.createOffer(socketId)
         }
       } catch (error) {
+        if (isStalePeerSignalError(error)) {
+          forgetRemotePeer(socketId, rtcRef.current)
+          refreshSignalingPeers(rtcRef.current, 'stale peer').catch(() => {})
+          return
+        }
+
         setPeerVideoWatchdog(socketId, {
           status: 'verifying',
           message: `Video restart failed: ${error.message}`,
@@ -1146,7 +1172,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const filteredTrack = filteredCameraTrackRef.current
 
     const nextStream = replaceCameraTrackInLocalStream(null)
-    await rtcRef.current?.replaceLocalTrack('video', null, nextStream, { renegotiate: false })
+    await rtcRef.current?.replaceLocalTrack('video', null, nextStream)
 
     stopCameraFilterPipeline({ stopSource: true })
 
@@ -1413,9 +1439,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
     } catch (error) {
       negotiatedPeersRef.current.delete(remoteSocketId)
-      setConnectionIssue(`${label} negotiation failed: ${error.message}`)
-      setStatus(`${label} negotiation failed: ${error.message}`)
-      scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
+      if (isStalePeerSignalError(error)) {
+        forgetRemotePeer(remoteSocketId, rtcClient)
+        refreshSignalingPeers(rtcClient, 'stale peer').catch((refreshError) => {
+          setStatus(`Peer refresh failed: ${refreshError.message}`)
+        })
+      } else {
+        setConnectionIssue(`${label} negotiation failed: ${error.message}`)
+        setStatus(`${label} negotiation failed: ${error.message}`)
+        scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
+      }
     }
   }
 
@@ -1433,6 +1466,100 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setPeerStats({})
     setPeerMediaStates({})
     setSignalingPeerCount(0)
+  }
+
+  function isStalePeerSignalError(error) {
+    return /target peer|no longer connected|not in this signaling room/i.test(String(error?.message || ''))
+  }
+
+  function forgetRemotePeer(socketId, rtcClient = rtcRef.current) {
+    if (!socketId) return
+
+    resetPeerVideoWatchdog(socketId)
+    resetPeerNegotiationRetry(socketId)
+    rtcClient?.closePeer?.(socketId)
+    negotiatedPeersRef.current.delete(socketId)
+
+    setRemoteStreams((previous) => {
+      if (!previous[socketId]) {
+        remoteStreamsRef.current = previous
+        return previous
+      }
+
+      const copy = { ...previous }
+      delete copy[socketId]
+      remoteStreamsRef.current = copy
+      return copy
+    })
+    setPeerStates((previous) => {
+      if (!previous[socketId]) {
+        peerStatesRef.current = previous
+        return previous
+      }
+
+      const copy = { ...previous }
+      delete copy[socketId]
+      peerStatesRef.current = copy
+      return copy
+    })
+    setPeerStats((previous) => {
+      if (!previous[socketId]) {
+        peerStatsRef.current = previous
+        return previous
+      }
+
+      const copy = { ...previous }
+      delete copy[socketId]
+      peerStatsRef.current = copy
+      return copy
+    })
+    setPeerMediaStates((previous) => {
+      if (!previous[socketId]) {
+        peerMediaStatesRef.current = previous
+        return previous
+      }
+
+      const copy = { ...previous }
+      delete copy[socketId]
+      peerMediaStatesRef.current = copy
+      return copy
+    })
+  }
+
+  async function refreshSignalingPeers(rtcClient = rtcRef.current, reason = 'peer refresh') {
+    const socket = socketRef.current
+    if (!socket?.connected || !joinedRef.current || !signalingRoomRef.current || !rtcClient) return []
+
+    const response = await requestSignalingPeers(socket, { roomId: signalingRoomRef.current })
+    if (response.socketId) localSocketIdRef.current = response.socketId
+
+    const peers = Array.isArray(response.users) ? response.users : []
+    const activePeerIds = new Set(peers.map((peer) => peer?.socketId).filter(Boolean))
+    const knownPeerIds = new Set([
+      ...Object.keys(rtcClient.peerConnections || {}),
+      ...Object.keys(remoteStreamsRef.current || {}),
+      ...Object.keys(peerStatesRef.current || {}),
+      ...Object.keys(peerMediaStatesRef.current || {}),
+    ])
+
+    knownPeerIds.forEach((socketId) => {
+      if (socketId && !activePeerIds.has(socketId)) forgetRemotePeer(socketId, rtcClient)
+    })
+
+    setSignalingPeerCount(peers.length)
+
+    if (peers.length) {
+      await negotiateExistingUsers(peers, rtcClient)
+    } else {
+      setPeerMediaStates({})
+      peerMediaStatesRef.current = {}
+    }
+
+    setStatus(peers.length
+      ? `Refreshed ${peers.length} peer${peers.length === 1 ? '' : 's'} after ${reason}`
+      : `No active peers after ${reason}`)
+
+    return peers
   }
 
   function signalingJoinPayload({
@@ -2453,9 +2580,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           }
           scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
         } catch (error) {
-          setConnectionIssue(`Offer failed: ${error.message}`)
-          setStatus(`Offer failed: ${error.message}`)
-          scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
+          if (isStalePeerSignalError(error)) {
+            forgetRemotePeer(fromSocketId, rtcClient)
+            refreshSignalingPeers(rtcClient, 'stale peer').catch((refreshError) => {
+              setStatus(`Peer refresh failed: ${refreshError.message}`)
+            })
+          } else {
+            setConnectionIssue(`Offer failed: ${error.message}`)
+            setStatus(`Offer failed: ${error.message}`)
+            scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
+          }
         }
       })
       socket.on('webrtc-answer', async ({ fromSocketId, answer }) => {
@@ -2480,35 +2614,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           setStatus(`ICE failed: ${error.message}`)
         }
       })
+      socket.on('peer-signal-error', ({ targetSocketId, message }) => {
+        if (!targetSocketId) return
+        forgetRemotePeer(targetSocketId, rtcClient)
+        setStatus(message || 'Peer signal target changed; refreshing room peers...')
+        refreshSignalingPeers(rtcClient, 'signal target change').catch((error) => {
+          setStatus(`Peer refresh failed: ${error.message}`)
+        })
+      })
       socket.on('user-left', ({ socketId }) => {
         setSignalingPeerCount((count) => Math.max(0, count - 1))
-        resetPeerVideoWatchdog(socketId)
-        resetPeerNegotiationRetry(socketId)
-        rtcClient.closePeer(socketId)
-        setRemoteStreams((previous) => {
-          const copy = { ...previous }
-          delete copy[socketId]
-          remoteStreamsRef.current = copy
-          return copy
-        })
-        setPeerStates((previous) => {
-          const copy = { ...previous }
-          delete copy[socketId]
-          peerStatesRef.current = copy
-          return copy
-        })
-        setPeerStats((previous) => {
-          const copy = { ...previous }
-          delete copy[socketId]
-          peerStatsRef.current = copy
-          return copy
-        })
-        setPeerMediaStates((previous) => {
-          const copy = { ...previous }
-          delete copy[socketId]
-          peerMediaStatesRef.current = copy
-          return copy
-        })
+        forgetRemotePeer(socketId, rtcClient)
       })
       socket.on('media-state-change', (payload) => {
         if (!payload?.socketId) return
@@ -2521,6 +2637,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         if (!remoteVideoExpectedFromState(nextMediaState)) {
           resetPeerVideoWatchdog(payload.socketId)
           clearNoVideoPeerState(payload.socketId)
+        } else {
+          scheduleNegotiationRetry(payload.socketId, rtcClient, 'Peer')
+          reconcileVideoWatchdog(payload.socketId)
         }
       })
       socket.on('room-session-replaced', () => {

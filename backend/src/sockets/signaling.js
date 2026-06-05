@@ -158,6 +158,59 @@ function registerSignaling(io) {
     return rooms.get(String(roomId))?.get(socketId) || null
   }
 
+  function socketIsInRoom(socketId, roomKey) {
+    return Boolean(io.sockets.adapter.rooms.get(roomKey)?.has(socketId))
+  }
+
+  function socketRoomsForPeer(socketId) {
+    const peerSocket = io.sockets.sockets.get(socketId)
+    return Array.from(peerSocket?.rooms || []).filter((roomId) => roomId !== socketId)
+  }
+
+  function sharedSignalingRoom(sourceSocket, targetSocketId) {
+    const targetRooms = new Set(socketRoomsForPeer(targetSocketId))
+
+    for (const roomId of sourceSocket.rooms || []) {
+      if (roomId !== sourceSocket.id && targetRooms.has(roomId)) return roomId
+    }
+
+    return null
+  }
+
+  function acknowledgeSignal(acknowledge, payload) {
+    if (typeof acknowledge === 'function') acknowledge(payload)
+  }
+
+  function forwardPeerSignal(socket, eventName, targetSocketId, payload, acknowledge) {
+    if (!targetSocketId || !payload) {
+      acknowledgeSignal(acknowledge, { ok: false, message: 'Missing WebRTC target or payload.' })
+      return
+    }
+
+    const targetSocket = io.sockets.sockets.get(targetSocketId)
+    if (!targetSocket) {
+      const message = 'Target peer is no longer connected.'
+      if (eventName !== 'webrtc-ice-candidate') {
+        socket.emit('peer-signal-error', { eventName, targetSocketId, message })
+      }
+      acknowledgeSignal(acknowledge, { ok: false, message })
+      return
+    }
+
+    const roomId = sharedSignalingRoom(socket, targetSocketId)
+    if (!roomId) {
+      const message = 'Target peer is not in this signaling room.'
+      if (eventName !== 'webrtc-ice-candidate') {
+        socket.emit('peer-signal-error', { eventName, targetSocketId, message })
+      }
+      acknowledgeSignal(acknowledge, { ok: false, message })
+      return
+    }
+
+    targetSocket.emit(eventName, { fromSocketId: socket.id, ...payload })
+    acknowledgeSignal(acknowledge, { ok: true, roomId, targetSocketId })
+  }
+
   function removeDuplicateUserSockets(roomKey, users, userId, keepSocketId) {
     const normalizedUserId = Number(userId || 0)
     if (!normalizedUserId) return []
@@ -333,19 +386,41 @@ function registerSignaling(io) {
       })
     })
 
-    socket.on('webrtc-offer', ({ targetSocketId, offer }) => {
-      if (!targetSocketId || !offer) return
-      socket.to(targetSocketId).emit('webrtc-offer', { fromSocketId: socket.id, offer })
+    socket.on('room-peers', ({ roomId } = {}, acknowledge) => {
+      if (!roomId) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Missing signaling room ID.' })
+        return
+      }
+
+      const roomKey = String(roomId)
+      if (!socketIsInRoom(socket.id, roomKey)) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Socket is not in this signaling room.' })
+        return
+      }
+
+      const users = rooms.get(roomKey) || new Map()
+      const existingUsers = Array.from(users.entries())
+        .filter(([socketId]) => socketId !== socket.id)
+        .map(([socketId, user]) => serializeUser(socketId, user))
+
+      acknowledgeSignal(acknowledge, {
+        ok: true,
+        roomId: roomKey,
+        socketId: socket.id,
+        users: existingUsers,
+      })
     })
 
-    socket.on('webrtc-answer', ({ targetSocketId, answer }) => {
-      if (!targetSocketId || !answer) return
-      socket.to(targetSocketId).emit('webrtc-answer', { fromSocketId: socket.id, answer })
+    socket.on('webrtc-offer', ({ targetSocketId, offer } = {}, acknowledge) => {
+      forwardPeerSignal(socket, 'webrtc-offer', targetSocketId, offer ? { offer } : null, acknowledge)
     })
 
-    socket.on('webrtc-ice-candidate', ({ targetSocketId, candidate }) => {
-      if (!targetSocketId || !candidate) return
-      socket.to(targetSocketId).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
+    socket.on('webrtc-answer', ({ targetSocketId, answer } = {}, acknowledge) => {
+      forwardPeerSignal(socket, 'webrtc-answer', targetSocketId, answer ? { answer } : null, acknowledge)
+    })
+
+    socket.on('webrtc-ice-candidate', ({ targetSocketId, candidate } = {}, acknowledge) => {
+      forwardPeerSignal(socket, 'webrtc-ice-candidate', targetSocketId, candidate ? { candidate } : null, acknowledge)
     })
 
     socket.on('media-state-change', ({ roomId, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {

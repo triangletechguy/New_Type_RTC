@@ -79,3 +79,15 @@ export function emitMediaState(socket, payload, timeoutMs = 3000) {
     })
   })
 }
+
+export function requestSignalingPeers(socket, payload, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    if (!socket?.connected) return reject(new Error('Signaling socket is not connected.'))
+
+    socket.timeout(timeoutMs).emit('room-peers', payload, (error, response) => {
+      if (error) return reject(new Error('Signaling peer refresh timed out.'))
+      if (!response?.ok) return reject(new Error(response?.message || 'Signaling peer refresh failed.'))
+      resolve(response)
+    })
+  })
+}

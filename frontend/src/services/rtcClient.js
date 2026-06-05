@@ -620,6 +620,38 @@ export class NativeRtcClient {
     delete this.pendingIceRestarts[remoteSocketId]
   }
 
+  emitWebrtcSignal(eventName, remoteSocketId, payload, { requireAck = true, timeoutMs = 5000 } = {}) {
+    if (!this.socket?.connected) {
+      return Promise.reject(new Error('Signaling socket is not connected.'))
+    }
+
+    const message = {
+      targetSocketId: remoteSocketId,
+      ...payload,
+    }
+
+    if (!requireAck) {
+      this.socket.emit(eventName, message)
+      return Promise.resolve({ ok: true })
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.timeout(timeoutMs).emit(eventName, message, (error, response) => {
+        if (error) {
+          reject(new Error(`${eventName} timed out.`))
+          return
+        }
+
+        if (!response?.ok) {
+          reject(new Error(response?.message || `${eventName} failed.`))
+          return
+        }
+
+        resolve(response)
+      })
+    })
+  }
+
   emitRemoteStream(remoteSocketId) {
     const stream = this.remoteMediaStreams[remoteSocketId]
     if (stream && this.onRemoteStream) this.onRemoteStream(remoteSocketId, stream)
@@ -730,10 +762,12 @@ export class NativeRtcClient {
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate && this.socket) {
-        this.socket.emit('webrtc-ice-candidate', {
-          targetSocketId: remoteSocketId,
-          candidate: event.candidate,
-        })
+        this.emitWebrtcSignal(
+          'webrtc-ice-candidate',
+          remoteSocketId,
+          { candidate: event.candidate },
+          { requireAck: false },
+        ).catch(() => {})
       }
     }
 
@@ -862,8 +896,7 @@ export class NativeRtcClient {
         throw error
       }
 
-      this.socket.emit('webrtc-offer', {
-        targetSocketId: remoteSocketId,
+      await this.emitWebrtcSignal('webrtc-offer', remoteSocketId, {
         offer: peerConnection.localDescription,
       })
 
@@ -898,8 +931,7 @@ export class NativeRtcClient {
     const answer = await peerConnection.createAnswer()
     await peerConnection.setLocalDescription(answer)
 
-    this.socket.emit('webrtc-answer', {
-      targetSocketId: fromSocketId,
+    await this.emitWebrtcSignal('webrtc-answer', fromSocketId, {
       answer: peerConnection.localDescription,
     })
 
