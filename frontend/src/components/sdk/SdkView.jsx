@@ -2,6 +2,11 @@ import { useMemo, useState } from 'react'
 import { brandAssets } from '../../assets/rtc/catalog'
 import roadmapPdf from '../../assets/agora_style_self_hosted_rtc_platform_roadmap.pdf'
 
+/**
+ * @typedef {{ id: string, label: string, title: string, language: string, code: string }} SdkTab
+ */
+
+/** @type {SdkTab[]} */
 const sdkTabs = [
   {
     id: 'web',
@@ -16,6 +21,10 @@ const rtc = new TalkEachOtherRTC({
   signalingUrl: 'https://signal.example.com',
 })
 
+const clientRtcToken = 'client_rtc_token'
+const roomId = 'room_1001'
+const remoteVideo = document.querySelector('[data-remote-video]')
+
 await rtc.authenticate(clientRtcToken)
 
 const session = await rtc.joinRoom(roomId, {
@@ -24,12 +33,15 @@ const session = await rtc.joinRoom(roomId, {
   cameraEnabled: true,
 })
 
+console.log('joined room', session.room?.id || roomId)
+
 rtc.on('peer-joined', (peer) => {
   console.log('peer joined', peer.userId)
 })
 
 rtc.on('remote-track', ({ peer, stream }) => {
-  remoteVideo.srcObject = stream
+  if (remoteVideo) remoteVideo.srcObject = stream
+  console.log('remote track from', peer.userId)
 })
 
 await rtc.leaveRoom()`,
@@ -87,6 +99,7 @@ export function LiveRoom({ roomId, token }) {
 
 const app = express()
 const apiBase = 'https://rtc.example.com/api/client'
+const requireUser = (req, _res, next) => next()
 const clientHeaders = {
   Authorization: 'Bearer ' + process.env.TEO_CLIENT_API_KEY,
   'Content-Type': 'application/json',
@@ -135,20 +148,44 @@ app.post('/my-app/rtc-token', requireUser, async (req, res) => {
     label: 'Events',
     title: 'Realtime callbacks',
     language: 'JavaScript',
-    code: `rtc.on('connection-state', ({ state }) => {
+    code: `const reportRtcError = (error) => {
+  console.error(error.code, error.message)
+}
+
+rtc.on('connection-state', ({ state }) => {
   console.log('rtc state', state)
 })
 
-rtc.on('peer-joined', ({ userId, name, role }) => {})
-rtc.on('peer-left', ({ userId, reason }) => {})
-rtc.on('remote-track', ({ peer, stream, kind }) => {})
-rtc.on('track-muted', ({ peer, kind }) => {})
-rtc.on('room-message', ({ id, sender, body, sentAt }) => {})
-rtc.on('message-unsent', ({ id, deletedBy }) => {})
-rtc.on('moderation', ({ action, targetUserId, reason }) => {})
+rtc.on('peer-joined', (peer) => {
+  console.log('peer joined', peer.userId, peer.name, peer.role)
+})
+
+rtc.on('peer-left', (peer) => {
+  console.log('peer left', peer.userId, peer.reason)
+})
+
+rtc.on('remote-track', ({ peer, stream, kind }) => {
+  console.log('remote track', peer.userId, kind, stream.id)
+})
+
+rtc.on('track-muted', ({ peer, kind }) => {
+  console.log('track muted', peer.userId, kind)
+})
+
+rtc.on('room-message', ({ id, sender, body, sentAt }) => {
+  console.log('room message', id, sender.name, body, sentAt)
+})
+
+rtc.on('message-unsent', ({ id, deletedBy }) => {
+  console.log('message unsent', id, deletedBy)
+})
+
+rtc.on('moderation', ({ action, targetUserId, reason }) => {
+  console.log('moderation', action, targetUserId, reason)
+})
 
 rtc.on('error', (error) => {
-  reportError(error.code, error.message)
+  reportRtcError(error)
 })`,
   },
 ]
@@ -271,6 +308,9 @@ const mediaUpgradeRows = [
   ['Admin metrics', 'Track packet loss, bitrate, RTT, jitter, reconnects, and token failures.'],
 ]
 
+/**
+ * @param {{ value: string, label?: string }} props
+ */
 function CopyButton({ value, label = 'Copy' }) {
   const [copied, setCopied] = useState(false)
 
@@ -291,6 +331,9 @@ function CopyButton({ value, label = 'Copy' }) {
   )
 }
 
+/**
+ * @param {{ tab: SdkTab }} props
+ */
 function CodePanel({ tab }) {
   return (
     <div className="glass-card sdk-code-card">
