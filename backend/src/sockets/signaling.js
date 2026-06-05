@@ -25,6 +25,10 @@ function registerSignaling(io) {
     return value === 'audio' ? 'audio' : 'video'
   }
 
+  function normalizeCameraEnabled(value, rtcMode, defaultValue = false) {
+    return normalizeRtcMode(rtcMode) === 'video' && normalizeBoolean(value, defaultValue)
+  }
+
   function serializeUser(socketId, user) {
     return {
       socketId,
@@ -190,7 +194,7 @@ function registerSignaling(io) {
         userAvatarUrl: userAvatarUrl || '',
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
-        cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+        cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
         screenShared: normalizeBoolean(screenShared, false),
       })
 
@@ -202,7 +206,7 @@ function registerSignaling(io) {
           roomId: resolvedDatabaseRoomId,
           userId,
           micEnabled: normalizeBoolean(micEnabled, true),
-          cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+          cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
           screenShared: normalizeBoolean(screenShared, false),
         }).catch((error) => console.error('[signaling] presence touch failed', error))
       }
@@ -231,7 +235,7 @@ function registerSignaling(io) {
         userAvatarUrl: userAvatarUrl || '',
         rtcMode: normalizeRtcMode(rtcMode),
         micEnabled: normalizeBoolean(micEnabled, true),
-        cameraEnabled: normalizeBoolean(cameraEnabled, normalizeRtcMode(rtcMode) === 'video'),
+        cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
         screenShared: normalizeBoolean(screenShared, false),
       })
 
@@ -262,7 +266,7 @@ function registerSignaling(io) {
         ...currentUser,
         databaseRoomId: resolvedDatabaseRoomId,
         micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
-        cameraEnabled: normalizeBoolean(cameraEnabled, currentUser.cameraEnabled),
+        cameraEnabled: normalizeCameraEnabled(cameraEnabled, currentUser.rtcMode, currentUser.cameraEnabled),
         screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
       }
 
@@ -321,7 +325,7 @@ function registerSignaling(io) {
         ...currentUser,
         rtcMode: nextRtcMode,
         micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
-        cameraEnabled: normalizeBoolean(cameraEnabled, currentUser.cameraEnabled),
+        cameraEnabled: normalizeCameraEnabled(cameraEnabled, nextRtcMode, currentUser.cameraEnabled),
         screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
       }
 

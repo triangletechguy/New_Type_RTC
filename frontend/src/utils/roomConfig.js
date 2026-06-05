@@ -116,11 +116,11 @@ export function roomSupportsVideo(roomType) {
 }
 
 export function roomAllowsCamera(roomType) {
-  return ['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return roomSupportsVideo(roomType)
 }
 
 export function defaultRtcModeForRoom(room) {
-  return roomAllowsCamera(room?.room_type) ? 'video' : 'audio'
+  return roomSupportsVideo(room?.room_type) ? 'video' : 'audio'
 }
 
 export function getRoomFlowLabel(roomType) {
@@ -138,7 +138,7 @@ export function getSeatLabel(roomType, count) {
 
 export function normalizeRtcMode(value, room) {
   const nextMode = value === 'audio' ? 'audio' : 'video'
-  if (room && !roomAllowsCamera(room.room_type)) return 'audio'
+  if (room && !roomSupportsVideo(room.room_type)) return 'audio'
   return nextMode
 }
 
@@ -237,7 +237,7 @@ export function peerMediaFromSignal(user) {
     avatarUrl: user?.userAvatarUrl || user?.avatarUrl || user?.avatar_url || '',
     rtcMode,
     micOn: user?.micEnabled !== false,
-    cameraOn: rtcMode === 'video' && user?.cameraEnabled !== false,
+    cameraOn: rtcMode === 'video' && user?.cameraEnabled === true,
     screenShared: user?.screenShared === true,
   }
 }

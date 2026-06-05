@@ -179,7 +179,7 @@ async function ensureRoomFollowSchema() {
 }
 
 function roomSupportsVideo(roomType) {
-  return validRoomTypes.has(roomType)
+  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
 }
 
 function defaultRtcModeForRoom(roomType) {

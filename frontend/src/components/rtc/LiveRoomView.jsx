@@ -101,7 +101,7 @@ function hasInboundVideoTrack(stream) {
 
 function remoteVideoExpectedFromState(mediaState = {}) {
   if (mediaState.screenShared === true) return true
-  return String(mediaState.rtcMode || 'video') !== 'audio' && mediaState.cameraOn !== false
+  return String(mediaState.rtcMode || 'video') !== 'audio' && mediaState.cameraOn === true
 }
 
 function aggregateRemoteTrackCounts(remoteStreams = {}, kind) {
@@ -3062,7 +3062,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         avatarUrl={mediaState.avatarUrl}
                         badge={badge}
                         micOn={mediaState.micOn !== false}
-                        cameraOn={mediaState.cameraOn !== false}
+                        cameraOn={mediaState.cameraOn === true || mediaState.screenShared === true}
                         rtcMode={mediaState.rtcMode || 'video'}
                         connectionState={peerState}
                         showMediaState

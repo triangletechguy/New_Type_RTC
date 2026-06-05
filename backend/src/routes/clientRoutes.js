@@ -8,6 +8,7 @@ const router = express.Router()
 const EXTERNAL_USER_STATUSES = new Set(['active', 'inactive', 'banned'])
 const RTC_ROLES = new Set(['audience', 'publisher', 'moderator', 'admin', 'owner'])
 const CLIENT_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
+const CLIENT_VIDEO_ROOM_TYPES = new Set(['video', 'group_video', 'solo_live', 'pk_live'])
 const CLIENT_PRIVACY_TYPES = new Set(['public', 'private', 'password'])
 const CLIENT_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
 const CLIENT_ROOM_THEMES = new Set(['neon', 'midnight', 'studio', 'mint'])
@@ -1314,7 +1315,7 @@ async function startClientRtcSession(clientApp, clientTenant, payload) {
       [session.id, externalUser.user_id]
     )
 
-    const cameraEnabled = CLIENT_ROOM_TYPES.has(room.room_type)
+    const cameraEnabled = CLIENT_VIDEO_ROOM_TYPES.has(room.room_type)
       ? payload.cameraEnabled
       : false
 
