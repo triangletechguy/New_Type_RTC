@@ -60,6 +60,21 @@ function latestMessageId(messages = []) {
   return messages.reduce((latest, message) => Math.max(latest, messageIdValue(message)), 0)
 }
 
+function sortMessagesById(messages = []) {
+  return [...messages].sort((a, b) => messageIdValue(a) - messageIdValue(b))
+}
+
+function directMessagePeerId(message, currentUser) {
+  const currentUserId = Number(currentUser?.id || 0)
+  const senderId = Number(message?.sender_id || 0)
+  const recipientId = Number(message?.recipient_id || 0)
+
+  if (!currentUserId) return 0
+  if (senderId === currentUserId) return recipientId
+  if (recipientId === currentUserId) return senderId
+  return 0
+}
+
 function roleNames(user) {
   return (Array.isArray(user?.roles) ? user.roles : [])
     .map((role) => (typeof role === 'string' ? role : role?.name))
@@ -261,6 +276,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     })
   }
 
+  function upsertInboxMessage(message) {
+    if (!message?.id || !directMessagePeerId(message, user)) return
+
+    setInboxMessages((previous) => {
+      const nextMessages = previous.some((item) => item.id === message.id)
+        ? previous.map((item) => (item.id === message.id ? { ...item, ...message } : item))
+        : [...previous, message]
+
+      return sortMessagesById(nextMessages)
+    })
+  }
+
   function mergeRoomMessages(incomingMessages) {
     const incoming = Array.isArray(incomingMessages)
       ? incomingMessages.filter((message) => message?.id && isVisibleRoomMessage(message, blockedSenderIds))
@@ -278,7 +305,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         byId.set(id, { ...(byId.get(id) || {}), ...message })
       })
 
-      return Array.from(byId.values()).sort((a, b) => messageIdValue(a) - messageIdValue(b))
+      return sortMessagesById(Array.from(byId.values()))
     })
   }
 
@@ -820,9 +847,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         method: 'POST',
         body: JSON.stringify({ message_body: value, message_type: 'text' }),
       })
-      setInboxMessages((previous) => [...previous, data.direct_message])
+      upsertInboxMessage(data.direct_message)
       setInboxText('')
-      loadInboxThreads()
+      loadInboxThreads({ quiet: true })
     } catch (error) {
       setStatus(`Send failed: ${error.message}`)
     } finally {
@@ -1021,12 +1048,27 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
         return copy
       })
     }
+    const handleDirectMessage = ({ direct_message: directMessage } = {}) => {
+      const peerId = directMessagePeerId(directMessage, user)
+      if (!peerId) return
+
+      if (Number(inboxTarget?.id || 0) === peerId) {
+        upsertInboxMessage(directMessage)
+      }
+
+      loadInboxThreads({ quiet: true })
+
+      if (Number(directMessage.sender_id) !== Number(user?.id) && Number(inboxTarget?.id || 0) !== peerId) {
+        setStatus(`New private message from ${directMessage.sender_name || `User #${directMessage.sender_id}`}.`)
+      }
+    }
 
     socket.on('connect', syncAfterReconnect)
     socket.on('chat-message', handleMessage)
     socket.on('chat-message-edited', handleMessageEdited)
     socket.on('chat-message-deleted', handleMessageDeleted)
     socket.on('chat-message-unsent', handleMessageUnsent)
+    socket.on('direct-message', handleDirectMessage)
     socket.on('typing-start', handleTypingStart)
     socket.on('typing-stop', handleTypingStop)
     socket.io?.on('reconnect', syncAfterReconnect)
@@ -1037,11 +1079,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       socket.off('chat-message-edited', handleMessageEdited)
       socket.off('chat-message-deleted', handleMessageDeleted)
       socket.off('chat-message-unsent', handleMessageUnsent)
+      socket.off('direct-message', handleDirectMessage)
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
       socket.io?.off('reconnect', syncAfterReconnect)
     }
-  }, [socket, roomId, user?.id, blockedSenderIds])
+  }, [socket, roomId, user?.id, blockedSenderIds, inboxTarget?.id])
 
   useEffect(() => () => {
     window.clearTimeout(typingTimeoutRef.current)

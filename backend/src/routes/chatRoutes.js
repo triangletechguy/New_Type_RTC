@@ -1009,10 +1009,18 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
     const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, {
       id: result.insertId,
     })
+    const directMessage = messages[0]
+    const realtimePayload = {
+      direct_message: directMessage,
+      peer,
+    }
+
+    emitUserRealtime(req, peerId, 'direct-message', realtimePayload)
+    emitUserRealtime(req, req.user.id, 'direct-message', realtimePayload)
 
     return res.status(201).json({
       message: 'Direct message sent.',
-      direct_message: messages[0],
+      direct_message: directMessage,
       peer,
     })
   } catch (error) {
