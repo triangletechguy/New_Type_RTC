@@ -845,6 +845,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   function scheduleNegotiationRetry(socketId, rtcClient, label = 'peer') {
     if (!socketId || !rtcClient || negotiationRetryTimersRef.current[socketId]) return
+    if (!shouldInitiateInitialOffer(socketId)) return
 
     const attempt = Number(negotiationRetryAttemptsRef.current[socketId] || 0)
     if (attempt >= RTC_NEGOTIATION_RETRY_MAX_ATTEMPTS) return
@@ -1141,8 +1142,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function unpublishCameraTrack() {
     if (rtcModeRef.current === 'audio' || screenShareTrackRef.current) return
+    const outgoingTrack = currentCameraTrack()
+    const sourceTrack = cameraSourceTrackRef.current
+    const filteredTrack = filteredCameraTrackRef.current
+
     const nextStream = replaceCameraTrackInLocalStream(null)
-    await rtcRef.current?.replaceLocalTrack('video', null, nextStream)
+    await rtcRef.current?.replaceLocalTrack('video', null, nextStream, { renegotiate: false })
+
+    stopCameraFilterPipeline({ stopSource: true })
+
+    const stoppedCameraTracks = [outgoingTrack, sourceTrack, filteredTrack]
+    stoppedCameraTracks.forEach((track) => {
+      if (!track || track.readyState === 'ended') return
+      cleanupLocalTrackMonitor(track)
+      try { track.stop() } catch {}
+    })
   }
 
   function localTrackForSender(kind) {
@@ -1373,12 +1387,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
-  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
+  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer', options = {}) {
     if (!remoteSocketId || !rtcClient) return
 
     rtcClient.createPeerConnection(remoteSocketId)
 
     if (negotiatedPeersRef.current.has(remoteSocketId)) return
+
+    if (options.initiateOffer === false) {
+      setPeerStates((previous) => {
+        const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'waiting' }
+        peerStatesRef.current = next
+        return next
+      })
+      scheduleNegotiationRetry(remoteSocketId, rtcClient, label)
+      return
+    }
 
     negotiatedPeersRef.current.add(remoteSocketId)
     setPeerStates((previous) => {
@@ -2112,6 +2136,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return String(localSocketId) > String(remoteSocketId)
   }
 
+  function shouldInitiateInitialOffer(remoteSocketId) {
+    const localSocketId = localSocketIdRef.current
+    if (!localSocketId || !remoteSocketId) return true
+    return String(localSocketId) < String(remoteSocketId)
+  }
+
   function handleRemoteStream(remoteSocketId, remoteStream) {
     resetPeerNegotiationRetry(remoteSocketId)
     setRemoteStreams((previous) => {
@@ -2124,14 +2154,20 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (hasVideoTrack) {
       resetPeerVideoWatchdog(remoteSocketId)
       setPeerStateValue(remoteSocketId, 'connected')
-      setPeerMediaStates((previous) => ({
-        ...previous,
-        [remoteSocketId]: {
-          ...(previous[remoteSocketId] || {}),
-          cameraOn: true,
-          rtcMode: 'video',
-        },
-      }))
+      setPeerMediaStates((previous) => {
+        const current = previous[remoteSocketId] || {}
+        const cameraWasExplicitlyOff = current.cameraOn === false && current.screenShared !== true
+        const next = {
+          ...previous,
+          [remoteSocketId]: {
+            ...current,
+            cameraOn: cameraWasExplicitlyOff ? false : true,
+            rtcMode: cameraWasExplicitlyOff ? (current.rtcMode || 'video') : 'video',
+          },
+        }
+        peerMediaStatesRef.current = next
+        return next
+      })
     } else {
       setPeerStates((previous) => {
         const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }
@@ -2144,13 +2180,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function negotiateExistingUsers(existingUsers, rtcClient) {
     const peers = Array.isArray(existingUsers) ? existingUsers : []
     setSignalingPeerCount(peers.length)
-    setPeerMediaStates((previous) => ({ ...previous, ...peerMediaMapFromUsers(peers) }))
+    setPeerMediaStates((previous) => {
+      const next = { ...previous, ...peerMediaMapFromUsers(peers) }
+      peerMediaStatesRef.current = next
+      return next
+    })
     if (!peers.length) return
 
     setStatus(`Found ${peers.length} peer connection${peers.length === 1 ? '' : 's'}...`)
 
     for (const remoteUser of peers) {
-      await beginPeerNegotiation(remoteUser?.socketId, rtcClient, 'Peer')
+      await beginPeerNegotiation(remoteUser?.socketId, rtcClient, 'Peer', {
+        initiateOffer: shouldInitiateInitialOffer(remoteUser?.socketId),
+      })
     }
   }
 
@@ -2324,7 +2366,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         },
         onPeerRecovery: (remoteSocketId, recoveryState, detail) => {
           if (['scheduled', 'waiting', 'restarting'].includes(recoveryState)) {
-            setPeerStates((previous) => ({ ...previous, [remoteSocketId]: 'reconnecting' }))
+            setPeerStates((previous) => {
+              const next = { ...previous, [remoteSocketId]: 'reconnecting' }
+              peerStatesRef.current = next
+              return next
+            })
             setStatus(`Recovering peer ${remoteSocketId.slice(0, 6)}${detail ? `: ${detail}` : ''}`)
           }
 
@@ -2401,17 +2447,33 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.on('user-joined', async (payload) => {
         const { socketId } = payload
         setSignalingPeerCount((count) => count + 1)
-        setPeerMediaStates((previous) => ({ ...previous, [socketId]: peerMediaFromSignal(payload) }))
-        setPeerStates((previous) => ({ ...previous, [socketId]: previous[socketId] || 'waiting' }))
+        setPeerMediaStates((previous) => {
+          const next = { ...previous, [socketId]: peerMediaFromSignal(payload) }
+          peerMediaStatesRef.current = next
+          return next
+        })
+        setPeerStates((previous) => {
+          const next = { ...previous, [socketId]: previous[socketId] || 'waiting' }
+          peerStatesRef.current = next
+          return next
+        })
         setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
         triggerJoinEffect(payload.userName)
-        await beginPeerNegotiation(socketId, rtcClient, 'Peer')
+        await beginPeerNegotiation(socketId, rtcClient, 'Peer', {
+          initiateOffer: shouldInitiateInitialOffer(socketId),
+        })
       })
       socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
         try {
           negotiatedPeersRef.current.add(fromSocketId)
           const accepted = await rtcClient.handleOffer(fromSocketId, offer, { polite: isPolitePeer(fromSocketId) })
-          if (accepted === false) setPeerStates((previous) => ({ ...previous, [fromSocketId]: 'glare' }))
+          if (accepted === false) {
+            setPeerStates((previous) => {
+              const next = { ...previous, [fromSocketId]: 'glare' }
+              peerStatesRef.current = next
+              return next
+            })
+          }
           scheduleNegotiationRetry(fromSocketId, rtcClient, 'Peer')
         } catch (error) {
           setConnectionIssue(`Offer failed: ${error.message}`)
@@ -2550,24 +2612,32 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         }
 
         if (payload.action === 'mute_mic' || payload.action === 'disable_camera') {
-          setPeerMediaStates((previous) => Object.fromEntries(Object.entries(previous).map(([socketId, mediaState]) => {
-            if (mediaState.userId !== payload.targetUserId) return [socketId, mediaState]
+          setPeerMediaStates((previous) => {
+            const next = Object.fromEntries(Object.entries(previous).map(([socketId, mediaState]) => {
+              if (mediaState.userId !== payload.targetUserId) return [socketId, mediaState]
 
-            return [socketId, {
-              ...mediaState,
-              micOn: payload.action === 'mute_mic' ? false : mediaState.micOn,
-              cameraOn: payload.action === 'disable_camera' ? false : mediaState.cameraOn,
-            }]
-          })))
+              return [socketId, {
+                ...mediaState,
+                micOn: payload.action === 'mute_mic' ? false : mediaState.micOn,
+                cameraOn: payload.action === 'disable_camera' ? false : mediaState.cameraOn,
+              }]
+            }))
+            peerMediaStatesRef.current = next
+            return next
+          })
         }
       })
       socket.on('disconnect', (reason) => {
         if (socketRef.current === socket) {
           setSignalingState(joinedRef.current ? 'disconnected' : 'idle')
           if (joinedRef.current) {
-            setPeerStates((previous) => Object.fromEntries(
-              Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
-            ))
+            setPeerStates((previous) => {
+              const next = Object.fromEntries(
+                Object.keys(previous).map((socketId) => [socketId, 'reconnecting'])
+              )
+              peerStatesRef.current = next
+              return next
+            })
           }
           if (joinedRef.current) setConnectionIssue(`Signaling disconnected: ${reason}`)
           setStatus(`Signaling disconnected: ${reason}`)

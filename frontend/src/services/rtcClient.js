@@ -452,6 +452,7 @@ export class NativeRtcClient {
     this.iceRestartAttempts = {}
     this.statsTimers = {}
     this.previousStats = {}
+    this.remoteTrackCleanups = {}
   }
 
   emitPeerState(remoteSocketId, peerConnection) {
@@ -619,6 +620,46 @@ export class NativeRtcClient {
     delete this.pendingIceRestarts[remoteSocketId]
   }
 
+  emitRemoteStream(remoteSocketId) {
+    const stream = this.remoteMediaStreams[remoteSocketId]
+    if (stream && this.onRemoteStream) this.onRemoteStream(remoteSocketId, stream)
+  }
+
+  watchRemoteTrack(remoteSocketId, track) {
+    if (!track || typeof track.addEventListener !== 'function') return
+
+    this.remoteTrackCleanups[remoteSocketId] ||= new Map()
+    const cleanups = this.remoteTrackCleanups[remoteSocketId]
+    if (cleanups.has(track)) return
+
+    const notify = () => this.emitRemoteStream(remoteSocketId)
+    const handleEnded = () => {
+      const stream = this.remoteMediaStreams[remoteSocketId]
+      if (stream?.getTracks?.().includes(track)) {
+        stream.removeTrack(track)
+      }
+      notify()
+    }
+
+    track.addEventListener('mute', notify)
+    track.addEventListener('unmute', notify)
+    track.addEventListener('ended', handleEnded)
+
+    cleanups.set(track, () => {
+      track.removeEventListener('mute', notify)
+      track.removeEventListener('unmute', notify)
+      track.removeEventListener('ended', handleEnded)
+    })
+  }
+
+  cleanupRemoteTracks(remoteSocketId) {
+    const cleanups = this.remoteTrackCleanups[remoteSocketId]
+    if (!cleanups) return
+
+    cleanups.forEach((cleanup) => cleanup())
+    delete this.remoteTrackCleanups[remoteSocketId]
+  }
+
   scheduleIceRestart(remoteSocketId, reason = 'ice') {
     const peerConnection = this.peerConnections[remoteSocketId]
     if (!peerConnection || ['closed', 'failed'].includes(peerConnection.signalingState)) return
@@ -697,17 +738,19 @@ export class NativeRtcClient {
     }
 
     peerConnection.ontrack = (event) => {
-      const [eventStream] = event.streams
-      const stream = eventStream || this.remoteMediaStreams[remoteSocketId] || new MediaStream()
+      const stream = this.remoteMediaStreams[remoteSocketId] || new MediaStream()
+      const incomingTracks = [
+        event.track,
+        ...((event.streams || []).flatMap((eventStream) => eventStream?.getTracks?.() || [])),
+      ].filter(Boolean)
 
-      if (!eventStream) {
-        stream.addTrack(event.track)
-      }
+      incomingTracks.forEach((track) => {
+        if (!stream.getTracks().includes(track)) stream.addTrack(track)
+        this.watchRemoteTrack(remoteSocketId, track)
+      })
 
       this.remoteMediaStreams[remoteSocketId] = stream
-      if (stream && this.onRemoteStream) {
-        this.onRemoteStream(remoteSocketId, stream)
-      }
+      this.emitRemoteStream(remoteSocketId)
     }
 
     peerConnection.onconnectionstatechange = () => {
@@ -801,7 +844,23 @@ export class NativeRtcClient {
       }
       await this.syncLocalTracksToPeerConnection(peerConnection)
       const offer = await peerConnection.createOffer(iceRestart ? { iceRestart: true } : undefined)
-      await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
+      if (peerConnection.signalingState !== 'stable') {
+        this.pendingOffers[remoteSocketId] = true
+        if (iceRestart) this.pendingIceRestarts[remoteSocketId] = true
+        return false
+      }
+
+      try {
+        await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
+      } catch (error) {
+        if (peerConnection.signalingState !== 'stable' || error?.name === 'InvalidStateError') {
+          this.pendingOffers[remoteSocketId] = true
+          if (iceRestart) this.pendingIceRestarts[remoteSocketId] = true
+          return false
+        }
+
+        throw error
+      }
 
       this.socket.emit('webrtc-offer', {
         targetSocketId: remoteSocketId,
@@ -908,7 +967,7 @@ export class NativeRtcClient {
     await this.renegotiateAll()
   }
 
-  async replaceLocalTrack(kind, track, stream = this.localStream) {
+  async replaceLocalTrack(kind, track, stream = this.localStream, options = {}) {
     const mediaStream = stream || this.localStream || (track ? new MediaStream([track]) : null)
     if (mediaStream) this.localStream = mediaStream
 
@@ -924,7 +983,7 @@ export class NativeRtcClient {
     }
 
     await this.tuneAllSenders()
-    await this.renegotiateAll()
+    if (options.renegotiate !== false) await this.renegotiateAll()
   }
 
   async renegotiateAll() {
@@ -959,6 +1018,7 @@ export class NativeRtcClient {
     delete this.makingOffers[remoteSocketId]
     delete this.ignoredOffers[remoteSocketId]
     delete this.pendingOffers[remoteSocketId]
+    this.cleanupRemoteTracks(remoteSocketId)
     this.resetIceRestart(remoteSocketId)
     this.tuneAllSenders().catch(() => {})
   }
@@ -978,5 +1038,7 @@ export class NativeRtcClient {
     this.iceRestartAttempts = {}
     this.statsTimers = {}
     this.previousStats = {}
+    Object.keys(this.remoteTrackCleanups).forEach((remoteSocketId) => this.cleanupRemoteTracks(remoteSocketId))
+    this.remoteTrackCleanups = {}
   }
 }

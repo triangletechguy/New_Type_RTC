@@ -47,6 +47,7 @@ export function VideoTile({
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false)
+  const [streamVersion, setStreamVersion] = useState(0)
   const hasLiveVideo = hasLiveMediaTrack(stream, 'video')
   const hasAudio = hasMediaTrack(stream, 'audio')
   const isScreenSharing = badge === 'screen'
@@ -93,6 +94,51 @@ export function VideoTile({
   }
 
   useEffect(() => {
+    setStreamVersion((version) => version + 1)
+    if (!stream || typeof stream.addEventListener !== 'function') return undefined
+
+    const trackCleanups = new Map()
+    const refresh = () => setStreamVersion((version) => version + 1)
+    const watchTrack = (track) => {
+      if (!track || typeof track.addEventListener !== 'function' || trackCleanups.has(track)) return
+
+      track.addEventListener('mute', refresh)
+      track.addEventListener('unmute', refresh)
+      track.addEventListener('ended', refresh)
+      trackCleanups.set(track, () => {
+        track.removeEventListener('mute', refresh)
+        track.removeEventListener('unmute', refresh)
+        track.removeEventListener('ended', refresh)
+      })
+    }
+    const unwatchTrack = (track) => {
+      const cleanup = trackCleanups.get(track)
+      if (!cleanup) return
+      cleanup()
+      trackCleanups.delete(track)
+    }
+    const handleAddTrack = (event) => {
+      watchTrack(event.track)
+      refresh()
+    }
+    const handleRemoveTrack = (event) => {
+      unwatchTrack(event.track)
+      refresh()
+    }
+
+    stream.getTracks?.().forEach((track) => watchTrack(track))
+    stream.addEventListener('addtrack', handleAddTrack)
+    stream.addEventListener('removetrack', handleRemoveTrack)
+
+    return () => {
+      stream.removeEventListener('addtrack', handleAddTrack)
+      stream.removeEventListener('removetrack', handleRemoveTrack)
+      trackCleanups.forEach((cleanup) => cleanup())
+      trackCleanups.clear()
+    }
+  }, [stream])
+
+  useEffect(() => {
     const video = videoRef.current
 
     if (video && stream && showVideo) {
@@ -121,7 +167,7 @@ export function VideoTile({
       audio.srcObject = null
       setAudioPlaybackBlocked(false)
     }
-  }, [stream, showVideo, hasAudio, muted])
+  }, [stream, showVideo, hasAudio, muted, streamVersion])
 
   useEffect(() => {
     if (!audioPlaybackBlocked || muted || !hasAudio) return undefined
