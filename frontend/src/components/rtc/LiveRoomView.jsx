@@ -858,7 +858,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function openChatTool() {
     setActiveToolPanel(null)
     setChatFocusRequest((request) => request + 1)
-    setStatus(room?.chat_enabled === false ? 'Chat is disabled by owner controls.' : 'Chat composer is ready')
+    setStatus(room?.chat_enabled === false ? 'Chat is disabled for this room.' : 'Chat composer is ready')
   }
 
   function uniqueIds(values = []) {
@@ -1087,7 +1087,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
 
     if (room?.screen_share_enabled === false) {
-      setStatus('Screen share is disabled by owner controls.')
+      setStatus('Screen share is disabled for this room.')
       setActiveToolPanel('screen')
       return
     }
@@ -1495,7 +1495,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         {
           timeoutMs: LOCAL_MEDIA_FAST_TIMEOUT_MS,
           onLateTrack: ({ kind, track }) => {
-            if (startupCancelled || !activeRoomIdRef.current) {
+            if (startupCancelled) {
               try { track.stop() } catch {}
               return
             }

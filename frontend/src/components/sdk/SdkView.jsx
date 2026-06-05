@@ -518,7 +518,6 @@ VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
         <span>Allowed origins</span>
         <span>Usage logging</span>
         <span>Chat events</span>
-        <span>Owner controls</span>
       </div>
     </aside>
   )
