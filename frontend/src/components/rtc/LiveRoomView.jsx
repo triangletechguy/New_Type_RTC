@@ -34,7 +34,7 @@ import {
 import { ChatPanel } from './ChatPanel'
 import { VideoTile } from './VideoTile'
 
-const LOCAL_MEDIA_FAST_TIMEOUT_MS = 1200
+const LOCAL_MEDIA_FAST_TIMEOUT_MS = 7000
 const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const RTC_VIDEO_WATCHDOG_DELAY_MS = 7000
@@ -365,6 +365,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const joinedRef = useRef(false)
   const micOnRef = useRef(micOn)
   const cameraOnRef = useRef(cameraOn)
+  const desiredMicOnRef = useRef(micOn)
+  const desiredCameraOnRef = useRef(cameraOn)
   const rtcModeRef = useRef(rtcMode)
   const cameraFilterRef = useRef(cameraFilter)
   const beautySettingsRef = useRef(beautySettings)
@@ -514,6 +516,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       setCameraOn(false)
       cameraOnRef.current = false
+      desiredCameraOnRef.current = false
       applyLocalMediaState(micOnRef.current, false)
 
       if (track?.readyState === 'ended') {
@@ -1065,11 +1068,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  async function attachCapturedLocalTrack(kind, track, { publish = true } = {}) {
+  async function attachCapturedLocalTrack(kind, track, { publish = true, enabled } = {}) {
     if (!track || track.readyState === 'ended') return null
 
+    const mediaKind = kind === 'audio' ? 'audio' : 'video'
+
+    if (mediaKind === 'video' && rtcModeRef.current === 'audio') {
+      try { track.stop() } catch {}
+      return null
+    }
+
     if (!rtcRef.current) {
-      pendingLocalTracksRef.current.push({ kind, track })
+      pendingLocalTracksRef.current.push({ kind: mediaKind, track, enabled })
       return track
     }
 
@@ -1077,7 +1087,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const previousTracks = previousStream?.getTracks?.() || []
     let outgoingTrack = track
 
-    if (kind === 'video') {
+    if (mediaKind === 'video') {
       stopCameraFilterPipeline({ stopSource: true })
       cameraSourceTrackRef.current = track
       outgoingTrack = await filteredCameraOutputTrack(
@@ -1089,17 +1099,20 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       )
     }
 
-    const keptTracks = previousTracks.filter((item) => item !== track && item.kind !== kind && item.readyState !== 'ended')
+    const keptTracks = previousTracks.filter((item) => item !== track && item.kind !== mediaKind && item.readyState !== 'ended')
 
     previousTracks
-      .filter((item) => item !== track && item.kind === kind)
+      .filter((item) => item !== track && item.kind === mediaKind)
       .forEach((item) => {
         cleanupLocalTrackMonitor(item)
         try { item.stop() } catch {}
       })
 
-    track.enabled = true
-    outgoingTrack.enabled = true
+    const desiredEnabled = enabled === undefined ? (
+      mediaKind === 'audio' ? desiredMicOnRef.current : desiredCameraOnRef.current
+    ) : Boolean(enabled)
+    track.enabled = desiredEnabled
+    outgoingTrack.enabled = desiredEnabled
 
     const nextStream = new MediaStream([...keptTracks, outgoingTrack])
     if (typeof previousStream?.__cleanup === 'function') {
@@ -1108,14 +1121,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
     streamRef.current = nextStream
     setLocalStream(nextStream)
-    if (kind === 'video') {
+    if (mediaKind === 'video') {
       monitorLocalVideoTrack(track)
       monitorLocalVideoTrack(outgoingTrack)
     }
     await rtcRef.current.addLocalTrack(outgoingTrack, nextStream)
 
-    const nextMicOn = kind === 'audio' ? true : micOnRef.current
-    const nextCameraOn = kind === 'video' ? true : cameraOnRef.current
+    const nextMicOn = mediaKind === 'audio' ? desiredEnabled : micOnRef.current
+    const nextCameraOn = mediaKind === 'video' ? desiredEnabled : cameraOnRef.current
     micOnRef.current = nextMicOn
     cameraOnRef.current = nextCameraOn
     setMicOn(nextMicOn)
@@ -1128,11 +1141,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setMicOn(synced.micOn)
         setCameraOn(synced.cameraOn)
         applyLocalMediaState(synced.micOn, synced.cameraOn)
-        setStatus(kind === 'video'
+        setStatus(mediaKind === 'video'
           ? (synced.cameraOn ? 'Camera is live' : 'Camera paused')
           : (synced.micOn ? 'Microphone is live' : 'Microphone muted'))
       } catch (error) {
-        setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} is live, media state sync warning: ${error.message}`)
+        setStatus(`${mediaKind === 'video' ? 'Camera' : 'Microphone'} is live, media state sync warning: ${error.message}`)
       }
     }
 
@@ -1144,7 +1157,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     pendingLocalTracksRef.current = []
 
     for (const pendingTrack of pendingTracks) {
-      await attachCapturedLocalTrack(pendingTrack.kind, pendingTrack.track, options)
+      await attachCapturedLocalTrack(pendingTrack.kind, pendingTrack.track, {
+        ...options,
+        enabled: pendingTrack.enabled,
+      })
     }
   }
 
@@ -1982,6 +1998,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(`Joining room #${roomId}...`)
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
+      const requestedMicIntent = Boolean(micOnRef.current)
+      const requestedCameraIntent = selectedRtcMode === 'video' && Boolean(cameraOnRef.current)
+      desiredMicOnRef.current = requestedMicIntent
+      desiredCameraOnRef.current = requestedCameraIntent
       const rtcConfigPromise = getRtcConfig().catch((error) => {
         setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
         return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
@@ -1997,7 +2017,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               return
             }
 
-            attachCapturedLocalTrack(kind, track).catch((error) => {
+            attachCapturedLocalTrack(kind, track, {
+              enabled: kind === 'audio' ? desiredMicOnRef.current : desiredCameraOnRef.current,
+            }).catch((error) => {
               try { track.stop() } catch {}
               setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} started late but could not attach: ${error.message}`)
             })
@@ -2024,8 +2046,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         body: JSON.stringify({
           ...(roomPasswordInput ? { password: roomPasswordInput } : {}),
           rtc_mode: selectedRtcMode,
-          mic_enabled: micOn,
-          camera_enabled: selectedRtcMode === 'video' && cameraOn,
+          mic_enabled: requestedMicIntent,
+          camera_enabled: requestedCameraIntent,
         }),
       })
 
@@ -2039,6 +2061,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcModeRef.current = joinedRtcMode
       micOnRef.current = Boolean(joinData.rtc.mic_enabled)
       cameraOnRef.current = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
+      desiredMicOnRef.current = micOnRef.current
+      desiredCameraOnRef.current = cameraOnRef.current
       setMicOn(micOnRef.current)
       setCameraOn(cameraOnRef.current)
 
@@ -2301,6 +2325,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = false })
             rtcRef.current?.setAudioEnabled(false)
             micOnRef.current = false
+            desiredMicOnRef.current = false
             setMicOn(false)
             setStatus('A moderator muted your microphone')
           }
@@ -2310,6 +2335,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               if (track !== screenShareTrackRef.current) track.enabled = false
             })
             cameraOnRef.current = false
+            desiredCameraOnRef.current = false
             setCameraOn(false)
             setStatus('A moderator paused your camera')
           }
@@ -2458,6 +2484,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const currentlyJoined = joinedRef.current
 
     micOnRef.current = next
+    desiredMicOnRef.current = next
     setMicOn(next)
     applyLocalMediaState(next, cameraOn)
     setMediaUpdating((state) => ({ ...state, mic: true }))
@@ -2481,6 +2508,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(synced.micOn ? 'Microphone is live' : 'Microphone muted')
     } catch (error) {
       micOnRef.current = previous
+      desiredMicOnRef.current = previous
       setMicOn(previous)
       applyLocalMediaState(previous, cameraOn)
       setStatus(`Mic update failed: ${error.message}`)
@@ -2496,6 +2524,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const currentlyJoined = joinedRef.current
 
     cameraOnRef.current = next
+    desiredCameraOnRef.current = next
     setCameraOn(next)
     applyLocalMediaState(micOn, next)
     setMediaUpdating((state) => ({ ...state, camera: true }))
@@ -2519,6 +2548,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
       cameraOnRef.current = previous
+      desiredCameraOnRef.current = previous
       setCameraOn(previous)
       applyLocalMediaState(micOn, previous)
       setStatus(`Camera update failed: ${error.message}`)

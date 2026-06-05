@@ -1295,14 +1295,14 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
       return res.status(422).json({ message: 'Invalid RTC mode.' })
     }
 
-    if (requestedRtcMode === 'video' && !roomSupportsVideo(room.room_type)) {
-      return res.status(422).json({ message: 'Video mode is not available for this room.' })
-    }
+    const effectiveRtcMode = requestedRtcMode === 'video' && !roomSupportsVideo(room.room_type)
+      ? 'audio'
+      : requestedRtcMode
 
     const joinOptions = {
-      rtc_mode: requestedRtcMode,
+      rtc_mode: effectiveRtcMode,
       mic_enabled: parseBoolean(req.body?.mic_enabled, true),
-      camera_enabled: requestedRtcMode === 'video' && parseBoolean(req.body?.camera_enabled, true),
+      camera_enabled: effectiveRtcMode === 'video' && parseBoolean(req.body?.camera_enabled, true),
       screen_shared: false,
     }
 

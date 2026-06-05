@@ -408,6 +408,7 @@ server {
     }
 
     location / {
+        add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)" always;
         try_files \$uri \$uri/ /index.html;
     }
 }
@@ -462,6 +463,7 @@ server {
     }
 
     location / {
+        add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)" always;
         try_files \$uri \$uri/ /index.html;
     }
 }
