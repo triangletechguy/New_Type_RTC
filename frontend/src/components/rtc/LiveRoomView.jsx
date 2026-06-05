@@ -452,7 +452,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const sourceTrack = cameraSourceTrackRef.current
     if (sourceTrack && sourceTrack !== screenShareTrackRef.current) {
       if (sourceTrack.readyState === 'live') return isPublishableCameraTrack(sourceTrack)
-      if (streamRef.current?.getVideoTracks?.().includes(sourceTrack)) return false
     }
 
     const filteredTrack = filteredCameraTrackRef.current
@@ -2086,7 +2085,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       const requestedMicOn = Boolean(joinData.rtc.mic_enabled)
       const requestedCameraOn = joinedRtcMode === 'video' && Boolean(joinData.rtc.camera_enabled)
       let actualMicOn = requestedMicOn && hasLiveTrack(localMediaStream, 'audio')
-      let actualCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
+      let actualCameraOn = requestedCameraOn && hasLiveTrack(localMediaStream, 'video')
 
       micOnRef.current = actualMicOn
       cameraOnRef.current = actualCameraOn
@@ -2153,7 +2152,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       await flushPendingLocalTracks({ publish: false })
 
       const latestMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const latestCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
+      const latestCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
 
       if (latestMicOn !== actualMicOn || latestCameraOn !== actualCameraOn) {
         actualMicOn = latestMicOn
@@ -2380,7 +2379,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       if (!socketReady.ok) throw socketReady.error
       if (socket.id) localSocketIdRef.current = socket.id
       const signalingMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const signalingCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
+      const signalingCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
 
       if (signalingMicOn !== actualMicOn || signalingCameraOn !== actualCameraOn) {
         actualMicOn = signalingMicOn
@@ -2413,7 +2412,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       let connectedMediaWarning = ''
       const connectedMicOn = requestedMicOn && hasLiveLocalTrack('audio')
-      const connectedCameraOn = requestedCameraOn && hasLiveLocalCameraTrack()
+      const connectedCameraOn = requestedCameraOn && hasLiveTrack(streamRef.current, 'video')
       if (connectedMicOn !== actualMicOn || connectedCameraOn !== actualCameraOn) {
         actualMicOn = connectedMicOn
         actualCameraOn = connectedCameraOn
@@ -2615,6 +2614,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     backgroundBlurAmountRef.current = normalizeBackgroundBlurAmount(backgroundBlurAmount)
   }, [backgroundBlurAmount])
+
+  useEffect(() => {
+    if (!joined || rtcMode !== 'video') return undefined
+    if (!desiredCameraOnRef.current || cameraOnRef.current) return undefined
+    if (!hasLiveLocalCameraTrack()) return undefined
+
+    cameraOnRef.current = true
+    setCameraOn(true)
+    applyLocalMediaState(micOnRef.current, true)
+    publishMediaState(micOnRef.current, true).catch((error) => {
+      setStatus(`Camera is live, media state sync warning: ${error.message}`)
+    })
+
+    return undefined
+  }, [joined, rtcMode, cameraOn, localStream])
 
   useEffect(() => {
     if (!joined) return undefined
