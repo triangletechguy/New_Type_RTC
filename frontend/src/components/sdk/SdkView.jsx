@@ -50,7 +50,7 @@ export function LiveRoom({ roomId, token }) {
     const rtc = new TalkEachOtherRTC({
       appKey: import.meta.env.VITE_RTC_APP_KEY,
       apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
-      signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+      signalingUrl: import.meta.env.VITE_SIGNALING_SERVER_URL,
     })
 
     clientRef.current = rtc
@@ -492,7 +492,7 @@ function SdkReliability() {
 function SdkConfigCard() {
   const envExample = `VITE_RTC_APP_KEY=client_app_key
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
-VITE_SIGNALING_URL=http://127.0.0.1:8000`
+VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
 
   return (
     <aside className="glass-card sdk-config-card">
@@ -545,7 +545,7 @@ function SdkPlayground() {
   const generatedCode = `const rtc = new TalkEachOtherRTC({
   appKey: '${config.appKey}',
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
-  signalingUrl: import.meta.env.VITE_SIGNALING_URL,
+  signalingUrl: import.meta.env.VITE_SIGNALING_SERVER_URL,
 })
 
 await rtc.authenticate('${config.token}')
