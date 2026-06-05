@@ -51,9 +51,12 @@ export function VideoTile({
   const hasAudio = hasMediaTrack(stream, 'audio')
   const isScreenSharing = badge === 'screen'
   const cameraExpected = cameraOn !== false && rtcMode === 'video'
-  const showVideo = Boolean(stream && hasLiveVideo && (isScreenSharing || cameraExpected))
-  const videoConnecting = (isScreenSharing || cameraExpected) && !hasLiveVideo && isVideoConnectingState(connectionState, stream)
-  const videoStateClass = hasLiveVideo ? 'on' : videoConnecting ? 'pending' : 'off'
+  const videoExpected = isScreenSharing || cameraExpected
+  const showVideo = Boolean(stream && hasLiveVideo && videoExpected)
+  const videoConnecting = videoExpected && !hasLiveVideo && isVideoConnectingState(connectionState, stream)
+  const videoStateClass = videoExpected
+    ? hasLiveVideo ? 'on' : videoConnecting ? 'pending' : 'off'
+    : 'off'
   const videoStateLabel = isScreenSharing
     ? hasLiveVideo ? 'Screen' : videoConnecting ? 'Screen connecting' : 'No screen'
     : cameraExpected

@@ -1998,8 +1998,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus(`Joining room #${roomId}...`)
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
-      const requestedMicIntent = Boolean(micOnRef.current)
-      const requestedCameraIntent = selectedRtcMode === 'video' && Boolean(cameraOnRef.current)
+      const requestedMicIntent = true
+      const requestedCameraIntent = selectedRtcMode === 'video'
       desiredMicOnRef.current = requestedMicIntent
       desiredCameraOnRef.current = requestedCameraIntent
       const rtcConfigPromise = getRtcConfig().catch((error) => {
