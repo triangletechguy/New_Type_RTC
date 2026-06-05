@@ -29,6 +29,21 @@ function preferredAudioMimeType() {
   ].find((type) => MediaRecorder.isTypeSupported(type)) || ''
 }
 
+function createVoiceRecorder(stream) {
+  const mimeType = preferredAudioMimeType()
+  const baseOptions = { audioBitsPerSecond }
+
+  if (mimeType) {
+    try {
+      return new MediaRecorder(stream, { ...baseOptions, mimeType })
+    } catch {
+      // Some mobile browsers over-report MIME support; fall back to browser defaults.
+    }
+  }
+
+  return new MediaRecorder(stream, baseOptions)
+}
+
 function formatDuration(ms) {
   const totalSeconds = Math.max(0, Math.round(Number(ms || 0) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -86,19 +101,23 @@ function liveAudioTrackFromStream(stream) {
   return stream?.getAudioTracks?.().find((track) => track.readyState === 'live') || null
 }
 
+function requestFreshAudioRecordingStream() {
+  return navigator.mediaDevices.getUserMedia({
+    audio: recordingAudioConstraints,
+    video: false,
+  })
+}
+
 async function createAudioRecordingStream(localStream) {
   const activeRoomMicTrack = liveAudioTrackFromStream(localStream)
 
-  if (activeRoomMicTrack) {
+  if (activeRoomMicTrack?.enabled !== false && activeRoomMicTrack.muted !== true) {
     const recordingTrack = activeRoomMicTrack.clone()
     recordingTrack.enabled = true
     return new MediaStream([recordingTrack])
   }
 
-  return navigator.mediaDevices.getUserMedia({
-    audio: recordingAudioConstraints,
-    video: false,
-  })
+  return requestFreshAudioRecordingStream()
 }
 
 function inboxEditKey(message) {
@@ -511,12 +530,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       setAudioDraft(null)
       setPhotoDraft(null)
       const stream = await createAudioRecordingStream(localStream)
-      const mimeType = preferredAudioMimeType()
-      const recorderOptions = {
-        audioBitsPerSecond,
-        ...(mimeType ? { mimeType } : {}),
-      }
-      const recorder = new MediaRecorder(stream, recorderOptions)
+      const recorder = createVoiceRecorder(stream)
       recordingChunksRef.current = []
       recordingStreamRef.current = stream
       recorderRef.current = recorder
@@ -533,7 +547,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
         try {
           const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
           recordingChunksRef.current = []
-          if (!blob.size) return
+          if (!blob.size) {
+            setStatus('No voice audio was captured. Check microphone permission and try again.')
+            return
+          }
           if (blob.size > maxAudioBytes) {
             setStatus('Audio message must be smaller than 5 MB.')
             return
@@ -555,7 +572,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       recordingStartedAtRef.current = Date.now()
       setRecordingMs(0)
       setRecording(true)
-      recorder.start()
+      recorder.start(250)
       recordingTimerRef.current = window.setInterval(() => {
         setRecordingMs(Date.now() - recordingStartedAtRef.current)
       }, 250)

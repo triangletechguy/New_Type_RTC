@@ -7,6 +7,11 @@ function visualIndexFromLabel(label) {
     .reduce((total, char) => total + char.charCodeAt(0), 0)
 }
 
+function audioOnlyStreamFrom(stream) {
+  const audioTracks = stream?.getAudioTracks?.().filter((track) => track.readyState !== 'ended') || []
+  return audioTracks.length ? new MediaStream(audioTracks) : null
+}
+
 export function VideoTile({
   stream,
   label,
@@ -50,6 +55,19 @@ export function VideoTile({
       ? roomAssets.cameraOff
       : roomAssets.avatarGrid
 
+  function playRemoteAudio() {
+    const audio = audioRef.current
+    if (!audio || muted || !hasAudio) return
+
+    audio.muted = false
+    const playPromise = audio.play()
+    if (playPromise?.then) {
+      playPromise
+        .then(() => setAudioPlaybackBlocked(false))
+        .catch(() => setAudioPlaybackBlocked(true))
+    }
+  }
+
   useEffect(() => {
     const video = videoRef.current
 
@@ -65,7 +83,13 @@ export function VideoTile({
     const audio = audioRef.current
 
     if (audio && stream && hasAudio) {
-      if (audio.srcObject !== stream) audio.srcObject = stream
+      const nextAudioStream = audioOnlyStreamFrom(stream)
+      const currentTracks = audio.srcObject?.getAudioTracks?.() || []
+      const nextTracks = nextAudioStream?.getAudioTracks?.() || []
+      const sameTracks = currentTracks.length === nextTracks.length
+        && currentTracks.every((track, index) => track === nextTracks[index])
+
+      if (!sameTracks) audio.srcObject = nextAudioStream
       audio.muted = Boolean(muted)
       const playPromise = audio.play()
       if (playPromise?.then) {
@@ -81,17 +105,6 @@ export function VideoTile({
     }
   }, [stream, showVideo, hasAudio, muted])
 
-  function playRemoteAudio(event) {
-    event.stopPropagation()
-    const audio = audioRef.current
-    if (!audio) return
-
-    audio.muted = false
-    audio.play()
-      .then(() => setAudioPlaybackBlocked(false))
-      .catch(() => setAudioPlaybackBlocked(true))
-  }
-
   function handleKeyDown(event) {
     if (!canExpand) return
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -106,10 +119,15 @@ export function VideoTile({
     onFollowAction()
   }
 
+  function handlePointerDown() {
+    if (audioPlaybackBlocked) playRemoteAudio()
+  }
+
   return (
     <div
       className={`video-tile${isScreenSharing ? ' screen-sharing-tile' : ''}${canExpand ? ' expandable' : ''}`}
       onClick={canExpand ? onExpand : undefined}
+      onPointerDownCapture={handlePointerDown}
       onKeyDown={canExpand ? handleKeyDown : undefined}
       role={canExpand ? 'button' : undefined}
       tabIndex={canExpand ? 0 : undefined}
@@ -133,7 +151,10 @@ export function VideoTile({
         <audio ref={audioRef} autoPlay muted={muted} className="audio-element" />
       ) : null}
       {audioPlaybackBlocked && !muted ? (
-        <button type="button" className="video-audio-button" onClick={playRemoteAudio}>
+        <button type="button" className="video-audio-button" onClick={(event) => {
+          event.stopPropagation()
+          playRemoteAudio()
+        }}>
           Play audio
         </button>
       ) : null}
