@@ -235,7 +235,7 @@ function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerSt
 export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack, onProfile }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
-  const [joined, setJoined] = useState(false)
+  const [joined, setJoinedState] = useState(false)
   const [connectAttempted, setConnectAttempted] = useState(false)
   const [connectStep, setConnectStep] = useState(autoConnect ? 'backend' : 'ready')
   const [connectionIssue, setConnectionIssue] = useState('')
@@ -298,6 +298,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const joinEffectTimerRef = useRef(null)
   const rejoiningSignalingRef = useRef(false)
   const latestRtcQualityRef = useRef(null)
+
+  function updateJoined(nextJoined) {
+    joinedRef.current = Boolean(nextJoined)
+    setJoinedState(Boolean(nextJoined))
+  }
 
   const remoteTiles = useMemo(() => {
     const socketIds = new Set([
@@ -532,6 +537,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function resetRtcState({ clearState = true } = {}) {
+    joinedRef.current = false
     if (socketRef.current) {
       const socket = socketRef.current
       socketRef.current = null
@@ -648,8 +654,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     applyLocalMediaState(nextMicOn, nextCameraOn)
 
     if (publish && joinedRef.current) {
-      await publishMediaState(nextMicOn, nextCameraOn)
-      setStatus(kind === 'video' ? 'Camera is live' : 'Microphone is live')
+      try {
+        const synced = await publishMediaState(nextMicOn, nextCameraOn)
+        setMicOn(synced.micOn)
+        setCameraOn(synced.cameraOn)
+        applyLocalMediaState(synced.micOn, synced.cameraOn)
+        setStatus(kind === 'video'
+          ? (synced.cameraOn ? 'Camera is live' : 'Camera paused')
+          : (synced.micOn ? 'Microphone is live' : 'Microphone muted'))
+      } catch (error) {
+        setStatus(`${kind === 'video' ? 'Camera' : 'Microphone'} is live, media state sync warning: ${error.message}`)
+      }
     }
 
     return outgoingTrack
@@ -670,7 +685,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   async function publishMediaState(nextMicOn, nextCameraOn, options = {}) {
-    if (!joined || !activeRoomIdRef.current) return { micOn: nextMicOn, cameraOn: nextCameraOn }
+    if (!joinedRef.current || !activeRoomIdRef.current) return { micOn: nextMicOn, cameraOn: nextCameraOn }
 
     const currentRtcMode = rtcModeRef.current
     const allowedCameraOn = currentRtcMode === 'video' && nextCameraOn
@@ -1038,7 +1053,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   async function syncScreenShareState(nextScreenSharing) {
-    if (!joined || !activeRoomIdRef.current) return
+    if (!joinedRef.current || !activeRoomIdRef.current) return
     await publishMediaState(micOnRef.current, cameraOnRef.current, { screenShared: nextScreenSharing })
   }
 
@@ -1471,9 +1486,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     let startupCancelled = false
 
     try {
-      if (joined || joining) return
+      if (joinedRef.current || joining) return
       setJoining(true)
-      setJoined(false)
+      updateJoined(false)
       setConnectAttempted(true)
       setConnectionIssue('')
       setRtcConfigState(null)
@@ -1797,7 +1812,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           if (payload.action === 'kick' || payload.action === 'ban') {
             resetRtcState()
             activeRoomIdRef.current = null
-            setJoined(false)
+            updateJoined(false)
             setConnectStep('ready')
             setStatus(payload.action === 'ban' ? 'You were banned from the room by a moderator' : 'You were removed from the room by a moderator')
           }
@@ -1861,10 +1876,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         setPeerMediaStates({})
       }
       setConnectStep('connected')
-      setJoined(true)
+      updateJoined(true)
+
+      let connectedMediaWarning = ''
+      const connectedMicOn = requestedMicOn && hasLiveLocalTrack('audio')
+      const connectedCameraOn = requestedCameraOn && hasLiveLocalTrack('video')
+      if (connectedMicOn !== actualMicOn || connectedCameraOn !== actualCameraOn) {
+        actualMicOn = connectedMicOn
+        actualCameraOn = connectedCameraOn
+        await publishMediaState(actualMicOn, actualCameraOn).catch((error) => {
+          connectedMediaWarning = `Connected, media state sync warning: ${error.message}`
+        })
+      }
+
       setSignalingState('connected')
       setConnectionIssue('')
-      setStatus(media.warning || `Connected to ${joinData.rtc.signaling_room}`)
+      setStatus(media.warning || connectedMediaWarning || `Connected to ${joinData.rtc.signaling_room}`)
     } catch (error) {
       console.error(error)
       startupCancelled = true
@@ -1876,7 +1903,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         activeRoomIdRef.current = null
       }
       if (isPasswordJoinError(error)) setShowPasswordRecovery(true)
-      setJoined(false)
+      updateJoined(false)
       setConnectStep('ready')
       setConnectionIssue(error.message)
       setStatus(`Join failed: ${error.message}`)
@@ -1897,7 +1924,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         })
         activeRoomIdRef.current = null
       }
-      setJoined(false)
+      updateJoined(false)
       setConnectStep('ready')
       setConnectionIssue('')
       setSignalingState('idle')
@@ -1907,7 +1934,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return leaveResult
     } catch (error) {
       setStatus(error.message)
-      setJoined(false)
+      updateJoined(false)
       setConnectStep('ready')
       setConnectionIssue('')
       if (navigateAfterLeave) onBack?.()
@@ -1919,6 +1946,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (mediaUpdating.mic) return
     const next = !micOn
     const previous = micOn
+    const currentlyJoined = joinedRef.current
 
     setMicOn(next)
     applyLocalMediaState(next, cameraOn)
@@ -1926,13 +1954,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setStatus(next ? 'Starting microphone...' : 'Microphone muted')
 
     try {
-      if (joined && next && !hasLiveLocalTrack('audio')) {
+      if (currentlyJoined && next && !hasLiveLocalTrack('audio')) {
         setStatus('Requesting microphone permission...')
         await attachNewLocalTrack('audio', { publish: false })
         applyLocalMediaState(next, cameraOn)
       }
 
-      if (!joined) return
+      if (!currentlyJoined) return
 
       const synced = await publishMediaState(next, cameraOn)
       setMicOn(synced.micOn)
@@ -1951,6 +1979,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (rtcMode === 'audio' || mediaUpdating.camera) return
     const next = !cameraOn
     const previous = cameraOn
+    const currentlyJoined = joinedRef.current
 
     setCameraOn(next)
     applyLocalMediaState(micOn, next)
@@ -1958,13 +1987,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setStatus(next ? 'Starting camera...' : 'Camera paused')
 
     try {
-      if (joined && next && !hasLiveLocalTrack('video')) {
+      if (currentlyJoined && next && !hasLiveLocalTrack('video')) {
         setStatus('Requesting camera permission...')
         await attachNewLocalTrack('video', { publish: false })
         applyLocalMediaState(micOn, next)
       }
 
-      if (!joined) return
+      if (!currentlyJoined) return
 
       const synced = await publishMediaState(micOn, next)
       setCameraOn(synced.cameraOn)
