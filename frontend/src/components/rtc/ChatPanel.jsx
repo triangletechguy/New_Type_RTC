@@ -10,6 +10,8 @@ const maxPhotoInputBytes = 12 * 1024 * 1024
 const photoMaxDimension = 1280
 const photoCompressionQuality = 0.72
 const audioBitsPerSecond = 32000
+const roomChatSyncIntervalMs = 5000
+const inboxSyncIntervalMs = 5000
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -769,7 +771,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
     }
   }
 
-  async function loadInboxConversation(peer) {
+  async function loadInboxConversation(peer, { quiet = false } = {}) {
     if (!peer?.id && !peer?.peer_id) return
     const peerId = Number(peer.id || peer.peer_id)
     const target = {
@@ -779,26 +781,36 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
       gender: peer.gender || peer.peer_gender || '',
     }
 
-    setInboxTarget(target)
-    setChatMode('inbox')
-    setLoadingInbox(true)
-    setStatus('')
-    previousInboxMessageCountRef.current = 0
+    if (!quiet) {
+      setInboxTarget(target)
+      setChatMode('inbox')
+      setLoadingInbox(true)
+      setStatus('')
+      previousInboxMessageCountRef.current = 0
+    }
 
     try {
       const data = await apiRequest(`/direct-messages/${peerId}`)
-      setInboxTarget(data.peer ? {
-        id: Number(data.peer.id),
-        name: data.peer.name || target.name,
-        avatar_url: data.peer.avatar_url || target.avatar_url,
-        gender: data.peer.gender || target.gender,
-      } : target)
+      if (!quiet) {
+        setInboxTarget(data.peer ? {
+          id: Number(data.peer.id),
+          name: data.peer.name || target.name,
+          avatar_url: data.peer.avatar_url || target.avatar_url,
+          gender: data.peer.gender || target.gender,
+        } : target)
+      }
       setInboxMessages(data.messages || [])
     } catch (error) {
-      setStatus(`Inbox failed: ${error.message}`)
+      if (!quiet) setStatus(`Inbox failed: ${error.message}`)
     } finally {
-      setLoadingInbox(false)
+      if (!quiet) setLoadingInbox(false)
     }
+  }
+
+  async function refreshInboxConversation({ quiet = true } = {}) {
+    if (!inboxTarget?.id) return
+
+    await loadInboxConversation(inboxTarget, { quiet })
   }
 
   function openInboxFromMessage(message) {
@@ -972,8 +984,31 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, focusRequ
   }, [roomId])
 
   useEffect(() => {
+    if (!roomId) return undefined
+
+    const interval = window.setInterval(() => {
+      syncMissedRoomMessages().catch((error) => {
+        if (!realtimeConnected) setStatus(`Chat sync failed: ${error.message}`)
+      })
+    }, roomChatSyncIntervalMs)
+
+    return () => window.clearInterval(interval)
+  }, [roomId, realtimeConnected])
+
+  useEffect(() => {
     if (chatMode === 'inbox') loadInboxThreads()
   }, [chatMode])
+
+  useEffect(() => {
+    if (chatMode !== 'inbox' || !inboxTarget?.id) return undefined
+
+    const interval = window.setInterval(() => {
+      refreshInboxConversation({ quiet: true }).catch((error) => setStatus(`Inbox sync failed: ${error.message}`))
+      loadInboxThreads({ quiet: true })
+    }, inboxSyncIntervalMs)
+
+    return () => window.clearInterval(interval)
+  }, [chatMode, inboxTarget?.id])
 
   useEffect(() => {
     if (user?.id) loadInboxThreads({ quiet: true })
