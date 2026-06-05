@@ -7,6 +7,27 @@ function visualIndexFromLabel(label) {
     .reduce((total, char) => total + char.charCodeAt(0), 0)
 }
 
+function hasLiveMediaTrack(stream, kind) {
+  return stream?.getTracks?.().some((track) => (
+    track.kind === kind
+    && track.readyState === 'live'
+    && track.enabled !== false
+    && track.muted !== true
+  )) || false
+}
+
+function hasMediaTrack(stream, kind) {
+  return stream?.getTracks?.().some((track) => (
+    track.kind === kind && track.readyState !== 'ended'
+  )) || false
+}
+
+function isVideoConnectingState(connectionState, stream) {
+  const state = String(connectionState || '').toLowerCase()
+  if (!stream) return true
+  return ['', 'new', 'waiting', 'negotiating', 'connecting', 'checking', 'reconnecting', 'glare'].includes(state)
+}
+
 export function VideoTile({
   stream,
   label,
@@ -28,11 +49,18 @@ export function VideoTile({
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false)
-  const hasVideo = stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended')
-  const hasAudio = stream?.getAudioTracks?.().some((track) => track.readyState !== 'ended')
+  const hasLiveVideo = hasLiveMediaTrack(stream, 'video')
+  const hasAudio = hasMediaTrack(stream, 'audio')
   const isScreenSharing = badge === 'screen'
-  const showVideo = Boolean(stream && hasVideo && (isScreenSharing || (cameraOn !== false && rtcMode === 'video')))
-  const videoStateOn = isScreenSharing || (cameraOn && rtcMode === 'video')
+  const cameraExpected = cameraOn !== false && rtcMode === 'video'
+  const showVideo = Boolean(stream && hasLiveVideo && (isScreenSharing || cameraExpected))
+  const videoConnecting = (isScreenSharing || cameraExpected) && !hasLiveVideo && isVideoConnectingState(connectionState, stream)
+  const videoStateClass = hasLiveVideo ? 'on' : videoConnecting ? 'pending' : 'off'
+  const videoStateLabel = isScreenSharing
+    ? hasLiveVideo ? 'Screen' : videoConnecting ? 'Screen connecting' : 'No screen'
+    : cameraExpected
+      ? hasLiveVideo ? 'Cam on' : videoConnecting ? 'Cam connecting' : 'No video'
+      : 'Cam off'
   const canExpand = typeof onExpand === 'function'
   const canUseFollowAction = Boolean(userId && typeof onFollowAction === 'function')
   const followLabel = {
@@ -158,7 +186,7 @@ export function VideoTile({
               {showMediaState && (
                 <div className="media-state-strip">
                   <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                  <span className={videoStateOn ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                  <span className={`state-pill ${videoStateClass}`}><span></span>{videoStateLabel}</span>
                 </div>
               )}
             </div>
@@ -172,7 +200,7 @@ export function VideoTile({
             {showMediaState && (
               <div className="media-state-strip">
                 <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
-                <span className={videoStateOn ? 'state-pill on' : 'state-pill off'}><span></span>{isScreenSharing ? 'Screen' : cameraOn && rtcMode === 'video' ? 'Cam on' : 'Cam off'}</span>
+                <span className={`state-pill ${videoStateClass}`}><span></span>{videoStateLabel}</span>
               </div>
             )}
             {connectionState && <span className={`tile-state-text ${connectionState}`}>{connectionState}</span>}

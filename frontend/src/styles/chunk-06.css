@@ -369,6 +369,16 @@
   background: var(--mint);
 }
 
+.state-pill.pending {
+  color: #fde68a;
+  background: rgba(120, 53, 15, .28);
+  border-color: rgba(251, 191, 36, .28);
+}
+
+.state-pill.pending span {
+  background: #fbbf24;
+}
+
 .state-pill.off {
   color: #e2e8f0;
   background: rgba(71, 85, 105, .34);
