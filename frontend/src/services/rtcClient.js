@@ -540,6 +540,32 @@ export class NativeRtcClient {
     return peerConnection.addTransceiver(mediaKind, { direction: 'recvonly' })
   }
 
+  liveLocalTrack(kind) {
+    const mediaKind = kind === 'audio' ? 'audio' : 'video'
+    return this.localStream?.getTracks?.()
+      .find((track) => track.kind === mediaKind && track.readyState !== 'ended') || null
+  }
+
+  async syncLocalTracksToPeerConnection(peerConnection) {
+    if (!peerConnection || peerConnection.signalingState === 'closed') return
+
+    await this.replaceTrackOnPeerConnection(
+      peerConnection,
+      'audio',
+      this.liveLocalTrack('audio'),
+      this.localStream,
+    )
+
+    if (this.rtcMode === 'video') {
+      await this.replaceTrackOnPeerConnection(
+        peerConnection,
+        'video',
+        this.liveLocalTrack('video'),
+        this.localStream,
+      )
+    }
+  }
+
   async replaceTrackOnPeerConnection(peerConnection, kind, track, stream = this.localStream) {
     const mediaKind = kind === 'audio' ? 'audio' : 'video'
     const transceiver = this.findTransceiverForKind(peerConnection, mediaKind)
@@ -773,6 +799,7 @@ export class NativeRtcClient {
       if (iceRestart && typeof peerConnection.restartIce === 'function') {
         peerConnection.restartIce()
       }
+      await this.syncLocalTracksToPeerConnection(peerConnection)
       const offer = await peerConnection.createOffer(iceRestart ? { iceRestart: true } : undefined)
       await peerConnection.setLocalDescription(preferVideoBitrate(offer, bitrateForPeerConnection(peerConnection, this.meshPeerCount())))
 
