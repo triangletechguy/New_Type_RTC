@@ -111,7 +111,7 @@ function requestFreshAudioRecordingStream() {
 async function createAudioRecordingStream(localStream) {
   const activeRoomMicTrack = liveAudioTrackFromStream(localStream)
 
-  if (activeRoomMicTrack?.enabled !== false && activeRoomMicTrack.muted !== true) {
+  if (activeRoomMicTrack) {
     const recordingTrack = activeRoomMicTrack.clone()
     recordingTrack.enabled = true
     return new MediaStream([recordingTrack])

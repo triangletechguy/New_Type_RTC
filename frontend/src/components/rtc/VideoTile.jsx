@@ -7,11 +7,6 @@ function visualIndexFromLabel(label) {
     .reduce((total, char) => total + char.charCodeAt(0), 0)
 }
 
-function audioOnlyStreamFrom(stream) {
-  const audioTracks = stream?.getAudioTracks?.().filter((track) => track.readyState !== 'ended') || []
-  return audioTracks.length ? new MediaStream(audioTracks) : null
-}
-
 export function VideoTile({
   stream,
   label,
@@ -83,13 +78,7 @@ export function VideoTile({
     const audio = audioRef.current
 
     if (audio && stream && hasAudio) {
-      const nextAudioStream = audioOnlyStreamFrom(stream)
-      const currentTracks = audio.srcObject?.getAudioTracks?.() || []
-      const nextTracks = nextAudioStream?.getAudioTracks?.() || []
-      const sameTracks = currentTracks.length === nextTracks.length
-        && currentTracks.every((track, index) => track === nextTracks[index])
-
-      if (!sameTracks) audio.srcObject = nextAudioStream
+      if (audio.srcObject !== stream) audio.srcObject = stream
       audio.muted = Boolean(muted)
       const playPromise = audio.play()
       if (playPromise?.then) {
