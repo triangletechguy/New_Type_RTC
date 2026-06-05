@@ -686,6 +686,101 @@
   box-shadow: 0 0 0 5px rgba(248, 113, 113, .16);
 }
 
+.rtc-diagnostics-panel {
+  position: absolute;
+  z-index: 5;
+  top: 148px;
+  left: 58px;
+  width: min(760px, calc(100% - 116px));
+  max-height: 164px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 10px;
+  background: rgba(8, 4, 24, .56);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .2);
+  backdrop-filter: blur(12px);
+}
+
+.rtc-diagnostics-grid,
+.rtc-peer-diagnostics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.rtc-diagnostics-grid > span,
+.rtc-peer-diagnostic {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .44);
+  color: rgba(226, 232, 240, .86);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rtc-diagnostics-grid b,
+.rtc-peer-diagnostic b {
+  color: #fff;
+  font-style: normal;
+}
+
+.rtc-peer-diagnostic {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rtc-peer-diagnostic em,
+.rtc-peer-diagnostic small {
+  color: rgba(226, 232, 240, .72);
+  font-style: normal;
+  line-height: 1.15;
+}
+
+.rtc-peer-diagnostic.connected,
+.rtc-peer-diagnostic.completed {
+  border-color: rgba(52, 211, 153, .24);
+}
+
+.rtc-peer-diagnostic.connected em,
+.rtc-peer-diagnostic.completed em {
+  color: #86efac;
+}
+
+.rtc-peer-diagnostic.failed,
+.rtc-peer-diagnostic.disconnected {
+  border-color: rgba(248, 113, 113, .3);
+}
+
+.rtc-peer-diagnostic.failed em,
+.rtc-peer-diagnostic.disconnected em {
+  color: #fca5a5;
+}
+
+.rtc-peer-diagnostic.waiting,
+.rtc-peer-diagnostic.negotiating,
+.rtc-peer-diagnostic.connecting,
+.rtc-peer-diagnostic.reconnecting {
+  border-color: rgba(251, 191, 36, .26);
+}
+
+.rtc-peer-diagnostic.waiting em,
+.rtc-peer-diagnostic.negotiating em,
+.rtc-peer-diagnostic.connecting em,
+.rtc-peer-diagnostic.reconnecting em {
+  color: #fde68a;
+}
+
 .buzzcast-live-shell .buzzcast-host-pill,
 .buzzcast-live-shell .buzzcast-room-metadata,
 .buzzcast-live-shell .buzzcast-join-ribbon,
@@ -892,6 +987,14 @@
     padding: 7px 8px;
   }
 
+  .rtc-diagnostics-panel {
+    top: 132px;
+    left: 10px;
+    width: min(520px, calc(100% - 20px));
+    max-height: 132px;
+    padding: 8px;
+  }
+
   .rtc-health-strip small {
     display: none;
   }
@@ -902,8 +1005,19 @@
     top: 92px;
   }
 
+  .rtc-diagnostics-panel {
+    top: 138px;
+    max-height: 116px;
+  }
+
   .rtc-health-strip > span:not(.rtc-health-dot):nth-of-type(n+4) {
     display: none;
+  }
+
+  .rtc-diagnostics-grid > span,
+  .rtc-peer-diagnostic {
+    font-size: 10px;
+    padding: 5px 7px;
   }
 }
 

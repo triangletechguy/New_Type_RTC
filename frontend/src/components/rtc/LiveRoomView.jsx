@@ -77,6 +77,31 @@ function formatRtcLoss(value) {
   return `${number.toFixed(number > 0 && number < 10 ? 1 : 0)}%`
 }
 
+function mediaTrackCount(stream, kind) {
+  const tracks = stream?.getTracks?.().filter((track) => track.kind === kind) || []
+  const live = tracks.filter((track) => (
+    track.readyState === 'live'
+    && track.enabled !== false
+    && track.muted !== true
+  )).length
+
+  return { live, total: tracks.length }
+}
+
+function formatTrackCount(count) {
+  return `${count.live}/${count.total}`
+}
+
+function aggregateRemoteTrackCounts(remoteStreams = {}, kind) {
+  return Object.values(remoteStreams || {}).reduce((counts, stream) => {
+    const next = mediaTrackCount(stream, kind)
+    return {
+      live: counts.live + next.live,
+      total: counts.total + next.total,
+    }
+  }, { live: 0, total: 0 })
+}
+
 function worstRtcQuality(statsList) {
   const order = ['failed', 'poor', 'degraded', 'fair', 'connecting', 'idle', 'unknown', 'good']
   return statsList.reduce((worst, stats) => {
@@ -229,6 +254,40 @@ function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerSt
       outbound_audio_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'audio')),
       outbound_video_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'video')),
     },
+  }
+}
+
+function buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates }) {
+  const statsList = Object.values(peerStats || {}).filter(Boolean)
+  const socketIds = Array.from(new Set([
+    ...Object.keys(peerStates || {}),
+    ...Object.keys(peerStats || {}),
+    ...Object.keys(peerMediaStates || {}),
+    ...Object.keys(remoteStreams || {}),
+  ]))
+
+  return {
+    localAudio: mediaTrackCount(localStream, 'audio'),
+    localVideo: mediaTrackCount(localStream, 'video'),
+    remoteAudio: aggregateRemoteTrackCounts(remoteStreams, 'audio'),
+    remoteVideo: aggregateRemoteTrackCounts(remoteStreams, 'video'),
+    inboundVideoKbps: sumMediaBitrate(statsList, 'inbound', 'video'),
+    outboundVideoKbps: sumMediaBitrate(statsList, 'outbound', 'video'),
+    peers: socketIds.map((socketId) => {
+      const stats = peerStats?.[socketId] || {}
+      const mediaState = peerMediaStates?.[socketId] || {}
+      const state = stats.connectionState || peerStates?.[socketId] || 'waiting'
+      const iceState = stats.iceConnectionState || ''
+
+      return {
+        socketId,
+        label: mediaState.userName || `Peer ${String(socketId).slice(0, 6)}`,
+        state,
+        iceState,
+        inboundVideoKbps: numericStat(stats.media?.inbound?.video?.bitrateKbps),
+        outboundVideoKbps: numericStat(stats.media?.outbound?.video?.bitrateKbps),
+      }
+    }),
   }
 }
 
@@ -2160,6 +2219,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
+  const rtcDiagnostics = buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -2243,6 +2303,33 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span>Video Out {rtcHealth.videoOutgoing}</span>
                 <span>RTT {rtcHealth.rtt}</span>
                 <span>Loss {rtcHealth.loss}</span>
+              </div>
+            ) : null}
+
+            {joined ? (
+              <div className="rtc-diagnostics-panel" aria-label="RTC diagnostics">
+                <div className="rtc-diagnostics-grid">
+                  <span><b>Local A/V</b>{formatTrackCount(rtcDiagnostics.localAudio)} / {formatTrackCount(rtcDiagnostics.localVideo)}</span>
+                  <span><b>Remote A/V</b>{formatTrackCount(rtcDiagnostics.remoteAudio)} / {formatTrackCount(rtcDiagnostics.remoteVideo)}</span>
+                  <span><b>Video out</b>{formatRtcBitrate(rtcDiagnostics.outboundVideoKbps)}</span>
+                  <span><b>Video in</b>{formatRtcBitrate(rtcDiagnostics.inboundVideoKbps)}</span>
+                </div>
+
+                <div className="rtc-peer-diagnostics" aria-label="Peer connection states">
+                  {rtcDiagnostics.peers.length ? rtcDiagnostics.peers.map((peer) => (
+                    <span key={peer.socketId} className={`rtc-peer-diagnostic ${peer.state || 'waiting'}`}>
+                      <b>{peer.label}</b>
+                      <em>{peer.state}{peer.iceState && peer.iceState !== peer.state ? ` / ${peer.iceState}` : ''}</em>
+                      <small>V in {formatRtcBitrate(peer.inboundVideoKbps)} - out {formatRtcBitrate(peer.outboundVideoKbps)}</small>
+                    </span>
+                  )) : (
+                    <span className="rtc-peer-diagnostic idle">
+                      <b>No peers</b>
+                      <em>waiting</em>
+                      <small>V in 0 kb/s - out 0 kb/s</small>
+                    </span>
+                  )}
+                </div>
               </div>
             ) : null}
 
