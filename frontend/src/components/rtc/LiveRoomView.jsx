@@ -3149,12 +3149,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <span>Video and music rooms</span>
           </div>
         </button>
-        <div className="buzzcast-search-wrap buzzcast-live-search">
-          <input value={roomTitle} readOnly aria-label="Current room" />
-          <button type="button" onClick={openChatTool} aria-label="Focus chat">
-            <span className="buzzcast-search-icon" aria-hidden="true"></span>
-          </button>
-        </div>
         <div className="buzzcast-actions">
           <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
             <span className="image-avatar"><img src={profileAvatar} alt="" /></span>
