@@ -22,6 +22,7 @@ import avatar05 from './avatars/avatar-05.png'
 import avatar06 from './avatars/avatar-06.png'
 import avatar07 from './avatars/avatar-07.png'
 import avatar08 from './avatars/avatar-08.png'
+import defaultAvatar from './avatars/default-avatar.svg'
 
 import sidebarEmpty from './admin/sidebar-empty.png'
 import emptySessions from './admin/empty-sessions.png'
@@ -72,6 +73,8 @@ export const avatarAssets = [
   avatar07,
   avatar08,
 ]
+
+export const defaultAvatarAsset = defaultAvatar
 
 export const adminAssets = {
   emptySessions,
@@ -146,10 +149,7 @@ export function avatarForIndex(index = 0) {
 }
 
 export function avatarForGender(gender, fallbackIndex = 0) {
-  const normalizedGender = String(gender || '').trim().toLowerCase()
-  if (normalizedGender === 'male') return avatarAssets[0]
-  if (normalizedGender === 'female') return avatarAssets[1]
-  return avatarForIndex(fallbackIndex)
+  return defaultAvatarAsset
 }
 
 function avatarRoleNames(user = {}) {
@@ -173,12 +173,9 @@ export function avatarForUser(user = {}, fallbackIndex = 0) {
     || profile.is_super_admin === true
     || profile.isSuperAdmin === true
 
-  if (adminUser) return avatarForGender('male', fallbackIndex)
+  if (adminUser) return defaultAvatarAsset
 
-  return avatarForGender(
-    profile.gender || profile.sender_gender || profile.peer_gender || profile.user_gender,
-    fallbackIndex
-  )
+  return defaultAvatarAsset
 }
 
 export function coverForDemoTone(tone, index = 0) {

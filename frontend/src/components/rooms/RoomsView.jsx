@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
+import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, defaultAvatarAsset, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -190,8 +190,8 @@ function liveUserAvatarItems(card, maxVisible = 3) {
     return {
       key: `${card?.id || 'room'}-${participant.user_id || participant.userId || offset}`,
       name,
-      src: avatarUrl,
-      initial: initialsFromName(name).slice(0, 1) || 'U',
+      src: avatarUrl || defaultAvatarAsset,
+      fallback: !avatarUrl,
     }
   })
 }
@@ -349,10 +349,8 @@ function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deletin
           {avatarItems.length ? (
             <span className="buzzcast-seat-dots" aria-label={`${userCount} live user${userCount === 1 ? '' : 's'}`}>
               {avatarItems.map((avatar) => (
-                <i key={avatar.key} className={avatar.src ? '' : 'buzzcast-seat-initial'} title={avatar.name}>
-                  {avatar.src
-                    ? <img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" />
-                    : avatar.initial}
+                <i key={avatar.key} className={avatar.fallback ? 'buzzcast-default-avatar-dot' : ''} title={avatar.name}>
+                  <img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" />
                 </i>
               ))}
               {extraAvatarCount > 0 ? <i className="buzzcast-seat-more">+{compactNumber(extraAvatarCount)}</i> : null}

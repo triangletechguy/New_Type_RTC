@@ -2179,7 +2179,7 @@ function AdminList({ admins, selectedAdminId, onSelect, onPlatform }) {
             key={admin.id}
             onClick={() => onSelect(admin)}
           >
-            <span className="admin-account-avatar">{getInitials(admin.name)}</span>
+            <span className="admin-account-avatar"><img src={avatarForUser(admin, admin.id)} alt="" loading="lazy" /></span>
             <span>
               <strong>{admin.name}</strong>
               <small>{admin.email}</small>

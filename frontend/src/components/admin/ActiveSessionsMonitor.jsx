@@ -1,15 +1,5 @@
+import { defaultAvatarAsset } from '../../assets/rtc/catalog'
 import { formatElapsed, formatNumber, formatUsageDate } from '../../utils/formatters'
-
-function initials(name) {
-  return String(name || 'User')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase() || 'U'
-}
 
 function sessionTypeLabel(type) {
   return String(type || 'rtc').replace(/_/g, ' ')
@@ -44,7 +34,7 @@ function QualityBadge({ quality }) {
 function ParticipantPreview({ participant }) {
   return (
     <div className="monitor-participant">
-      <div className="monitor-avatar">{initials(participant.user_name)}</div>
+      <div className="monitor-avatar"><img src={defaultAvatarAsset} alt="" loading="lazy" /></div>
       <div>
         <strong>{participant.user_name}</strong>
         <span>{participant.role} · {formatElapsed(participant.connected_seconds)}</span>

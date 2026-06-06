@@ -545,13 +545,18 @@
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
+  display: block;
+  overflow: hidden;
   border-radius: 12px;
-  color: #fff;
-  background: linear-gradient(135deg, #6ee7f9, #8b5cf6 55%, #fb7185);
-  font-size: 13px;
-  font-weight: 1000;
+  background: #d9772f;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+
+.admin-account-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .admin-account-card span:nth-child(2) {

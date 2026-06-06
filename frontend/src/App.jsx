@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { AUTH_EXPIRED_EVENT, clearSession, getUser, getToken, refreshCurrentUser, saveUser } from './services/api'
 import { Sidebar } from './components/layout/Sidebar'
 import { LoadingMovie } from './components/common/LoadingMovie'
+import { avatarForUser, defaultAvatarAsset } from './assets/rtc/catalog'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
 import { canUseAdminDashboard } from './utils/roles'
 
@@ -18,11 +19,11 @@ function ViewFallback({ label }) {
 
 function AppProfileButton({ user, onClick }) {
   const label = user ? 'Open profile' : 'Login or signup'
-  const avatar = user?.avatar_url || user?.avatarUrl || ''
+  const avatar = user ? avatarForUser(user, user?.id || 0) : defaultAvatarAsset
 
   return (
     <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>
-      {user && avatar ? <img src={avatar} alt="" /> : <span></span>}
+      <img src={avatar} alt="" />
     </button>
   )
 }
