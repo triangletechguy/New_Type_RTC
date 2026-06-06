@@ -480,6 +480,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
   const profileAvatar = avatarForUser(user, displayId)
+  const messageAvatar = avatarForIndex(6)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -2581,7 +2582,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
-          <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}><i className="buzzcast-glyph glyph-message" aria-hidden="true"></i></IconButton>
+          <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
+            <span className="buzzcast-message-avatar image-avatar" aria-hidden="true">
+              <img src={messageAvatar} alt="" loading="lazy" />
+            </span>
+          </IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
               <img src={profileAvatar} alt={profileInitials} loading="lazy" />
@@ -2631,7 +2636,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openMobileMessageSection}
           aria-label="Messages"
         >
-          <span className="buzzcast-rail-icon rail-help" aria-hidden="true"></span>
+          <span className="buzzcast-rail-icon rail-message-avatar image-avatar" aria-hidden="true">
+            <img src={messageAvatar} alt="" loading="lazy" />
+          </span>
           <b>Feedback and Help</b>
         </button>
       </aside>
