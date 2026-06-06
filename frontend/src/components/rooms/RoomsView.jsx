@@ -27,7 +27,6 @@ import {
 } from '../../utils/roomConfig'
 import {
   dmThreads,
-  exploreFilters,
   faqAnswers,
   faqTopics,
   feedTabs,
@@ -212,7 +211,7 @@ function defaultLiveRoomName(displayName) {
   return ownerName ? `${ownerName} Live Room` : 'Enterprise Live Room'
 }
 
-function cardMatchesActiveFeed(card, activeFeed, activeExplore, context = {}) {
+function cardMatchesActiveFeed(card, activeFeed, context = {}) {
   const roomType = card.room?.room_type || card.roomType
   const userId = Number(context.user?.id || 0)
   const selectedRegion = normalizedRegion(context.region || context.user?.current_residence)
@@ -233,10 +232,7 @@ function cardMatchesActiveFeed(card, activeFeed, activeExplore, context = {}) {
   }
   if (activeFeed === 'global') return Boolean(card.tab === 'global' || card.tab === 'latest' || card.room || card.country || card.host === 'TalkEachOther')
   if (activeFeed === 'explore') {
-    if (activeExplore === 'all') return card.tab !== 'party'
-    if (activeExplore === 'pk') return card.room?.room_type === 'pk_live' || card.explore === 'pk'
-    if (activeExplore === 'games') return card.explore === 'games' || roomSupportsVideo(roomType)
-    return Boolean(card.room || card.explore === activeExplore)
+    return card.tab !== 'party'
   }
 
   return true
@@ -371,7 +367,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [openingRoom, setOpeningRoom] = useState(false)
   const [activeSection, setActiveSection] = useState('live')
   const [activeFeed, setActiveFeed] = useState('for_you')
-  const [activeExplore, setActiveExplore] = useState('all')
   const [mobileRoomGroup, setMobileRoomGroup] = useState('recently')
   const [showSearchPanel, setShowSearchPanel] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
@@ -495,14 +490,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
-    let cards = roomCards.filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore, {
+    let cards = roomCards.filter((card) => cardMatchesActiveFeed(card, activeFeed, {
       user,
       region: settingsDraft.region,
     }))
 
     cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
     return sortCardsForView(cards, sort).slice(0, 48)
-  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
+  }, [activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
   const recentRoomCards = useMemo(() => {
     const cardsById = new Map(roomCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
@@ -516,7 +511,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
     const candidateCards = roomCards
-      .filter((card) => cardMatchesActiveFeed(card, activeFeed, activeExplore, {
+      .filter((card) => cardMatchesActiveFeed(card, activeFeed, {
         user,
         region: settingsDraft.region,
       }))
@@ -532,7 +527,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       room: card.room,
       card,
     }))
-  }, [activeExplore, activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, user])
+  }, [activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, user])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const roomMessageThreads = useMemo(() => roomCards.slice(0, 24).map((card, index) => ({
@@ -1055,15 +1050,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSort(tab?.sort || 'newest')
   }
 
-  function switchExplore(nextExplore) {
-    const next = exploreFilters.find((item) => item.value === nextExplore)
-    setActiveExplore(nextExplore)
-    if (activeFeed === 'explore') {
-      setFilter(next?.filter || 'all')
-      setSort(nextExplore === 'new_host' ? 'newest' : 'active')
-    }
-  }
-
   function switchMobileRoomGroup(nextGroup) {
     setMobileRoomGroup(nextGroup)
     setActiveSection('live')
@@ -1572,21 +1558,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </button>
           ))}
         </nav>
-
-        {activeFeed === 'explore' ? (
-          <div className="buzzcast-filter-pills">
-            {exploreFilters.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={activeExplore === option.value ? 'active' : ''}
-                onClick={() => switchExplore(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
 
         <div className="buzzcast-match-banner">
           <button type="button" className="buzzcast-create-room-button" onClick={() => openHostPanel()} aria-label="Create room">
