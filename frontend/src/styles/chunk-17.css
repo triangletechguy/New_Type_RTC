@@ -1271,3 +1271,30 @@
     grid-row: 4;
   }
 }
+
+@media (max-width: 760px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-empty-state.room-grid-empty {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+    min-height: 420px !important;
+    margin: 0 10px !important;
+    padding: 16px !important;
+    border: 1px solid rgba(255, 255, 255, .12) !important;
+    background: #171622 !important;
+    color: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-empty-state.room-grid-empty img {
+    min-height: 210px;
+  }
+
+  .room-grid-empty-copy strong {
+    font-size: 26px;
+  }
+
+  .room-grid-empty-actions button {
+    flex: 1 1 140px;
+  }
+}

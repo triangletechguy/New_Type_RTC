@@ -1093,6 +1093,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSort(tab?.sort || 'newest')
   }
 
+  function showAllLiveRooms() {
+    setActiveSection('live')
+    setPreviewCard(null)
+    setActiveFeed('for_you')
+    setFilter('all')
+    setPrivacyFilter('all')
+    setSort('active')
+    setSearch('')
+  }
+
   function switchMobileRoomGroup(nextGroup) {
     setMobileRoomGroup(nextGroup)
     setActiveSection('live')
@@ -1629,11 +1639,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         {loadingRooms && rooms.length === 0 ? (
           <LoadingMovie label="Loading rooms" className="buzzcast-loading-state" />
         ) : visibleCards.length === 0 ? (
-          <div className="buzzcast-empty-state visual">
+          <div className="buzzcast-empty-state room-grid-empty">
             <img src={roomAssets.studioStage} alt="" loading="lazy" />
-            <div>
+            <div className="room-grid-empty-copy">
               <strong>No matching rooms yet</strong>
-              <span>Create one or adjust the filters to bring live rooms into this grid.</span>
+              <span>Try a wider room list or start a room now.</span>
+              <div className="room-grid-empty-actions">
+                <button type="button" className="secondary-button" onClick={showAllLiveRooms}>Show all rooms</button>
+                <button type="button" className="primary-button" onClick={() => openHostPanel()}>Create room</button>
+              </div>
             </div>
           </div>
         ) : (
