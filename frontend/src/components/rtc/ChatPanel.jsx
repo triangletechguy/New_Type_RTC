@@ -422,10 +422,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     }
   }
 
-  async function syncMissedRoomMessages() {
+  async function syncMissedRoomMessages({ full = false } = {}) {
     if (!roomId) return
+    const shouldFullRefresh = full || !(socket?.connected && signalingRoom)
+
     await loadMessages({
-      afterId: latestRoomMessageIdRef.current,
+      afterId: shouldFullRefresh ? 0 : latestRoomMessageIdRef.current,
       silent: true,
     })
   }
@@ -698,7 +700,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       replaceMessage(data.chat_message)
       cancelEdit()
 
-      if (socket && signalingRoom) {
+      if (!data.realtime_broadcasted && socket && signalingRoom) {
         socket.timeout(3000).emit(
           'chat-message-edited',
           {
@@ -1041,7 +1043,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
         body: JSON.stringify({ for_everyone: shouldDeleteForEveryone }),
       })
 
-      if (message.__scope !== 'inbox' && data.deleted_for_everyone && socket && signalingRoom) {
+      if (message.__scope !== 'inbox' && data.deleted_for_everyone && !data.realtime_broadcasted && socket && signalingRoom) {
         socket.timeout(3000).emit(
           'chat-message-deleted',
           {
@@ -1218,7 +1220,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   useEffect(() => {
     if (!socket) return undefined
     const syncAfterReconnect = () => {
-      syncMissedRoomMessages().catch((error) => setStatus(`Chat sync failed: ${error.message}`))
+      syncMissedRoomMessages({ full: true }).catch((error) => setStatus(`Chat sync failed: ${error.message}`))
     }
     const handleMessage = ({ message }) => appendMessage(message)
     const handleMessageEdited = ({ message }) => replaceMessage(message)

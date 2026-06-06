@@ -238,35 +238,53 @@ async function findRoomForChat(roomId) {
   return rooms[0] || null
 }
 
-async function findActiveSignalingRoom(roomId) {
+async function findActiveSignalingRooms(roomId) {
   const sessions = await query(
     `
     SELECT signaling_room
     FROM rtc_sessions
     WHERE room_id = :roomId
     AND status = 'active'
-    ORDER BY id DESC
-    LIMIT 1
+    AND signaling_room IS NOT NULL
+    AND signaling_room <> ''
+    GROUP BY signaling_room
+    ORDER BY MAX(id) DESC
     `,
     { roomId }
   )
 
-  return sessions[0]?.signaling_room || ''
+  return sessions.map((session) => String(session.signaling_room || '').trim()).filter(Boolean)
 }
 
-async function broadcastRoomChatMessage(req, roomId, message) {
+function deterministicSignalingRoom(room) {
+  if (!room?.tenant_id || !room?.id) return ''
+  return `webrtc_tenant_${room.tenant_id}_room_${room.id}`
+}
+
+async function emitRoomRealtime(req, room, eventName, payload = {}) {
   const io = req.app?.get('io')
-  if (!io || !message?.id) return false
+  if (!io || !room?.id || !eventName) return false
 
-  const signalingRoom = await findActiveSignalingRoom(roomId)
-  if (!signalingRoom) return false
+  const channels = new Set(await findActiveSignalingRooms(room.id))
+  const fallbackChannel = deterministicSignalingRoom(room)
+  if (fallbackChannel) channels.add(fallbackChannel)
+  if (!channels.size) return false
 
-  io.to(String(signalingRoom)).emit('chat-message', {
-    message,
+  const realtimePayload = {
+    ...payload,
     source: 'http',
+  }
+
+  channels.forEach((channel) => {
+    io.to(String(channel)).emit(eventName, realtimePayload)
   })
 
   return true
+}
+
+async function broadcastRoomChatMessage(req, room, message) {
+  if (!message?.id) return false
+  return emitRoomRealtime(req, room, 'chat-message', { message })
 }
 
 async function blockedUserIdsForRoom(roomId, userId) {
@@ -579,7 +597,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     let realtimeBroadcasted = false
 
     try {
-      realtimeBroadcasted = await broadcastRoomChatMessage(req, roomId, chatMessage)
+      realtimeBroadcasted = await broadcastRoomChatMessage(req, room, chatMessage)
     } catch (broadcastError) {
       console.error('[chat] realtime broadcast failed', broadcastError)
     }
@@ -1196,6 +1214,8 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
 
 router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
   try {
+    await ensureChatSchema()
+
     const messageId = parsePositiveInteger(req.params.id)
     const body = cleanMessageBody(req.body?.message_body).trim()
 
@@ -1243,10 +1263,22 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
     const updatedMessages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
       id: messageId,
     })
+    const updatedMessage = updatedMessages[0]
+    const room = updatedMessage?.room_id ? await findRoomForChat(updatedMessage.room_id) : null
+    let realtimeBroadcasted = false
+
+    try {
+      realtimeBroadcasted = room
+        ? await emitRoomRealtime(req, room, 'chat-message-edited', { message: updatedMessage })
+        : false
+    } catch (broadcastError) {
+      console.error('[chat] realtime edit broadcast failed', broadcastError)
+    }
 
     return res.json({
       message: 'Message updated successfully.',
-      chat_message: updatedMessages[0],
+      chat_message: updatedMessage,
+      realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {
     next(error)
@@ -1310,12 +1342,26 @@ router.delete('/messages/:id', authMiddleware, async (req, res, next) => {
       `,
       { deletedBy: req.user.id, messageId }
     )
+    const room = message?.room_id ? await findRoomForChat(message.room_id) : null
+    let realtimeBroadcasted = false
+
+    try {
+      realtimeBroadcasted = room
+        ? await emitRoomRealtime(req, room, 'chat-message-deleted', {
+          messageId: message.id,
+          room_id: message.room_id,
+        })
+        : false
+    } catch (broadcastError) {
+      console.error('[chat] realtime delete broadcast failed', broadcastError)
+    }
 
     return res.json({
       message: 'Message deleted successfully.',
       message_id: message.id,
       room_id: message.room_id,
       deleted_for_everyone: true,
+      realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {
     next(error)
