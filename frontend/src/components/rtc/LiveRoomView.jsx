@@ -52,13 +52,6 @@ const RTC_FULL_ROOM_CAMERA_TARGET_KBPS = 120
 const RTC_LARGE_SCREEN_TARGET_KBPS = 450
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
-function compactNumber(value) {
-  const number = Number(value || 0)
-  if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
-  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`
-  return String(number)
-}
-
 function formatRtcBitrate(value) {
   const number = Number(value || 0)
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)} Mb/s`
@@ -84,17 +77,6 @@ function formatRtcLoss(value) {
   return `${number.toFixed(number > 0 && number < 10 ? 1 : 0)}%`
 }
 
-function mediaTrackCount(stream, kind) {
-  const tracks = stream?.getTracks?.().filter((track) => track.kind === kind) || []
-  const live = tracks.filter((track) => track.readyState === 'live').length
-
-  return { live, total: tracks.length }
-}
-
-function formatTrackCount(count) {
-  return `${count.live}/${count.total}`
-}
-
 function hasInboundVideoTrack(stream) {
   return stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended') || false
 }
@@ -102,16 +84,6 @@ function hasInboundVideoTrack(stream) {
 function remoteVideoExpectedFromState(mediaState = {}) {
   if (mediaState.screenShared === true) return true
   return String(mediaState.rtcMode || 'video') !== 'audio' && mediaState.cameraOn === true
-}
-
-function aggregateRemoteTrackCounts(remoteStreams = {}, kind) {
-  return Object.values(remoteStreams || {}).reduce((counts, stream) => {
-    const next = mediaTrackCount(stream, kind)
-    return {
-      live: counts.live + next.live,
-      total: counts.total + next.total,
-    }
-  }, { live: 0, total: 0 })
 }
 
 function worstRtcQuality(statsList) {
@@ -266,47 +238,6 @@ function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerSt
       outbound_audio_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'audio')),
       outbound_video_kbps: roundedStat(sumMediaBitrate(statsList, 'outbound', 'video')),
     },
-  }
-}
-
-function buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates, peerVideoWatchdogStates }) {
-  const statsList = Object.values(peerStats || {}).filter(Boolean)
-  const socketIds = Array.from(new Set([
-    ...Object.keys(peerStates || {}),
-    ...Object.keys(peerStats || {}),
-    ...Object.keys(peerMediaStates || {}),
-    ...Object.keys(remoteStreams || {}),
-  ]))
-
-  return {
-    localAudio: mediaTrackCount(localStream, 'audio'),
-    localVideo: mediaTrackCount(localStream, 'video'),
-    remoteAudio: aggregateRemoteTrackCounts(remoteStreams, 'audio'),
-    remoteVideo: aggregateRemoteTrackCounts(remoteStreams, 'video'),
-    inboundVideoKbps: sumMediaBitrate(statsList, 'inbound', 'video'),
-    outboundVideoKbps: sumMediaBitrate(statsList, 'outbound', 'video'),
-    peers: socketIds.map((socketId) => {
-      const stats = peerStats?.[socketId] || {}
-      const mediaState = peerMediaStates?.[socketId] || {}
-      const watchdogState = peerVideoWatchdogStates?.[socketId] || {}
-      const rawState = stats.connectionState || peerStates?.[socketId] || 'waiting'
-      const state = watchdogState.status === 'failed' ? 'no-video' : rawState
-      const iceState = stats.iceConnectionState || ''
-      const watchdogLabel = watchdogState.status === 'failed'
-        ? 'No video received'
-        : watchdogState.message || ''
-
-      return {
-        socketId,
-        label: mediaState.userName || `Peer ${String(socketId).slice(0, 6)}`,
-        state,
-        stateLabel: watchdogLabel || state,
-        iceState,
-        watchdogStatus: watchdogState.status || '',
-        inboundVideoKbps: numericStat(stats.media?.inbound?.video?.bitrateKbps),
-        outboundVideoKbps: numericStat(stats.media?.outbound?.video?.bitrateKbps),
-      }
-    }),
   }
 }
 
@@ -3187,12 +3118,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     })
     .filter(Boolean)
     .slice(-5)
-  const viewerCount = Math.max(Number(room?.active_participants || 0), remotePeerCount, joined ? 1 : 0)
   const roomTitle = room?.name || `Room #${roomId}`
-  const displayUserCount = compactNumber(viewerCount)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
-  const rtcDiagnostics = buildRtcDiagnostics({ localStream, remoteStreams, peerStates, peerStats, peerMediaStates, peerVideoWatchdogStates })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -3207,13 +3135,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const activeFollowRequest = followRelations.incoming.find((request) => Number(request.id) === Number(activeFollowRequestId))
     || followRelations.incoming[0]
     || null
-  const rtcStageStatusText = connectionIssue || status || (joined ? 'Connected' : 'Ready to connect')
-  const rtcStageStatusTone = connectionIssue || (connectAttempted && !joined && !joining)
-    ? 'error'
-    : joined ? 'online' : joining ? 'connecting' : 'idle'
-  const rtcStageStatusLabel = joined
-    ? 'RTC connected'
-    : joining ? 'RTC connecting' : connectAttempted ? 'RTC issue' : 'RTC ready'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -3270,53 +3191,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <div className="buzzcast-room-summary" aria-label="Room summary">
               <strong title={roomTitle}>{roomTitle}</strong>
               <span>Room ID: {room?.id || roomId}</span>
-              <small>{displayUserCount} user{viewerCount === 1 ? '' : 's'}</small>
             </div>
-            <div className={`live-rtc-status-card ${rtcStageStatusTone}`} title={rtcStageStatusText}>
-              <span className="live-rtc-status-dot" aria-hidden="true"></span>
-              <strong>{rtcStageStatusLabel}</strong>
-              <small>{rtcStageStatusText}</small>
-            </div>
-
-            {joined ? (
-              <div className={`rtc-health-strip ${rtcHealth.quality}`} aria-label="RTC health">
-                <span className="rtc-health-dot" aria-hidden="true"></span>
-                <strong>{rtcHealth.label}</strong>
-                <small>{rtcHealth.detail}</small>
-                <span>In {rtcHealth.incoming}</span>
-                <span>Out {rtcHealth.outgoing}</span>
-                <span>Video Out {rtcHealth.videoOutgoing}</span>
-                <span>RTT {rtcHealth.rtt}</span>
-                <span>Loss {rtcHealth.loss}</span>
-              </div>
-            ) : null}
-
-            {joined ? (
-              <div className="rtc-diagnostics-panel" aria-label="RTC diagnostics">
-                <div className="rtc-diagnostics-grid">
-                  <span><b>Local A/V</b>{formatTrackCount(rtcDiagnostics.localAudio)} / {formatTrackCount(rtcDiagnostics.localVideo)}</span>
-                  <span><b>Remote A/V</b>{formatTrackCount(rtcDiagnostics.remoteAudio)} / {formatTrackCount(rtcDiagnostics.remoteVideo)}</span>
-                  <span><b>Video out</b>{formatRtcBitrate(rtcDiagnostics.outboundVideoKbps)}</span>
-                  <span><b>Video in</b>{formatRtcBitrate(rtcDiagnostics.inboundVideoKbps)}</span>
-                </div>
-
-                <div className="rtc-peer-diagnostics" aria-label="Peer connection states">
-                  {rtcDiagnostics.peers.length ? rtcDiagnostics.peers.map((peer) => (
-                    <span key={peer.socketId} className={`rtc-peer-diagnostic ${peer.state || 'waiting'} ${peer.watchdogStatus || ''}`}>
-                      <b>{peer.label}</b>
-                      <em>{peer.stateLabel}{peer.iceState && peer.iceState !== peer.state ? ` / ${peer.iceState}` : ''}</em>
-                      <small>V in {formatRtcBitrate(peer.inboundVideoKbps)} - out {formatRtcBitrate(peer.outboundVideoKbps)}</small>
-                    </span>
-                  )) : (
-                    <span className="rtc-peer-diagnostic idle">
-                      <b>No peers</b>
-                      <em>waiting</em>
-                      <small>V in 0 kb/s - out 0 kb/s</small>
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : null}
 
             <div className="buzzcast-live-stage-streams">
               {localStream || remoteTiles.length ? (
@@ -3370,10 +3245,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <div className="buzzcast-waiting-card">
                   <img src={roomAvatar} alt="" />
                   <strong>{roomTitle}</strong>
-                  <span>Press Connect RTC to start</span>
-                  {connectAttempted || joining ? (
-                    <small className={`waiting-rtc-status ${rtcStageStatusTone}`}>{rtcStageStatusText}</small>
-                  ) : null}
+                  <span>Room ID: {room?.id || roomId}</span>
                 </div>
               )}
             </div>
