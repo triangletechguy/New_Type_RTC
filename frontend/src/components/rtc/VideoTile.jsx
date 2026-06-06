@@ -73,7 +73,7 @@ export function VideoTile({
   }[followStatus] || 'Follow'
   const followDisabled = followStatus === 'requested' || followStatus === 'loading'
   const visualIndex = visualIndexFromLabel(label)
-  const avatar = avatarForUser({ id: userId, gender, avatar_url: avatarUrl }, userId || visualIndex)
+  const avatar = avatarForUser({ id: userId, name: label, gender, avatar_url: avatarUrl }, userId || visualIndex)
   const placeholderArt = rtcMode === 'audio'
     ? roomAssets.audioStage
     : cameraOn === false

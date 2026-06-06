@@ -22,7 +22,6 @@ import avatar05 from './avatars/avatar-05.png'
 import avatar06 from './avatars/avatar-06.png'
 import avatar07 from './avatars/avatar-07.png'
 import avatar08 from './avatars/avatar-08.png'
-import defaultAvatar from './avatars/default-avatar.svg'
 
 import sidebarEmpty from './admin/sidebar-empty.png'
 import emptySessions from './admin/empty-sessions.png'
@@ -73,8 +72,6 @@ export const avatarAssets = [
   avatar07,
   avatar08,
 ]
-
-export const defaultAvatarAsset = defaultAvatar
 
 export const adminAssets = {
   emptySessions,
@@ -144,12 +141,80 @@ function safeIndex(index, length) {
   return Math.abs(Math.trunc(numericIndex)) % length
 }
 
+const initialAvatarThemes = [
+  ['#9259fe', '#6365ff'],
+  ['#f97316', '#ef4444'],
+  ['#06b6d4', '#2563eb'],
+  ['#22c55e', '#0f766e'],
+  ['#ec4899', '#8b5cf6'],
+  ['#f59e0b', '#dc2626'],
+  ['#14b8a6', '#7c3aed'],
+  ['#64748b', '#111827'],
+]
+
+function hashString(value) {
+  return Array.from(String(value || 'User')).reduce((hash, character) => {
+    return ((hash << 5) - hash + character.charCodeAt(0)) | 0
+  }, 0)
+}
+
+function escapeSvgText(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function avatarLabelForProfile(profile = {}) {
+  return profile.name
+    || profile.user_name
+    || profile.sender_name
+    || profile.peer_name
+    || profile.display_name
+    || profile.displayName
+    || profile.nick_name
+    || profile.nickname
+    || profile.email
+    || profile.sender_email
+    || profile.peer_email
+    || 'User'
+}
+
+export function avatarInitialFromName(name) {
+  const value = String(name || 'User').trim()
+  const label = (value.includes('@') ? value.split('@')[0] : value).replace(/^[@#]+/, '').trim()
+  return Array.from(label)[0]?.toLocaleUpperCase() || 'U'
+}
+
+export function initialAvatarForName(name = 'User', fallbackIndex = 0) {
+  const label = String(name || 'User').trim() || 'User'
+  const initial = escapeSvgText(avatarInitialFromName(label))
+  const colorIndex = safeIndex(hashString(`${label}-${fallbackIndex}`), initialAvatarThemes.length)
+  const [startColor, endColor] = initialAvatarThemes[colorIndex]
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="${initial} avatar"><defs><linearGradient id="bg" x1="24" y1="18" x2="176" y2="182" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${startColor}"/><stop offset="1" stop-color="${endColor}"/></linearGradient></defs><rect width="200" height="200" rx="100" fill="url(#bg)"/><circle cx="100" cy="100" r="86" fill="rgba(255,255,255,.1)"/><circle cx="142" cy="54" r="28" fill="rgba(255,255,255,.16)"/><text x="100" y="108" text-anchor="middle" dominant-baseline="central" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800">${initial}</text></svg>`
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+}
+
+export function initialAvatarForUser(user = {}, fallbackIndex = 0) {
+  const profile = user || {}
+  const seed = profile.id
+    || profile.user_id
+    || profile.userId
+    || profile.sender_id
+    || profile.peer_id
+    || fallbackIndex
+
+  return initialAvatarForName(avatarLabelForProfile(profile), seed)
+}
+
 export function avatarForIndex(index = 0) {
   return avatarAssets[safeIndex(index, avatarAssets.length)]
 }
 
 export function avatarForGender(gender, fallbackIndex = 0) {
-  return defaultAvatarAsset
+  return initialAvatarForName('User', fallbackIndex)
 }
 
 function avatarRoleNames(user = {}) {
@@ -173,9 +238,9 @@ export function avatarForUser(user = {}, fallbackIndex = 0) {
     || profile.is_super_admin === true
     || profile.isSuperAdmin === true
 
-  if (adminUser) return defaultAvatarAsset
+  if (adminUser) return initialAvatarForUser(profile, fallbackIndex)
 
-  return defaultAvatarAsset
+  return initialAvatarForUser(profile, fallbackIndex)
 }
 
 export function coverForDemoTone(tone, index = 0) {

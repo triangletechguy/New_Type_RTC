@@ -1,4 +1,4 @@
-import { defaultAvatarAsset } from '../../assets/rtc/catalog'
+import { avatarForUser } from '../../assets/rtc/catalog'
 import { formatElapsed, formatNumber, formatUsageDate } from '../../utils/formatters'
 
 function sessionTypeLabel(type) {
@@ -32,9 +32,11 @@ function QualityBadge({ quality }) {
 }
 
 function ParticipantPreview({ participant }) {
+  const avatar = avatarForUser({ ...participant, name: participant.user_name }, participant.user_id || 0)
+
   return (
     <div className="monitor-participant">
-      <div className="monitor-avatar"><img src={defaultAvatarAsset} alt="" loading="lazy" /></div>
+      <div className="monitor-avatar"><img src={avatar} alt="" loading="lazy" /></div>
       <div>
         <strong>{participant.user_name}</strong>
         <span>{participant.role} · {formatElapsed(participant.connected_seconds)}</span>
