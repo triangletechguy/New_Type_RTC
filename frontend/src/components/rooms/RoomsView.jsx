@@ -478,6 +478,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
   const profileAvatar = avatarForUser(user, displayId)
+  const messageAvatar = avatarForIndex(6)
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -2633,8 +2634,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openMobileMessageSection}
           aria-label="Messages"
         >
-          <span className="buzzcast-rail-icon rail-message-icon" aria-hidden="true">
-            <i className="buzzcast-glyph glyph-message"></i>
+          <span className="buzzcast-rail-icon rail-message-avatar image-avatar" aria-hidden="true">
+            <img src={messageAvatar} alt="" loading="lazy" />
           </span>
           <b>Feedback and Help</b>
         </button>

@@ -540,19 +540,17 @@
   justify-self: end;
 }
 
-.buzzcast-message-icon,
-.rail-message-icon {
+.buzzcast-message-icon {
   display: grid;
   place-items: center;
   border-radius: 50%;
   color: #fff;
-  background: linear-gradient(135deg, #7d55ff, #ff6bb5);
-}
-
-.buzzcast-message-icon {
   width: 32px;
   height: 32px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .08), 0 8px 18px rgba(125, 85, 255, .26);
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, .28), transparent 30%),
+    linear-gradient(135deg, #6d5dfc, #4568f0 52%, #1cc7d0);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .1), 0 8px 18px rgba(69, 104, 240, .28);
 }
 
 .buzzcast-message-icon .buzzcast-glyph {
@@ -560,21 +558,30 @@
   height: 18px;
 }
 
-.buzzcast-rail-icon.rail-message-icon {
-  width: 30px;
-  height: 30px;
-  box-shadow: 0 6px 15px rgba(125, 85, 255, .24);
+.rail-message-avatar {
+  display: block;
+  overflow: hidden;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .1);
 }
 
-.rail-message-icon::before,
-.rail-message-icon::after {
+.buzzcast-rail-icon.rail-message-avatar {
+  width: 30px;
+  height: 30px;
+  color: transparent;
+}
+
+.rail-message-avatar::before,
+.rail-message-avatar::after {
   content: none !important;
   display: none !important;
 }
 
-.rail-message-icon .buzzcast-glyph {
-  width: 17px;
-  height: 17px;
+.rail-message-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .buzzcast-live-side .messages,
