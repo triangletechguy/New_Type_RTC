@@ -366,6 +366,15 @@
   object-fit: cover;
 }
 
+.buzzcast-seat-dots .buzzcast-seat-more {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .buzzcast-sensitive-dot {
   top: 12px;
   right: 12px;

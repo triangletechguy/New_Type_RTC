@@ -166,15 +166,33 @@ function cardCover(card, fallback = 0) {
   return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
 }
 
+function liveUserCount(card) {
+  const count = Number(card?.room?.active_participants ?? card?.activeParticipants ?? card?.viewers ?? 0)
+  return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
+}
+
+function liveUserAvatarItems(card, maxVisible = 3) {
+  const count = liveUserCount(card)
+  const avatarIndex = cardAvatarIndex(card)
+  const visibleCount = Math.min(count, maxVisible)
+
+  return Array.from({ length: visibleCount }, (_, offset) => ({
+    key: `${card?.id || 'room'}-${offset}`,
+    src: offset === 0 && card?.avatarUrl ? card.avatarUrl : avatarForIndex(avatarIndex + offset),
+  }))
+}
+
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
   const ownerRegion = room.owner_region || room.owner_current_residence || room.country || ''
+  const activeParticipants = liveUserCount({ room })
   return {
     id: `room-${room.id}`,
     room,
     title: room.name || `Live room ${room.id}`,
     host: room.owner_name || 'Room host',
-    viewers: Number(room.active_participants || 0) || 100 + index * 37,
+    viewers: activeParticipants,
+    activeParticipants,
     tone: ['aurora', 'warm', 'rose', 'sunset', 'slate', 'amber', 'night', 'plum'][index % 8],
     badge: room.privacy_type === 'password' ? 'Locked' : meta.short,
     category: meta.label,
@@ -296,7 +314,9 @@ function BuzzLogo() {
 
 function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deleting = false }) {
   const cover = cardCover(card)
-  const avatarIndex = cardAvatarIndex(card)
+  const userCount = liveUserCount(card)
+  const avatarItems = liveUserAvatarItems(card)
+  const extraAvatarCount = Math.max(0, userCount - avatarItems.length)
   const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
   const privacy = card.room?.privacy_type || card.privacy || 'public'
   const imageLoading = featured ? 'eager' : 'lazy'
@@ -309,23 +329,26 @@ function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deletin
           <img className="buzzcast-media-image" src={cover} alt="" loading={imageLoading} decoding="async" fetchPriority={imagePriority} />
           {card.badge ? <span className="buzzcast-card-badge">{card.badge}</span> : null}
           {card.sensitive ? <span className="buzzcast-sensitive-dot"></span> : null}
-          <span className="buzzcast-viewers">{compactNumber(card.viewers)}</span>
-          <span className="buzzcast-seat-dots">
-            {[0, 1, 2].map((offset) => (
-              <i key={offset}><img src={avatarForIndex(avatarIndex + offset)} alt="" loading="lazy" decoding="async" fetchPriority="low" /></i>
-            ))}
-          </span>
+          <span className="buzzcast-viewers">{compactNumber(userCount)}</span>
+          {avatarItems.length ? (
+            <span className="buzzcast-seat-dots" aria-label={`${userCount} live user${userCount === 1 ? '' : 's'}`}>
+              {avatarItems.map((avatar) => (
+                <i key={avatar.key}><img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" /></i>
+              ))}
+              {extraAvatarCount > 0 ? <i className="buzzcast-seat-more">+{compactNumber(extraAvatarCount)}</i> : null}
+            </span>
+          ) : null}
         </div>
         <div className="buzzcast-card-copy">
           <strong>{card.title}</strong>
           <span>{card.host}</span>
           <small className="buzzcast-card-meta">
             <b>{roomMeta.label}</b>
-            <em>{privacy === 'public' ? `${compactNumber(card.viewers)} watching` : privacy}</em>
+            <em>{privacy === 'public' ? `${compactNumber(userCount)} watching` : privacy}</em>
           </small>
         </div>
         <span className="buzzcast-mobile-live-count" aria-hidden="true">
-          <i></i>{compactNumber(card.viewers)}
+          <i></i>{compactNumber(userCount)}
         </span>
       </button>
       {canDelete ? (
