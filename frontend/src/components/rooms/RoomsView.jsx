@@ -166,26 +166,41 @@ function cardCover(card, fallback = 0) {
   return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
 }
 
+function activeParticipantPreviews(card) {
+  const previews = card?.room?.active_participant_previews || card?.activeParticipantPreviews || card?.active_participant_previews || []
+  return Array.isArray(previews) ? previews.filter(Boolean) : []
+}
+
 function liveUserCount(card) {
-  const count = Number(card?.room?.active_participants ?? card?.activeParticipants ?? card?.viewers ?? 0)
+  const previewCount = activeParticipantPreviews(card).length
+  const count = Number(card?.room?.active_participants ?? card?.activeParticipants ?? card?.viewers ?? previewCount)
   return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
 }
 
 function liveUserAvatarItems(card, maxVisible = 3) {
   const count = liveUserCount(card)
-  const avatarIndex = cardAvatarIndex(card)
+  const previews = activeParticipantPreviews(card)
   const visibleCount = Math.min(count, maxVisible)
 
-  return Array.from({ length: visibleCount }, (_, offset) => ({
-    key: `${card?.id || 'room'}-${offset}`,
-    src: offset === 0 && card?.avatarUrl ? card.avatarUrl : avatarForIndex(avatarIndex + offset),
-  }))
+  return Array.from({ length: visibleCount }, (_, offset) => {
+    const participant = previews[offset] || {}
+    const name = participant.name || participant.user_name || (offset === 0 ? card?.host : '') || `User ${offset + 1}`
+    const avatarUrl = participant.avatar_url || participant.avatarUrl || ''
+
+    return {
+      key: `${card?.id || 'room'}-${participant.user_id || participant.userId || offset}`,
+      name,
+      src: avatarUrl,
+      initial: initialsFromName(name).slice(0, 1) || 'U',
+    }
+  })
 }
 
 function roomToFeedCard(room, index) {
   const meta = getRoomMeta(room.room_type)
   const ownerRegion = room.owner_region || room.owner_current_residence || room.country || ''
   const activeParticipants = liveUserCount({ room })
+  const participantPreviews = activeParticipantPreviews({ room })
   return {
     id: `room-${room.id}`,
     room,
@@ -193,6 +208,7 @@ function roomToFeedCard(room, index) {
     host: room.owner_name || 'Room host',
     viewers: activeParticipants,
     activeParticipants,
+    activeParticipantPreviews: participantPreviews,
     tone: ['aurora', 'warm', 'rose', 'sunset', 'slate', 'amber', 'night', 'plum'][index % 8],
     badge: room.privacy_type === 'password' ? 'Locked' : meta.short,
     category: meta.label,
@@ -333,7 +349,11 @@ function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deletin
           {avatarItems.length ? (
             <span className="buzzcast-seat-dots" aria-label={`${userCount} live user${userCount === 1 ? '' : 's'}`}>
               {avatarItems.map((avatar) => (
-                <i key={avatar.key}><img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" /></i>
+                <i key={avatar.key} className={avatar.src ? '' : 'buzzcast-seat-initial'} title={avatar.name}>
+                  {avatar.src
+                    ? <img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" />
+                    : avatar.initial}
+                </i>
               ))}
               {extraAvatarCount > 0 ? <i className="buzzcast-seat-more">+{compactNumber(extraAvatarCount)}</i> : null}
             </span>

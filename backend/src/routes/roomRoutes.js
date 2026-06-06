@@ -205,6 +205,7 @@ function serializeRoom(row) {
     is_password_protected: row.privacy_type === 'password',
     max_mic_count: Number(row.max_mic_count || 0),
     active_participants: Number(row.active_participants || 0),
+    active_participant_previews: parseActiveParticipantPreviews(row.active_participant_previews),
     theme: row.theme,
     chat_enabled: Boolean(Number(row.chat_enabled)),
     gift_enabled: Boolean(Number(row.gift_enabled)),
@@ -214,6 +215,31 @@ function serializeRoom(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
+}
+
+function parseActiveParticipantPreviews(value) {
+  let previews = []
+
+  try {
+    if (Array.isArray(value)) {
+      previews = value
+    } else if (Buffer.isBuffer(value)) {
+      previews = JSON.parse(value.toString('utf8'))
+    } else if (typeof value === 'string' && value.trim()) {
+      previews = JSON.parse(value)
+    }
+  } catch {
+    previews = []
+  }
+
+  return previews
+    .filter(Boolean)
+    .slice(0, 8)
+    .map((participant) => ({
+      user_id: Number(participant.user_id || 0) || null,
+      name: cleanString(participant.name || '', 80) || null,
+      avatar_url: cleanString(participant.avatar_url || '', 255) || null,
+    }))
 }
 
 function roomSelectSql(options = {}) {
@@ -229,7 +255,8 @@ function roomSelectSql(options = {}) {
       owner.name AS owner_name,
       owner.current_residence AS owner_region,
       ${includeViewerFields ? 'CASE WHEN followed_owner.followed_user_id IS NULL THEN 0 ELSE 1 END' : '0'} AS owner_followed,
-      COALESCE(active_counts.active_participants, 0) AS active_participants
+      COALESCE(active_counts.active_participants, 0) AS active_participants,
+      active_counts.active_participant_previews AS active_participant_previews
     FROM rooms r
     LEFT JOIN tenants tenant ON tenant.id = r.tenant_id
     LEFT JOIN users owner ON owner.id = r.owner_id
@@ -240,12 +267,25 @@ function roomSelectSql(options = {}) {
       AND followed_owner.followed_user_id = r.owner_id
     ` : ''}
     LEFT JOIN (
-      SELECT active_sessions.room_id, COUNT(active_participants.id) AS active_participants
+      SELECT
+        active_sessions.room_id,
+        COUNT(active_participants.id) AS active_participants,
+        JSON_ARRAYAGG(
+          CASE
+            WHEN active_participants.id IS NULL THEN NULL
+            ELSE JSON_OBJECT(
+              'user_id', active_participants.user_id,
+              'name', COALESCE(active_users.name, CONCAT('User #', active_participants.user_id)),
+              'avatar_url', active_users.avatar_url
+            )
+          END
+        ) AS active_participant_previews
       FROM rtc_sessions active_sessions
       LEFT JOIN rtc_session_participants active_participants
         ON active_participants.session_id = active_sessions.id
         AND active_participants.left_at IS NULL
         AND active_participants.updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
+      LEFT JOIN users active_users ON active_users.id = active_participants.user_id
       WHERE active_sessions.status = 'active'
       GROUP BY active_sessions.room_id
     ) active_counts ON active_counts.room_id = r.id
