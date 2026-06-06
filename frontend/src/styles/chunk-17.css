@@ -540,38 +540,41 @@
   justify-self: end;
 }
 
-.buzzcast-message-avatar,
-.rail-message-avatar {
-  display: block;
-  overflow: hidden;
+.buzzcast-message-icon,
+.rail-message-icon {
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  background: linear-gradient(135deg, #7d55ff, #ff6bb5);
 }
 
-.buzzcast-message-avatar {
+.buzzcast-message-icon {
   width: 32px;
   height: 32px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .08);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .08), 0 8px 18px rgba(125, 85, 255, .26);
 }
 
-.buzzcast-rail-icon.rail-message-avatar {
+.buzzcast-message-icon .buzzcast-glyph {
+  width: 18px;
+  height: 18px;
+}
+
+.buzzcast-rail-icon.rail-message-icon {
   width: 30px;
   height: 30px;
-  color: transparent;
+  box-shadow: 0 6px 15px rgba(125, 85, 255, .24);
 }
 
-.rail-message-avatar::before,
-.rail-message-avatar::after {
+.rail-message-icon::before,
+.rail-message-icon::after {
   content: none !important;
   display: none !important;
 }
 
-.buzzcast-message-avatar img,
-.rail-message-avatar img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
+.rail-message-icon .buzzcast-glyph {
+  width: 17px;
+  height: 17px;
 }
 
 .buzzcast-live-side .messages,
