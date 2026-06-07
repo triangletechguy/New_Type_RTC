@@ -29,8 +29,8 @@ let roomFollowSchemaPromise = null
 let roomFeatureSchemaPromise = null
 const roomTypeGroups = {
   all: null,
-  live: ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'],
-  video: ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'],
+  live: ['solo_live', 'pk_live'],
+  video: ['video', 'one_to_one_video', 'group_video'],
   music: ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'],
   voice: ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'],
   pk: ['pk_live'],

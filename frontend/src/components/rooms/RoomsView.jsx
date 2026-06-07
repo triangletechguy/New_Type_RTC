@@ -11,6 +11,8 @@ import {
   defaultRoomForm,
   defaultRtcModeForRoom,
   getRoomMeta,
+  liveRoomTypes,
+  musicRoomTypes,
   maxSeatsForRoomType,
   normalizeRtcMode,
   privacyFilterOptions,
@@ -20,8 +22,8 @@ import {
   roomAllowsCamera,
   roomPrivacyOptions,
   roomSortOptions,
-  roomSupportsVideo,
   roomTypeLabels,
+  videoRoomTypes,
   rtcModeOptions,
   themeOptions,
   validateRoomForm,
@@ -41,6 +43,7 @@ import {
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
+const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
 const dmAudioBitsPerSecond = 32000
@@ -360,15 +363,28 @@ function cardMatchesActiveFeed(card, activeFeed, context = {}) {
 
 function cardMatchesRoomFilters(card, filter, privacyFilter) {
   const roomType = card.room?.room_type || card.roomType
-  const privacyType = card.room?.privacy_type || card.privacy || 'public'
+  const privacyType = roomAccessType(card)
+  const accessFilter = normalizeAccessFilter(privacyFilter)
   const typeMatches = filter === 'all'
-    || (filter === 'live' && ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType))
-    || (filter === 'video' && roomSupportsVideo(roomType))
-    || (filter === 'music' && ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType))
+    || (filter === 'live' && liveRoomTypes.includes(roomType))
+    || (filter === 'video' && videoRoomTypes.includes(roomType))
+    || (filter === 'music' && musicRoomTypes.includes(roomType))
     || (filter === 'pk' && roomType === 'pk_live')
-  const privacyMatches = privacyFilter === 'all' || privacyType === privacyFilter
+  const privacyMatches = accessFilter === 'all' || privacyType === accessFilter
 
   return typeMatches && privacyMatches
+}
+
+function normalizeAccessFilter(value) {
+  const normalized = String(value || 'all').trim().toLowerCase()
+  return accessFilterValues.has(normalized) ? normalized : 'all'
+}
+
+function roomAccessType(card) {
+  const rawValue = card?.room?.privacy_type || card?.privacy || (card?.room?.is_password_protected ? 'password' : 'public')
+  const normalized = String(rawValue || 'public').trim().toLowerCase()
+  if (normalized === 'locked') return 'password'
+  return accessFilterValues.has(normalized) && normalized !== 'all' ? normalized : 'public'
 }
 
 function sortCardsForView(cards, sort) {
@@ -645,14 +661,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     return sortCardsForView(cards, sort).slice(0, 48)
   }, [activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
   const recentRoomCards = useMemo(() => {
-    const cardsById = new Map(roomCards.map((card) => [String(card.id), card]))
+    const cardsById = new Map(visibleCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
       .map((id) => cardsById.get(String(id)))
       .filter(Boolean)
 
     if (rememberedCards.length) return rememberedCards.slice(0, 24)
     return visibleCards.filter((card) => card.id !== ownRoomCard.id).slice(0, 24)
-  }, [ownRoomCard.id, recentRoomIds, roomCards, visibleCards])
+  }, [ownRoomCard.id, recentRoomIds, visibleCards])
   const searchTerm = search.trim().toLowerCase()
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
@@ -733,7 +749,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     && !dmRecording
     && (dmInput.trim() || dmPhotoDraft || dmAudioDraft)
   )
-  const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
+  const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'All types'
   const searchPanelTitle = search.trim()
       ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
       : `${activeFilterLabel} rooms`
@@ -2097,7 +2113,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
               {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <select value={privacyFilter} onChange={(event) => setPrivacyFilter(event.target.value)} aria-label="Room privacy filter">
+            <select value={privacyFilter} onChange={(event) => setPrivacyFilter(normalizeAccessFilter(event.target.value))} aria-label="Room privacy filter">
               {privacyFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Room sort">

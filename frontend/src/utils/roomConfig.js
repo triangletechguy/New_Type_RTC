@@ -22,8 +22,13 @@ const roomTypeMeta = {
   pk_live: { label: 'PK Live', short: 'PK', tone: 'tone-pk' },
 }
 
+export const liveRoomTypes = ['solo_live', 'pk_live']
+export const videoRoomTypes = ['video', 'one_to_one_video', 'group_video']
+export const musicRoomTypes = ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio']
+export const videoCapableRoomTypes = [...videoRoomTypes, ...liveRoomTypes]
+
 export const roomFilterOptions = [
-  { value: 'all', label: 'For You' },
+  { value: 'all', label: 'All types' },
   { value: 'live', label: 'Live' },
   { value: 'video', label: 'Video' },
   { value: 'music', label: 'Music' },
@@ -114,15 +119,15 @@ export function getRoomTags(room) {
 
 export function roomMatchesFilter(room, filter) {
   if (filter === 'all') return true
-  if (filter === 'live') return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
-  if (filter === 'video') return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
-  if (filter === 'music') return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(room.room_type)
+  if (filter === 'live') return liveRoomTypes.includes(room.room_type)
+  if (filter === 'video') return videoRoomTypes.includes(room.room_type)
+  if (filter === 'music') return musicRoomTypes.includes(room.room_type)
   if (filter === 'pk') return room.room_type === 'pk_live'
   return true
 }
 
 export function roomSupportsVideo(roomType) {
-  return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return videoCapableRoomTypes.includes(roomType)
 }
 
 export function isOneToOneRoom(roomType) {
