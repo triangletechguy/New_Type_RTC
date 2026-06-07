@@ -796,6 +796,10 @@
   background: #272637;
 }
 
+.room-access-code-input {
+  -webkit-text-security: disc;
+}
+
 .buzzcast-choice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

@@ -51,6 +51,14 @@ const RTC_GROUP_CAMERA_TARGET_KBPS = 240
 const RTC_LARGE_CAMERA_TARGET_KBPS = 180
 const RTC_FULL_ROOM_CAMERA_TARGET_KBPS = 120
 const RTC_LARGE_SCREEN_TARGET_KBPS = 450
+const roomAccessCodeInputProps = {
+  type: 'text',
+  autoComplete: 'off',
+  autoCorrect: 'off',
+  autoCapitalize: 'none',
+  spellCheck: false,
+  className: 'room-access-code-input',
+}
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 
 function formatRtcBitrate(value) {
@@ -3411,11 +3419,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <div className="buzzcast-password-popover">
                 <strong>Room password required</strong>
                 <input
-                  type="password"
+                  {...roomAccessCodeInputProps}
+                  name="live-room-access-code"
                   value={roomPasswordInput}
                   onChange={(event) => setRoomPasswordInput(event.target.value)}
                   placeholder="Room password"
-                  autoComplete="current-password"
                 />
               </div>
             )}

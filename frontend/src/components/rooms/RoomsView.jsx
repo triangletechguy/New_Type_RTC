@@ -47,6 +47,14 @@ const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.v
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
 const dmAudioBitsPerSecond = 32000
+const roomAccessCodeInputProps = {
+  type: 'text',
+  autoComplete: 'off',
+  autoCorrect: 'off',
+  autoCapitalize: 'none',
+  spellCheck: false,
+  className: 'room-access-code-input',
+}
 const dmRecordingAudioConstraints = {
   echoCancellation: true,
   noiseSuppression: true,
@@ -3519,7 +3527,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               {roomForm.privacy_type === 'password' ? (
                 <>
                   <label>Password</label>
-                  <input type="password" value={roomForm.password} onChange={(event) => updateRoomForm('password', event.target.value)} autoComplete="new-password" aria-invalid={Boolean(formErrors.password)} />
+                  <input
+                    {...roomAccessCodeInputProps}
+                    name="new-room-access-code"
+                    value={roomForm.password}
+                    onChange={(event) => updateRoomForm('password', event.target.value)}
+                    aria-invalid={Boolean(formErrors.password)}
+                  />
                   {formErrors.password && <small className="form-error">{formErrors.password}</small>}
                 </>
               ) : null}
@@ -3598,12 +3612,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   />
                   <label>Room Password</label>
                   <input
+                    {...roomAccessCodeInputProps}
                     name="rtc-room-password"
-                    type="password"
                     value={joinPassword}
                     onChange={(event) => setJoinPassword(event.target.value)}
                     placeholder="Only needed for locked rooms"
-                    autoComplete="new-password"
                   />
                 </>
               ) : null}
@@ -3640,11 +3653,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </div>
               <label>Room Password</label>
               <input
-                type="password"
+                {...roomAccessCodeInputProps}
+                name="locked-room-access-code"
                 value={joinPassword}
                 onChange={(event) => setJoinPassword(event.target.value)}
                 placeholder="Enter locked room password"
-                autoComplete="current-password"
                 autoFocus
               />
               <button className="buzzcast-submit secondary" type="submit" disabled={!canJoinRoom}>
