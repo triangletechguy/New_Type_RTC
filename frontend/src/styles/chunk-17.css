@@ -2017,6 +2017,11 @@
   border-color: rgba(148, 163, 184, .18) !important;
 }
 
+.admin-dashboard-view .rtc-quality-panel,
+.dashboard-tab-panel > .rtc-quality-panel {
+  display: none !important;
+}
+
 @media (max-width: 1100px) {
   .admin-readiness-grid,
   .rtc-action-grid,
