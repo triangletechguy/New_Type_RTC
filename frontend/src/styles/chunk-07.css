@@ -861,6 +861,10 @@
     padding: 6px 9px;
   }
 
+  .buzzcast-live-side .room-role-form {
+    grid-template-columns: 1fr;
+  }
+
   .buzzcast-live-side .chat-form textarea {
     height: 64px;
     min-height: 64px;

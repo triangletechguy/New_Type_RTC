@@ -85,6 +85,7 @@ export const INITIAL_ROOM_FORM = {
   password: '',
   max_mic_count: '8',
   chat_enabled: true,
+  gift_enabled: false,
   screen_share_enabled: false,
   ai_security_enabled: false,
 }
@@ -137,6 +138,7 @@ export const CLIENT_API_TOKEN_CLAIMS = [
   ['app_id', 'Connects usage and room access to the correct client app.'],
   ['external_user_id', 'Maps the RTC session back to the client company user without charging that user.'],
   ['room_id', 'Limits the token to one room/channel.'],
+  ['room_type / rtc_profile', 'Maps the room to communication/live profile, web mode, and media type.'],
   ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
   ['permissions', 'Controls join, media publish, screen share, chat, mute, and kick.'],
   ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],

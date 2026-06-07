@@ -17,6 +17,11 @@ const recordingAudioConstraints = {
 }
 const roomChatSyncIntervalMs = 5000
 const inboxSyncIntervalMs = 5000
+const roomGifts = [
+  { id: 'star', label: 'Star' },
+  { id: 'heart', label: 'Heart' },
+  { id: 'cheer', label: 'Cheer' },
+]
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -67,8 +72,7 @@ function isOwnMessage(message, currentUser) {
 
 function isVisibleRoomMessage(message, blockedSenderIds = []) {
   return (
-    message?.message_type !== 'gift'
-    && !Boolean(Number(message?.is_deleted || message?.is_unsent))
+    !Boolean(Number(message?.is_deleted || message?.is_unsent))
     && !blockedSenderIds.some((id) => Number(id) === Number(message?.sender_id))
   )
 }
@@ -642,6 +646,41 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           },
           (error, response) => {
             if (error || !response?.ok) setStatus('Message saved. Realtime delivery will resume when signaling reconnects.')
+          }
+        )
+      }
+    } catch (error) {
+      setStatus(error.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function sendGift(gift) {
+    if (!gift?.id || !chatEnabled || room?.gift_enabled === false || sending || recording) return
+
+    try {
+      setSending(true)
+      setStatus('')
+      const data = await apiRequest(`/rooms/${roomId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          message_type: 'gift',
+          message_body: gift.label,
+          media_url: gift.id,
+        }),
+      })
+      appendMessage(data.chat_message)
+
+      if (!data.realtime_broadcasted && socket && signalingRoom) {
+        socket.timeout(8000).emit(
+          'chat-message',
+          {
+            roomId: signalingRoom,
+            message: { id: data.chat_message.id },
+          },
+          (error, response) => {
+            if (error || !response?.ok) setStatus('Gift saved. Realtime delivery will resume when signaling reconnects.')
           }
         )
       }
@@ -1351,6 +1390,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const imageMessage = message.message_type === 'image'
           const avatarMessage = imageMessage && String(message.message_body || '').trim() === 'sent an avatar'
           const voiceMessage = message.message_type === 'voice'
+          const giftMessage = message.message_type === 'gift'
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
@@ -1367,7 +1407,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             ? String(message.message_body || '').trim()
             : ''
           const bubbleClass = imageMessage
-            ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
+            ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
@@ -1419,6 +1459,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   <div className="chat-voice-message">
                     <audio controls src={message.media_url}></audio>
                     <span>{message.message_body || 'Voice message'}</span>
+                  </div>
+                ) : giftMessage ? (
+                  <div className="chat-gift-message">
+                    <strong>{message.message_body || 'Gift'}</strong>
+                    <span>sent a gift</span>
                   </div>
                 ) : (
                   <p>{message.message_body}</p>
@@ -1525,6 +1570,19 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
               <span>{recording ? 'Stop' : 'Audio'}</span>
             </button>
+            {roomGifts.map((gift) => (
+              <button
+                key={gift.id}
+                type="button"
+                className="secondary-button chat-gift-button"
+                onClick={() => sendGift(gift)}
+                disabled={!chatEnabled || room?.gift_enabled === false || sending || recording}
+                aria-label={`Send ${gift.label} gift`}
+                title={`Send ${gift.label} gift`}
+              >
+                <span>{gift.label}</span>
+              </button>
+            ))}
             <button className="primary-button" type="submit" disabled={!canSend}>
               {sending ? 'Sending' : 'Send'}
             </button>

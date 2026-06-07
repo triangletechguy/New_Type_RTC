@@ -1,6 +1,9 @@
 export const roomTypeLabels = {
   audio: 'Music Room',
+  youtube_audio: 'YouTube Audio',
+  one_to_one_audio: '1:1 Voice',
   video: 'Video Room',
+  one_to_one_video: '1:1 Video',
   group_audio: 'Group Music',
   group_video: 'Group Video',
   solo_live: 'Solo Live',
@@ -9,7 +12,10 @@ export const roomTypeLabels = {
 
 const roomTypeMeta = {
   audio: { label: 'Music Room', short: 'Music', tone: 'tone-music' },
+  youtube_audio: { label: 'YouTube Audio Room', short: 'YouTube', tone: 'tone-music' },
+  one_to_one_audio: { label: '1:1 Voice Call', short: 'Voice', tone: 'tone-music' },
   video: { label: 'Video Room', short: 'Video', tone: 'tone-video' },
+  one_to_one_video: { label: '1:1 Video Call', short: 'Call', tone: 'tone-video' },
   group_audio: { label: 'Group Music', short: 'Music', tone: 'tone-music' },
   group_video: { label: 'Group Video', short: 'Group', tone: 'tone-video' },
   solo_live: { label: 'Solo Live', short: 'Solo', tone: 'tone-live' },
@@ -49,6 +55,7 @@ export const themeOptions = [
 
 export const roomFeatureOptions = [
   { field: 'chat_enabled', label: 'Chat', detail: 'Live messages' },
+  { field: 'gift_enabled', label: 'Gifts', detail: 'Room reactions' },
   { field: 'screen_share_enabled', label: 'Screen share', detail: 'Presenter tools' },
   { field: 'ai_security_enabled', label: 'AI guard', detail: 'Moderation layer' },
 ]
@@ -76,6 +83,7 @@ export const stageLayoutOptions = [
 const defaultRoomTheme = 'neon'
 
 export const MAX_ROOM_SEATS = 20
+export const ONE_TO_ONE_ROOM_SEATS = 2
 
 export const defaultRoomForm = {
   name: '',
@@ -86,6 +94,7 @@ export const defaultRoomForm = {
   max_mic_count: 8,
   theme: defaultRoomTheme,
   chat_enabled: true,
+  gift_enabled: false,
   screen_share_enabled: false,
   ai_security_enabled: false,
 }
@@ -97,6 +106,7 @@ export function getRoomMeta(roomType) {
 export function getRoomTags(room) {
   const tags = []
   if (room.chat_enabled) tags.push('Chat')
+  if (room.gift_enabled) tags.push('Gifts')
   if (room.screen_share_enabled) tags.push('Share')
   if (room.ai_security_enabled) tags.push('AI Guard')
   return tags.length ? tags : ['Live']
@@ -104,15 +114,29 @@ export function getRoomTags(room) {
 
 export function roomMatchesFilter(room, filter) {
   if (filter === 'all') return true
-  if (filter === 'live') return ['video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
-  if (filter === 'video') return ['video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
-  if (filter === 'music') return ['audio', 'group_audio'].includes(room.room_type)
+  if (filter === 'live') return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
+  if (filter === 'video') return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(room.room_type)
+  if (filter === 'music') return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(room.room_type)
   if (filter === 'pk') return room.room_type === 'pk_live'
   return true
 }
 
 export function roomSupportsVideo(roomType) {
-  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+}
+
+export function isOneToOneRoom(roomType) {
+  return ['one_to_one_audio', 'one_to_one_video'].includes(roomType)
+}
+
+export function maxSeatsForRoomType(roomType) {
+  return isOneToOneRoom(roomType) ? ONE_TO_ONE_ROOM_SEATS : MAX_ROOM_SEATS
+}
+
+export function defaultSeatsForRoomType(roomType) {
+  if (isOneToOneRoom(roomType)) return ONE_TO_ONE_ROOM_SEATS
+  if (roomType === 'solo_live') return 1
+  return 8
 }
 
 export function roomAllowsCamera(roomType) {
@@ -124,7 +148,9 @@ export function defaultRtcModeForRoom(room) {
 }
 
 export function getRoomFlowLabel(roomType) {
-  if (['audio', 'group_audio'].includes(roomType)) return 'Music flow'
+  if (['audio', 'youtube_audio', 'group_audio'].includes(roomType)) return 'Music flow'
+  if (roomType === 'one_to_one_audio') return '1:1 voice flow'
+  if (roomType === 'one_to_one_video') return '1:1 video flow'
   if (roomType === 'pk_live') return 'PK video flow'
   if (roomType === 'solo_live') return 'Solo video flow'
   return 'Video flow'
@@ -132,7 +158,9 @@ export function getRoomFlowLabel(roomType) {
 
 export function getSeatLabel(roomType, count) {
   const seats = Number(count || 0)
-  const label = ['audio', 'group_audio'].includes(roomType) ? 'music seat' : 'stage seat'
+  const label = isOneToOneRoom(roomType)
+    ? 'call seat'
+    : ['audio', 'youtube_audio', 'group_audio'].includes(roomType) ? 'music seat' : 'stage seat'
   return `${seats} ${label}${seats === 1 ? '' : 's'}`
 }
 
@@ -194,13 +222,16 @@ export function validateRoomForm(form) {
   const name = form.name.trim()
   const password = form.password.trim()
   const maxMicCount = Number(form.max_mic_count)
+  const maxAllowedSeats = maxSeatsForRoomType(form.room_type)
 
   if (!name) errors.name = 'Room name is required.'
   if (name && name.length < 3) errors.name = 'Use at least 3 characters.'
   if (name.length > 150) errors.name = 'Keep the room name under 150 characters.'
   if (form.description.length > 700) errors.description = 'Keep the description under 700 characters.'
-  if (!Number.isInteger(maxMicCount) || maxMicCount < 1 || maxMicCount > MAX_ROOM_SEATS) {
-    errors.max_mic_count = `Choose 1 to ${MAX_ROOM_SEATS} mic seats.`
+  if (!Number.isInteger(maxMicCount) || maxMicCount < 1 || maxMicCount > maxAllowedSeats) {
+    errors.max_mic_count = isOneToOneRoom(form.room_type)
+      ? 'Choose 1 or 2 call seats.'
+      : `Choose 1 to ${MAX_ROOM_SEATS} mic seats.`
   }
   if (form.privacy_type === 'password' && password.length < 4) {
     errors.password = 'Use at least 4 characters.'
@@ -210,15 +241,18 @@ export function validateRoomForm(form) {
 }
 
 export function roomFormPayload(form) {
+  const maxMicCount = Math.min(Number(form.max_mic_count), maxSeatsForRoomType(form.room_type))
+
   return {
     name: form.name.trim(),
     description: form.description.trim(),
     room_type: form.room_type,
     privacy_type: form.privacy_type,
     password: form.privacy_type === 'password' ? form.password.trim() : undefined,
-    max_mic_count: Number(form.max_mic_count),
+    max_mic_count: Number.isFinite(maxMicCount) ? maxMicCount : defaultSeatsForRoomType(form.room_type),
     theme: form.theme === defaultRoomTheme ? undefined : form.theme,
     chat_enabled: form.chat_enabled,
+    gift_enabled: form.gift_enabled,
     screen_share_enabled: form.screen_share_enabled,
     ai_security_enabled: form.ai_security_enabled,
   }

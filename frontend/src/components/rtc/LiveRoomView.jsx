@@ -33,6 +33,7 @@ import {
 } from '../../utils/roomConfig'
 import { ChatPanel } from './ChatPanel'
 import { VideoTile } from './VideoTile'
+import { LoadingMovie } from '../common/LoadingMovie'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 7000
 const RTC_PRESENCE_INTERVAL_MS = 20000
@@ -264,6 +265,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [rtcMode, setRtcMode] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom))
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(normalizeRtcMode(initialRtcMode || defaultRtcModeForRoom(initialRoom), initialRoom) === 'video')
+  const [noiseCancellation, setNoiseCancellation] = useState(true)
+  const [voiceEffect, setVoiceEffect] = useState('natural')
   const [roomPasswordInput, setRoomPasswordInput] = useState(roomPassword)
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false)
   const [rtcConfigState, setRtcConfigState] = useState(null)
@@ -284,6 +287,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [backgroundEffect, setBackgroundEffect] = useState('none')
   const [backgroundBlurAmount, setBackgroundBlurAmount] = useState(DEFAULT_BACKGROUND_BLUR_AMOUNT)
   const [cameraFilterPerformance, setCameraFilterPerformance] = useState('720p / 24fps')
+  const [roomControls, setRoomControls] = useState(null)
+  const [controlsLoading, setControlsLoading] = useState(false)
+  const [moderatingUserIds, setModeratingUserIds] = useState({})
+  const [roleForm, setRoleForm] = useState({ userId: '', role: 'moderator' })
+  const [roleSaving, setRoleSaving] = useState(false)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -300,6 +308,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const cameraOnRef = useRef(cameraOn)
   const desiredMicOnRef = useRef(micOn)
   const desiredCameraOnRef = useRef(cameraOn)
+  const noiseCancellationRef = useRef(noiseCancellation)
+  const voiceEffectRef = useRef(voiceEffect)
   const rtcModeRef = useRef(rtcMode)
   const cameraFilterRef = useRef(cameraFilter)
   const beautySettingsRef = useRef(beautySettings)
@@ -432,6 +442,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     localTrackCleanupRef.current.set(track, () => {
       track.removeEventListener('ended', handleEnded)
     })
+  }
+
+  function audioProcessingOptions() {
+    return {
+      audioProcessing: {
+        echoCancellation: true,
+        noiseSuppression: noiseCancellationRef.current,
+        autoGainControl: true,
+        voiceEffect: voiceEffectRef.current,
+      },
+    }
   }
 
   function monitorLocalCameraTracks(stream = streamRef.current) {
@@ -1074,6 +1095,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setScreenSharing(false)
       setExpandedScreenShareId('')
       setActiveToolPanel(null)
+      setRoomControls(null)
     }
   }
 
@@ -1303,7 +1325,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   async function attachNewLocalTrack(kind, options = {}) {
-    const { track } = await requestLocalMediaTrack(kind)
+    const { track } = await requestLocalMediaTrack(kind, kind === 'audio' ? audioProcessingOptions() : {})
     return attachCapturedLocalTrack(kind, track, options)
   }
 
@@ -1610,6 +1632,89 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setActiveToolPanel(null)
     setChatFocusRequest((request) => request + 1)
     setStatus(room?.chat_enabled === false ? 'Chat is disabled for this room.' : 'Chat composer is ready')
+  }
+
+  async function loadRoomControls({ quiet = false } = {}) {
+    const targetRoomId = activeRoomIdRef.current || Number(room?.id || roomId || 0)
+    if (!targetRoomId || controlsLoading) return null
+
+    try {
+      setControlsLoading(true)
+      if (!quiet) setStatus('Loading room controls...')
+      const data = await apiRequest(`/rooms/${targetRoomId}/controls`)
+      setRoomControls(data.controls || null)
+      if (!quiet) setStatus('Room controls loaded.')
+      return data.controls || null
+    } catch (error) {
+      if (error.status === 403) {
+        setRoomControls(null)
+        if (!quiet) setStatus('Room controls are available to the owner, admins, and moderators.')
+      } else if (!quiet) {
+        setStatus(`Room controls failed: ${error.message}`)
+      }
+      return null
+    } finally {
+      setControlsLoading(false)
+    }
+  }
+
+  function openManageTool() {
+    setActiveToolPanel((current) => (current === 'manage' ? null : 'manage'))
+    loadRoomControls({ quiet: true })
+  }
+
+  async function applyParticipantModeration(participant, action) {
+    const targetUserId = Number(participant?.user_id || 0)
+    const targetRoomId = activeRoomIdRef.current || Number(room?.id || roomId || 0)
+    if (!targetRoomId || !targetUserId || moderatingUserIds[targetUserId]) return
+
+    setModeratingUserIds((previous) => ({ ...previous, [targetUserId]: true }))
+    setStatus('')
+
+    try {
+      const pathAction = action === 'disable_camera' ? 'moderation' : action === 'mute_mic' ? 'mute' : action
+      const data = await apiRequest(`/rooms/${targetRoomId}/participants/${targetUserId}/${pathAction}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          action,
+          ...(action === 'ban' ? { ban_type: 'temporary', duration_minutes: 60, reason: 'Room moderation' } : {}),
+        }),
+      })
+      if (data.controls) setRoomControls(data.controls)
+      setStatus(`${participant.user_name || `User #${targetUserId}`} ${action === 'mute_mic' ? 'muted' : action === 'disable_camera' ? 'camera paused' : action === 'kick' ? 'removed' : 'banned'}.`)
+    } catch (error) {
+      setStatus(`Moderation failed: ${error.message}`)
+    } finally {
+      setModeratingUserIds((previous) => {
+        const next = { ...previous }
+        delete next[targetUserId]
+        return next
+      })
+    }
+  }
+
+  async function saveRoomRole(removeRole = false) {
+    const targetRoomId = activeRoomIdRef.current || Number(room?.id || roomId || 0)
+    const targetUserId = Number(roleForm.userId || 0)
+    if (!targetRoomId || !targetUserId || roleSaving) return
+
+    setRoleSaving(true)
+    setStatus('')
+
+    try {
+      const data = await apiRequest(removeRole
+        ? `/rooms/${targetRoomId}/roles/${targetUserId}`
+        : `/rooms/${targetRoomId}/roles`, {
+        method: removeRole ? 'DELETE' : 'POST',
+        body: removeRole ? undefined : JSON.stringify({ user_id: targetUserId, role: roleForm.role }),
+      })
+      if (data.controls) setRoomControls(data.controls)
+      setStatus(data.message || (removeRole ? 'Room role removed.' : 'Room role assigned.'))
+    } catch (error) {
+      setStatus(`Role update failed: ${error.message}`)
+    } finally {
+      setRoleSaving(false)
+    }
   }
 
   function uniqueIds(values = []) {
@@ -2264,6 +2369,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         mediaMode === 'real' ? 'real' : mediaMode === 'mock' ? 'mock' : 'auto',
         selectedRtcMode,
         {
+          ...audioProcessingOptions(),
           timeoutMs: LOCAL_MEDIA_FAST_TIMEOUT_MS,
           onLateTrack: ({ kind, track }) => {
             if (startupCancelled) {
@@ -2616,6 +2722,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('moderation-action', (payload) => {
         if (!payload?.targetUserId) return
+        if (payload.controls) setRoomControls(payload.controls)
 
         if (payload.targetUserId === user?.id) {
           if (payload.action === 'mute_mic') {
@@ -2663,6 +2770,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             return next
           })
         }
+      })
+      socket.on('room-controls-updated', (payload) => {
+        if (payload?.controls) {
+          setRoomControls(payload.controls)
+          if (payload.controls.room) setRoom(payload.controls.room)
+        }
+      })
+      socket.on('room-roles-updated', (payload) => {
+        if (payload?.controls) setRoomControls(payload.controls)
       })
       socket.on('disconnect', (reason) => {
         if (socketRef.current === socket) {
@@ -2816,6 +2932,38 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
+  async function toggleNoiseCancellation() {
+    const next = !noiseCancellationRef.current
+    noiseCancellationRef.current = next
+    setNoiseCancellation(next)
+
+    const audioTrack = streamRef.current?.getAudioTracks?.().find((track) => track.readyState === 'live') || null
+    if (!audioTrack || typeof audioTrack.applyConstraints !== 'function') {
+      setStatus(next ? 'Noise cancellation will apply to the next microphone track.' : 'Noise cancellation disabled for the next microphone track.')
+      return
+    }
+
+    try {
+      await audioTrack.applyConstraints({
+        echoCancellation: true,
+        noiseSuppression: next,
+        autoGainControl: true,
+      })
+      setStatus(next ? 'Noise cancellation enabled.' : 'Noise cancellation disabled.')
+    } catch (error) {
+      setStatus(`Noise cancellation setting saved; browser could not update live mic: ${error.message}`)
+    }
+  }
+
+  function changeVoiceEffect(nextEffect) {
+    const normalizedEffect = ['natural', 'clear', 'deep', 'bright'].includes(nextEffect) ? nextEffect : 'natural'
+    voiceEffectRef.current = normalizedEffect
+    setVoiceEffect(normalizedEffect)
+    setStatus(normalizedEffect === 'natural'
+      ? 'Voice changer disabled.'
+      : `${normalizedEffect[0].toUpperCase()}${normalizedEffect.slice(1)} voice preset selected.`)
+  }
+
   async function toggleCamera() {
     if (rtcMode === 'audio' || mediaUpdating.camera) return
     const next = !cameraOn
@@ -2896,6 +3044,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [cameraOn])
 
   useEffect(() => {
+    noiseCancellationRef.current = noiseCancellation
+  }, [noiseCancellation])
+
+  useEffect(() => {
+    voiceEffectRef.current = voiceEffect
+  }, [voiceEffect])
+
+  useEffect(() => {
     rtcModeRef.current = rtcMode
   }, [rtcMode])
 
@@ -2968,6 +3124,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const timer = window.setInterval(sendPresence, RTC_PRESENCE_INTERVAL_MS)
     return () => window.clearInterval(timer)
   }, [joined, user?.id])
+
+  useEffect(() => {
+    if (!joined) return undefined
+    loadRoomControls({ quiet: true })
+    return undefined
+  }, [joined, room?.id, user?.id])
 
   useEffect(() => {
     if (!joined) return undefined
@@ -3131,6 +3293,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const mirrorEnabled = normalizedBeautySettings.mirror
   const beautyActiveCount = BEAUTY_CONTROLS.filter((control) => Number(normalizedBeautySettings[control.id] || 0) > 0).length + (mirrorEnabled ? 1 : 0)
   const cameraEffectsActive = cameraFilterActive || beautySettingsActive || backgroundEffectActive
+  const audioEffectsActive = noiseCancellation || voiceEffect !== 'natural'
   const filterButtonDisabled = joining || mediaUpdating.filter || rtcMode === 'audio'
   const activeFollowRequest = followRelations.incoming.find((request) => Number(request.id) === Number(activeFollowRequestId))
     || followRelations.incoming[0]
@@ -3260,7 +3423,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Beauty & Background' : 'AI guard'}</strong>
+                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Beauty & Background' : activeToolPanel === 'audio' ? 'Audio effects' : activeToolPanel === 'manage' ? 'Room Ops' : 'AI guard'}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
                 </header>
                 {activeToolPanel === 'screen' ? (
@@ -3270,6 +3433,53 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
                     </button>
                     <small>{room?.screen_share_enabled === false ? 'Screen share is turned off for this room.' : 'Presenter tools are available for this room.'}</small>
+                  </div>
+                ) : activeToolPanel === 'audio' ? (
+                  <div className="tool-status-panel camera-filter-panel">
+                    <p>{noiseCancellation ? 'Noise cancellation is enabled for microphone capture.' : 'Noise cancellation is off for microphone capture.'}</p>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Noise cancellation</strong>
+                        <small>{noiseCancellation ? 'On' : 'Off'}</small>
+                      </header>
+                      <button
+                        type="button"
+                        className={noiseCancellation ? 'beauty-mirror-button active' : 'beauty-mirror-button'}
+                        onClick={toggleNoiseCancellation}
+                        aria-pressed={noiseCancellation}
+                        title={noiseCancellation ? 'Turn noise cancellation off' : 'Turn noise cancellation on'}
+                      >
+                        <span className="control-glyph mic" aria-hidden="true"></span>
+                        <span>
+                          <strong>NC</strong>
+                          <small>{noiseCancellation ? 'Browser noise suppression on' : 'Browser noise suppression off'}</small>
+                        </span>
+                        <b>{noiseCancellation ? 'On' : 'Off'}</b>
+                      </button>
+                    </section>
+                    <section className="camera-effect-section">
+                      <header>
+                        <strong>Voice changer</strong>
+                        <small>{voiceEffect}</small>
+                      </header>
+                      <div className="camera-filter-grid" aria-label="Voice changer presets">
+                        {['natural', 'clear', 'deep', 'bright'].map((effect) => (
+                          <button
+                            key={effect}
+                            type="button"
+                            className={voiceEffect === effect ? 'active' : ''}
+                            onClick={() => changeVoiceEffect(effect)}
+                            aria-pressed={voiceEffect === effect}
+                          >
+                            <span className="filter-swatch bright" aria-hidden="true"></span>
+                            <strong>{effect}</strong>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                    <div className="camera-filter-footer">
+                      <small>Voice presets are sent through the SDK audio options for compatible processors.</small>
+                    </div>
                   </div>
                 ) : activeToolPanel === 'filters' ? (
                   <div className="tool-status-panel camera-filter-panel">
@@ -3385,6 +3595,66 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Camera effects apply after screen share stops.' : `Outgoing camera effects - ${cameraFilterPerformance}`}</small>
                     </div>
                   </div>
+                ) : activeToolPanel === 'manage' ? (
+                  <div className="tool-status-panel room-ops-panel">
+                    {controlsLoading ? <LoadingMovie label="Loading controls" compact /> : null}
+                    {!roomControls ? (
+                      <div className="empty-chat">
+                        <strong>Room controls</strong>
+                        <span>Available to the room owner, admins, and moderators.</span>
+                        <button type="button" className="secondary-button" onClick={() => loadRoomControls()} disabled={controlsLoading}>Refresh</button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="guard-summary">
+                          <span>{roomControls.role}</span>
+                          <strong>{roomControls.participants?.length || 0}</strong>
+                          <small>active participant{roomControls.participants?.length === 1 ? '' : 's'}</small>
+                        </div>
+                        <div className="room-ops-list">
+                          {(roomControls.participants || []).map((participant) => {
+                            const targetUserId = Number(participant.user_id || 0)
+                            const isSelf = targetUserId === Number(user?.id || 0)
+                            const busy = Boolean(moderatingUserIds[targetUserId])
+                            return (
+                              <article key={`${participant.session_id}-${targetUserId}`} className="room-ops-row">
+                                <span>
+                                  <strong>{participant.user_name || `User #${targetUserId}`}</strong>
+                                  <small>{participant.role_in_room} · {participant.mic_enabled ? 'mic on' : 'mic off'} · {participant.camera_enabled ? 'cam on' : 'cam off'}</small>
+                                </span>
+                                <div className="chat-actions">
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={isSelf || busy}>Mute</button>
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={isSelf || busy}>Camera</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={isSelf || busy}>Kick</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={isSelf || busy}>Ban</button>
+                                </div>
+                              </article>
+                            )
+                          })}
+                          {!(roomControls.participants || []).length ? <small>No active participants yet.</small> : null}
+                        </div>
+                        {roomControls.can_assign_roles ? (
+                          <form className="chat-edit-form room-role-form" onSubmit={(event) => {
+                            event.preventDefault()
+                            saveRoomRole(false)
+                          }}>
+                            <input
+                              inputMode="numeric"
+                              value={roleForm.userId}
+                              onChange={(event) => setRoleForm((current) => ({ ...current, userId: event.target.value.replace(/\D/g, '') }))}
+                              placeholder="User ID"
+                            />
+                            <select value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value }))}>
+                              <option value="moderator">Moderator</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                            <button type="submit" disabled={roleSaving || !roleForm.userId}>Assign</button>
+                            <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleForm.userId}>Remove</button>
+                          </form>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
                     <p>Be polite and respectful. AI guard watches the current room text for risky phrases.</p>
@@ -3436,6 +3706,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph camera"></span>
               </button>
               <button
+                className={activeToolPanel === 'audio' || audioEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                onClick={() => toggleToolPanel('audio')}
+                aria-label={activeToolPanel === 'audio' ? 'Close audio effects' : 'Open audio effects'}
+                aria-pressed={activeToolPanel === 'audio'}
+                title="Audio effects"
+              >
+                <span className="control-glyph mic"></span>
+                <span>Audio</span>
+              </button>
+              <button
                 className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
                 onClick={() => toggleToolPanel('filters')}
                 disabled={filterButtonDisabled}
@@ -3457,6 +3737,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph screen"></span>
               </button>
               <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
+                <span className="control-glyph guard"></span>
+              </button>
+              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
                 <span className="control-glyph guard"></span>
               </button>
             </div>

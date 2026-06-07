@@ -7,7 +7,8 @@ const APP_PLATFORMS = new Set(['web', 'ios', 'android', 'web_mobile', 'server'])
 const APP_STATUSES = new Set(['active', 'inactive', 'suspended'])
 const PLAN_REVIEW_STATUSES = new Set(['approved', 'rejected'])
 const PLAN_STATUSES = new Set(['active', 'inactive'])
-const ADMIN_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
+const ADMIN_ROOM_TYPES = new Set(['audio', 'youtube_audio', 'one_to_one_audio', 'video', 'one_to_one_video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
+const ADMIN_ONE_TO_ONE_ROOM_TYPES = new Set(['one_to_one_audio', 'one_to_one_video'])
 const ADMIN_ROOM_PRIVACY = new Set(['public', 'private', 'password'])
 const ADMIN_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
 const MAX_ADMIN_ROOM_SEATS = 20
@@ -268,14 +269,20 @@ function parseAdminRoomPayload(body = {}) {
   const roomType = cleanString(readBodyValue(body, 'room_type', 'roomType'), 30) || 'video'
   const privacyType = cleanString(readBodyValue(body, 'privacy_type', 'privacyType'), 30) || 'public'
   const password = cleanString(readBodyValue(body, 'password'), 100)
-  const maxMicCount = positiveInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), 8)
+  const defaultMicCount = ADMIN_ONE_TO_ONE_ROOM_TYPES.has(roomType) ? 2 : 8
+  const maxMicCount = positiveInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), defaultMicCount)
+  const maxAllowedSeats = ADMIN_ONE_TO_ONE_ROOM_TYPES.has(roomType) ? 2 : MAX_ADMIN_ROOM_SEATS
   const errors = {}
 
   if (!name) errors.name = 'Room name is required.'
   if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
   if (!ADMIN_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
   if (!ADMIN_ROOM_PRIVACY.has(privacyType)) errors.privacy_type = 'Choose a valid privacy type.'
-  if (maxMicCount < 1 || maxMicCount > MAX_ADMIN_ROOM_SEATS) errors.max_mic_count = `Max mic count must be between 1 and ${MAX_ADMIN_ROOM_SEATS}.`
+  if (maxMicCount < 1 || maxMicCount > maxAllowedSeats) {
+    errors.max_mic_count = ADMIN_ONE_TO_ONE_ROOM_TYPES.has(roomType)
+      ? 'One-to-one rooms support exactly 1 or 2 seats.'
+      : `Max mic count must be between 1 and ${MAX_ADMIN_ROOM_SEATS}.`
+  }
   if (privacyType === 'password' && password.length < 4) errors.password = 'Password rooms need a password of at least 4 characters.'
 
   return {

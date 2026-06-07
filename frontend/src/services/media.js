@@ -1,4 +1,4 @@
-const audioConstraints = {
+const defaultAudioProcessing = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
@@ -55,7 +55,7 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
   }
 }
 
-export async function requestLocalMediaTrack(kind) {
+export async function requestLocalMediaTrack(kind, options = {}) {
   const mediaKind = kind === 'audio' ? 'audio' : 'video'
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -68,7 +68,7 @@ export async function requestLocalMediaTrack(kind) {
 
     const stream = await navigator.mediaDevices.getUserMedia(
       mediaKind === 'audio'
-        ? { audio: audioConstraints, video: false }
+        ? { audio: buildAudioConstraints(options), video: false }
         : { audio: false, video: videoConstraints }
     )
     const [track] = mediaKind === 'audio' ? stream.getAudioTracks() : stream.getVideoTracks()
@@ -82,6 +82,19 @@ export async function requestLocalMediaTrack(kind) {
   } catch (error) {
     if (error?.message?.startsWith('No ')) throw error
     throw new Error(formatSingleMediaError(error, mediaKind))
+  }
+}
+
+function buildAudioConstraints(options = {}) {
+  const processing = {
+    ...defaultAudioProcessing,
+    ...(options.audioProcessing || {}),
+  }
+
+  return {
+    echoCancellation: Boolean(processing.echoCancellation),
+    noiseSuppression: Boolean(processing.noiseSuppression),
+    autoGainControl: Boolean(processing.autoGainControl),
   }
 }
 
@@ -162,7 +175,7 @@ async function captureCombinedVideoMedia(options = {}) {
   const failures = {}
   const timeoutMs = Math.max(0, Number(options.timeoutMs || 0))
   const onLateTrack = typeof options.onLateTrack === 'function' ? options.onLateTrack : null
-  const capture = startCombinedMediaCapture()
+  const capture = startCombinedMediaCapture(options)
   const result = timeoutMs > 0 ? await waitForCapture(capture, timeoutMs) : await capture.promise
 
   if (result?.timedOut) {
@@ -206,7 +219,7 @@ async function captureSeparateMedia(rtcMode, options = {}) {
   const captures = captureKinds.map((kind) => startMediaCapture(
     kind,
     kind === 'audio'
-      ? { audio: audioConstraints, video: false }
+      ? { audio: buildAudioConstraints(options), video: false }
       : { audio: false, video: videoConstraints }
   ))
   const results = await Promise.all(captures.map((capture) => (
@@ -247,7 +260,7 @@ async function captureSeparateMedia(rtcMode, options = {}) {
   }
 }
 
-function startCombinedMediaCapture() {
+function startCombinedMediaCapture(options = {}) {
   const promise = Promise.all([
     getLocalMediaPermissionState('audio'),
     getLocalMediaPermissionState('video'),
@@ -262,7 +275,7 @@ function startCombinedMediaCapture() {
       }
 
       return navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints,
+        audio: buildAudioConstraints(options),
         video: videoConstraints,
       })
     })

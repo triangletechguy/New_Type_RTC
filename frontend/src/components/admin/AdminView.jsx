@@ -2563,8 +2563,11 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
           <span>Type</span>
           <select value={form.room_type} onChange={(event) => change('room_type', event.target.value)}>
             <option value="video">Video</option>
+            <option value="one_to_one_video">One-to-one video</option>
             <option value="group_video">Group video</option>
             <option value="audio">Audio</option>
+            <option value="youtube_audio">YouTube audio</option>
+            <option value="one_to_one_audio">One-to-one voice</option>
             <option value="group_audio">Group audio</option>
             <option value="solo_live">Solo live</option>
             <option value="pk_live">PK live</option>
@@ -2607,6 +2610,14 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
             onChange={(event) => change('screen_share_enabled', event.target.checked)}
           />
           <span>Screen share</span>
+        </label>
+        <label className="admin-room-toggle">
+          <input
+            type="checkbox"
+            checked={form.gift_enabled}
+            onChange={(event) => change('gift_enabled', event.target.checked)}
+          />
+          <span>Gifts</span>
         </label>
         <button className="primary-button" type="submit" disabled={creating || (isSuperAdmin && !form.tenant_id)}>
           {creating ? 'Creating...' : 'Create room'}

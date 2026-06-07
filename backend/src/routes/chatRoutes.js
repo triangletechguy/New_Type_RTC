@@ -4,11 +4,20 @@ const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 
-const validMessageTypes = new Set(['text', 'image', 'voice', 'system'])
+const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
 const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
+const giftDataUrlPattern = /^data:(image\/(png|jpe?g|gif|webp|svg\+xml)|application\/(octet-stream|x-svga));base64,[a-z0-9+/=\s]+$/i
 const audioDataUrlPattern = /^data:audio\/(webm|ogg|mpeg|mp3|mp4|wav|x-m4a)(;codecs=[^;]+)?;base64,[a-z0-9+/=\s]+$/i
 const maxImageDataUrlLength = 7 * 1024 * 1024
+const maxGiftDataUrlLength = 9 * 1024 * 1024
 const maxAudioDataUrlLength = 7 * 1024 * 1024
+const aiSecurityRules = [
+  { label: 'abuse', pattern: /\b(abuse|harass|bully|threaten|hate speech)\b/i },
+  { label: 'adult content', pattern: /\b(nude|nudity|porn|sexual explicit)\b/i },
+  { label: 'violence', pattern: /\b(violent|kill|murder|attack this user)\b/i },
+  { label: 'scam', pattern: /\b(spam|scam|fraud|phishing|fake giveaway)\b/i },
+  { label: 'private transaction', pattern: /\b(private transaction|off[-\s]?platform payment|wire transfer|crypto wallet|western union)\b/i },
+]
 let chatSchemaPromise = null
 
 async function ensureChatSchema() {
@@ -168,6 +177,40 @@ function audioMediaError(mediaUrl) {
   } catch {
     return 'Audio URL is invalid.'
   }
+}
+
+function giftMediaError(mediaUrl) {
+  if (!mediaUrl) return ''
+  if (mediaUrl.length > maxGiftDataUrlLength) return 'Gift asset must be smaller than 7 MB.'
+
+  if (mediaUrl.startsWith('data:')) {
+    return giftDataUrlPattern.test(mediaUrl) ? '' : 'Gift asset must be SVG, SVGA, PNG, JPG, GIF, or WebP.'
+  }
+
+  try {
+    const url = new URL(mediaUrl)
+    if (!['http:', 'https:'].includes(url.protocol)) return 'Gift asset URL must be HTTP or HTTPS.'
+    const cleanPath = url.pathname.toLowerCase()
+    return /\.(svga|svg|png|jpe?g|gif|webp)$/.test(cleanPath)
+      ? ''
+      : 'Gift asset URL must end with .svga, .svg, .png, .jpg, .jpeg, .gif, or .webp.'
+  } catch {
+    return 'Gift asset URL is invalid.'
+  }
+}
+
+function aiMessageSecurityError(messageBody, messageType = 'text') {
+  if (!['text', 'image', 'gift'].includes(messageType)) return ''
+
+  const text = String(messageBody || '')
+    .toLowerCase()
+    .replace(/[\s_.,;:!?()[\]{}'"`~<>|/\\-]+/g, ' ')
+    .trim()
+
+  if (!text) return ''
+
+  const matchedRule = aiSecurityRules.find((rule) => rule.pattern.test(text))
+  return matchedRule ? `AI security blocked this message for ${matchedRule.label}.` : ''
 }
 
 function messageSelectSql() {
@@ -518,7 +561,6 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       AND cm.room_id = :roomId
       ${afterId ? 'AND cm.id > :afterId' : ''}
       AND cm.is_deleted = 0
-      AND cm.message_type <> 'gift'
       AND NOT EXISTS (
         SELECT 1
         FROM chat_message_hides hidden
@@ -572,6 +614,10 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     } else if (messageType === 'voice') {
       const mediaError = audioMediaError(mediaUrl)
       if (mediaError) return res.status(422).json({ message: mediaError })
+    } else if (messageType === 'gift') {
+      if (!body) return res.status(422).json({ message: 'Choose a gift before sending.' })
+      const mediaError = giftMediaError(mediaUrl)
+      if (mediaError) return res.status(422).json({ message: mediaError })
     } else if (!body) {
       return res.status(422).json({ message: 'Message body is required.' })
     }
@@ -582,6 +628,13 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     if (!room.chat_enabled) {
       return res.status(403).json({ message: 'Chat is disabled in this room.' })
+    }
+    if (messageType === 'gift' && !room.gift_enabled) {
+      return res.status(403).json({ message: 'Gifts are disabled in this room.' })
+    }
+    if (Number(room.ai_security_enabled)) {
+      const securityError = aiMessageSecurityError(body, messageType)
+      if (securityError) return res.status(422).json({ message: securityError })
     }
 
     const result = await query(
@@ -605,7 +658,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
         messageBody: messageType === 'image'
           ? (body || 'sent a photo')
           : messageType === 'voice' ? (body || 'sent a voice message') : body,
-        mediaUrl: ['image', 'voice'].includes(messageType) ? mediaUrl : mediaUrl || null,
+        mediaUrl: ['image', 'voice', 'gift'].includes(messageType) ? mediaUrl : mediaUrl || null,
       }
     )
 
@@ -1055,6 +1108,8 @@ router.patch('/direct-messages/messages/:id', authMiddleware, async (req, res, n
     if (message.message_type !== 'text') {
       return res.status(422).json({ message: 'Only text messages can be edited.' })
     }
+    const securityError = aiMessageSecurityError(body, 'text')
+    if (securityError) return res.status(422).json({ message: securityError })
 
     await query(
       `
@@ -1206,6 +1261,8 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
     } else if (!body) {
       return res.status(422).json({ message: 'Message body is required.' })
     }
+    const securityError = aiMessageSecurityError(body, messageType)
+    if (securityError) return res.status(422).json({ message: securityError })
 
     const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
@@ -1295,6 +1352,12 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
       return res.status(422).json({ message: 'Only text messages can be edited.' })
     }
 
+    const room = await findRoomForChat(message.room_id)
+    if (Number(room?.ai_security_enabled)) {
+      const securityError = aiMessageSecurityError(body, 'text')
+      if (securityError) return res.status(422).json({ message: securityError })
+    }
+
     await query(
       `
       UPDATE chat_messages
@@ -1309,12 +1372,12 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
       id: messageId,
     })
     const updatedMessage = updatedMessages[0]
-    const room = updatedMessage?.room_id ? await findRoomForChat(updatedMessage.room_id) : null
+    const updatedRoom = updatedMessage?.room_id ? room || await findRoomForChat(updatedMessage.room_id) : null
     let realtimeBroadcasted = false
 
     try {
-      realtimeBroadcasted = room
-        ? await emitRoomRealtime(req, room, 'chat-message-edited', { message: updatedMessage })
+      realtimeBroadcasted = updatedRoom
+        ? await emitRoomRealtime(req, updatedRoom, 'chat-message-edited', { message: updatedMessage })
         : false
     } catch (broadcastError) {
       console.error('[chat] realtime edit broadcast failed', broadcastError)

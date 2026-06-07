@@ -1944,8 +1944,8 @@ async function getDashboard(roomIds) {
       COALESCE(SUM(r.privacy_type = 'public'), 0) AS public_rooms,
       COALESCE(SUM(r.privacy_type = 'private'), 0) AS private_rooms,
       COALESCE(SUM(r.privacy_type = 'password'), 0) AS password_rooms,
-      COALESCE(SUM(r.room_type IN ('video', 'group_video')), 0) AS video_rooms,
-      COALESCE(SUM(r.room_type IN ('audio', 'group_audio')), 0) AS voice_rooms,
+      COALESCE(SUM(r.room_type IN ('video', 'one_to_one_video', 'group_video')), 0) AS video_rooms,
+      COALESCE(SUM(r.room_type IN ('audio', 'youtube_audio', 'one_to_one_audio', 'group_audio')), 0) AS voice_rooms,
       COALESCE(SUM(r.room_type IN ('solo_live', 'pk_live')), 0) AS live_rooms,
       COALESCE(SUM(r.created_at >= CURDATE()), 0) AS created_today
     FROM rooms r

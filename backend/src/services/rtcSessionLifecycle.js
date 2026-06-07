@@ -1,7 +1,7 @@
 const { query, transaction } = require('../config/db')
 
 function usageTypeFromRoomType(roomType) {
-  return ['audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
+  return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
 }
 
 async function closeParticipantSession(connection, room, participant, userId) {

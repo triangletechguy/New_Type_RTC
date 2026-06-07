@@ -7,13 +7,27 @@ const { query, transaction } = require('../config/db')
 const router = express.Router()
 const EXTERNAL_USER_STATUSES = new Set(['active', 'inactive', 'banned'])
 const RTC_ROLES = new Set(['audience', 'publisher', 'moderator', 'admin', 'owner'])
-const CLIENT_ROOM_TYPES = new Set(['audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live'])
-const CLIENT_VIDEO_ROOM_TYPES = new Set(['video', 'group_video', 'solo_live', 'pk_live'])
+const ROOM_TYPES = ['audio', 'youtube_audio', 'one_to_one_audio', 'video', 'one_to_one_video', 'group_audio', 'group_video', 'solo_live', 'pk_live']
+const CLIENT_ROOM_TYPES = new Set(ROOM_TYPES)
+const CLIENT_VIDEO_ROOM_TYPES = new Set(['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'])
+const CLIENT_ONE_TO_ONE_ROOM_TYPES = new Set(['one_to_one_audio', 'one_to_one_video'])
 const CLIENT_PRIVACY_TYPES = new Set(['public', 'private', 'password'])
 const CLIENT_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
 const CLIENT_ROOM_THEMES = new Set(['neon', 'midnight', 'studio', 'mint'])
 const RTC_TOKEN_TTL_SECONDS = Number(process.env.CLIENT_RTC_TOKEN_TTL_SECONDS || 900)
 const MAX_CLIENT_ROOM_SEATS = 20
+const CLIENT_PERMISSION_ALIASES = {
+  join: ['room:join'],
+  publish: ['media:publish'],
+  publish_audio: ['media:publish', 'media:publish_audio'],
+  publish_video: ['media:publish', 'media:publish_video'],
+  subscribe: ['media:subscribe'],
+  screen_share: ['screen:share'],
+  chat: ['chat:read', 'chat:write'],
+  mute: ['moderation:mute'],
+  kick: ['moderation:kick'],
+  ban: ['moderation:ban'],
+}
 let clientSchemaPromise = null
 
 function cleanString(value, maxLength = 255) {
@@ -117,9 +131,15 @@ function parsePermissionList(value) {
     : String(value || '')
       .split(',')
 
-  return [...new Set(raw
+  const permissions = []
+  raw
     .map((permission) => cleanString(permission, 60).toLowerCase())
-    .filter(Boolean))]
+    .filter(Boolean)
+    .forEach((permission) => {
+      permissions.push(...(CLIENT_PERMISSION_ALIASES[permission] || [permission]))
+    })
+
+  return [...new Set(permissions)]
     .slice(0, 30)
 }
 
@@ -166,6 +186,103 @@ function clientBillingPolicy(tenant = {}) {
     tenant_id: tenant.id ? Number(tenant.id) : tenant.tenant_id ? Number(tenant.tenant_id) : null,
     tenant_name: tenant.name || tenant.tenant_name || null,
     note: 'The client company is billed for invited user RTC usage. Synced external users are not charged by this platform.',
+  }
+}
+
+function featureForRoomType(roomType) {
+  if (roomType === 'youtube_audio') return 'youtube_audio_room'
+  if (roomType === 'one_to_one_audio') return 'one_to_one_voice_calling'
+  if (roomType === 'one_to_one_video') return 'one_to_one_video_calling'
+  if (roomType === 'group_audio') return 'group_voice_chat'
+  if (roomType === 'solo_live') return 'solo_video_live'
+  if (roomType === 'pk_live') return 'live_video_pk'
+  if (CLIENT_VIDEO_ROOM_TYPES.has(roomType)) return 'normal_video_group_chat'
+  return 'normal_audio_room'
+}
+
+function aiSecurityFeatureForRoomType(roomType) {
+  return CLIENT_VIDEO_ROOM_TYPES.has(roomType) ? 'ai_security_video' : 'ai_security_audio'
+}
+
+function featureEnabled(clientApp, featureKey) {
+  return new Set(clientApp?.enabled_features || []).has(featureKey)
+}
+
+function requireFeature(clientApp, featureKey, message) {
+  if (!featureKey || featureEnabled(clientApp, featureKey)) return
+  throw createClientError(403, 'feature_disabled', message || `${featureKey} is not enabled for this client app.`)
+}
+
+function roomTypeEnumSql() {
+  return ROOM_TYPES.map((roomType) => `'${roomType}'`).join(', ')
+}
+
+function isOneToOneRoom(roomType) {
+  return CLIENT_ONE_TO_ONE_ROOM_TYPES.has(roomType)
+}
+
+function defaultMaxMicCountForRoomType(roomType) {
+  return isOneToOneRoom(roomType) ? 2 : 8
+}
+
+function rtcProfileForRoomType(roomType) {
+  const liveBroadcast = ['solo_live', 'pk_live'].includes(roomType)
+  return {
+    channel_profile: liveBroadcast ? 'live_broadcasting' : 'communication',
+    agora_web_mode: liveBroadcast ? 'live' : 'rtc',
+    client_role: liveBroadcast ? 'broadcaster' : 'broadcaster',
+    media_type: CLIENT_VIDEO_ROOM_TYPES.has(roomType) ? 'video' : 'audio',
+  }
+}
+
+function assertClientRoomFeatures(clientApp, roomLike = {}) {
+  const roomType = roomLike.roomType || roomLike.room_type || 'video'
+  const privacyType = roomLike.privacyType || roomLike.privacy_type || 'public'
+  const maxMicCount = Number(roomLike.maxMicCount ?? roomLike.max_mic_count ?? 0)
+
+  requireFeature(clientApp, featureForRoomType(roomType), 'This room type is not enabled for this client app.')
+  if (['private', 'password'].includes(privacyType)) {
+    requireFeature(clientApp, 'private_room_password', 'Private and password rooms are not enabled for this client app.')
+  }
+  if (roomLike.chatEnabled === true || roomLike.chat_enabled === true || Number(roomLike.chat_enabled) === 1) {
+    requireFeature(clientApp, 'message_chat', 'Room chat is not enabled for this client app.')
+  }
+  if (roomLike.screenShareEnabled === true || roomLike.screen_share_enabled === true || Number(roomLike.screen_share_enabled) === 1) {
+    requireFeature(clientApp, 'screen_share', 'Screen share is not enabled for this client app.')
+  }
+  if (roomLike.aiSecurityEnabled === true || roomLike.ai_security_enabled === true || Number(roomLike.ai_security_enabled) === 1) {
+    requireFeature(clientApp, aiSecurityFeatureForRoomType(roomType), 'AI security is not enabled for this room type.')
+  }
+  if (roomLike.theme) {
+    requireFeature(clientApp, 'room_theme', 'Room themes are not enabled for this client app.')
+  }
+  if (isOneToOneRoom(roomType) && maxMicCount > 2) {
+    throw createClientError(422, 'room_capacity_reached', 'One-to-one rooms support a maximum of 2 participants.')
+  }
+  if (clientApp?.max_participants_per_room > 0 && maxMicCount > clientApp.max_participants_per_room) {
+    throw createClientError(422, 'room_capacity_reached', `This package allows ${clientApp.max_participants_per_room} participants per room.`)
+  }
+}
+
+function assertTokenPermissionsAllowed(clientApp, room, tokenPayload) {
+  assertClientRoomFeatures(clientApp, {
+    room_type: room.room_type,
+    privacy_type: room.privacy_type,
+    chat_enabled: Boolean(Number(room.chat_enabled)),
+    screen_share_enabled: Boolean(Number(room.screen_share_enabled)),
+    ai_security_enabled: Boolean(Number(room.ai_security_enabled)),
+    max_mic_count: Number(room.max_mic_count || 0),
+  })
+
+  const permissions = new Set(tokenPayload.permissions || [])
+  if ((permissions.has('chat:read') || permissions.has('chat:write')) && !Number(room.chat_enabled)) {
+    throw createClientError(403, 'permission_denied', 'Chat permission cannot be issued because chat is disabled in this room.')
+  }
+  if (permissions.has('screen:share') && !Number(room.screen_share_enabled)) {
+    throw createClientError(403, 'permission_denied', 'Screen share permission cannot be issued because screen share is disabled in this room.')
+  }
+  if (['moderator', 'admin', 'owner'].includes(tokenPayload.role)) {
+    requireFeature(clientApp, 'room_roles', 'Room roles are not enabled for this client app.')
   }
 }
 
@@ -261,6 +378,9 @@ async function ensureClientSchema() {
       }
       await query("UPDATE client_apps SET api_key_hash = COALESCE(NULLIF(api_key_hash, ''), SHA2(api_key, 256)), api_key = CONCAT(LEFT(api_key, 6), '...', RIGHT(api_key, 4)) WHERE api_key NOT LIKE '%...%'")
 
+      const roomTypeEnum = roomTypeEnumSql()
+      await query(`ALTER TABLE rooms MODIFY COLUMN room_type ENUM(${roomTypeEnum}) NOT NULL DEFAULT 'video'`)
+      await query(`ALTER TABLE rtc_sessions MODIFY COLUMN session_type ENUM(${roomTypeEnum}) NOT NULL`)
       await query("ALTER TABLE rtc_sessions MODIFY COLUMN rtc_provider ENUM('native_webrtc', 'mediasoup', 'janus', 'livekit_style') NOT NULL DEFAULT 'native_webrtc'")
 
       await query(
@@ -438,7 +558,9 @@ async function clientApiAuth(req, res, next) {
         t.name AS tenant_name,
         t.status AS tenant_status,
         sp.name AS plan_name,
-        sp.code AS plan_code
+        sp.code AS plan_code,
+        sp.included_features AS plan_features,
+        sp.max_participants_per_room
       FROM client_apps ca
       INNER JOIN tenants t ON t.id = ca.tenant_id
       LEFT JOIN service_plans sp ON sp.id = ca.plan_id
@@ -483,6 +605,20 @@ async function clientApiAuth(req, res, next) {
       )
     }
 
+    const featureRows = await query(
+      `
+      SELECT feature_key, enabled
+      FROM client_feature_flags
+      WHERE tenant_id = :tenantId
+      AND (app_id = :appId OR app_id IS NULL)
+      `,
+      { tenantId: app.tenant_id, appId: app.id }
+    )
+    const featureMap = new Map(parseJsonArray(app.plan_features).map((featureKey) => [featureKey, true]))
+    featureRows.forEach((row) => {
+      featureMap.set(row.feature_key, Boolean(Number(row.enabled)))
+    })
+
     req.clientApp = {
       id: app.id,
       tenant_id: app.tenant_id,
@@ -493,6 +629,10 @@ async function clientApiAuth(req, res, next) {
       status: app.app_status,
       plan_name: app.plan_name,
       plan_code: app.plan_code,
+      max_participants_per_room: Number(app.max_participants_per_room || 0),
+      enabled_features: Array.from(featureMap.entries())
+        .filter(([, enabled]) => enabled)
+        .map(([featureKey]) => featureKey),
       allowed_origins: [...allowedOrigins],
     }
     req.clientTenant = {
@@ -726,7 +866,11 @@ function parseClientRoomPayload(body = {}) {
   const roomType = cleanString(readBodyValue(body, 'room_type', 'roomType'), 30).toLowerCase() || 'video'
   const privacyType = cleanString(readBodyValue(body, 'privacy_type', 'privacyType'), 30).toLowerCase() || 'public'
   const password = cleanString(readBodyValue(body, 'password'), 100)
-  const maxMicCount = parseInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), 8)
+  const maxMicCount = parseInteger(
+    readBodyValue(body, 'max_mic_count', 'maxMicCount'),
+    defaultMaxMicCountForRoomType(roomType)
+  )
+  const maxAllowedSeats = isOneToOneRoom(roomType) ? 2 : MAX_CLIENT_ROOM_SEATS
   const theme = emptyToNull(readBodyValue(body, 'theme'), 100)
   const errors = {}
 
@@ -735,7 +879,11 @@ function parseClientRoomPayload(body = {}) {
   if (name && name.length < 3) errors.name = 'Room name must be at least 3 characters.'
   if (!CLIENT_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
   if (!CLIENT_PRIVACY_TYPES.has(privacyType)) errors.privacy_type = 'Choose a valid privacy type.'
-  if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_CLIENT_ROOM_SEATS) errors.max_mic_count = `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
+  if (!maxMicCount || maxMicCount < 1 || maxMicCount > maxAllowedSeats) {
+    errors.max_mic_count = isOneToOneRoom(roomType)
+      ? 'one-to-one room max_mic_count must be 1 or 2.'
+      : `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
+  }
   if (privacyType === 'password' && password.length < 4) errors.password = 'Password rooms need a password of at least 4 characters.'
 
   return {
@@ -786,6 +934,7 @@ function formatClientRoom(row) {
       screen_share_enabled: Boolean(Number(row.screen_share_enabled)),
       ai_security_enabled: Boolean(Number(row.ai_security_enabled)),
     },
+    rtc_profile: rtcProfileForRoomType(row.room_type),
     status: row.status,
     signaling_room: `webrtc_tenant_${row.tenant_id}_room_${row.id}`,
     created_at: row.created_at,
@@ -883,6 +1032,9 @@ async function buildClientRoomUpdate(room, body = {}) {
   const updates = []
   const values = []
   const errors = {}
+  const nextRoomType = hasBodyValue(body, 'room_type', 'roomType')
+    ? cleanString(readBodyValue(body, 'room_type', 'roomType'), 30).toLowerCase()
+    : room.room_type
 
   if (hasBodyValue(body, 'name')) {
     const name = cleanString(readBodyValue(body, 'name'), 150)
@@ -904,11 +1056,10 @@ async function buildClientRoomUpdate(room, body = {}) {
   }
 
   if (hasBodyValue(body, 'room_type', 'roomType')) {
-    const roomType = cleanString(readBodyValue(body, 'room_type', 'roomType'), 30).toLowerCase()
-    if (!CLIENT_ROOM_TYPES.has(roomType)) errors.room_type = 'Choose a valid room type.'
+    if (!CLIENT_ROOM_TYPES.has(nextRoomType)) errors.room_type = 'Choose a valid room type.'
     else {
       updates.push('room_type = ?')
-      values.push(roomType)
+      values.push(nextRoomType)
     }
   }
 
@@ -947,12 +1098,18 @@ async function buildClientRoomUpdate(room, body = {}) {
 
   if (hasBodyValue(body, 'max_mic_count', 'maxMicCount')) {
     const maxMicCount = parseInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), null)
-    if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_CLIENT_ROOM_SEATS) {
-      errors.max_mic_count = `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
+    const maxAllowedSeats = isOneToOneRoom(nextRoomType) ? 2 : MAX_CLIENT_ROOM_SEATS
+    if (!maxMicCount || maxMicCount < 1 || maxMicCount > maxAllowedSeats) {
+      errors.max_mic_count = isOneToOneRoom(nextRoomType)
+        ? 'one-to-one room max_mic_count must be 1 or 2.'
+        : `max_mic_count must be between 1 and ${MAX_CLIENT_ROOM_SEATS}.`
     } else {
       updates.push('max_mic_count = ?')
       values.push(maxMicCount)
     }
+  } else if (isOneToOneRoom(nextRoomType) && Number(room.max_mic_count || 0) > 2) {
+    updates.push('max_mic_count = ?')
+    values.push(2)
   }
 
   if (hasBodyValue(body, 'theme')) {
@@ -980,6 +1137,35 @@ async function buildClientRoomUpdate(room, body = {}) {
   }
 
   return { errors, updates, values }
+}
+
+function roomFeatureSnapshot(room, body = {}) {
+  const roomType = hasBodyValue(body, 'room_type', 'roomType')
+    ? cleanString(readBodyValue(body, 'room_type', 'roomType'), 30).toLowerCase()
+    : room.room_type
+  const privacyType = hasBodyValue(body, 'privacy_type', 'privacyType')
+    ? cleanString(readBodyValue(body, 'privacy_type', 'privacyType'), 30).toLowerCase()
+    : room.privacy_type
+
+  return {
+    roomType,
+    privacyType,
+    chatEnabled: hasBodyValue(body, 'chat_enabled', 'chatEnabled')
+      ? parseBoolean(readBodyValue(body, 'chat_enabled', 'chatEnabled'), Boolean(Number(room.chat_enabled)))
+      : Boolean(Number(room.chat_enabled)),
+    screenShareEnabled: hasBodyValue(body, 'screen_share_enabled', 'screenShareEnabled')
+      ? parseBoolean(readBodyValue(body, 'screen_share_enabled', 'screenShareEnabled'), Boolean(Number(room.screen_share_enabled)))
+      : Boolean(Number(room.screen_share_enabled)),
+    aiSecurityEnabled: hasBodyValue(body, 'ai_security_enabled', 'aiSecurityEnabled')
+      ? parseBoolean(readBodyValue(body, 'ai_security_enabled', 'aiSecurityEnabled'), Boolean(Number(room.ai_security_enabled)))
+      : Boolean(Number(room.ai_security_enabled)),
+    theme: hasBodyValue(body, 'theme')
+      ? emptyToNull(readBodyValue(body, 'theme'), 100)
+      : room.theme,
+    maxMicCount: hasBodyValue(body, 'max_mic_count', 'maxMicCount')
+      ? parseInteger(readBodyValue(body, 'max_mic_count', 'maxMicCount'), defaultMaxMicCountForRoomType(roomType))
+      : Math.min(Number(room.max_mic_count || defaultMaxMicCountForRoomType(roomType)), isOneToOneRoom(roomType) ? 2 : MAX_CLIENT_ROOM_SEATS),
+  }
 }
 
 async function setClientRoomStatus(tenantId, roomId, status, appId = null) {
@@ -1124,6 +1310,8 @@ function signRtcToken({ app, tenant, externalUser, room, tokenPayload }) {
         app_key: app.app_key,
         external_user_id: externalUser.external_user_id,
         room_id: room.id,
+        room_type: room.room_type,
+        rtc_profile: rtcProfileForRoomType(room.room_type),
         rtc_role: tokenPayload.role,
         permissions: tokenPayload.permissions,
         billing_payer: 'client_company',
@@ -1150,6 +1338,8 @@ async function storeRtcTokenRecord({ app, tenant, externalUser, room, tokenPaylo
     app_key: app.app_key,
     external_user_id: externalUser.external_user_id,
     room_id: room.id,
+    room_type: room.room_type,
+    rtc_profile: rtcProfileForRoomType(room.room_type),
     role: tokenPayload.role,
     permissions: tokenPayload.permissions,
     token_use: 'rtc_room',
@@ -1255,7 +1445,7 @@ async function recordUsageDailySessionEnd(connection, { tenantId, appId, partici
 }
 
 function usageTypeFromRoomType(roomType) {
-  return ['audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
+  return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
 }
 
 function roleInRoomFromRtcRole(role, room, externalUser) {
@@ -1308,6 +1498,20 @@ async function startClientRtcSession(clientApp, clientTenant, payload) {
   if (externalUser.status !== 'active') throw createClientError(403, 'permission_denied', 'External user is not active.')
   if (!room) throw createClientError(404, 'room_not_found', 'Room was not found for this client company.')
   if (room.status !== 'active') throw createClientError(403, 'room_disabled', 'Room is disabled.')
+  assertClientRoomFeatures(clientApp, {
+    room_type: room.room_type,
+    privacy_type: room.privacy_type,
+    chat_enabled: Boolean(Number(room.chat_enabled)),
+    screen_share_enabled: Boolean(Number(room.screen_share_enabled)),
+    ai_security_enabled: Boolean(Number(room.ai_security_enabled)),
+    max_mic_count: Number(room.max_mic_count || 0),
+  })
+  if (payload.screenShared && !Number(room.screen_share_enabled)) {
+    throw createClientError(403, 'permission_denied', 'Screen share is disabled in this room.')
+  }
+  if (['moderator', 'admin', 'owner'].includes(payload.role)) {
+    requireFeature(clientApp, 'room_roles', 'Room roles are not enabled for this client app.')
+  }
 
   return transaction(async (connection) => {
     const [activeSessions] = await connection.execute(
@@ -1903,6 +2107,7 @@ router.post('/rooms', async (req, res, next) => {
     if (Object.keys(errors).length) {
       return clientError(res, 422, 'permission_denied', 'Check room details.', { errors })
     }
+    assertClientRoomFeatures(req.clientApp, payload)
 
     const externalUser = await getExternalUser(req.clientApp.id, payload.externalUserId)
     if (!externalUser) {
@@ -2005,6 +2210,7 @@ router.patch('/rooms/:roomId', async (req, res, next) => {
         error.errors = errors
         throw error
       }
+      assertClientRoomFeatures(req.clientApp, roomFeatureSnapshot(room, req.body || {}))
 
       if (!updates.length) return room
 
@@ -2109,6 +2315,7 @@ router.post('/rtc/token', async (req, res, next) => {
     if (room.status !== 'active') {
       return clientError(res, 403, 'room_disabled', 'Room is disabled.')
     }
+    assertTokenPermissionsAllowed(req.clientApp, room, payload)
 
     const signed = signRtcToken({
       app: req.clientApp,
@@ -2147,6 +2354,7 @@ router.post('/rtc/token', async (req, res, next) => {
         billing: clientBillingPolicy(req.clientTenant),
         name: room.name,
         room_type: room.room_type,
+        rtc_profile: rtcProfileForRoomType(room.room_type),
         privacy_type: room.privacy_type,
         signaling_room: `webrtc_tenant_${room.tenant_id}_room_${room.id}`,
         controls: {
@@ -2187,6 +2395,7 @@ router.post('/rtc/session/start', async (req, res, next) => {
         billing: clientBillingPolicy(req.clientTenant),
         name: result.room.name,
         room_type: result.room.room_type,
+        rtc_profile: rtcProfileForRoomType(result.room.room_type),
         signaling_room: `webrtc_tenant_${result.room.tenant_id}_room_${result.room.id}`,
       },
       external_user: {

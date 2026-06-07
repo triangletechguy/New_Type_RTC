@@ -7,10 +7,11 @@ import { formatChatTime } from '../../utils/formatters'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
   buildRoomsPath,
+  defaultSeatsForRoomType,
   defaultRoomForm,
   defaultRtcModeForRoom,
   getRoomMeta,
-  MAX_ROOM_SEATS,
+  maxSeatsForRoomType,
   normalizeRtcMode,
   privacyFilterOptions,
   roomFeatureOptions,
@@ -361,9 +362,9 @@ function cardMatchesRoomFilters(card, filter, privacyFilter) {
   const roomType = card.room?.room_type || card.roomType
   const privacyType = card.room?.privacy_type || card.privacy || 'public'
   const typeMatches = filter === 'all'
-    || (filter === 'live' && ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType))
+    || (filter === 'live' && ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType))
     || (filter === 'video' && roomSupportsVideo(roomType))
-    || (filter === 'music' && ['audio', 'group_audio'].includes(roomType))
+    || (filter === 'music' && ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType))
     || (filter === 'pk' && roomType === 'pk_live')
   const privacyMatches = privacyFilter === 'all' || privacyType === privacyFilter
 
@@ -1445,7 +1446,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function updateRoomForm(field, value) {
-    setRoomForm((previous) => ({ ...previous, [field]: value }))
+    setRoomForm((previous) => {
+      const next = { ...previous, [field]: value }
+      if (field === 'room_type') {
+        const maxSeats = maxSeatsForRoomType(value)
+        if (Number(next.max_mic_count || 0) > maxSeats) next.max_mic_count = defaultSeatsForRoomType(value)
+      }
+      return next
+    })
     setFormErrors((previous) => {
       if (!previous[field] && !previous.submit) return previous
       const next = { ...previous }
@@ -3502,7 +3510,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div className="buzzcast-host-fields">
                 <div>
                   <label>Stage Seats</label>
-                  <input type="number" min="1" max={MAX_ROOM_SEATS} value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} aria-invalid={Boolean(formErrors.max_mic_count)} />
+                  <input type="number" min="1" max={maxSeatsForRoomType(roomForm.room_type)} value={roomForm.max_mic_count} onChange={(event) => updateRoomForm('max_mic_count', event.target.value)} aria-invalid={Boolean(formErrors.max_mic_count)} />
                 </div>
                 <div>
                   <label>Theme</label>

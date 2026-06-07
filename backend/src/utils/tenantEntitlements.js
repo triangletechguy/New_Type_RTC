@@ -1,15 +1,27 @@
 const FEATURE_LABELS = {
   normal_audio_room: 'normal audio rooms',
+  youtube_audio_room: 'YouTube audio rooms',
+  noise_cancellation: 'noise cancellation',
+  voice_changer: 'voice changer',
+  one_to_one_voice_calling: 'one-to-one voice calling',
   group_voice_chat: 'group voice chat',
   normal_video_group_chat: 'video group chat',
+  one_to_one_video_calling: 'one-to-one video calling',
   live_video_pk: 'PK live rooms',
   solo_video_live: 'solo live rooms',
+  video_filter_beauty: 'video filters and beauty effects',
   message_chat: 'chat and media',
+  room_roles: 'room role management',
   private_room_password: 'private/password rooms',
   screen_share: 'screen sharing',
   ai_security_audio: 'AI audio guard',
   ai_security_video: 'AI video guard',
   room_theme: 'room themes',
+  room_share: 'room sharing',
+  comment_reply: 'comment replies',
+  company_billing: 'company billing',
+  admin_panel_analytics: 'admin analytics',
+  rtc_connection_indicator: 'RTC connection indicator',
 }
 
 function createHttpError(status, message) {
@@ -37,11 +49,14 @@ function parseJsonArray(value) {
 }
 
 function roomSupportsVideo(roomType) {
-  return ['video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
 }
 
 function roomTypeFeature(roomType) {
   if (roomType === 'audio') return 'normal_audio_room'
+  if (roomType === 'youtube_audio') return 'youtube_audio_room'
+  if (roomType === 'one_to_one_audio') return 'one_to_one_voice_calling'
+  if (roomType === 'one_to_one_video') return 'one_to_one_video_calling'
   if (roomType === 'group_audio') return 'group_voice_chat'
   if (roomType === 'solo_live') return 'solo_video_live'
   if (roomType === 'pk_live') return 'live_video_pk'

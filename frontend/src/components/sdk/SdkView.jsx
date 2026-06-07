@@ -224,6 +224,25 @@ const eventRows = [
   ['moderation', 'Mute, camera-off, kick, or ban action was applied.'],
 ]
 
+const roomTypeRows = [
+  ['audio', 'Normal audio room SDK', 'Voice room with mic seats and chat.'],
+  ['youtube_audio', 'YouTube audio room SDK', 'Audio room profile for YouTube/music co-listening flows.'],
+  ['one_to_one_audio', 'One-to-one voice calling', 'Two-seat voice call; billed as audio minutes.'],
+  ['group_audio', 'Group voice chat', 'Multi-speaker audio room.'],
+  ['video', 'Normal video room SDK', 'Standard camera room.'],
+  ['one_to_one_video', 'One-to-one video calling', 'Two-seat video call with beauty/filter support.'],
+  ['group_video', 'Normal video group chat', 'Multi-user camera grid.'],
+  ['solo_live', 'Solo video live', 'Host-led live video room.'],
+  ['pk_live', 'Live video PK', 'Two-host live video battle room.'],
+]
+
+const rtcProfileRows = [
+  ['Communication', 'audio, one_to_one_audio, video, one_to_one_video, group_audio, group_video', 'Agora-style rtc/communication profile for calls and group rooms.'],
+  ['Live broadcast', 'solo_live, pk_live', 'Agora-style live profile with publisher/audience roles.'],
+  ['Audio-only', 'audio, youtube_audio, one_to_one_audio, group_audio', 'Publish microphone, disable camera by default, bill usage as audio.'],
+  ['Video-capable', 'video, one_to_one_video, group_video, solo_live, pk_live', 'Publish microphone and camera, support screen share and video effects when enabled.'],
+]
+
 const buildMilestones = [
   ['1', 'Company-first admin', 'Tenants, apps, packages, status, contacts, and billing setup.'],
   ['2', 'Client API auth', 'API keys resolve company/app and reject suspended or revoked access.'],
@@ -240,6 +259,7 @@ const tokenClaims = [
   ['app_id', 'Connects usage and permissions to one client app.'],
   ['external_user_id', 'Maps the RTC session to the client company user without charging that user.'],
   ['room_id', 'Limits the token to one room/channel.'],
+  ['room_type / rtc_profile', 'Maps to communication/live profile, web mode, media type, and publisher role.'],
   ['role', 'Controls audience, publisher, moderator, and admin behavior.'],
   ['permissions', 'Controls join, publish_audio, publish_video, screen_share, chat, mute, kick.'],
   ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
@@ -450,6 +470,46 @@ function SdkTokenContract() {
             <span>{detail}</span>
           </div>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function SdkRoomTypes() {
+  return (
+    <section className="sdk-reference-grid">
+      <div className="glass-card sdk-reference-card">
+        <div className="sdk-card-header">
+          <div>
+            <span className="eyebrow">Room Types</span>
+            <h2>Required RTC Surface</h2>
+          </div>
+        </div>
+        <div className="sdk-method-list">
+          {roomTypeRows.map(([type, label, detail]) => (
+            <div className="sdk-method-row" key={type}>
+              <code>{type}</code>
+              <span><strong>{label}</strong> {detail}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-card sdk-reference-card">
+        <div className="sdk-card-header">
+          <div>
+            <span className="eyebrow">Agora-Type Map</span>
+            <h2>RTC Profiles</h2>
+          </div>
+        </div>
+        <div className="sdk-method-list">
+          {rtcProfileRows.map(([profile, types, detail]) => (
+            <div className="sdk-method-row" key={profile}>
+              <code>{profile}</code>
+              <span><strong>{types}</strong> {detail}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -712,6 +772,7 @@ export default function SdkView() {
       </section>
 
       <SdkPlayground />
+      <SdkRoomTypes />
       <SdkTokenContract />
       <SdkRouteMap />
       <SdkReliability />

@@ -255,10 +255,13 @@ export function coverForRoomType(roomType, privacyType, index = 0) {
   if (privacyType === 'private') return privateRoom
 
   if (roomType === 'audio') return musicRoom
+  if (roomType === 'youtube_audio') return musicRoom
+  if (roomType === 'one_to_one_audio') return audioDuet
   if (roomType === 'group_audio') return audioDuet
   if (roomType === 'group_video') return videoRoom
   if (roomType === 'solo_live') return soloLive
   if (roomType === 'pk_live') return studioStage
+  if (roomType === 'one_to_one_video') return videoRoom
   if (roomType === 'video') return videoRoom
 
   return coverRotation[safeIndex(index, coverRotation.length)]
