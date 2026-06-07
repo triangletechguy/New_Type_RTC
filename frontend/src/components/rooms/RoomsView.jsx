@@ -218,8 +218,8 @@ function formatDmDuration(ms) {
   return `${minutes}:${seconds}`
 }
 
-function directMessageActionKey(message, action = 'delete') {
-  return `${action}-${message?.id || 'message'}`
+function directMessageActionKey(message) {
+  return `dm-${message?.id || 'message'}`
 }
 
 function directMessageDownloadName(message) {
@@ -550,6 +550,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [dmRecordingMs, setDmRecordingMs] = useState(0)
   const [deletingDmMessageIds, setDeletingDmMessageIds] = useState({})
   const [dmDeleteTarget, setDmDeleteTarget] = useState(null)
+  const [dmDeleteForEveryone, setDmDeleteForEveryone] = useState(false)
+  const [dmImagePreview, setDmImagePreview] = useState(null)
   const [mobileRoomLockCode, setMobileRoomLockCode] = useState('199')
   const [liveChatMessages, setLiveChatMessages] = useState([])
   const [mobileToast, setMobileToast] = useState('')
@@ -1062,24 +1064,28 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }))
   }
 
-  function requestDmDelete(message, action) {
+  function canDeleteDmMessageForEveryone(message) {
+    return Boolean(message?.id && message.mine)
+  }
+
+  function requestDmDelete(message) {
     if (!message?.id || !activeThreadData?.peerId) return
-    if (action === 'unsend' && !message.mine) return
 
     setDmDeleteTarget({
-      action,
       message,
       peerId: activeThreadData.peerId,
       threadId: activeThreadData.id,
     })
+    setDmDeleteForEveryone(canDeleteDmMessageForEveryone(message))
     setDmStatus('')
   }
 
   function closeDmDeletePrompt() {
     if (!dmDeleteTarget) return
-    const pendingKey = directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)
+    const pendingKey = directMessageActionKey(dmDeleteTarget.message)
     if (deletingDmMessageIds[pendingKey]) return
     setDmDeleteTarget(null)
+    setDmDeleteForEveryone(false)
   }
 
   async function confirmDmDelete() {
@@ -1087,12 +1093,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const message = target?.message
     if (!target?.threadId || !message?.id) return
 
-    const pendingKey = directMessageActionKey(message, target.action)
+    const pendingKey = directMessageActionKey(message)
     if (deletingDmMessageIds[pendingKey]) return
 
     const previousThreadMessages = dmMessages[target.threadId] || []
     const previousContacts = dmContacts
-    const deleteForEveryone = target.action === 'unsend'
+    const deleteForEveryone = dmDeleteForEveryone && canDeleteDmMessageForEveryone(message)
 
     setDeletingDmMessageIds((previous) => ({ ...previous, [pendingKey]: true }))
     setDmStatus('')
@@ -1105,7 +1111,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         body: JSON.stringify({ for_everyone: deleteForEveryone }),
       })
       setDmDeleteTarget(null)
-      setDmStatus(deleteForEveryone ? 'Message unsent.' : 'Message deleted from your inbox.')
+      setDmDeleteForEveryone(false)
+      setDmStatus(deleteForEveryone ? 'Message deleted for everyone.' : 'Message deleted from your inbox.')
       loadDirectMessageContacts({ quiet: true })
     } catch (error) {
       setDmMessages((previous) => ({
@@ -1113,7 +1120,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         [target.threadId]: previousThreadMessages,
       }))
       setDmContacts(previousContacts)
-      setDmStatus(`${deleteForEveryone ? 'Unsend' : 'Delete'} failed: ${error.message}`)
+      setDmStatus(`Delete failed: ${error.message}`)
     } finally {
       setDeletingDmMessageIds((previous) => {
         const next = { ...previous }
@@ -1121,6 +1128,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         return next
       })
     }
+  }
+
+  function openDmImagePreview({ src, alt, caption, downloadName = '' }) {
+    if (!src) return
+    setDmImagePreview({
+      src,
+      alt: alt || 'Chat photo',
+      caption: caption || '',
+      downloadName: downloadName || directMessageDownloadName({ media_url: src }),
+    })
+  }
+
+  function closeDmImagePreview() {
+    setDmImagePreview(null)
   }
 
   function clearDmMediaDrafts() {
@@ -2976,6 +2997,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setDmMessages({})
     setActiveThread('')
     setDmDeleteTarget(null)
+    setDmDeleteForEveryone(false)
+    setDmImagePreview(null)
     clearDmMediaDrafts()
   }, [activeSection, user])
 
@@ -2984,8 +3007,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (dmRecording) stopDmAudioRecording()
     clearDmMediaDrafts()
     setDmDeleteTarget(null)
+    setDmDeleteForEveryone(false)
+    setDmImagePreview(null)
     setDmInput('')
   }, [showMessages])
+
+  useEffect(() => {
+    if (!dmImagePreview) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') closeDmImagePreview()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [dmImagePreview])
 
   useEffect(() => () => {
     cancelDmAudioRecording()
@@ -3124,6 +3160,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   setDmStatus('')
                   setDmInput('')
                   setDmDeleteTarget(null)
+                  setDmDeleteForEveryone(false)
+                  setDmImagePreview(null)
                   clearDmMediaDrafts()
                   if (dmRecording) cancelDmAudioRecording()
                 }}
@@ -3144,6 +3182,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <header className="buzzcast-dm-header">
                   <button type="button" className="buzzcast-dm-back" onClick={() => {
                     setDmDeleteTarget(null)
+                    setDmDeleteForEveryone(false)
+                    setDmImagePreview(null)
                     setShowMessages(false)
                   }} aria-label="Back to rooms">‹</button>
                   <span className="buzzcast-dm-peer-avatar image-avatar">
@@ -3168,128 +3208,167 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   {activeThreadMessages.map((message) => {
                     const imageMessage = message.message_type === 'image' && message.media_url
                     const voiceMessage = message.message_type === 'voice' && message.media_url
-                    const caption = imageMessage && !['sent a photo', 'Photo'].includes(String(message.body || '').trim())
-                      ? String(message.body || '').trim()
+                    const senderName = message.mine ? 'You' : activeThreadData.name
+                    const senderAvatar = message.mine ? profileAvatar : activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)
+                    const body = String(message.body || '').trim()
+                    const caption = imageMessage && !['sent a photo', 'Photo'].includes(body)
+                      ? body
                       : ''
-                    const deletingForMe = Boolean(deletingDmMessageIds[directMessageActionKey(message, 'delete')])
-                    const unsending = Boolean(deletingDmMessageIds[directMessageActionKey(message, 'unsend')])
+                    const deleting = Boolean(deletingDmMessageIds[directMessageActionKey(message)])
+                    const bubbleClass = imageMessage
+                      ? 'chat-bubble image-message'
+                      : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'
 
                     return (
-                      <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
-                        <time>{formatChatTime(message.createdAt)}</time>
-                        <span className="image-avatar">
-                          <img
-                            src={message.mine ? profileAvatar : activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)}
-                            alt=""
-                            loading="lazy"
-                          />
-                        </span>
-                        <div className={imageMessage ? 'buzzcast-dm-bubble media image' : voiceMessage ? 'buzzcast-dm-bubble media voice' : 'buzzcast-dm-bubble'}>
-                          {imageMessage ? (
-                            <>
-                              <img className="buzzcast-dm-photo" src={message.media_url} alt={`${message.mine ? 'You' : activeThreadData.name} sent`} loading="lazy" />
-                              {caption ? <p>{caption}</p> : null}
-                            </>
-                          ) : voiceMessage ? (
-                            <>
-                              <audio controls src={message.media_url}></audio>
-                              <span>{message.body || 'Voice message'}</span>
-                            </>
-                          ) : (
-                            <p>{message.body}</p>
-                          )}
+                      <div key={message.id} className={message.mine ? 'chat-row mine buzzcast-dm-chat-row' : 'chat-row buzzcast-dm-chat-row'}>
+                        <div className="chat-avatar image-avatar">
+                          <img src={senderAvatar} alt={senderName} loading="lazy" />
                         </div>
-                        <div className="buzzcast-dm-actions" aria-label="Message actions">
+                        <div className={bubbleClass}>
+                          <div className="chat-meta">
+                            <strong>{senderName}</strong>
+                            <time>{formatChatTime(message.createdAt)}</time>
+                          </div>
                           {imageMessage ? (
-                            <a href={message.media_url} download={directMessageDownloadName(message)}>Download</a>
-                          ) : null}
-                          {message.mine ? (
-                            <button type="button" onClick={() => requestDmDelete(message, 'unsend')} disabled={unsending || deletingForMe}>
-                              {unsending ? 'Unsending' : 'Unsend'}
+                            <div className="chat-image-message">
+                              <button
+                                type="button"
+                                className="chat-photo-preview-button"
+                                onClick={() => openDmImagePreview({
+                                  src: message.media_url,
+                                  alt: `${senderName} sent`,
+                                  caption,
+                                  downloadName: directMessageDownloadName(message),
+                                })}
+                                aria-label="Preview photo"
+                              >
+                                <img className="chat-photo" src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
+                              </button>
+                              {caption ? <p>{caption}</p> : null}
+                            </div>
+                          ) : voiceMessage ? (
+                            <div className="chat-voice-message">
+                              <audio controls src={message.media_url}></audio>
+                              <span>{body || 'Voice message'}</span>
+                            </div>
+                          ) : (
+                            <p>{body}</p>
+                          )}
+                          <div className="chat-actions">
+                            <button type="button" className="danger" onClick={() => requestDmDelete(message)} disabled={deleting}>
+                              {deleting ? 'Deleting' : 'Delete'}
                             </button>
-                          ) : null}
-                          <button type="button" onClick={() => requestDmDelete(message, 'delete')} disabled={deletingForMe || unsending}>
-                            {deletingForMe ? 'Deleting' : 'Delete'}
-                          </button>
+                          </div>
                         </div>
                       </div>
                     )
                   })}
                 </div>
-                <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
+                <form className="chat-form buzzcast-dm-composer" onSubmit={sendDmMessage}>
                   <input
                     ref={dmPhotoInputRef}
-                    className="buzzcast-dm-photo-input"
+                    className="chat-photo-input buzzcast-dm-photo-input"
                     type="file"
                     accept="image/*"
                     onChange={stageDmPhotoDraft}
                     disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
                   />
                   {dmPhotoDraft ? (
-                    <div className="buzzcast-dm-draft photo">
+                    <div className="chat-photo-draft buzzcast-dm-draft photo">
                       <img src={dmPhotoDraft.dataUrl} alt="" />
                       <span><strong>Photo</strong><small>{dmPhotoDraft.name || 'Ready to send'}</small></span>
                       <button type="button" onClick={() => setDmPhotoDraft(null)} disabled={sendingDm} aria-label="Remove photo">x</button>
                     </div>
                   ) : null}
                   {dmAudioDraft ? (
-                    <div className="buzzcast-dm-draft audio">
+                    <div className="chat-audio-draft buzzcast-dm-draft audio">
                       <audio controls src={dmAudioDraft.dataUrl}></audio>
                       <span>{formatDmDuration(dmAudioDraft.durationMs)} voice note</span>
                       <button type="button" onClick={() => setDmAudioDraft(null)} disabled={sendingDm} aria-label="Remove voice note">x</button>
                     </div>
                   ) : null}
                   {dmRecording ? (
-                    <div className="buzzcast-dm-recording">
+                    <div className="chat-recording-line buzzcast-dm-recording">
                       <span>{formatDmDuration(dmRecordingMs)}</span>
                       <b>Recording voice message</b>
                     </div>
                   ) : null}
-                  <input
+                  <textarea
                     value={dmInput}
                     onChange={(event) => setDmInput(event.target.value)}
                     placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
                     maxLength={1200}
+                    rows={2}
                     disabled={sendingDm || dmRecording}
                   />
-                  <button
-                    type="button"
-                    className={dmRecording ? 'buzzcast-dm-composer-icon mic recording' : 'buzzcast-dm-composer-icon mic'}
-                    onClick={toggleDmAudioRecording}
-                    disabled={!activeThreadData?.peerId || sendingDm}
-                    aria-label={dmRecording ? 'Stop recording voice message' : 'Record voice message'}
-                    title={dmRecording ? 'Stop recording' : 'Record voice message'}
-                  >
-                    <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
-                  </button>
-                  <button
-                    type="button"
-                    className="buzzcast-dm-composer-icon photo"
-                    onClick={openDmPhotoPicker}
-                    disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
-                    aria-label="Send photo"
-                    title="Send photo"
-                  >
-                    <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
-                  </button>
-                  <button type="submit" aria-label="Send message" disabled={!canSendDm}>{sendingDm ? 'Sending' : 'send'}</button>
+                  <div className="chat-form-footer">
+                    <span>{dmInput.length}/1200</span>
+                    <div className="chat-form-actions">
+                      <button
+                        type="button"
+                        className={dmRecording ? 'secondary-button chat-audio-button buzzcast-dm-composer-icon mic recording' : 'secondary-button chat-audio-button buzzcast-dm-composer-icon mic'}
+                        onClick={toggleDmAudioRecording}
+                        disabled={!activeThreadData?.peerId || sendingDm}
+                        aria-label={dmRecording ? 'Stop recording voice message' : 'Record voice message'}
+                        title={dmRecording ? 'Stop recording' : 'Record voice message'}
+                      >
+                        <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
+                        <span>{dmRecording ? 'Stop' : 'Audio'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button chat-photo-button buzzcast-dm-composer-icon photo"
+                        onClick={openDmPhotoPicker}
+                        disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
+                        aria-label="Send photo"
+                        title="Send photo"
+                      >
+                        <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
+                        <span>Photo</span>
+                      </button>
+                      <button className="primary-button" type="submit" aria-label="Send message" disabled={!canSendDm}>{sendingDm ? 'Sending' : 'Send'}</button>
+                    </div>
+                  </div>
                 </form>
                 {dmDeleteTarget ? (
-                  <div className="buzzcast-dm-confirm-backdrop" onMouseDown={closeDmDeletePrompt}>
-                    <section className="buzzcast-dm-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="buzzcast-dm-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
-                      <h3 id="buzzcast-dm-confirm-title">{dmDeleteTarget.action === 'unsend' ? 'Unsend message' : 'Delete message'}</h3>
-                      <p>
-                        {dmDeleteTarget.action === 'unsend'
-                          ? 'Remove this message from both inboxes?'
-                          : 'Remove this message from your inbox?'}
-                      </p>
+                  <div className="chat-delete-backdrop" onMouseDown={closeDmDeletePrompt}>
+                    <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="buzzcast-dm-delete-title" onMouseDown={(event) => event.stopPropagation()}>
+                      <h3 id="buzzcast-dm-delete-title">Delete message</h3>
+                      <p>Are you sure you want to delete this message?</p>
+                      <label className={canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? 'chat-delete-option' : 'chat-delete-option disabled'}>
+                        <input
+                          type="checkbox"
+                          checked={dmDeleteForEveryone && canDeleteDmMessageForEveryone(dmDeleteTarget.message)}
+                          disabled={!canDeleteDmMessageForEveryone(dmDeleteTarget.message) || Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}
+                          onChange={(event) => setDmDeleteForEveryone(event.target.checked)}
+                        />
+                        <span>{canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? 'Delete for everyone in this chat' : 'Delete only for me'}</span>
+                      </label>
+                      {canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? (
+                        <small className="chat-delete-hint">
+                          {dmDeleteForEveryone ? 'Everyone will lose this message.' : 'Only your inbox will hide this message.'}
+                        </small>
+                      ) : null}
                       <footer>
-                        <button type="button" onClick={closeDmDeletePrompt} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)])}>Cancel</button>
-                        <button type="button" className="danger" onClick={confirmDmDelete} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)])}>
-                          {deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)]
-                            ? 'Working'
-                            : dmDeleteTarget.action === 'unsend' ? 'Unsend' : 'Delete'}
+                        <button type="button" className="secondary-button" onClick={closeDmDeletePrompt} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}>CANCEL</button>
+                        <button type="button" className="danger-button" onClick={confirmDmDelete} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}>
+                          {deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)] ? 'DELETING...' : 'DELETE'}
                         </button>
+                      </footer>
+                    </section>
+                  </div>
+                ) : null}
+                {dmImagePreview ? (
+                  <div className="chat-image-preview-backdrop" onMouseDown={closeDmImagePreview}>
+                    <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label="Photo preview" onMouseDown={(event) => event.stopPropagation()}>
+                      <header>
+                        <strong>Photo</strong>
+                        <button type="button" onClick={closeDmImagePreview} aria-label="Close photo preview">x</button>
+                      </header>
+                      <img src={dmImagePreview.src} alt={dmImagePreview.alt} />
+                      {dmImagePreview.caption ? <p>{dmImagePreview.caption}</p> : null}
+                      <footer>
+                        <a className="chat-image-download-action" href={dmImagePreview.src} download={dmImagePreview.downloadName || 'direct-message-photo.jpg'}>Download</a>
                       </footer>
                     </section>
                   </div>
