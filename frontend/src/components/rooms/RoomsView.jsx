@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
@@ -40,6 +40,14 @@ import {
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
+const maxDmPhotoBytes = 5 * 1024 * 1024
+const maxDmAudioBytes = 5 * 1024 * 1024
+const dmAudioBitsPerSecond = 32000
+const dmRecordingAudioConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+}
 
 function initialsFromName(name) {
   return String(name || 'User')
@@ -140,8 +148,8 @@ function directMessagePeerId(message, currentUser) {
 
 function directMessageBody(message) {
   if (!message) return ''
-  if (message.message_type === 'image') return message.message_body || 'sent a photo'
-  if (message.message_type === 'voice') return message.message_body || 'sent a voice message'
+  if (message.message_type === 'image') return message.message_body || 'Photo'
+  if (message.message_type === 'voice') return message.message_body || 'Voice message'
   return message.message_body || message.body || ''
 }
 
@@ -175,6 +183,39 @@ function contactFromDirectMessage(message, peer, currentUser) {
     peer_gender: peer?.gender || (fromSender ? message.sender_gender : message.recipient_gender) || '',
     last_message: message,
   }
+}
+
+function preferredDmAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
+
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ].find((type) => MediaRecorder.isTypeSupported(type)) || ''
+}
+
+function createDmVoiceRecorder(stream) {
+  const mimeType = preferredDmAudioMimeType()
+  const baseOptions = { audioBitsPerSecond: dmAudioBitsPerSecond }
+
+  if (mimeType) {
+    try {
+      return new MediaRecorder(stream, { ...baseOptions, mimeType })
+    } catch {
+      // Some browsers over-report MIME support; browser defaults are a safer fallback.
+    }
+  }
+
+  return new MediaRecorder(stream, baseOptions)
+}
+
+function formatDmDuration(ms) {
+  const totalSeconds = Math.max(0, Math.round(Number(ms || 0) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+  return `${minutes}:${seconds}`
 }
 
 function copyForLanguage(_language, key, replacements = {}) {
@@ -491,6 +532,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [loadingDmContacts, setLoadingDmContacts] = useState(false)
   const [loadingDmConversation, setLoadingDmConversation] = useState(false)
   const [sendingDm, setSendingDm] = useState(false)
+  const [dmPhotoDraft, setDmPhotoDraft] = useState(null)
+  const [dmAudioDraft, setDmAudioDraft] = useState(null)
+  const [dmRecording, setDmRecording] = useState(false)
+  const [dmRecordingMs, setDmRecordingMs] = useState(0)
   const [mobileRoomLockCode, setMobileRoomLockCode] = useState('199')
   const [liveChatMessages, setLiveChatMessages] = useState([])
   const [mobileToast, setMobileToast] = useState('')
@@ -509,6 +554,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [feedbackRecords, setFeedbackRecords] = useState(savedFeedbackRecords)
   const [feedbackStatus, setFeedbackStatus] = useState('')
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
+  const dmPhotoInputRef = useRef(null)
+  const dmRecorderRef = useRef(null)
+  const dmRecordingStreamRef = useRef(null)
+  const dmRecordingChunksRef = useRef([])
+  const dmRecordingStartedAtRef = useRef(0)
+  const dmRecordingTimerRef = useRef(null)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -649,6 +700,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const messageThreads = directMessageThreads
   const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0] || null
   const activeThreadMessages = activeThreadData ? (dmMessages[activeThreadData.id] || []) : []
+  const canSendDm = Boolean(
+    activeThreadData?.peerId
+    && !sendingDm
+    && !dmRecording
+    && (dmInput.trim() || dmPhotoDraft || dmAudioDraft)
+  )
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'For You'
   const searchPanelTitle = search.trim()
       ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
@@ -964,6 +1021,163 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ...previous.filter((item) => Number(item.peer_id || item.id || 0) !== Number(contact.peer_id)),
       ]
     })
+  }
+
+  function clearDmMediaDrafts() {
+    setDmPhotoDraft(null)
+    setDmAudioDraft(null)
+  }
+
+  function stopDmRecordingTracks() {
+    dmRecordingStreamRef.current?.getTracks?.().forEach((track) => {
+      try { track.stop() } catch {}
+    })
+    dmRecordingStreamRef.current = null
+  }
+
+  function clearDmRecordingTimer() {
+    if (typeof window !== 'undefined') window.clearInterval(dmRecordingTimerRef.current)
+    dmRecordingTimerRef.current = null
+  }
+
+  function openDmPhotoPicker() {
+    if (!activeThreadData?.peerId || sendingDm || dmRecording) return
+    dmPhotoInputRef.current?.click()
+  }
+
+  async function stageDmPhotoDraft(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!file.type?.startsWith('image/')) {
+      setDmStatus('Choose an image file.')
+      return
+    }
+
+    if (file.size > maxDmPhotoBytes) {
+      setDmStatus('Photo message must be 5 MB or smaller.')
+      return
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      if (dataUrl.length > 7 * 1024 * 1024) {
+        setDmStatus('Photo message is too large after encoding.')
+        return
+      }
+
+      setDmPhotoDraft({
+        dataUrl,
+        name: file.name || 'Photo',
+        size: file.size,
+      })
+      setDmAudioDraft(null)
+      setDmStatus('Photo ready to send.')
+    } catch (error) {
+      setDmStatus(error.message || 'Photo could not be read.')
+    }
+  }
+
+  async function startDmAudioRecording() {
+    if (!activeThreadData?.peerId || sendingDm || dmRecording) return
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setDmStatus('Audio recording is not supported in this browser.')
+      return
+    }
+
+    try {
+      setDmStatus('')
+      setDmPhotoDraft(null)
+      setDmAudioDraft(null)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: dmRecordingAudioConstraints,
+        video: false,
+      })
+      const recorder = createDmVoiceRecorder(stream)
+      dmRecordingChunksRef.current = []
+      dmRecordingStreamRef.current = stream
+      dmRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) dmRecordingChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = async () => {
+        clearDmRecordingTimer()
+        setDmRecording(false)
+        stopDmRecordingTracks()
+
+        try {
+          const blob = new Blob(dmRecordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          dmRecordingChunksRef.current = []
+          if (!blob.size) {
+            setDmStatus('No voice audio was captured. Check microphone permission and try again.')
+            return
+          }
+          if (blob.size > maxDmAudioBytes) {
+            setDmStatus('Audio message must be 5 MB or smaller.')
+            return
+          }
+
+          setDmAudioDraft({
+            dataUrl: await fileToDataUrl(blob),
+            size: blob.size,
+            durationMs: Date.now() - dmRecordingStartedAtRef.current,
+          })
+          setDmStatus('Voice message ready to send.')
+        } catch (error) {
+          setDmStatus(error.message || 'Audio message could not be prepared.')
+        } finally {
+          dmRecorderRef.current = null
+        }
+      }
+
+      dmRecordingStartedAtRef.current = Date.now()
+      setDmRecordingMs(0)
+      setDmRecording(true)
+      recorder.start(250)
+      dmRecordingTimerRef.current = window.setInterval(() => {
+        setDmRecordingMs(Date.now() - dmRecordingStartedAtRef.current)
+      }, 250)
+    } catch (error) {
+      clearDmRecordingTimer()
+      setDmRecording(false)
+      stopDmRecordingTracks()
+      setDmStatus(`Audio recording failed: ${error.message}`)
+    }
+  }
+
+  function stopDmAudioRecording() {
+    if (!dmRecording || !dmRecorderRef.current) return
+    try {
+      dmRecorderRef.current.stop()
+    } catch (error) {
+      setDmStatus(error.message)
+      clearDmRecordingTimer()
+      setDmRecording(false)
+      stopDmRecordingTracks()
+    }
+  }
+
+  function cancelDmAudioRecording() {
+    const recorder = dmRecorderRef.current
+    if (recorder) {
+      try {
+        recorder.onstop = null
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {}
+    }
+    dmRecorderRef.current = null
+    dmRecordingChunksRef.current = []
+    clearDmRecordingTimer()
+    setDmRecording(false)
+    stopDmRecordingTracks()
+  }
+
+  function toggleDmAudioRecording() {
+    if (dmRecording) cancelDmAudioRecording()
+    else startDmAudioRecording()
   }
 
   function toggleMessagesDrawer() {
@@ -1526,19 +1740,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       setDmStatus('No private conversation is selected.')
       return
     }
-    if (sendingDm) return
+    if (sendingDm || dmRecording) return
     const threadId = activeThreadData.id
     const body = dmInput.trim()
-    if (!body) return
+    if (!body && !dmPhotoDraft && !dmAudioDraft) return
 
     try {
       setSendingDm(true)
       setDmStatus('')
+      const messageType = dmAudioDraft ? 'voice' : dmPhotoDraft ? 'image' : 'text'
       const data = await apiRequest(`/direct-messages/${activeThreadData.peerId}`, {
         method: 'POST',
         body: JSON.stringify({
-          message_body: body,
-          message_type: 'text',
+          message_body: dmAudioDraft ? (body || 'sent a voice message') : dmPhotoDraft ? (body || 'sent a photo') : body,
+          message_type: messageType,
+          ...(dmPhotoDraft ? { media_url: dmPhotoDraft.dataUrl } : {}),
+          ...(dmAudioDraft ? { media_url: dmAudioDraft.dataUrl } : {}),
         }),
       })
       const nextMessage = normalizeDirectMessage(data.direct_message, user)
@@ -1553,8 +1770,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         upsertDirectMessageContact(data.direct_message, data.peer)
       }
       setDmInput('')
+      clearDmMediaDrafts()
       setReadThreadIds((previous) => previous.includes(threadId) ? previous : [...previous, threadId])
-      setDmStatus(`Sent to ${activeThreadData.name}: "${compactText(body, 44)}"`)
+      setDmStatus(`Sent to ${activeThreadData.name}.`)
     } catch (error) {
       setDmStatus(`Send failed: ${error.message}`)
     } finally {
@@ -2657,7 +2875,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setDmContacts([])
     setDmMessages({})
     setActiveThread('')
+    clearDmMediaDrafts()
   }, [activeSection, user])
+
+  useEffect(() => {
+    if (showMessages) return
+    if (dmRecording) stopDmAudioRecording()
+    clearDmMediaDrafts()
+    setDmInput('')
+  }, [showMessages])
+
+  useEffect(() => () => {
+    cancelDmAudioRecording()
+  }, [])
 
   return (
     <div className={`buzzcast-shell section-${activeSection}`}>
@@ -2790,6 +3020,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   setActiveThread(thread.id)
                   setReadThreadIds((previous) => previous.includes(thread.id) ? previous : [...previous, thread.id])
                   setDmStatus('')
+                  setDmInput('')
+                  clearDmMediaDrafts()
+                  if (dmRecording) cancelDmAudioRecording()
                 }}
               >
                 <i className="image-avatar"><img src={thread.avatarUrl || avatarForIndex(thread.avatarIndex)} alt="" loading="lazy" /></i>
@@ -2826,32 +3059,98 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   {!loadingDmConversation && activeThreadMessages.length === 0 ? (
                     <div className="buzzcast-empty-state compact">No messages with this user yet.</div>
                   ) : null}
-                  {activeThreadMessages.map((message) => (
-                    <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
-                      <time>{formatChatTime(message.createdAt)}</time>
-                      {!message.mine ? (
+                  {activeThreadMessages.map((message) => {
+                    const imageMessage = message.message_type === 'image' && message.media_url
+                    const voiceMessage = message.message_type === 'voice' && message.media_url
+                    const caption = imageMessage && !['sent a photo', 'Photo'].includes(String(message.body || '').trim())
+                      ? String(message.body || '').trim()
+                      : ''
+
+                    return (
+                      <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
+                        <time>{formatChatTime(message.createdAt)}</time>
                         <span className="image-avatar">
-                          <img src={activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+                          <img
+                            src={message.mine ? profileAvatar : activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)}
+                            alt=""
+                            loading="lazy"
+                          />
                         </span>
-                      ) : null}
-                      <p>{message.body}</p>
-                    </div>
-                  ))}
+                        <div className={imageMessage ? 'buzzcast-dm-bubble media image' : voiceMessage ? 'buzzcast-dm-bubble media voice' : 'buzzcast-dm-bubble'}>
+                          {imageMessage ? (
+                            <>
+                              <img className="buzzcast-dm-photo" src={message.media_url} alt={`${message.mine ? 'You' : activeThreadData.name} sent`} loading="lazy" />
+                              {caption ? <p>{caption}</p> : null}
+                            </>
+                          ) : voiceMessage ? (
+                            <>
+                              <audio controls src={message.media_url}></audio>
+                              <span>{message.body || 'Voice message'}</span>
+                            </>
+                          ) : (
+                            <p>{message.body}</p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
                 <form className="buzzcast-dm-composer" onSubmit={sendDmMessage}>
-                  <button type="button" className="buzzcast-dm-composer-icon mic" onClick={() => setDmStatus('Voice messages are available from the full live-room chat panel.')} aria-label="Voice message" title="Voice message">
+                  <input
+                    ref={dmPhotoInputRef}
+                    className="buzzcast-dm-photo-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={stageDmPhotoDraft}
+                    disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
+                  />
+                  {dmPhotoDraft ? (
+                    <div className="buzzcast-dm-draft photo">
+                      <img src={dmPhotoDraft.dataUrl} alt="" />
+                      <span><strong>Photo</strong><small>{dmPhotoDraft.name || 'Ready to send'}</small></span>
+                      <button type="button" onClick={() => setDmPhotoDraft(null)} disabled={sendingDm} aria-label="Remove photo">x</button>
+                    </div>
+                  ) : null}
+                  {dmAudioDraft ? (
+                    <div className="buzzcast-dm-draft audio">
+                      <audio controls src={dmAudioDraft.dataUrl}></audio>
+                      <span>{formatDmDuration(dmAudioDraft.durationMs)} voice note</span>
+                      <button type="button" onClick={() => setDmAudioDraft(null)} disabled={sendingDm} aria-label="Remove voice note">x</button>
+                    </div>
+                  ) : null}
+                  {dmRecording ? (
+                    <div className="buzzcast-dm-recording">
+                      <span>{formatDmDuration(dmRecordingMs)}</span>
+                      <b>Recording voice message</b>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={dmRecording ? 'buzzcast-dm-composer-icon mic recording' : 'buzzcast-dm-composer-icon mic'}
+                    onClick={toggleDmAudioRecording}
+                    disabled={!activeThreadData?.peerId || sendingDm}
+                    aria-label={dmRecording ? 'Stop recording voice message' : 'Record voice message'}
+                    title={dmRecording ? 'Stop recording' : 'Record voice message'}
+                  >
                     <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
                   </button>
                   <input
                     value={dmInput}
                     onChange={(event) => setDmInput(event.target.value)}
-                    placeholder="Type a message..."
-                    disabled={sendingDm}
+                    placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
+                    disabled={sendingDm || dmRecording}
                   />
-                  <button type="button" className="buzzcast-dm-composer-icon photo" onClick={() => setDmStatus('Photo messages are available from the full live-room chat panel.')} aria-label="Photo" title="Photo">
+                  <button
+                    type="button"
+                    className="buzzcast-dm-composer-icon photo"
+                    onClick={openDmPhotoPicker}
+                    disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
+                    aria-label="Send photo"
+                    title="Send photo"
+                  >
                     <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
                   </button>
-                  <button type="submit" aria-label="Send message" disabled={sendingDm}>{sendingDm ? 'Sending' : 'send'}</button>
+                  <button type="submit" aria-label="Send message" disabled={!canSendDm}>{sendingDm ? 'Sending' : 'send'}</button>
                 </form>
               </>
             ) : (
