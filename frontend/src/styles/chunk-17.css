@@ -1710,3 +1710,360 @@
     display: none !important;
   }
 }
+
+/* Client-facing admin dashboard optimization. */
+.admin-dashboard-view {
+  gap: 12px !important;
+}
+
+.admin-dashboard-view .page-header {
+  gap: 16px !important;
+  padding: 18px !important;
+  border-radius: 8px !important;
+}
+
+.admin-dashboard-view .page-header h1 {
+  margin-bottom: 6px !important;
+  letter-spacing: 0 !important;
+}
+
+.admin-dashboard-view .page-header p {
+  max-width: 820px !important;
+  margin-bottom: 0 !important;
+}
+
+.admin-header-summary {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+
+.admin-header-summary span {
+  min-height: 32px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  max-width: 260px !important;
+  padding: 6px 10px !important;
+  border: 1px solid rgba(148, 163, 184, .2) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, .055) !important;
+  color: #e5e7eb !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.admin-header-summary b {
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+}
+
+.admin-dashboard-tabs {
+  padding: 6px !important;
+  border-radius: 8px !important;
+}
+
+.admin-dashboard-tabs button {
+  min-height: 38px !important;
+  border-radius: 7px !important;
+}
+
+.admin-readiness-panel {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 12px !important;
+  padding: 16px !important;
+  border-radius: 8px !important;
+}
+
+.admin-readiness-summary {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 14px !important;
+  align-items: center !important;
+}
+
+.admin-readiness-summary h2 {
+  margin: 4px 0 5px !important;
+}
+
+.admin-readiness-summary p {
+  max-width: 820px !important;
+  margin: 0 !important;
+  color: #cbd5e1 !important;
+}
+
+.admin-readiness-score {
+  width: 92px !important;
+  min-height: 72px !important;
+  display: grid !important;
+  place-items: center !important;
+  gap: 2px !important;
+  padding: 10px !important;
+  border: 1px solid rgba(34, 197, 94, .28) !important;
+  border-radius: 8px !important;
+  background: rgba(34, 197, 94, .1) !important;
+  color: #bbf7d0 !important;
+}
+
+.admin-readiness-score strong {
+  font-size: 25px !important;
+  line-height: 1 !important;
+}
+
+.admin-readiness-score span {
+  color: #86efac !important;
+  font-size: 11px !important;
+  font-weight: 1000 !important;
+  text-transform: uppercase !important;
+}
+
+.admin-readiness-bar {
+  height: 8px !important;
+  overflow: hidden !important;
+  border-radius: 999px !important;
+  background: rgba(148, 163, 184, .18) !important;
+}
+
+.admin-readiness-bar span {
+  display: block !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+  background: linear-gradient(90deg, #38bdf8, #22c55e) !important;
+}
+
+.admin-next-step {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 3px 14px !important;
+  align-items: center !important;
+  padding: 13px !important;
+  border: 1px solid rgba(56, 189, 248, .28) !important;
+  border-radius: 8px !important;
+  background: rgba(56, 189, 248, .08) !important;
+  text-align: left !important;
+}
+
+.admin-next-step.attention {
+  border-color: rgba(251, 191, 36, .32) !important;
+  background: rgba(251, 191, 36, .08) !important;
+}
+
+.admin-next-step.todo {
+  border-color: rgba(148, 163, 184, .25) !important;
+  background: rgba(148, 163, 184, .07) !important;
+}
+
+.admin-next-step span,
+.admin-next-step small {
+  color: #94a3b8 !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+.admin-next-step strong {
+  min-width: 0 !important;
+  color: #fff !important;
+  overflow-wrap: anywhere !important;
+}
+
+.admin-next-step b {
+  grid-row: 1 / span 3 !important;
+  grid-column: 2 !important;
+  min-height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 0 12px !important;
+  border-radius: 7px !important;
+  background: rgba(255, 255, 255, .1) !important;
+  color: #e0f2fe !important;
+  font-size: 12px !important;
+}
+
+.admin-readiness-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+.admin-readiness-step {
+  min-width: 0 !important;
+  min-height: 92px !important;
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+  gap: 8px !important;
+  align-items: start !important;
+  padding: 12px !important;
+  border: 1px solid rgba(148, 163, 184, .18) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, .045) !important;
+  text-align: left !important;
+}
+
+.admin-readiness-step.good {
+  border-color: rgba(34, 197, 94, .24) !important;
+  background: rgba(34, 197, 94, .075) !important;
+}
+
+.admin-readiness-step.attention {
+  border-color: rgba(251, 191, 36, .3) !important;
+  background: rgba(251, 191, 36, .075) !important;
+}
+
+.admin-readiness-step i {
+  width: 30px !important;
+  height: 30px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 8px !important;
+  background: rgba(148, 163, 184, .16) !important;
+  color: #e5e7eb !important;
+  font-style: normal !important;
+  font-size: 11px !important;
+  font-weight: 1000 !important;
+}
+
+.admin-readiness-step.good i {
+  background: rgba(34, 197, 94, .18) !important;
+  color: #bbf7d0 !important;
+}
+
+.admin-readiness-step.attention i {
+  background: rgba(251, 191, 36, .18) !important;
+  color: #fde68a !important;
+}
+
+.admin-readiness-step span {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 4px !important;
+}
+
+.admin-readiness-step strong,
+.admin-readiness-step small,
+.admin-readiness-step b {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.admin-readiness-step strong {
+  color: #fff !important;
+  font-size: 13px !important;
+}
+
+.admin-readiness-step small {
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  line-height: 1.35 !important;
+}
+
+.admin-readiness-step b {
+  grid-column: 1 / -1 !important;
+  color: #bae6fd !important;
+  font-size: 12px !important;
+}
+
+.rtc-command-center {
+  gap: 14px !important;
+  padding: 16px !important;
+  border-radius: 8px !important;
+}
+
+.rtc-command-copy h2 {
+  font-size: 22px !important;
+  letter-spacing: 0 !important;
+}
+
+.rtc-command-kpis {
+  gap: 8px !important;
+}
+
+.rtc-command-kpis div {
+  min-height: 72px !important;
+  padding: 12px !important;
+  border-radius: 8px !important;
+}
+
+.rtc-action-grid {
+  gap: 8px !important;
+}
+
+.rtc-action-card {
+  min-height: 132px !important;
+  border-radius: 8px !important;
+}
+
+.rtc-action-card.good {
+  border-color: rgba(34, 197, 94, .22) !important;
+  background: rgba(34, 197, 94, .06) !important;
+}
+
+.rtc-action-card.attention {
+  border-color: rgba(251, 191, 36, .3) !important;
+  background: rgba(251, 191, 36, .075) !important;
+}
+
+.rtc-action-card.todo {
+  border-color: rgba(148, 163, 184, .18) !important;
+}
+
+@media (max-width: 1100px) {
+  .admin-readiness-grid,
+  .rtc-action-grid,
+  .rtc-command-kpis,
+  .company-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-dashboard-view .page-header,
+  .admin-readiness-summary,
+  .admin-next-step {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-readiness-score {
+    width: 100% !important;
+    min-height: 58px !important;
+    grid-template-columns: auto auto !important;
+    justify-content: start !important;
+    padding-inline: 12px !important;
+  }
+
+  .admin-next-step b {
+    grid-row: auto !important;
+    grid-column: 1 !important;
+    width: fit-content !important;
+  }
+
+  .admin-readiness-grid,
+  .rtc-action-grid,
+  .rtc-command-kpis,
+  .company-action-grid,
+  .admin-header-summary {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-readiness-grid,
+  .rtc-action-grid,
+  .rtc-command-kpis,
+  .company-action-grid {
+    display: grid !important;
+  }
+
+  .admin-header-summary span {
+    max-width: none !important;
+    width: 100% !important;
+  }
+}

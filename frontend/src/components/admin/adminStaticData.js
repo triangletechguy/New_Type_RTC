@@ -170,13 +170,13 @@ export const CLIENT_API_WEBHOOK_EVENTS = [
 export function buildDashboardTabs(mode) {
   if (mode === 'super_admin') {
     return [
-      { key: 'command', label: 'Start' },
+      { key: 'command', label: 'Command' },
       { key: 'companies', label: 'Companies' },
       { key: 'packages', label: 'Packages' },
-      { key: 'sdk', label: 'SDK Access' },
-      { key: 'usage', label: 'Usage' },
+      { key: 'sdk', label: 'Integration' },
+      { key: 'usage', label: 'Billing' },
       { key: 'rooms', label: 'Rooms' },
-      { key: 'health', label: 'Health' },
+      { key: 'health', label: 'Status' },
     ]
   }
 
@@ -185,22 +185,22 @@ export function buildDashboardTabs(mode) {
       { key: 'company_overview', label: 'Overview' },
       { key: 'rooms', label: 'Rooms' },
       { key: 'users', label: 'Users' },
-      { key: 'sdk', label: 'SDK Apps' },
-      { key: 'usage', label: 'Usage' },
+      { key: 'sdk', label: 'Integration' },
+      { key: 'usage', label: 'Billing' },
       { key: 'packages', label: 'Package' },
       { key: 'company', label: 'Settings' },
-      { key: 'health', label: 'Health' },
+      { key: 'health', label: 'Status' },
     ]
   }
 
   return [
-    { key: 'command', label: 'Start' },
-    { key: 'purchase', label: 'Purchase' },
-    { key: 'sdk', label: 'SDK Access' },
+    { key: 'command', label: 'Command' },
+    { key: 'purchase', label: 'Package' },
+    { key: 'sdk', label: 'Integration' },
     { key: 'rooms', label: 'Rooms' },
-    { key: 'usage', label: 'Usage' },
+    { key: 'usage', label: 'Billing' },
     { key: 'company', label: 'Company' },
-    { key: 'health', label: 'Health' },
+    { key: 'health', label: 'Status' },
   ]
 }
 

@@ -58,7 +58,190 @@ function planFeatureRows(plan) {
   }))
 }
 
-function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }) {
+function firstActionableStep(steps) {
+  return steps.find((step) => step.state === 'attention')
+    || steps.find((step) => step.state === 'todo')
+    || steps[0]
+    || null
+}
+
+function readinessPercent(steps) {
+  if (!steps.length) return 0
+  const complete = steps.filter((step) => step.state === 'good').length
+  return Math.round((complete / steps.length) * 100)
+}
+
+function buildClientReadiness({ enterprise, dashboard, mode }) {
+  const isPlatform = mode === 'super_admin'
+  const client = getPrimaryClient(enterprise)
+  const currentPlan = enterprise?.current_plan || client?.plan
+  const apps = enterprise?.apps || []
+  const pendingRequests = (enterprise?.plan_requests || []).filter((request) => request.status === 'pending')
+  const billing = enterprise?.billing || {}
+  const totals = enterprise?.platform_totals || {}
+  const roomMetrics = dashboard?.metrics?.rooms || {}
+  const sessionMetrics = dashboard?.metrics?.sessions || {}
+  const usageMonth = dashboard?.metrics?.usage?.month || dashboard?.usage_month || {}
+  const verification = dashboard?.usage_verification || {}
+  const activeRooms = Number(roomMetrics.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0)
+  const totalRooms = Number(roomMetrics.total ?? client?.room_count ?? 0)
+  const activeSessions = Number(sessionMetrics.active ?? dashboard?.active_sessions ?? 0)
+  const monthMinutes = Number(usageMonth.minutes ?? dashboard?.minutes_used_this_month ?? billing.minutes_month ?? totals.minutes_month ?? 0)
+  const serviceAttention = enterprise?.service_model?.connection_indicator === 'attention'
+
+  if (isPlatform) {
+    return [
+      {
+        key: 'companies',
+        label: 'Client companies',
+        value: formatNumber(totals.active_clients || enterprise?.clients?.filter((item) => item.status === 'active').length),
+        detail: 'Companies can be opened and managed.',
+        state: Number(totals.total_clients || enterprise?.clients?.length || 0) > 0 ? 'good' : 'todo',
+        action: 'Open companies',
+        tab: 'companies',
+      },
+      {
+        key: 'packages',
+        label: 'Package requests',
+        value: pendingRequests.length ? `${formatNumber(pendingRequests.length)} pending` : 'Clear',
+        detail: pendingRequests.length ? 'Review client purchase requests.' : 'No purchase approval is waiting.',
+        state: pendingRequests.length ? 'attention' : 'good',
+        action: pendingRequests.length ? 'Review requests' : 'Manage packages',
+        tab: 'packages',
+      },
+      {
+        key: 'sdk',
+        label: 'SDK access',
+        value: formatNumber(totals.active_apps || apps.length),
+        detail: 'Generated apps can issue API keys and RTC tokens.',
+        state: Number(totals.active_apps || apps.length || 0) > 0 ? 'good' : 'todo',
+        action: 'Open integration',
+        tab: 'sdk',
+      },
+      {
+        key: 'billing',
+        label: 'Usage billing',
+        value: formatCurrency(totals.estimated_invoice),
+        detail: verification.status === 'verified' ? 'Usage records are verified.' : 'Open billing checks before invoicing.',
+        state: verification.status === 'verified' || Number(totals.estimated_invoice || 0) === 0 ? 'good' : 'attention',
+        action: 'Review billing',
+        tab: 'usage',
+      },
+      {
+        key: 'health',
+        label: 'Service health',
+        value: serviceAttention ? 'Attention' : 'Online',
+        detail: `${formatNumber(activeSessions)} live sessions across the platform.`,
+        state: serviceAttention ? 'attention' : 'good',
+        action: 'Open status',
+        tab: 'health',
+      },
+    ]
+  }
+
+  return [
+    {
+      key: 'package',
+      label: 'Package',
+      value: currentPlan?.name || 'Not selected',
+      detail: currentPlan ? `${formatMinutes(currentPlan.monthly_minute_allowance)} included each month.` : 'Choose a package before production use.',
+      state: currentPlan ? 'good' : pendingRequests.length ? 'attention' : 'todo',
+      action: pendingRequests.length ? 'View request' : 'Choose package',
+      tab: mode === 'company_detail' ? 'packages' : 'purchase',
+    },
+    {
+      key: 'sdk',
+      label: 'Integration',
+      value: `${formatNumber(apps.length)} apps`,
+      detail: apps.length ? 'App credentials are ready for backend integration.' : 'Generate app credentials for API and SDK access.',
+      state: apps.length ? 'good' : 'todo',
+      action: 'Open integration',
+      tab: 'sdk',
+    },
+    {
+      key: 'rooms',
+      label: 'Rooms',
+      value: `${formatNumber(activeRooms)} live`,
+      detail: totalRooms ? `${formatNumber(totalRooms)} rooms are configured.` : 'Create or activate a room for RTC use.',
+      state: activeRooms || totalRooms ? 'good' : 'todo',
+      action: 'Manage rooms',
+      tab: 'rooms',
+    },
+    {
+      key: 'usage',
+      label: 'Usage tracking',
+      value: formatMinutes(monthMinutes),
+      detail: monthMinutes > 0 ? 'Billing records are being captured.' : 'Usage appears after users join RTC sessions.',
+      state: monthMinutes > 0 || verification.status === 'verified' ? 'good' : 'todo',
+      action: 'Review billing',
+      tab: 'usage',
+    },
+    {
+      key: 'health',
+      label: 'Service health',
+      value: serviceAttention ? 'Attention' : 'Online',
+      detail: serviceAttention ? 'Open status to inspect RTC quality.' : 'RTC service is available.',
+      state: serviceAttention ? 'attention' : 'good',
+      action: 'Open status',
+      tab: 'health',
+    },
+  ]
+}
+
+function AdminReadinessPanel({ enterprise, dashboard, mode, onTabChange }) {
+  const steps = buildClientReadiness({ enterprise, dashboard, mode })
+  const percent = readinessPercent(steps)
+  const nextStep = firstActionableStep(steps)
+  const isPlatform = mode === 'super_admin'
+  const title = isPlatform ? 'Operations readiness' : 'Setup progress'
+  const subtitle = isPlatform
+    ? 'Keep package approvals, SDK access, billing, and service health ready for client companies.'
+    : 'Follow these checks to make the client RTC service production-ready.'
+
+  return (
+    <section className="admin-readiness-panel glass-card">
+      <div className="admin-readiness-summary">
+        <div>
+          <span className="eyebrow">{isPlatform ? 'Platform Workflow' : 'Client Workflow'}</span>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <div className="admin-readiness-score" aria-label={`${percent}% complete`}>
+          <strong>{percent}%</strong>
+          <span>{percent === 100 ? 'Ready' : 'Complete'}</span>
+        </div>
+      </div>
+
+      <div className="admin-readiness-bar" aria-hidden="true">
+        <span style={{ width: `${percent}%` }}></span>
+      </div>
+
+      {nextStep ? (
+        <button type="button" className={`admin-next-step ${nextStep.state}`} onClick={() => onTabChange?.(nextStep.tab)}>
+          <span>{nextStep.state === 'good' ? 'Recommended check' : nextStep.state === 'attention' ? 'Needs attention' : 'Next step'}</span>
+          <strong>{nextStep.label}: {nextStep.value}</strong>
+          <small>{nextStep.detail}</small>
+          <b>{nextStep.action}</b>
+        </button>
+      ) : null}
+
+      <div className="admin-readiness-grid">
+        {steps.map((step) => (
+          <button type="button" className={`admin-readiness-step ${step.state}`} key={step.key} onClick={() => onTabChange?.(step.tab)}>
+            <i aria-hidden="true">{step.state === 'good' ? 'OK' : step.state === 'attention' ? '!' : '-'}</i>
+            <span>
+              <strong>{step.label}</strong>
+              <small>{step.detail}</small>
+            </span>
+            <b>{step.value}</b>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
   const isPlatform = mode === 'super_admin'
   const client = getPrimaryClient(enterprise)
   const currentPlan = enterprise?.current_plan || client?.plan
@@ -78,6 +261,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Create client company',
       detail: 'Tenant, package, billing scope, admin invite, and default limits.',
       meta: `${formatNumber(totals.total_clients)} total clients`,
+      state: totals.total_clients ? 'good' : 'todo',
       action: 'Open companies',
       onClick: () => onTabChange('companies'),
     },
@@ -85,6 +269,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Review purchases',
       detail: 'Approve or reject client package requests.',
       meta: `${formatNumber(pendingRequests.length)} pending`,
+      state: pendingRequests.length ? 'attention' : 'good',
       action: 'Open packages',
       onClick: () => onTabChange('packages'),
     },
@@ -92,6 +277,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Generate SDK access',
       detail: 'Create app key, API key, SDK token, and allowed origins.',
       meta: `${formatNumber(totals.active_apps)} active apps`,
+      state: totals.active_apps ? 'good' : 'todo',
       action: 'Open SDK',
       onClick: () => onTabChange('sdk'),
     },
@@ -99,6 +285,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Track billing',
       detail: 'Participant minutes, usage records, invoice estimate, and verification.',
       meta: formatCurrency(invoice),
+      state: 'good',
       action: 'Open usage',
       onClick: () => onTabChange('usage'),
     },
@@ -107,6 +294,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Package',
       detail: currentPlan ? `${currentPlan.name} is active for this company.` : 'Choose a package before integration.',
       meta: getPendingPlanRequest(enterprise) ? 'Purchase pending' : formatCurrency(currentPlan?.monthly_base_price),
+      state: currentPlan ? 'good' : getPendingPlanRequest(enterprise) ? 'attention' : 'todo',
       action: 'Manage package',
       onClick: () => onTabChange('purchase'),
     },
@@ -114,6 +302,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'SDK access',
       detail: apps.length ? 'App credentials are ready for integration.' : 'Generate app credentials before connecting your app.',
       meta: `${formatNumber(apps.length)} apps`,
+      state: apps.length ? 'good' : 'todo',
       action: 'Open SDK',
       onClick: () => onTabChange('sdk'),
     },
@@ -121,13 +310,15 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
       title: 'Rooms',
       detail: `${formatNumber(activeRooms)} active rooms from ${formatNumber(totalRooms)} total.`,
       meta: `${formatNumber(activeRooms)} live`,
+      state: activeRooms || totalRooms ? 'good' : 'todo',
       action: 'Open rooms',
-      onClick: () => onView?.('rooms'),
+      onClick: () => onTabChange('rooms'),
     },
     {
       title: 'Usage and billing',
       detail: 'Review monthly minutes, overage, records, and invoice estimate.',
       meta: formatCurrency(invoice),
+      state: Number(invoice || 0) > 0 ? 'good' : 'todo',
       action: 'Open usage',
       onClick: () => onTabChange('usage'),
     },
@@ -164,7 +355,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange, onView }
 
       <div className="rtc-action-grid">
         {actionCards.map((card) => (
-          <button type="button" className="rtc-action-card" key={card.title} onClick={card.onClick}>
+          <button type="button" className={`rtc-action-card ${card.state || 'neutral'}`} key={card.title} onClick={card.onClick}>
             <span>{card.meta}</span>
             <strong>{card.title}</strong>
             <small>{card.detail}</small>
@@ -2651,6 +2842,31 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     if (isSuperAdmin) return 'Client Company Dashboard'
     return 'Admin Dashboard'
   }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
+  const headerFacts = useMemo(() => {
+    const client = getPrimaryClient(enterprise)
+    const plan = enterprise?.current_plan || client?.plan
+    const apps = enterprise?.apps || []
+    const roomMetrics = dashboard?.metrics?.rooms || {}
+    const activeRooms = Number(roomMetrics.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0)
+    const totalRooms = Number(roomMetrics.total ?? client?.room_count ?? 0)
+    const invoice = enterprise?.billing?.estimated_invoice ?? enterprise?.platform_totals?.estimated_invoice
+
+    if (enterpriseMode === 'super_admin') {
+      return [
+        ['Clients', formatNumber(enterprise?.platform_totals?.active_clients || 0)],
+        ['Pending', formatNumber((enterprise?.plan_requests || []).filter((request) => request.status === 'pending').length)],
+        ['SDK apps', formatNumber(enterprise?.platform_totals?.active_apps || apps.length)],
+        ['Invoice', formatCurrency(invoice)],
+      ]
+    }
+
+    return [
+      ['Package', plan?.name || 'No package'],
+      ['SDK apps', formatNumber(apps.length)],
+      ['Rooms', `${formatNumber(activeRooms)} / ${formatNumber(totalRooms)}`],
+      ['Invoice', formatCurrency(invoice)],
+    ]
+  }, [dashboard, enterprise, enterpriseMode])
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const profileLabel = user ? 'Open profile' : 'Profile'
   const companySections = [
@@ -2882,6 +3098,11 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
                 : 'Start with client companies, then open one company to manage its RTC service.'
               : 'Purchase RTC, connect your app, manage rooms, and track billing.'}
           </p>
+          <div className="admin-header-summary" aria-label="Dashboard summary">
+            {headerFacts.map(([label, value]) => (
+              <span key={label}><b>{label}</b>{value}</span>
+            ))}
+          </div>
         </div>
         <div className="admin-header-actions">
           {isSuperAdmin && selectedCompanyDetail ? (
@@ -2916,12 +3137,17 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
       {activeTab === 'command' ? (
         <div className="dashboard-tab-panel">
+          <AdminReadinessPanel
+            enterprise={enterprise}
+            dashboard={dashboard}
+            mode={enterpriseMode}
+            onTabChange={setActiveTab}
+          />
           <CommandCenterPanel
             enterprise={enterprise}
             dashboard={dashboard}
             mode={enterpriseMode}
             onTabChange={setActiveTab}
-            onView={onView}
           />
           <DashboardMetrics dashboard={dashboard} usageStatusLabel={usageStatus.label} />
         </div>
@@ -2971,6 +3197,12 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
       {activeTab === 'company_overview' && enterpriseMode === 'company_detail' ? (
         <div className="dashboard-tab-panel">
+          <AdminReadinessPanel
+            enterprise={enterprise}
+            dashboard={dashboard}
+            mode={enterpriseMode}
+            onTabChange={setActiveTab}
+          />
           <CompanyDetailSummary
             company={activeCompany}
             dashboard={dashboard}
