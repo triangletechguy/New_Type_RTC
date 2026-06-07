@@ -218,6 +218,18 @@ function formatDmDuration(ms) {
   return `${minutes}:${seconds}`
 }
 
+function directMessageActionKey(message, action = 'delete') {
+  return `${action}-${message?.id || 'message'}`
+}
+
+function directMessageDownloadName(message) {
+  const mediaUrl = String(message?.media_url || '')
+  const dataType = mediaUrl.match(/^data:image\/([^;]+);/i)?.[1]
+  const pathType = !dataType ? mediaUrl.split('?')[0].split('#')[0].match(/\.([a-z0-9]+)$/i)?.[1] : ''
+  const extension = String(dataType || pathType || 'jpg').replace(/^jpeg$/i, 'jpg').toLowerCase()
+  return `direct-message-${message?.id || Date.now()}.${extension}`
+}
+
 function copyForLanguage(_language, key, replacements = {}) {
   const template = settingsCopy[key] || key
   return Object.entries(replacements).reduce(
@@ -536,6 +548,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [dmAudioDraft, setDmAudioDraft] = useState(null)
   const [dmRecording, setDmRecording] = useState(false)
   const [dmRecordingMs, setDmRecordingMs] = useState(0)
+  const [deletingDmMessageIds, setDeletingDmMessageIds] = useState({})
+  const [dmDeleteTarget, setDmDeleteTarget] = useState(null)
   const [mobileRoomLockCode, setMobileRoomLockCode] = useState('199')
   const [liveChatMessages, setLiveChatMessages] = useState([])
   const [mobileToast, setMobileToast] = useState('')
@@ -1021,6 +1035,92 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ...previous.filter((item) => Number(item.peer_id || item.id || 0) !== Number(contact.peer_id)),
       ]
     })
+  }
+
+  function removeDirectMessageFromThread(threadId, messageId) {
+    if (!threadId || !messageId) return
+
+    setDmMessages((previous) => ({
+      ...previous,
+      [threadId]: (previous[threadId] || []).filter((message) => Number(message.id) !== Number(messageId)),
+    }))
+  }
+
+  function clearDirectMessagePreview(peerId, messageId) {
+    if (!peerId || !messageId) return
+
+    setDmContacts((previous) => previous.map((contact) => {
+      const contactPeerId = Number(contact.peer_id || contact.id || 0)
+      const lastMessageId = Number(contact.last_message?.id || 0)
+      if (contactPeerId !== Number(peerId) || lastMessageId !== Number(messageId)) return contact
+
+      return {
+        ...contact,
+        last_message: null,
+        unread: 0,
+      }
+    }))
+  }
+
+  function requestDmDelete(message, action) {
+    if (!message?.id || !activeThreadData?.peerId) return
+    if (action === 'unsend' && !message.mine) return
+
+    setDmDeleteTarget({
+      action,
+      message,
+      peerId: activeThreadData.peerId,
+      threadId: activeThreadData.id,
+    })
+    setDmStatus('')
+  }
+
+  function closeDmDeletePrompt() {
+    if (!dmDeleteTarget) return
+    const pendingKey = directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)
+    if (deletingDmMessageIds[pendingKey]) return
+    setDmDeleteTarget(null)
+  }
+
+  async function confirmDmDelete() {
+    const target = dmDeleteTarget
+    const message = target?.message
+    if (!target?.threadId || !message?.id) return
+
+    const pendingKey = directMessageActionKey(message, target.action)
+    if (deletingDmMessageIds[pendingKey]) return
+
+    const previousThreadMessages = dmMessages[target.threadId] || []
+    const previousContacts = dmContacts
+    const deleteForEveryone = target.action === 'unsend'
+
+    setDeletingDmMessageIds((previous) => ({ ...previous, [pendingKey]: true }))
+    setDmStatus('')
+    removeDirectMessageFromThread(target.threadId, message.id)
+    clearDirectMessagePreview(target.peerId, message.id)
+
+    try {
+      await apiRequest(`/direct-messages/messages/${message.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ for_everyone: deleteForEveryone }),
+      })
+      setDmDeleteTarget(null)
+      setDmStatus(deleteForEveryone ? 'Message unsent.' : 'Message deleted from your inbox.')
+      loadDirectMessageContacts({ quiet: true })
+    } catch (error) {
+      setDmMessages((previous) => ({
+        ...previous,
+        [target.threadId]: previousThreadMessages,
+      }))
+      setDmContacts(previousContacts)
+      setDmStatus(`${deleteForEveryone ? 'Unsend' : 'Delete'} failed: ${error.message}`)
+    } finally {
+      setDeletingDmMessageIds((previous) => {
+        const next = { ...previous }
+        delete next[pendingKey]
+        return next
+      })
+    }
   }
 
   function clearDmMediaDrafts() {
@@ -2875,6 +2975,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setDmContacts([])
     setDmMessages({})
     setActiveThread('')
+    setDmDeleteTarget(null)
     clearDmMediaDrafts()
   }, [activeSection, user])
 
@@ -2882,6 +2983,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (showMessages) return
     if (dmRecording) stopDmAudioRecording()
     clearDmMediaDrafts()
+    setDmDeleteTarget(null)
     setDmInput('')
   }, [showMessages])
 
@@ -3021,6 +3123,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   setReadThreadIds((previous) => previous.includes(thread.id) ? previous : [...previous, thread.id])
                   setDmStatus('')
                   setDmInput('')
+                  setDmDeleteTarget(null)
                   clearDmMediaDrafts()
                   if (dmRecording) cancelDmAudioRecording()
                 }}
@@ -3039,7 +3142,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             {activeThreadData ? (
               <>
                 <header className="buzzcast-dm-header">
-                  <button type="button" className="buzzcast-dm-back" onClick={() => setShowMessages(false)} aria-label="Back to rooms">‹</button>
+                  <button type="button" className="buzzcast-dm-back" onClick={() => {
+                    setDmDeleteTarget(null)
+                    setShowMessages(false)
+                  }} aria-label="Back to rooms">‹</button>
                   <span className="buzzcast-dm-peer-avatar image-avatar">
                     <img src={activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
                   </span>
@@ -3065,6 +3171,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     const caption = imageMessage && !['sent a photo', 'Photo'].includes(String(message.body || '').trim())
                       ? String(message.body || '').trim()
                       : ''
+                    const deletingForMe = Boolean(deletingDmMessageIds[directMessageActionKey(message, 'delete')])
+                    const unsending = Boolean(deletingDmMessageIds[directMessageActionKey(message, 'unsend')])
 
                     return (
                       <div key={message.id} className={message.mine ? 'buzzcast-dm-message mine' : 'buzzcast-dm-message'}>
@@ -3090,6 +3198,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                           ) : (
                             <p>{message.body}</p>
                           )}
+                        </div>
+                        <div className="buzzcast-dm-actions" aria-label="Message actions">
+                          {imageMessage ? (
+                            <a href={message.media_url} download={directMessageDownloadName(message)}>Download</a>
+                          ) : null}
+                          {message.mine ? (
+                            <button type="button" onClick={() => requestDmDelete(message, 'unsend')} disabled={unsending || deletingForMe}>
+                              {unsending ? 'Unsending' : 'Unsend'}
+                            </button>
+                          ) : null}
+                          <button type="button" onClick={() => requestDmDelete(message, 'delete')} disabled={deletingForMe || unsending}>
+                            {deletingForMe ? 'Deleting' : 'Delete'}
+                          </button>
                         </div>
                       </div>
                     )
@@ -3124,6 +3245,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                       <b>Recording voice message</b>
                     </div>
                   ) : null}
+                  <input
+                    value={dmInput}
+                    onChange={(event) => setDmInput(event.target.value)}
+                    placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
+                    maxLength={1200}
+                    disabled={sendingDm || dmRecording}
+                  />
                   <button
                     type="button"
                     className={dmRecording ? 'buzzcast-dm-composer-icon mic recording' : 'buzzcast-dm-composer-icon mic'}
@@ -3134,12 +3262,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   >
                     <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
                   </button>
-                  <input
-                    value={dmInput}
-                    onChange={(event) => setDmInput(event.target.value)}
-                    placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
-                    disabled={sendingDm || dmRecording}
-                  />
                   <button
                     type="button"
                     className="buzzcast-dm-composer-icon photo"
@@ -3152,6 +3274,26 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   </button>
                   <button type="submit" aria-label="Send message" disabled={!canSendDm}>{sendingDm ? 'Sending' : 'send'}</button>
                 </form>
+                {dmDeleteTarget ? (
+                  <div className="buzzcast-dm-confirm-backdrop" onMouseDown={closeDmDeletePrompt}>
+                    <section className="buzzcast-dm-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="buzzcast-dm-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
+                      <h3 id="buzzcast-dm-confirm-title">{dmDeleteTarget.action === 'unsend' ? 'Unsend message' : 'Delete message'}</h3>
+                      <p>
+                        {dmDeleteTarget.action === 'unsend'
+                          ? 'Remove this message from both inboxes?'
+                          : 'Remove this message from your inbox?'}
+                      </p>
+                      <footer>
+                        <button type="button" onClick={closeDmDeletePrompt} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)])}>Cancel</button>
+                        <button type="button" className="danger" onClick={confirmDmDelete} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)])}>
+                          {deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message, dmDeleteTarget.action)]
+                            ? 'Working'
+                            : dmDeleteTarget.action === 'unsend' ? 'Unsend' : 'Delete'}
+                        </button>
+                      </footer>
+                    </section>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="buzzcast-empty-state visual">
