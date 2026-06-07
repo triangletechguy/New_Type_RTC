@@ -179,7 +179,7 @@ function buildClientReadiness({ enterprise, dashboard, mode }) {
       key: 'health',
       label: 'Service health',
       value: serviceAttention ? 'Attention' : 'Online',
-      detail: serviceAttention ? 'Open status to inspect RTC quality.' : 'RTC service is available.',
+      detail: serviceAttention ? 'Open status to inspect service health.' : 'RTC service is available.',
       state: serviceAttention ? 'attention' : 'good',
       action: 'Open status',
       tab: 'health',

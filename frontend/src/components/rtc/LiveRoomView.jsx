@@ -2986,7 +2986,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           body: JSON.stringify(payload),
         })
       } catch (error) {
-        console.debug('RTC quality report skipped:', error.message)
+        console.debug('RTC stats report skipped:', error.message)
       }
     }
 

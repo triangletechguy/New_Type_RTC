@@ -727,9 +727,6 @@
   .company-profile-grid,
   .admin-room-create-form,
   .simple-health-grid,
-  .rtc-quality-summary-grid,
-  .rtc-quality-grid,
-  .rtc-quality-candidate-grid,
   .enterprise-service-panel,
   .enterprise-dashboard-grid,
   .company-setup-form,
@@ -1004,16 +1001,12 @@
 
   .monitor-header,
   .monitor-session-title,
-  .rtc-quality-room-list article,
-  .rtc-quality-issue-list article,
   .monitor-participant {
     grid-template-columns: 1fr;
   }
 
   .monitor-header,
-  .monitor-session-title,
-  .rtc-quality-room-list article,
-  .rtc-quality-issue-list article {
+  .monitor-session-title {
     flex-direction: column;
     align-items: stretch;
   }
@@ -1031,12 +1024,6 @@
 
   .monitor-header-state {
     justify-items: start;
-  }
-
-  .rtc-quality-room-list article > div:last-child,
-  .rtc-quality-issue-list article > div:last-child {
-    justify-items: start;
-    justify-content: flex-start;
   }
 
   .sdk-tab-row,
