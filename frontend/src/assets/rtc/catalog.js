@@ -168,7 +168,9 @@ function escapeSvgText(value) {
 }
 
 function avatarLabelForProfile(profile = {}) {
-  return profile.name
+  return profile.full_name
+    || profile.fullName
+    || profile.name
     || profile.user_name
     || profile.sender_name
     || profile.peer_name
@@ -225,12 +227,13 @@ function avatarRoleNames(user = {}) {
 
 export function avatarForUser(user = {}, fallbackIndex = 0) {
   const profile = user || {}
-  const avatar = profile.avatar_url
-    || profile.avatarUrl
-    || profile.sender_avatar_url
-    || profile.peer_avatar_url
-    || profile.user_avatar_url
-    || ''
+  const avatar = [
+    profile.avatar_url,
+    profile.avatarUrl,
+    profile.sender_avatar_url,
+    profile.peer_avatar_url,
+    profile.user_avatar_url,
+  ].map((value) => String(value || '').trim()).find(Boolean) || ''
   if (avatar) return avatar
 
   const roles = avatarRoleNames(profile)

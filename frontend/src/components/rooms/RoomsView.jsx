@@ -687,6 +687,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         const messages = dmMessages[id] || []
         const lastMessage = messages[messages.length - 1] || contact.last_message
         const name = contact.peer_name || contact.name || `User #${peerId}`
+        const avatarUrl = avatarForUser({
+          id: peerId,
+          peer_id: peerId,
+          name,
+          peer_name: name,
+          avatar_url: contact.peer_avatar_url || contact.avatar_url || '',
+          peer_avatar_url: contact.peer_avatar_url || contact.avatar_url || '',
+          gender: contact.peer_gender || contact.gender || '',
+          peer_gender: contact.peer_gender || contact.gender || '',
+        }, peerId || index)
         const previewText = directMessagePreview(lastMessage, user)
         const searchable = `${name} ${previewText}`.toLowerCase()
         const isFollowing = contact.following === undefined ? true : Boolean(contact.following)
@@ -702,7 +712,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           kind: 'dm',
           peerId,
           name,
-          avatarUrl: contact.peer_avatar_url || contact.avatar_url || '',
+          avatarUrl,
           avatarIndex: peerId || index,
           previewText,
           time: lastMessage?.created_at ? formatChatTime(lastMessage.created_at) : '',
@@ -3172,7 +3182,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   if (dmRecording) cancelDmAudioRecording()
                 }}
               >
-                <i className="image-avatar"><img src={thread.avatarUrl || avatarForIndex(thread.avatarIndex)} alt="" loading="lazy" /></i>
+                <i className="image-avatar"><img src={thread.avatarUrl} alt={thread.name} loading="lazy" /></i>
                 <span><strong>{thread.name}</strong><small>{thread.relationshipLabel} - {thread.previewText}</small></span>
                 <time>{thread.time}</time>
                 {thread.unread ? <em>{thread.unread}</em> : null}
@@ -3193,7 +3203,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     setShowMessages(false)
                   }} aria-label="Back to rooms">‹</button>
                   <span className="buzzcast-dm-peer-avatar image-avatar">
-                    <img src={activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)} alt="" loading="lazy" />
+                    <img src={activeThreadData.avatarUrl} alt={activeThreadData.name} loading="lazy" />
                   </span>
                   <strong>{activeThreadData.name}</strong>
                   <span className="buzzcast-dm-peer-id">( User ID: {activeThreadData.peerId})</span>
@@ -3215,7 +3225,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     const imageMessage = message.message_type === 'image' && message.media_url
                     const voiceMessage = message.message_type === 'voice' && message.media_url
                     const senderName = message.mine ? 'You' : activeThreadData.name
-                    const senderAvatar = message.mine ? profileAvatar : activeThreadData.avatarUrl || avatarForIndex(activeThreadData.avatarIndex || 0)
+                    const senderAvatar = message.mine ? profileAvatar : activeThreadData.avatarUrl
                     const body = String(message.body || '').trim()
                     const caption = imageMessage && !['sent a photo', 'Photo'].includes(body)
                       ? body
