@@ -47,6 +47,7 @@ const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.v
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
 const dmAudioBitsPerSecond = 32000
+const newestRoomWindowMs = 3 * 24 * 60 * 60 * 1000
 const roomAccessCodeInputProps = {
   type: 'text',
   autoComplete: 'off',
@@ -272,6 +273,16 @@ function compareCardsByNewest(a, b) {
 
 function compareCardsByOldest(a, b) {
   return cardCreatedAtMs(a) - cardCreatedAtMs(b) || Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b))
+}
+
+function cardMatchesSortBucket(card, sort, nowMs = Date.now()) {
+  if (sort !== 'newest' && sort !== 'oldest') return true
+
+  const createdAtMs = cardCreatedAtMs(card)
+  if (!createdAtMs) return sort === 'oldest'
+
+  const isNewest = nowMs - createdAtMs <= newestRoomWindowMs
+  return sort === 'newest' ? isNewest : !isNewest
 }
 
 function cardCover(card, fallback = 0) {
@@ -680,6 +691,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }))
 
     cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+    cards = cards.filter((card) => cardMatchesSortBucket(card, sort))
     return sortCardsForView(cards, sort).slice(0, 48)
   }, [activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
   const recentRoomCards = useMemo(() => {
@@ -700,9 +712,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         region: settingsDraft.region,
       }))
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+      .filter((card) => cardMatchesSortBucket(card, sort))
       .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country}`))
 
-    return candidateCards.slice(0, 8).map((card) => ({
+    return sortCardsForView(candidateCards, sort).slice(0, 8).map((card) => ({
       id: card.id,
       type: 'room',
       name: card.title,
@@ -711,7 +724,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       room: card.room,
       card,
     }))
-  }, [activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, user])
+  }, [activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, sort, user])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const directMessageThreads = useMemo(() => {
