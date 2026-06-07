@@ -1526,11 +1526,6 @@
   object-fit: cover !important;
 }
 
-.buzzcast-dm-body .chat-actions {
-  opacity: 1 !important;
-  transform: none !important;
-}
-
 .buzzcast-dm-composer {
   min-height: auto !important;
   display: grid !important;

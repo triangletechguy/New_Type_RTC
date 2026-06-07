@@ -1901,6 +1901,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }
 
+  function handleDmComposerKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return
+    event.preventDefault()
+    sendDmMessage(event)
+  }
+
   async function submitFeedback(event) {
     event.preventDefault()
     if (submittingFeedback) return
@@ -3296,6 +3302,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <textarea
                     value={dmInput}
                     onChange={(event) => setDmInput(event.target.value)}
+                    onKeyDown={handleDmComposerKeyDown}
                     placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
                     maxLength={1200}
                     rows={2}
