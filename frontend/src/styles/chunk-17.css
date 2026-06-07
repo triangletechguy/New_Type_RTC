@@ -2018,7 +2018,8 @@
 }
 
 .admin-dashboard-view .rtc-quality-panel,
-.dashboard-tab-panel > .rtc-quality-panel {
+.dashboard-tab-panel > .rtc-quality-panel,
+section.rtc-quality-panel {
   display: none !important;
 }
 
