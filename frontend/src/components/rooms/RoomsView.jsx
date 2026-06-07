@@ -261,6 +261,19 @@ function cardAvatarIndex(card, fallback = 0) {
   return Number(numericId || fallback)
 }
 
+function cardCreatedAtMs(card) {
+  const timestamp = new Date(card?.room?.created_at || card?.createdAt || card?.created_at || 0).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function compareCardsByNewest(a, b) {
+  return cardCreatedAtMs(b) - cardCreatedAtMs(a) || Number(cardAvatarIndex(b)) - Number(cardAvatarIndex(a))
+}
+
+function compareCardsByOldest(a, b) {
+  return cardCreatedAtMs(a) - cardCreatedAtMs(b) || Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b))
+}
+
 function cardCover(card, fallback = 0) {
   if (card?.room) return coverForRoomType(card.room.room_type, card.room.privacy_type, cardAvatarIndex(card, fallback))
   if (card?.roomType || card?.privacy) return coverForRoomType(card.roomType, card.privacy, cardAvatarIndex(card, fallback))
@@ -318,6 +331,7 @@ function roomToFeedCard(room, index) {
     region: ownerRegion || '',
     following: Boolean(room.owner_followed),
     size: index === 0 ? 'feature' : '',
+    createdAt: room.created_at || room.updated_at || '',
     roomType: room.room_type,
     privacy: room.privacy_type,
     avatarIndex: Number(room.id) || index,
@@ -399,17 +413,16 @@ function sortCardsForView(cards, sort) {
   const nextCards = [...cards]
 
   if (sort === 'name') {
-    nextCards.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+    nextCards.sort((a, b) => (
+      String(a.title || '').localeCompare(String(b.title || ''))
+      || compareCardsByNewest(a, b)
+    ))
   } else if (sort === 'active') {
-    nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0))
+    nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0) || compareCardsByNewest(a, b))
   } else if (sort === 'newest') {
-    nextCards.sort((a, b) => {
-      const aDate = new Date(a.room?.created_at || a.createdAt || 0).getTime() || 0
-      const bDate = new Date(b.room?.created_at || b.createdAt || 0).getTime() || 0
-      return bDate - aDate || Number(cardAvatarIndex(b)) - Number(cardAvatarIndex(a))
-    })
+    nextCards.sort(compareCardsByNewest)
   } else if (sort === 'oldest') {
-    nextCards.sort((a, b) => Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b)))
+    nextCards.sort(compareCardsByOldest)
   }
 
   return nextCards
@@ -601,6 +614,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const dmRecordingChunksRef = useRef([])
   const dmRecordingStartedAtRef = useRef(0)
   const dmRecordingTimerRef = useRef(null)
+  const roomListRequestRef = useRef(0)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -1615,6 +1629,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     preserveStatus = false,
     throwOnError = false,
   } = {}) {
+    const requestId = roomListRequestRef.current + 1
+    roomListRequestRef.current = requestId
+    const isLatestRoomRequest = () => roomListRequestRef.current === requestId
+
     setLoadingRooms(true)
     const path = buildRoomsPath({
       page,
@@ -1627,24 +1645,27 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     })
 
     function applyRoomData(data) {
+      if (!isLatestRoomRequest()) return false
       const meta = data.rooms?.meta || { page, per_page: 24, total: 0, total_pages: 1 }
       setRooms(data.rooms?.data || [])
       setRoomMeta(meta)
       if (!preserveStatus) {
         setStatus(meta.total === 1 ? 'Showing 1 room' : `Showing ${meta.total} rooms`)
       }
+      return true
     }
 
     try {
       if (!quiet) setStatus('Loading rooms...')
-      applyRoomData(await apiRequest(path))
-      return true
+      return applyRoomData(await apiRequest(path))
     } catch (error) {
+      if (!isLatestRoomRequest()) return false
+
       if (error.status === 401) {
         try {
-          applyRoomData(await apiRequest(path))
-          return true
+          return applyRoomData(await apiRequest(path))
         } catch (retryError) {
+          if (!isLatestRoomRequest()) return false
           if (!preserveStatus) setStatus(retryError.message)
           if (throwOnError) throw retryError
           return false
@@ -1655,7 +1676,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       if (throwOnError) throw error
       return false
     } finally {
-      setLoadingRooms(false)
+      if (isLatestRoomRequest()) setLoadingRooms(false)
     }
   }
 
