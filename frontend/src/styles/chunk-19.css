@@ -330,18 +330,39 @@
   left: auto;
 }
 
+.chat-row.gift-row {
+  align-items: center;
+}
+
+.chat-row.gift-row .chat-avatar {
+  display: none;
+}
+
+.chat-row.mine.gift-row .chat-bubble.gift-message,
+.chat-row.gift-row .chat-bubble.gift-message {
+  width: auto;
+  min-width: 0;
+  max-width: 92px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .chat-gift-message {
   display: grid;
   place-items: center;
-  min-height: 54px;
+  width: 76px;
+  height: 76px;
 }
 
 .chat-gift-message .chat-gift-emoji {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
+  width: 76px;
+  height: 76px;
+  border-radius: 0;
   background: transparent;
-  font-size: 44px;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, .24));
+  font-size: 60px;
 }
 
 @media (hover: none) {

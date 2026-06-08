@@ -1765,15 +1765,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const reactionKey = reactionTarget('room', message)
 
           return (
-            <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
+            <div className={`${mine ? 'chat-row mine' : 'chat-row'}${giftMessage ? ' gift-row' : ''}`} key={`${message.id}-${message.created_at || ''}`}>
               <div className="chat-avatar image-avatar">
                 <img src={senderAvatar} alt={senderName} loading="lazy" />
               </div>
               <div className={bubbleClass}>
-                <div className="chat-meta">
-                  <strong>{senderName}</strong>
-                  <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
-                </div>
+                {!giftMessage ? (
+                  <div className="chat-meta">
+                    <strong>{senderName}</strong>
+                    <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
+                  </div>
+                ) : null}
                 {editing ? (
                   <form className="chat-edit-form" onSubmit={(event) => saveEdit(message, event)}>
                     <textarea
@@ -1837,7 +1839,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {!editing && !systemMessage ? (
+                {!editing && !systemMessage && !giftMessage ? (
                   <MessageReactions
                     message={message}
                     pickerOpen={reactionPickerTarget === reactionKey}
@@ -1849,7 +1851,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                     onPickEmoji={toggleRoomReaction}
                   />
                 ) : null}
-                {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && (
+                {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && !giftMessage && (
                   <div className="chat-actions">
                     {canFollow ? (
                       <button type="button" className="neutral" onClick={() => requestFollowFromMessage(message)} disabled={following || requested}>
