@@ -3891,7 +3891,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={micOn}
                 title={micButtonTitle}
               >
-                <img className="control-avatar" src={rtcToolbarAssets.audio} alt="" aria-hidden="true" draggable="false" />
+                <span className="control-glyph mic" aria-hidden="true"></span>
               </button>
               <button
                 className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
