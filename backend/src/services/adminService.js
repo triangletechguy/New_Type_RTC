@@ -1555,6 +1555,106 @@ async function rotateClientAppCredentials(user, appId, body = {}) {
   })
 }
 
+async function deleteClientAppAccess(user, appId) {
+  await ensureTenantCompanyColumns()
+
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+
+  return transaction(async (connection) => {
+    const [apps] = await connection.execute(
+      `
+      SELECT
+        ca.id, ca.tenant_id, ca.plan_id, ca.name, ca.platform, ca.app_key,
+        ca.api_key, ca.api_key_hash, ca.sdk_token, ca.allowed_origins, ca.status,
+        t.name AS tenant_name,
+        sp.name AS plan_name,
+        sp.code AS plan_code
+      FROM client_apps ca
+      INNER JOIN tenants t ON t.id = ca.tenant_id
+      LEFT JOIN service_plans sp ON sp.id = ca.plan_id
+      WHERE ca.id = ?
+      LIMIT 1
+      `,
+      [appId]
+    )
+    const app = apps[0]
+
+    if (!app) {
+      const error = new Error('Client app was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!isSuperAdmin && Number(app.tenant_id) !== Number(user.tenant_id)) {
+      const error = new Error('You can only manage apps for your company.')
+      error.status = 403
+      throw error
+    }
+
+    const revokedApiKey = makeCredential('revoked_api')
+    const revokedSdkToken = makeCredential('revoked_sdk')
+
+    await connection.execute(
+      `
+      UPDATE client_apps
+      SET api_key = ?,
+          api_key_hash = ?,
+          sdk_token = ?,
+          status = 'suspended',
+          last_key_rotated_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        maskSecret(revokedApiKey),
+        hashSecret(revokedApiKey),
+        revokedSdkToken,
+        appId,
+      ]
+    )
+
+    const [tokenTables] = await connection.execute(
+      `
+      SELECT TABLE_NAME
+      FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'rtc_tokens'
+      LIMIT 1
+      `
+    )
+
+    if (tokenTables.length) {
+      await connection.execute(
+        `
+        UPDATE rtc_tokens
+        SET revoked_at = COALESCE(revoked_at, NOW())
+        WHERE app_id = ?
+        `,
+        [appId]
+      )
+    }
+
+    return {
+      app: {
+        id: app.id,
+        tenant_id: app.tenant_id,
+        tenant_name: app.tenant_name,
+        plan_id: app.plan_id,
+        plan_name: app.plan_name,
+        plan_code: app.plan_code,
+        name: app.name,
+        platform: app.platform,
+        app_key: app.app_key,
+        api_key_masked: maskSecret(revokedApiKey),
+        sdk_token_masked: maskSecret(revokedSdkToken),
+        allowed_origins: parseJsonArray(app.allowed_origins),
+        status: 'suspended',
+      },
+      tenant_id: app.tenant_id,
+    }
+  })
+}
+
 async function findRoomOwnerForTenant(connection, tenantId, preferredOwnerId = null) {
   if (preferredOwnerId && Number.isInteger(preferredOwnerId)) {
     const [preferred] = await connection.execute(
@@ -3012,6 +3112,7 @@ module.exports = {
   createAdminRoom,
   createClientAppForTenant,
   createClientCompany,
+  deleteClientAppAccess,
   createPlanRequest,
   ensureTenantCompanyColumns,
   getAdminStats,

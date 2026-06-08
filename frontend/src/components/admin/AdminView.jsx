@@ -1391,6 +1391,7 @@ function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
 
 function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
   const [rotatingId, setRotatingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [message, setMessage] = useState('')
 
   if (!apps?.length) return null
@@ -1414,6 +1415,26 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
       setMessage(error.message)
     } finally {
       setRotatingId(null)
+    }
+  }
+
+  async function deleteAppKey(app) {
+    const confirmed = window.confirm(`Delete app key for ${app.name}? This revokes existing API and SDK credentials, suspends the app, and preserves usage history.`)
+    if (!confirmed) return
+
+    setDeletingId(app.id)
+    setMessage(`Deleting ${app.name} app key...`)
+
+    try {
+      const data = await apiRequest(`/admin/client-apps/${app.id}`, {
+        method: 'DELETE',
+      })
+      setMessage(data.message)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -1449,10 +1470,18 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
               <button
                 type="button"
                 className="secondary-button"
-                disabled={rotatingId === app.id}
+                disabled={rotatingId === app.id || deletingId === app.id}
                 onClick={() => rotateCredentials(app)}
               >
                 {rotatingId === app.id ? 'Rotating...' : 'Rotate keys'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button danger"
+                disabled={rotatingId === app.id || deletingId === app.id || app.status === 'suspended'}
+                onClick={() => deleteAppKey(app)}
+              >
+                {deletingId === app.id ? 'Deleting...' : app.status === 'suspended' ? 'Key deleted' : 'Delete key'}
               </button>
             </div>
           </article>
