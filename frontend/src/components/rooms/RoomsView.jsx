@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, navigationAssets, roomAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, navigationAssets, roomAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -2695,7 +2695,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
 
           <form className="buzzcast-mobile-live-composer" onSubmit={sendLiveRoomMessage}>
-            <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice"><img src={liveRoomAssets.composerMic} alt="" loading="lazy" /></button>
+            <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice"><img src={rtcToolbarAssets.audio} alt="" loading="lazy" /></button>
             <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
             <button type="submit" aria-label="Send"><img src={liveRoomAssets.send} alt="" loading="lazy" /></button>
           </form>
