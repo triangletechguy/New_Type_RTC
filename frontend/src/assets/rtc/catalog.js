@@ -23,6 +23,13 @@ import liveSeatLock from './live-ui/seat-lock.svg'
 import liveSeatMic from './live-ui/seat-mic.svg'
 import liveSend from './live-ui/send.svg'
 
+import rtcToolbarAiGuard from './111/ai-flag-message-detect-avatar.svg'
+import rtcToolbarAudio from './111/audio-avatar.svg'
+import rtcToolbarAudioFilter from './111/audio-filter-avatar.svg'
+import rtcToolbarBeauty from './111/beauty-avatar.svg'
+import rtcToolbarRoomOperations from './111/room-operations-avatar.svg'
+import rtcToolbarScreenShare from './111/screenshare-avatar.svg'
+
 import avatar01 from './avatars/avatar-01.png'
 import avatar02 from './avatars/avatar-02.png'
 import avatar03 from './avatars/avatar-03.png'
@@ -92,6 +99,15 @@ export const liveRoomAssets = {
   seatLock: liveSeatLock,
   seatMic: liveSeatMic,
   send: liveSend,
+}
+
+export const rtcToolbarAssets = {
+  aiGuard: rtcToolbarAiGuard,
+  audio: rtcToolbarAudio,
+  audioFilter: rtcToolbarAudioFilter,
+  beauty: rtcToolbarBeauty,
+  roomOperations: rtcToolbarRoomOperations,
+  screenShare: rtcToolbarScreenShare,
 }
 
 export const avatarAssets = [

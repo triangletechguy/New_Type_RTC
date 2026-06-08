@@ -492,6 +492,28 @@
   height: 20px;
 }
 
+.media-control-button .control-avatar {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  display: block;
+  border-radius: 8px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
+}
+
+.media-control-button.icon-only .control-avatar {
+  width: 27px;
+  height: 27px;
+  flex-basis: 27px;
+}
+
+.media-control-button.effect-text-button .control-avatar {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+}
+
 .media-control-button.active {
   border-color: rgba(45, 212, 191, .58);
   background: linear-gradient(135deg, rgba(20, 184, 166, .34), rgba(34, 211, 238, .2));
@@ -569,6 +591,10 @@
 
 .media-control-button.active .control-glyph {
   filter: drop-shadow(0 0 9px rgba(255, 255, 255, .2)) drop-shadow(0 2px 5px rgba(0, 0, 0, .2));
+}
+
+.media-control-button.active .control-avatar {
+  filter: drop-shadow(0 0 10px rgba(199, 210, 254, .34)) drop-shadow(0 2px 5px rgba(0, 0, 0, .22));
 }
 
 .media-control-button.media-toggle-mic.active .control-glyph {
@@ -840,8 +866,10 @@
 
 .room-ops-panel {
   max-height: min(72vh, 620px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
+  min-width: 0;
 }
 
 .room-ops-list {
@@ -879,17 +907,48 @@
   transform: none;
 }
 
+.room-ops-row-note {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, .24);
+  background: rgba(52, 211, 153, .1);
+  color: #bbf7d0;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .room-role-form {
-  grid-template-columns: minmax(160px, 1.4fr) minmax(100px, .75fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
 }
 
-.room-role-form select {
+.room-role-form select,
+.room-role-form button {
   min-width: 0;
+  width: 100%;
 }
 
 .room-role-user-select {
+  grid-column: 1 / -1;
   text-overflow: ellipsis;
+}
+
+.room-role-empty {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(148, 163, 184, .24);
+  background: rgba(148, 163, 184, .08);
+}
+
+.room-role-empty strong {
+  color: #e0f2fe;
+  font-size: 13px;
+  font-weight: 1000;
 }
 
 .room-role-selected,

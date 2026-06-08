@@ -33,8 +33,9 @@ const resetIfEmptyTables = [
   'rtc_session_participants',
   'rtc_events',
   'rtc_quality_samples',
-  'chat_messages',
   'chat_message_hides',
+  'chat_message_reactions',
+  'chat_messages',
   'chat_user_blocks',
   'usage_logs',
 ]

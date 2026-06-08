@@ -5,6 +5,8 @@ const { authMiddleware } = require('../middleware/auth')
 const router = express.Router()
 
 const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
+const reactionEmojiMeaningfulPattern = /(\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]|[0-9#*]\uFE0F?\u20E3)/u
+const reactionEmojiAllowedPattern = /^[\p{Emoji}\u200D\uFE0F\uFE0E\u20E3\u{E0061}-\u{E007F}]+$/u
 const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
 const giftDataUrlPattern = /^data:(image\/(png|jpe?g|gif|webp|svg\+xml)|application\/(octet-stream|x-svga));base64,[a-z0-9+/=\s]+$/i
 const audioDataUrlPattern = /^data:audio\/(webm|ogg|mpeg|mp3|mp4|wav|x-m4a)(;codecs=[^;]+)?;base64,[a-z0-9+/=\s]+$/i
@@ -33,6 +35,21 @@ async function ensureChatSchema() {
         INDEX idx_chat_message_hides_user_id (user_id),
         CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS chat_message_reactions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        emoji VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+        reacted_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_chat_message_reaction (message_id, user_id, emoji),
+        INDEX idx_chat_message_reactions_message (message_id),
+        INDEX idx_chat_message_reactions_user (user_id),
+        CONSTRAINT fk_chat_reactions_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
       `)
 
@@ -91,6 +108,21 @@ async function ensureChatSchema() {
       `)
 
       await query(`
+      CREATE TABLE IF NOT EXISTS direct_message_reactions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        emoji VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+        reacted_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_direct_message_reaction (message_id, user_id, emoji),
+        INDEX idx_direct_message_reactions_message (message_id),
+        INDEX idx_direct_message_reactions_user (user_id),
+        CONSTRAINT fk_direct_reactions_message FOREIGN KEY (message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
       CREATE TABLE IF NOT EXISTS user_follows (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         tenant_id BIGINT UNSIGNED NOT NULL,
@@ -143,8 +175,105 @@ function cleanMessageBody(value) {
   return String(value || '').replace(/\s+$/g, '')
 }
 
+function cleanReactionEmoji(value) {
+  return String(value || '').trim()
+}
+
+function reactionEmojiError(emoji) {
+  if (!emoji) return 'Choose an emoji reaction.'
+  if (emoji.length > 32) return 'Emoji reaction is too long.'
+  return reactionEmojiAllowedPattern.test(emoji) && reactionEmojiMeaningfulPattern.test(emoji)
+    ? ''
+    : 'Choose a valid emoji reaction.'
+}
+
 function cleanMediaUrl(value) {
   return String(value || '').trim()
+}
+
+function makeIdListFilter(ids, prefix = 'id') {
+  const params = {}
+  const placeholders = ids.map((id, index) => {
+    const key = `${prefix}${index}`
+    params[key] = id
+    return `:${key}`
+  })
+
+  return {
+    sql: placeholders.join(', '),
+    params,
+  }
+}
+
+async function attachReactionSummaries(messages, userId, scope = 'room') {
+  if (!Array.isArray(messages) || !messages.length) return messages || []
+
+  const ids = Array.from(new Set(
+    messages.map((message) => Number(message?.id || 0)).filter((id) => Number.isInteger(id) && id > 0)
+  ))
+
+  if (!ids.length) return messages
+
+  const tableName = scope === 'direct' ? 'direct_message_reactions' : 'chat_message_reactions'
+  const idFilter = makeIdListFilter(ids, 'reactionMessageId')
+  const rows = await query(
+    `
+    SELECT
+      message_id,
+      emoji,
+      COUNT(*) AS reaction_count,
+      MAX(user_id = :viewerId) AS reacted_by_me
+    FROM ${tableName}
+    WHERE message_id IN (${idFilter.sql})
+    GROUP BY message_id, emoji
+    ORDER BY message_id ASC, reaction_count DESC, emoji ASC
+    `,
+    { ...idFilter.params, viewerId: Number(userId || 0) }
+  )
+
+  const byMessageId = new Map()
+  rows.forEach((row) => {
+    const messageId = Number(row.message_id)
+    const summary = {
+      emoji: row.emoji,
+      count: Number(row.reaction_count || 0),
+      reacted_by_me: Boolean(Number(row.reacted_by_me || 0)),
+    }
+    byMessageId.set(messageId, [...(byMessageId.get(messageId) || []), summary])
+  })
+
+  return messages.map((message) => {
+    const reactions = byMessageId.get(Number(message.id)) || []
+    return {
+      ...message,
+      reactions,
+      reaction_count: reactions.reduce((total, reaction) => total + Number(reaction.count || 0), 0),
+    }
+  })
+}
+
+async function fetchRoomMessageById(messageId, viewerId) {
+  const messages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, { id: messageId })
+  return (await attachReactionSummaries(messages, viewerId, 'room'))[0] || null
+}
+
+async function publicReactionPayload(message, scope = 'room') {
+  if (!message?.id) {
+    return {
+      message_id: 0,
+      reactions: [],
+      reaction_count: 0,
+    }
+  }
+
+  const messages = await attachReactionSummaries([message], 0, scope)
+  const currentMessage = messages[0] || message
+
+  return {
+    message_id: Number(currentMessage.id),
+    reactions: currentMessage.reactions || [],
+    reaction_count: Number(currentMessage.reaction_count || 0),
+  }
 }
 
 function imageMediaError(mediaUrl) {
@@ -448,9 +577,9 @@ async function findDirectMessageForUser(messageId, user) {
   return messages[0] || null
 }
 
-async function fetchDirectMessageById(messageId) {
+async function fetchDirectMessageById(messageId, viewerId = 0) {
   const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, { id: messageId })
-  return messages[0] || null
+  return (await attachReactionSummaries(messages, viewerId, 'direct'))[0] || null
 }
 
 function mapFollowRequest(row) {
@@ -580,8 +709,10 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       params
     )
 
+    const hydratedMessages = await attachReactionSummaries(messages.reverse(), req.user.id, 'room')
+
     return res.json({
-      messages: messages.reverse(),
+      messages: hydratedMessages,
       meta: {
         limit,
         chat_enabled: Boolean(Number(room.chat_enabled)),
@@ -662,11 +793,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       }
     )
 
-    const messages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
-      id: result.insertId,
-    })
-
-    const chatMessage = messages[0]
+    const chatMessage = await fetchRoomMessageById(result.insertId, req.user.id)
     let realtimeBroadcasted = false
 
     try {
@@ -1121,7 +1248,7 @@ router.patch('/direct-messages/messages/:id', authMiddleware, async (req, res, n
       { messageBody: body, messageId }
     )
 
-    const directMessage = await fetchDirectMessageById(messageId)
+    const directMessage = await fetchDirectMessageById(messageId, req.user.id)
     emitDirectMessageRealtime(req, directMessage, 'direct-message-edited', {
       direct_message: directMessage,
     })
@@ -1129,6 +1256,87 @@ router.patch('/direct-messages/messages/:id', authMiddleware, async (req, res, n
     return res.json({
       message: 'Direct message updated successfully.',
       direct_message: directMessage,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/direct-messages/messages/:id/reactions', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const emoji = cleanReactionEmoji(req.body?.emoji)
+    const emojiError = reactionEmojiError(emoji)
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    if (emojiError) return res.status(422).json({ message: emojiError })
+
+    const message = await findDirectMessageForUser(messageId, req.user)
+    if (!message) return res.status(404).json({ message: 'Message not found.' })
+    if (Number(message.is_deleted)) {
+      return res.status(422).json({ message: 'Deleted messages cannot be reacted to.' })
+    }
+
+    const hiddenRows = await query(
+      `
+      SELECT id
+      FROM direct_message_hides
+      WHERE message_id = :messageId
+      AND user_id = :userId
+      LIMIT 1
+      `,
+      { messageId, userId: req.user.id }
+    )
+
+    if (hiddenRows.length) return res.status(404).json({ message: 'Message not found.' })
+
+    const existingRows = await query(
+      `
+      SELECT id
+      FROM direct_message_reactions
+      WHERE message_id = :messageId
+      AND user_id = :userId
+      AND emoji = :emoji
+      LIMIT 1
+      `,
+      { messageId, userId: req.user.id, emoji }
+    )
+
+    const action = existingRows.length ? 'removed' : 'added'
+
+    if (existingRows.length) {
+      await query(
+        `
+        DELETE FROM direct_message_reactions
+        WHERE id = :reactionId
+        `,
+        { reactionId: existingRows[0].id }
+      )
+    } else {
+      await query(
+        `
+        INSERT IGNORE INTO direct_message_reactions (message_id, user_id, emoji, reacted_at)
+        VALUES (:messageId, :userId, :emoji, NOW())
+        `,
+        { messageId, userId: req.user.id, emoji }
+      )
+    }
+
+    const directMessage = await fetchDirectMessageById(messageId, req.user.id)
+    const realtimePayload = await publicReactionPayload(directMessage, 'direct')
+    const realtimeBroadcasted = emitDirectMessageRealtime(req, directMessage, 'direct-message-reaction', {
+      ...realtimePayload,
+      source_user_id: req.user.id,
+    })
+
+    return res.json({
+      message: `Reaction ${action}.`,
+      action,
+      emoji,
+      direct_message: directMessage,
+      realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {
     next(error)
@@ -1229,9 +1437,11 @@ router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) =>
       { tenantId: req.user.tenant_id, userId: req.user.id, peerId }
     )
 
+    const hydratedMessages = await attachReactionSummaries(messages.reverse(), req.user.id, 'direct')
+
     return res.json({
       peer,
-      messages: messages.reverse(),
+      messages: hydratedMessages,
     })
   } catch (error) {
     next(error)
@@ -1292,10 +1502,7 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
       }
     )
 
-    const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, {
-      id: result.insertId,
-    })
-    const directMessage = messages[0]
+    const directMessage = await fetchDirectMessageById(result.insertId, req.user.id)
     const realtimePayload = {
       direct_message: directMessage,
       peer,
@@ -1368,10 +1575,7 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
       { messageBody: body, messageId }
     )
 
-    const updatedMessages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
-      id: messageId,
-    })
-    const updatedMessage = updatedMessages[0]
+    const updatedMessage = await fetchRoomMessageById(messageId, req.user.id)
     const updatedRoom = updatedMessage?.room_id ? room || await findRoomForChat(updatedMessage.room_id) : null
     let realtimeBroadcasted = false
 
@@ -1386,6 +1590,110 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
     return res.json({
       message: 'Message updated successfully.',
       chat_message: updatedMessage,
+      realtime_broadcasted: realtimeBroadcasted,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/messages/:id/reactions', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const emoji = cleanReactionEmoji(req.body?.emoji)
+    const emojiError = reactionEmojiError(emoji)
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    if (emojiError) return res.status(422).json({ message: emojiError })
+
+    const messages = await query(
+      `
+      SELECT cm.*, r.chat_enabled
+      FROM chat_messages cm
+      INNER JOIN rooms r ON r.id = cm.room_id
+      WHERE cm.id = :messageId
+      AND cm.tenant_id = :tenantId
+      AND cm.is_deleted = 0
+      AND cm.is_unsent = 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM chat_message_hides hidden
+        WHERE hidden.message_id = cm.id
+        AND hidden.user_id = :userId
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM chat_user_blocks blocked
+        WHERE blocked.room_id = cm.room_id
+        AND blocked.blocker_id = :userId
+        AND blocked.blocked_user_id = cm.sender_id
+      )
+      LIMIT 1
+      `,
+      { messageId, tenantId: req.user.tenant_id, userId: req.user.id }
+    )
+
+    if (!messages.length) return res.status(404).json({ message: 'Message not found.' })
+    if (!Number(messages[0].chat_enabled)) {
+      return res.status(403).json({ message: 'Chat is disabled in this room.' })
+    }
+
+    const existingRows = await query(
+      `
+      SELECT id
+      FROM chat_message_reactions
+      WHERE message_id = :messageId
+      AND user_id = :userId
+      AND emoji = :emoji
+      LIMIT 1
+      `,
+      { messageId, userId: req.user.id, emoji }
+    )
+
+    const action = existingRows.length ? 'removed' : 'added'
+
+    if (existingRows.length) {
+      await query(
+        `
+        DELETE FROM chat_message_reactions
+        WHERE id = :reactionId
+        `,
+        { reactionId: existingRows[0].id }
+      )
+    } else {
+      await query(
+        `
+        INSERT IGNORE INTO chat_message_reactions (message_id, user_id, emoji, reacted_at)
+        VALUES (:messageId, :userId, :emoji, NOW())
+        `,
+        { messageId, userId: req.user.id, emoji }
+      )
+    }
+
+    const chatMessage = await fetchRoomMessageById(messageId, req.user.id)
+    const room = await findRoomForChat(chatMessage.room_id)
+    const realtimePayload = await publicReactionPayload(chatMessage, 'room')
+    let realtimeBroadcasted = false
+
+    try {
+      realtimeBroadcasted = room
+        ? await emitRoomRealtime(req, room, 'chat-message-reaction', {
+          ...realtimePayload,
+          room_id: chatMessage.room_id,
+          source_user_id: req.user.id,
+        })
+        : false
+    } catch (broadcastError) {
+      console.error('[chat] realtime reaction broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: `Reaction ${action}.`,
+      action,
+      emoji,
+      chat_message: chatMessage,
       realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {

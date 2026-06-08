@@ -3,6 +3,7 @@ import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { defaultEmojiReactions, isValidEmoji, searchEmojiCategories } from '../../utils/emoji'
 
 const maxAudioBytes = 5 * 1024 * 1024
 const maxPhotoBytes = 6 * 1024 * 1024
@@ -22,6 +23,123 @@ const roomGifts = [
   { id: 'heart', label: 'Heart' },
   { id: 'cheer', label: 'Cheer' },
 ]
+
+function EmojiPicker({ open, query, onQueryChange, onPick, onClose, label = 'Emoji picker' }) {
+  if (!open) return null
+
+  const categories = searchEmojiCategories(query)
+
+  return (
+    <section className="chat-emoji-picker" aria-label={label}>
+      <header>
+        <strong>Emoji</strong>
+        <button type="button" onClick={onClose} aria-label="Close emoji picker">x</button>
+      </header>
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+        placeholder="Search emoji"
+        aria-label="Search emoji"
+      />
+      <div className="chat-emoji-groups">
+        {categories.length ? categories.map((category) => (
+          <div className="chat-emoji-group" key={category.id}>
+            <span>{category.label}</span>
+            <div className="chat-emoji-grid">
+              {category.emojis.map((emoji) => (
+                <button
+                  key={`${category.id}-${emoji}`}
+                  type="button"
+                  onClick={() => onPick(emoji)}
+                  aria-label={`Insert ${emoji}`}
+                  title={emoji}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )) : (
+          <small>No emoji found.</small>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function reactionSummaries(message) {
+  return Array.isArray(message?.reactions) ? message.reactions.filter((reaction) => reaction?.emoji) : []
+}
+
+function MessageReactions({
+  message,
+  disabled = false,
+  pickerOpen = false,
+  pickerQuery = '',
+  onPickerQueryChange,
+  onToggle,
+  onOpenPicker,
+  onClosePicker,
+  onPickEmoji,
+}) {
+  const reactions = reactionSummaries(message)
+
+  return (
+    <div className={reactions.length || pickerOpen ? 'chat-reactions active' : 'chat-reactions'}>
+      {reactions.map((reaction) => (
+        <button
+          key={reaction.emoji}
+          type="button"
+          className={reaction.reacted_by_me ? 'chat-reaction-pill mine' : 'chat-reaction-pill'}
+          onClick={() => onToggle(message, reaction.emoji)}
+          disabled={disabled}
+          aria-label={`${reaction.reacted_by_me ? 'Remove' : 'Add'} ${reaction.emoji} reaction`}
+          title={`${reaction.emoji} ${reaction.count || 0}`}
+        >
+          <span>{reaction.emoji}</span>
+          <b>{reaction.count || 0}</b>
+        </button>
+      ))}
+      <button
+        type="button"
+        className="chat-reaction-add"
+        onClick={() => (pickerOpen ? onClosePicker() : onOpenPicker(message))}
+        disabled={disabled}
+        aria-label="Add emoji reaction"
+        title="Add reaction"
+      >
+        +
+      </button>
+      {pickerOpen ? (
+        <div className="chat-reaction-picker">
+          <div className="chat-reaction-quick" aria-label="Quick reactions">
+            {defaultEmojiReactions.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => onPickEmoji(message, emoji)}
+                disabled={disabled}
+                aria-label={`React with ${emoji}`}
+                title={`React with ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          <EmojiPicker
+            open
+            query={pickerQuery}
+            onQueryChange={onPickerQueryChange}
+            onPick={(emoji) => onPickEmoji(message, emoji)}
+            onClose={onClosePicker}
+            label="Reaction emoji picker"
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 function preferredAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
@@ -292,11 +410,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const [requestedContactIds, setRequestedContactIds] = useState([])
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [typingUsers, setTypingUsers] = useState({})
+  const [emojiPickerTarget, setEmojiPickerTarget] = useState('')
+  const [emojiQuery, setEmojiQuery] = useState('')
+  const [reactionPickerTarget, setReactionPickerTarget] = useState('')
+  const [reactionQuery, setReactionQuery] = useState('')
   const messagesRef = useRef(null)
   const messagesEndRef = useRef(null)
   const inboxMessagesRef = useRef(null)
   const inboxEndRef = useRef(null)
   const composerRef = useRef(null)
+  const inboxComposerRef = useRef(null)
+  const editComposerRef = useRef(null)
   const roomPhotoInputRef = useRef(null)
   const inboxPhotoInputRef = useRef(null)
   const recorderRef = useRef(null)
@@ -325,6 +449,120 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
     : realtimeConnected ? 'No one is typing' : 'Typing status starts after RTC connects'
+
+  function toggleEmojiPicker(target) {
+    setReactionPickerTarget('')
+    const nextTarget = emojiPickerTarget === target ? '' : target
+    setEmojiPickerTarget(nextTarget)
+    if (nextTarget) setEmojiQuery('')
+  }
+
+  function closeEmojiPicker() {
+    setEmojiPickerTarget('')
+  }
+
+  function emojiTargetRef(target) {
+    if (target === 'room') return composerRef
+    if (target === 'inbox') return inboxComposerRef
+    if (target.startsWith('edit:')) return editComposerRef
+    return { current: null }
+  }
+
+  function emojiTargetValue(target) {
+    if (target === 'room') return text
+    if (target === 'inbox') return inboxText
+    if (target.startsWith('edit:')) return editText
+    return ''
+  }
+
+  function setEmojiTargetValue(target, value) {
+    if (target === 'room') {
+      updateText(value)
+      return
+    }
+    if (target === 'inbox') {
+      setInboxText(value)
+      return
+    }
+    if (target.startsWith('edit:')) {
+      setEditText(value)
+    }
+  }
+
+  function insertEmoji(emoji) {
+    if (!isValidEmoji(emoji) || !emojiPickerTarget) return
+
+    const target = emojiPickerTarget
+    const textarea = emojiTargetRef(target).current
+    const currentValue = emojiTargetValue(target)
+    const selectionStart = Number.isInteger(textarea?.selectionStart) ? textarea.selectionStart : currentValue.length
+    const selectionEnd = Number.isInteger(textarea?.selectionEnd) ? textarea.selectionEnd : selectionStart
+    const nextValue = `${currentValue.slice(0, selectionStart)}${emoji}${currentValue.slice(selectionEnd)}`
+
+    if (nextValue.length > 1200) {
+      setStatus('Message body must be 1200 characters or fewer.')
+      return
+    }
+
+    setEmojiTargetValue(target, nextValue)
+    const nextCaret = selectionStart + emoji.length
+    window.requestAnimationFrame(() => {
+      textarea?.focus()
+      textarea?.setSelectionRange?.(nextCaret, nextCaret)
+    })
+  }
+
+  function reactionTarget(scope, message) {
+    const id = messageIdValue(message)
+    return id ? `${scope}:${id}` : ''
+  }
+
+  function openReactionPicker(scope, message) {
+    const target = reactionTarget(scope, message)
+    if (!target) return
+    setEmojiPickerTarget('')
+    setReactionQuery('')
+    setReactionPickerTarget(target)
+  }
+
+  function closeReactionPicker() {
+    setReactionPickerTarget('')
+  }
+
+  async function toggleRoomReaction(message, emoji) {
+    const messageId = messageIdValue(message)
+    if (!messageId || !isValidEmoji(emoji)) return
+
+    try {
+      setStatus('')
+      const data = await apiRequest(`/messages/${messageId}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      })
+      if (data.chat_message) replaceMessage(data.chat_message)
+      closeReactionPicker()
+    } catch (error) {
+      setStatus(`Reaction failed: ${error.message}`)
+    }
+  }
+
+  async function toggleInboxReaction(message, emoji) {
+    const messageId = messageIdValue(message)
+    if (!messageId || !isValidEmoji(emoji)) return
+
+    try {
+      setStatus('')
+      const data = await apiRequest(`/direct-messages/messages/${messageId}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      })
+      if (data.direct_message) replaceInboxMessage(data.direct_message)
+      closeReactionPicker()
+      loadInboxThreads({ quiet: true })
+    } catch (error) {
+      setStatus(`Reaction failed: ${error.message}`)
+    }
+  }
 
   function appendMessage(message) {
     if (!message?.id) return
@@ -378,6 +616,55 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     )))
   }
 
+  function mergeReactionSummaries(previousReactions = [], nextReactions = [], { preserveMine = false } = {}) {
+    const previousByEmoji = new Map(
+      reactionSummaries({ reactions: previousReactions }).map((reaction) => [reaction.emoji, reaction])
+    )
+
+    return reactionSummaries({ reactions: nextReactions }).map((reaction) => ({
+      ...reaction,
+      count: Number(reaction.count || 0),
+      reacted_by_me: preserveMine
+        ? Boolean(previousByEmoji.get(reaction.emoji)?.reacted_by_me)
+        : Boolean(reaction.reacted_by_me),
+    }))
+  }
+
+  function applyReactionUpdateToMessage(message, update = {}) {
+    const incomingReactions = update.reactions || update.message?.reactions || []
+    const reactions = mergeReactionSummaries(message.reactions, incomingReactions, { preserveMine: true })
+    return {
+      ...message,
+      reactions,
+      reaction_count: Number(update.reaction_count ?? update.message?.reaction_count ?? reactions.reduce((total, reaction) => total + Number(reaction.count || 0), 0)),
+    }
+  }
+
+  function applyRoomReactionUpdate(update = {}) {
+    const messageId = Number(update.message_id || update.messageId || update.message?.id || 0)
+    if (!messageId) return
+
+    setMessages((previous) => previous.map((message) => (
+      messageIdValue(message) === messageId ? applyReactionUpdateToMessage(message, update) : message
+    )))
+  }
+
+  function replaceMessageFromRealtime(updatedMessage) {
+    if (!updatedMessage?.id) return
+
+    setMessages((previous) => previous.map((message) => {
+      if (message.id !== updatedMessage.id) return message
+      const incomingReactions = Array.isArray(updatedMessage.reactions) ? updatedMessage.reactions : message.reactions
+      const reactions = mergeReactionSummaries(message.reactions, incomingReactions, { preserveMine: true })
+      return {
+        ...message,
+        ...updatedMessage,
+        reactions,
+        reaction_count: Number(updatedMessage.reaction_count ?? reactions.reduce((total, reaction) => total + Number(reaction.count || 0), 0)),
+      }
+    }))
+  }
+
   function removeMessage(messageId) {
     setMessages((previous) => previous.filter((message) => message.id !== messageId))
     if (editingMessageId === String(messageId)) cancelEdit()
@@ -388,6 +675,31 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     setInboxMessages((previous) => previous.map((message) => (
       message.id === updatedMessage.id ? { ...message, ...updatedMessage } : message
     )))
+  }
+
+  function applyInboxReactionUpdate(update = {}) {
+    const messageId = Number(update.message_id || update.messageId || update.direct_message?.id || 0)
+    if (!messageId) return
+
+    setInboxMessages((previous) => previous.map((message) => (
+      messageIdValue(message) === messageId ? applyReactionUpdateToMessage(message, update) : message
+    )))
+  }
+
+  function replaceInboxMessageFromRealtime(updatedMessage) {
+    if (!updatedMessage?.id) return
+
+    setInboxMessages((previous) => previous.map((message) => {
+      if (message.id !== updatedMessage.id) return message
+      const incomingReactions = Array.isArray(updatedMessage.reactions) ? updatedMessage.reactions : message.reactions
+      const reactions = mergeReactionSummaries(message.reactions, incomingReactions, { preserveMine: true })
+      return {
+        ...message,
+        ...updatedMessage,
+        reactions,
+        reaction_count: Number(updatedMessage.reaction_count ?? reactions.reduce((total, reaction) => total + Number(reaction.count || 0), 0)),
+      }
+    }))
   }
 
   function removeInboxMessage(messageId) {
@@ -633,6 +945,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       setText('')
       clearPhotoDraft()
       cancelAudioDraft()
+      closeEmojiPicker()
       refocusComposerRef.current = true
       emitTyping(false)
       window.clearTimeout(typingTimeoutRef.current)
@@ -695,6 +1008,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     if (!message?.id || !isOwnMessage(message, user) || message.is_deleted) return
     setEditingMessageId(String(message.id))
     setEditText(message.message_body || '')
+    setEmojiPickerTarget('')
     setStatus('')
   }
 
@@ -702,6 +1016,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     if (!message?.id || !isOwnMessage(message, user) || message.is_deleted || message.message_type !== 'text') return
     setEditingMessageId(inboxEditKey(message))
     setEditText(message.message_body || '')
+    setEmojiPickerTarget('')
     setStatus('')
   }
 
@@ -709,6 +1024,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     setEditingMessageId(null)
     setEditText('')
     setSavingEditId(null)
+    if (emojiPickerTarget.startsWith('edit:')) closeEmojiPicker()
   }
 
   async function saveEdit(message, event) {
@@ -1008,6 +1324,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     setChatMode('comments')
     setLoadingInbox(false)
     setStatus('')
+    closeEmojiPicker()
+    closeReactionPicker()
     if (!recording) clearComposerDrafts()
     previousRoomMessageCountRef.current = 0
 
@@ -1019,6 +1337,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
 
   function showPersonalInbox() {
     setStatus('')
+    closeEmojiPicker()
+    closeReactionPicker()
     previousInboxMessageCountRef.current = 0
 
     if (chatMode === 'inbox') {
@@ -1051,6 +1371,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       upsertInboxMessage(data.direct_message)
       setInboxText('')
       clearComposerDrafts()
+      closeEmojiPicker()
       loadInboxThreads({ quiet: true })
     } catch (error) {
       setStatus(`Send failed: ${error.message}`)
@@ -1236,6 +1557,19 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   }, [imagePreview])
 
   useEffect(() => {
+    if (!emojiPickerTarget && !reactionPickerTarget) return undefined
+
+    function handleKeyDown(event) {
+      if (event.key !== 'Escape') return
+      closeEmojiPicker()
+      closeReactionPicker()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [emojiPickerTarget, reactionPickerTarget])
+
+  useEffect(() => {
     const previousCount = previousRoomMessageCountRef.current
     const shouldScroll = previousCount === 0 || shouldStickToLatestMessage(messagesRef.current)
     previousRoomMessageCountRef.current = visibleMessages.length
@@ -1262,7 +1596,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       syncMissedRoomMessages({ full: true }).catch((error) => setStatus(`Chat sync failed: ${error.message}`))
     }
     const handleMessage = ({ message }) => appendMessage(message)
-    const handleMessageEdited = ({ message }) => replaceMessage(message)
+    const handleMessageEdited = ({ message }) => replaceMessageFromRealtime(message)
+    const handleMessageReaction = (payload = {}) => applyRoomReactionUpdate(payload)
     const handleMessageDeleted = ({ messageId }) => {
       if (!messageId) return
       removeMessage(messageId)
@@ -1300,7 +1635,11 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     const handleDirectMessageEdited = ({ direct_message: directMessage } = {}) => {
       const peerId = directMessagePeerId(directMessage, user)
       if (!peerId) return
-      if (Number(inboxTarget?.id || 0) === peerId) replaceInboxMessage(directMessage)
+      if (Number(inboxTarget?.id || 0) === peerId) replaceInboxMessageFromRealtime(directMessage)
+      loadInboxThreads({ quiet: true })
+    }
+    const handleDirectMessageReaction = (payload = {}) => {
+      applyInboxReactionUpdate(payload)
       loadInboxThreads({ quiet: true })
     }
     const handleDirectMessageDeleted = ({ message_id: messageId } = {}) => {
@@ -1312,10 +1651,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     socket.on('connect', syncAfterReconnect)
     socket.on('chat-message', handleMessage)
     socket.on('chat-message-edited', handleMessageEdited)
+    socket.on('chat-message-reaction', handleMessageReaction)
     socket.on('chat-message-deleted', handleMessageDeleted)
     socket.on('chat-message-unsent', handleMessageUnsent)
     socket.on('direct-message', handleDirectMessage)
     socket.on('direct-message-edited', handleDirectMessageEdited)
+    socket.on('direct-message-reaction', handleDirectMessageReaction)
     socket.on('direct-message-deleted', handleDirectMessageDeleted)
     socket.on('typing-start', handleTypingStart)
     socket.on('typing-stop', handleTypingStop)
@@ -1325,10 +1666,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       socket.off('connect', syncAfterReconnect)
       socket.off('chat-message', handleMessage)
       socket.off('chat-message-edited', handleMessageEdited)
+      socket.off('chat-message-reaction', handleMessageReaction)
       socket.off('chat-message-deleted', handleMessageDeleted)
       socket.off('chat-message-unsent', handleMessageUnsent)
       socket.off('direct-message', handleDirectMessage)
       socket.off('direct-message-edited', handleDirectMessageEdited)
+      socket.off('direct-message-reaction', handleDirectMessageReaction)
       socket.off('direct-message-deleted', handleDirectMessageDeleted)
       socket.off('typing-start', handleTypingStart)
       socket.off('typing-stop', handleTypingStop)
@@ -1408,6 +1751,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             : ''
           const bubbleClass = imageMessage
             ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
+          const reactionKey = reactionTarget('room', message)
 
           return (
             <div className={mine ? 'chat-row mine' : 'chat-row'} key={`${message.id}-${message.created_at || ''}`}>
@@ -1422,12 +1766,27 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 {editing ? (
                   <form className="chat-edit-form" onSubmit={(event) => saveEdit(message, event)}>
                     <textarea
+                      ref={editComposerRef}
                       value={editText}
                       onChange={(event) => setEditText(event.target.value)}
                       onKeyDown={(event) => handleEditKeyDown(message, event)}
                       maxLength={1200}
                       rows={2}
                       autoFocus
+                    />
+                    <div className="chat-edit-tools">
+                      <button type="button" className="chat-emoji-button compact" onClick={() => toggleEmojiPicker(`edit:${messageActionKey(message)}`)} aria-label="Emoji" title="Emoji">
+                        🙂
+                      </button>
+                      <span>{editText.length}/1200</span>
+                    </div>
+                    <EmojiPicker
+                      open={emojiPickerTarget === `edit:${messageActionKey(message)}`}
+                      query={emojiQuery}
+                      onQueryChange={setEmojiQuery}
+                      onPick={insertEmoji}
+                      onClose={closeEmojiPicker}
+                      label="Edit message emoji picker"
                     />
                     <div className="chat-edit-actions">
                       <button type="submit" disabled={savingEdit || !editText.trim()}>
@@ -1468,6 +1827,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 ) : (
                   <p>{message.message_body}</p>
                 )}
+                {!editing && !systemMessage ? (
+                  <MessageReactions
+                    message={message}
+                    pickerOpen={reactionPickerTarget === reactionKey}
+                    pickerQuery={reactionQuery}
+                    onPickerQueryChange={setReactionQuery}
+                    onToggle={toggleRoomReaction}
+                    onOpenPicker={(targetMessage) => openReactionPicker('room', targetMessage)}
+                    onClosePicker={closeReactionPicker}
+                    onPickEmoji={toggleRoomReaction}
+                  />
+                ) : null}
                 {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && (
                   <div className="chat-actions">
                     {canFollow ? (
@@ -1543,6 +1914,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           rows={2}
           disabled={!chatEnabled || sending || recording}
         />
+        <EmojiPicker
+          open={emojiPickerTarget === 'room'}
+          query={emojiQuery}
+          onQueryChange={setEmojiQuery}
+          onPick={insertEmoji}
+          onClose={closeEmojiPicker}
+          label="Room message emoji picker"
+        />
         {!chatEnabled ? <small className="chat-disabled-note">Chat is turned off for this room.</small> : null}
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
@@ -1555,6 +1934,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               onChange={stagePhotoDraft}
               disabled={!chatEnabled || sending}
             />
+            <button type="button" className="secondary-button chat-emoji-button" onClick={() => toggleEmojiPicker('room')} disabled={!chatEnabled || sending || recording} aria-label="Emoji" title="Emoji">
+              🙂
+            </button>
             <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending} aria-label="Photo" title="Photo">
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
               <span>Photo</span>
@@ -1639,6 +2021,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             const editing = editingMessageId === editKey
             const savingEdit = savingEditId === editKey
             const deleting = Boolean(deletingMessageIds[editKey])
+            const reactionKey = reactionTarget('inbox', message)
 
             return (
               <div className={mine ? 'chat-row mine' : 'chat-row'} key={`dm-${message.id}`}>
@@ -1653,12 +2036,27 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   {editing ? (
                     <form className="chat-edit-form" onSubmit={(event) => saveInboxEdit(message, event)}>
                       <textarea
+                        ref={editComposerRef}
                         value={editText}
                         onChange={(event) => setEditText(event.target.value)}
                         onKeyDown={(event) => handleInboxEditKeyDown(message, event)}
                         maxLength={1200}
                         rows={2}
                         autoFocus
+                      />
+                      <div className="chat-edit-tools">
+                        <button type="button" className="chat-emoji-button compact" onClick={() => toggleEmojiPicker(`edit:${messageActionKey({ ...message, __scope: 'inbox' })}`)} aria-label="Emoji" title="Emoji">
+                          🙂
+                        </button>
+                        <span>{editText.length}/1200</span>
+                      </div>
+                      <EmojiPicker
+                        open={emojiPickerTarget === `edit:${messageActionKey({ ...message, __scope: 'inbox' })}`}
+                        query={emojiQuery}
+                        onQueryChange={setEmojiQuery}
+                        onPick={insertEmoji}
+                        onClose={closeEmojiPicker}
+                        label="Edit private message emoji picker"
                       />
                       <div className="chat-edit-actions">
                         <button type="submit" disabled={savingEdit || !editText.trim()}>
@@ -1694,6 +2092,18 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   ) : (
                     <p>{body}</p>
                   )}
+                  {!editing ? (
+                    <MessageReactions
+                      message={message}
+                      pickerOpen={reactionPickerTarget === reactionKey}
+                      pickerQuery={reactionQuery}
+                      onPickerQueryChange={setReactionQuery}
+                      onToggle={toggleInboxReaction}
+                      onOpenPicker={(targetMessage) => openReactionPicker('inbox', targetMessage)}
+                      onClosePicker={closeReactionPicker}
+                      onPickEmoji={toggleInboxReaction}
+                    />
+                  ) : null}
                   {(canModify || canDelete) && !editing ? (
                     <div className="chat-actions">
                       {canModify ? (
@@ -1741,6 +2151,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           </div>
         ) : null}
         <textarea
+          ref={inboxComposerRef}
           value={inboxText}
           onChange={(event) => setInboxText(event.target.value)}
           onKeyDown={handleInboxComposerKeyDown}
@@ -1748,6 +2159,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           maxLength={1200}
           rows={2}
           disabled={!inboxTarget || sendingInbox || recording}
+        />
+        <EmojiPicker
+          open={emojiPickerTarget === 'inbox'}
+          query={emojiQuery}
+          onQueryChange={setEmojiQuery}
+          onPick={insertEmoji}
+          onClose={closeEmojiPicker}
+          label="Private message emoji picker"
         />
         <div className="chat-form-footer">
           <span>{inboxText.length}/1200</span>
@@ -1760,6 +2179,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               onChange={stagePhotoDraft}
               disabled={!inboxTarget || sendingInbox}
             />
+            <button type="button" className="secondary-button chat-emoji-button" onClick={() => toggleEmojiPicker('inbox')} disabled={!inboxTarget || sendingInbox || recording} aria-label="Emoji" title="Emoji">
+              🙂
+            </button>
             <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!inboxTarget || sendingInbox} aria-label="Photo" title="Photo">
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
               <span>Photo</span>

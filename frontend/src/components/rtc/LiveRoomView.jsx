@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType, navigationAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType, navigationAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -1806,6 +1806,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setRoleFeedback({ type: 'error', text: 'Choose a user first.' })
       return
     }
+    if (!targetUser) {
+      setRoleFeedback({ type: 'error', text: 'Choose an available user.' })
+      setRoleForm((current) => ({ ...current, userId: '' }))
+      return
+    }
     if (roleSaving) return
 
     setRoleSaving(true)
@@ -3435,6 +3440,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roleTargetOptions = buildRoomRoleTargets(roomControls)
   const selectedRoleTarget = roleTargetOptions.find((target) => target.userId === String(roleForm.userId))
   const roleTargetUnavailable = roleTargetOptions.length === 0
+  const roleTargetReady = Boolean(selectedRoleTarget)
   const roomOpsParticipants = Array.isArray(roomControls?.participants) ? roomControls.participants : []
   const currentUserId = Number(user?.id || 0)
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
@@ -3776,19 +3782,29 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                                   <strong>{participant.user_name || `User #${targetUserId}`}</strong>
                                   <small>{targetRole}{isSelf ? ' (you)' : ''} · {participant.mic_enabled ? 'mic on' : 'mic off'} · {participant.camera_enabled ? 'cam on' : 'cam off'}</small>
                                 </span>
-                                <div className="chat-actions">
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={moderationDisabled} title={moderationTitle}>Mute</button>
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={moderationDisabled} title={moderationTitle}>Camera</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={moderationDisabled} title={moderationTitle}>Kick</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={moderationDisabled} title={moderationTitle}>Ban</button>
-                                </div>
+                                {isSelf ? (
+                                  <small className="room-ops-row-note">Current session</small>
+                                ) : (
+                                  <div className="chat-actions">
+                                    <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={moderationDisabled} title={moderationTitle}>Mute</button>
+                                    <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={moderationDisabled} title={moderationTitle}>Camera</button>
+                                    <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={moderationDisabled} title={moderationTitle}>Kick</button>
+                                    <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={moderationDisabled} title={moderationTitle}>Ban</button>
+                                  </div>
+                                )}
                               </article>
                             )
                           })}
                           {!roomOpsParticipants.length ? <small>No active participants yet.</small> : null}
                           {roomOpsOnlySelf ? <small>No other active participants.</small> : null}
                         </div>
-                        {roomControls.can_assign_roles ? (
+                        {roomControls.can_assign_roles && roleTargetUnavailable ? (
+                          <div className="room-role-empty">
+                            <strong>No assignable users</strong>
+                            <small>No company users available.</small>
+                          </div>
+                        ) : null}
+                        {roomControls.can_assign_roles && !roleTargetUnavailable ? (
                           <form className="chat-edit-form room-role-form" onSubmit={(event) => {
                             event.preventDefault()
                             saveRoomRole(false)
@@ -3800,10 +3816,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                                 setRoleForm((current) => ({ ...current, userId: event.target.value }))
                                 setRoleFeedback({ type: '', text: '' })
                               }}
-                              disabled={roleSaving || roleTargetUnavailable}
+                              disabled={roleSaving}
                               aria-label="Room member"
                             >
-                              <option value="">{roleTargetUnavailable ? 'No users available' : 'Select user'}</option>
+                              <option value="">Select user</option>
                               {roleTargetOptions.map((target) => (
                                 <option key={target.userId} value={target.userId}>
                                   {roomRoleOptionLabel(target)}
@@ -3814,10 +3830,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                               <option value="moderator">Moderator</option>
                               <option value="admin">Admin</option>
                             </select>
-                            <button type="submit" disabled={roleSaving || !roleForm.userId}>
+                            <button type="submit" disabled={roleSaving || !roleTargetReady}>
                               {roleSavingAction === 'assign' ? 'Assigning...' : 'Assign'}
                             </button>
-                            <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleForm.userId || !selectedRoleTarget?.currentRole}>
+                            <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleTargetReady || !selectedRoleTarget?.currentRole}>
                               {roleSavingAction === 'remove' ? 'Removing...' : 'Remove'}
                             </button>
                             {selectedRoleTarget ? (
@@ -3873,7 +3889,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={micOn}
                 title={micButtonTitle}
               >
-                <span className="control-glyph mic"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.audio} alt="" aria-hidden="true" />
               </button>
               <button
                 className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
@@ -3892,7 +3908,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'audio'}
                 title="Audio effects"
               >
-                <span className="control-glyph mic"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.audioFilter} alt="" aria-hidden="true" />
                 <span>Audio</span>
               </button>
               <button
@@ -3903,7 +3919,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'filters'}
                 title="Beauty and background"
               >
-                <span className="control-glyph beauty"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.beauty} alt="" aria-hidden="true" />
                 <span>Beauty</span>
               </button>
               <button
@@ -3914,13 +3930,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={screenSharing}
                 title={screenSharing ? 'Stop screen share' : 'Screen share'}
               >
-                <span className="control-glyph screen"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.screenShare} alt="" aria-hidden="true" />
               </button>
               <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
-                <span className="control-glyph guard"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.aiGuard} alt="" aria-hidden="true" />
               </button>
               <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
-                <span className="control-glyph guard"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.roomOperations} alt="" aria-hidden="true" />
               </button>
             </div>
 
