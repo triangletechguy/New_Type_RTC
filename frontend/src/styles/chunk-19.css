@@ -1065,8 +1065,8 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) {
-    --mobile-rail-width: 76px;
-    --mobile-lobby-top: calc(98px + env(safe-area-inset-top));
+    --mobile-rail-width: 92px;
+    --mobile-lobby-top: calc(66px + env(safe-area-inset-top));
     min-height: 100svh !important;
     background: #242331 !important;
     color: #f7f5ff !important;
@@ -1089,11 +1089,12 @@
     height: var(--mobile-lobby-top) !important;
     min-height: 0 !important;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    grid-template-rows: 42px 40px !important;
+    grid-template-columns: minmax(132px, 172px) minmax(0, 1fr) !important;
+    grid-template-rows: 42px !important;
     align-items: center !important;
-    gap: 8px 10px !important;
-    padding: calc(8px + env(safe-area-inset-top)) 10px 8px !important;
+    gap: 10px !important;
+    overflow: hidden !important;
+    padding: calc(10px + env(safe-area-inset-top)) 10px 10px !important;
     border: 0 !important;
     border-bottom: 1px solid rgba(255, 255, 255, .08) !important;
     border-radius: 0 !important;
@@ -1103,6 +1104,8 @@
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo {
     position: static !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
     width: auto !important;
     min-width: 0 !important;
     height: auto !important;
@@ -1113,9 +1116,9 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo-mark {
-    width: 34px !important;
-    height: 34px !important;
-    flex: 0 0 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    flex: 0 0 32px !important;
     border-radius: 8px !important;
     border: 1px solid rgba(255, 255, 255, .52) !important;
     box-shadow: 0 0 16px rgba(128, 68, 255, .42) !important;
@@ -1140,17 +1143,13 @@
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo span {
     margin-top: 2px !important;
     color: #b8b2cc !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
     font-weight: 700 !important;
     line-height: 1.1 !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-actions {
-    width: auto !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: end !important;
-    gap: 6px !important;
+    display: none !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-actions .buzzcast-icon-button,
@@ -1174,7 +1173,8 @@
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap {
     position: relative !important;
-    grid-column: 1 / -1 !important;
+    grid-column: 2 !important;
+    grid-row: 1 !important;
     justify-self: stretch !important;
     width: 100% !important;
     max-width: none !important;
@@ -1262,14 +1262,14 @@
     position: relative !important;
     width: 100% !important;
     min-width: 0 !important;
-    min-height: 70px !important;
+    min-height: 68px !important;
     height: auto !important;
     display: grid !important;
     grid-template-columns: 1fr !important;
-    grid-template-rows: 28px minmax(24px, auto) !important;
-    align-items: center !important;
+    grid-template-rows: 28px minmax(20px, auto) !important;
+    align-items: start !important;
     justify-items: center !important;
-    gap: 5px !important;
+    gap: 6px !important;
     padding: 8px 4px !important;
     border: 1px solid transparent !important;
     border-radius: 8px !important;
@@ -1315,7 +1315,7 @@
     width: 100% !important;
     overflow: hidden !important;
     color: inherit !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 850 !important;
     line-height: 1.1 !important;
     text-align: center !important;
@@ -1350,7 +1350,7 @@
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 22px 14px !important;
-    padding: 14px 10px calc(28px + env(safe-area-inset-bottom)) !important;
+    padding: 16px 12px calc(28px + env(safe-area-inset-bottom)) !important;
     background: #242331 !important;
   }
 
@@ -1417,9 +1417,9 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media-image {
-    opacity: .76 !important;
-    filter: blur(7px) saturate(.82) brightness(.7) !important;
-    transform: scale(1.08) !important;
+    opacity: 0 !important;
+    filter: blur(12px) saturate(.72) brightness(.45) !important;
+    transform: scale(1.12) !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-viewers {
@@ -1437,7 +1437,8 @@
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-sensitive-dot,
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-seat-dots,
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-meta,
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-live-count {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-live-count,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-room-delete-button {
     display: none !important;
   }
 
