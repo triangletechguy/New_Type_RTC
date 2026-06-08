@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -3414,6 +3414,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     .slice(-5)
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
+  const backAvatar = actionAvatarAssets.back
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
@@ -3469,7 +3470,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button type="button" onClick={handleBack}>
-          <span className="buzzcast-rail-icon rail-help" aria-hidden="true"></span>
+          <span className="buzzcast-rail-icon rail-back-avatar image-avatar" aria-hidden="true">
+            <img src={backAvatar} alt="" loading="lazy" />
+          </span>
           <b>Back</b>
         </button>
       </aside>

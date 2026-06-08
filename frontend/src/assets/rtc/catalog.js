@@ -22,6 +22,9 @@ import avatar05 from './avatars/avatar-05.png'
 import avatar06 from './avatars/avatar-06.png'
 import avatar07 from './avatars/avatar-07.png'
 import avatar08 from './avatars/avatar-08.png'
+import backAvatar from './avatars/back_avatar.svg'
+import messageAvatar from './avatars/message_avatar.svg'
+import rankingAvatar from './avatars/ranking_avatar.svg'
 
 import sidebarEmpty from './admin/sidebar-empty.png'
 import emptySessions from './admin/empty-sessions.png'
@@ -72,6 +75,12 @@ export const avatarAssets = [
   avatar07,
   avatar08,
 ]
+
+export const actionAvatarAssets = {
+  back: backAvatar,
+  message: messageAvatar,
+  ranking: rankingAvatar,
+}
 
 export const adminAssets = {
   emptySessions,

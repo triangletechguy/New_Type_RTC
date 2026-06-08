@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -606,7 +606,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
   const profileAvatar = avatarForUser(user, displayId)
-  const messageAvatar = avatarForIndex(6)
+  const backAvatar = actionAvatarAssets.back
+  const messageAvatar = actionAvatarAssets.message
+  const rankingAvatar = actionAvatarAssets.ranking
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -2584,7 +2586,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       <section className="buzzcast-room-preview">
         <section className={showMobileRoomSettings ? 'buzzcast-mobile-room-live-preview is-hidden' : 'buzzcast-mobile-room-live-preview'} aria-label={`${card.title} live room preview`}>
           <header className="buzzcast-mobile-live-head">
-            <button type="button" onClick={openLiveSection} aria-label="Back to rooms">‹</button>
+            <button type="button" className="buzzcast-avatar-back-button" onClick={openLiveSection} aria-label="Back to rooms">
+              <img src={backAvatar} alt="" loading="lazy" />
+            </button>
             <button type="button" className="buzzcast-mobile-profile-avatar-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
               <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
             </button>
@@ -2677,7 +2681,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           {showMobileMembers ? (
             <section className="buzzcast-mobile-members-page" aria-label="Group members">
               <header>
-                <button type="button" onClick={() => setShowMobileMembers(false)} aria-label="Back to room">‹</button>
+                <button type="button" className="buzzcast-avatar-back-button" onClick={() => setShowMobileMembers(false)} aria-label="Back to room">
+                  <img src={backAvatar} alt="" loading="lazy" />
+                </button>
                 <strong>Group Members<span>({memberCount} members)</span></strong>
                 <span></span>
               </header>
@@ -2802,7 +2808,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <span>Clear comments history</span>
                 </button>
                 <button type="button" onClick={() => { setShowMobileRoomTools(false); openRankings() }}>
-                  <i className="gather"></i>
+                  <i className="action-avatar"><img src={rankingAvatar} alt="" loading="lazy" /></i>
                   <span>Gather</span>
                 </button>
                 <button type="button" className="cancel" onClick={() => setShowMobileRoomTools(false)}>Cancel</button>
@@ -2840,7 +2846,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </section>
         <section className={showMobileRoomSettings ? 'buzzcast-mobile-room-settings is-visible' : 'buzzcast-mobile-room-settings'} aria-label={`${card.title} room settings`}>
           <header>
-            <button type="button" onClick={() => setShowMobileRoomSettings(false)} aria-label="Back to room">‹</button>
+            <button type="button" className="buzzcast-avatar-back-button" onClick={() => setShowMobileRoomSettings(false)} aria-label="Back to room">
+              <img src={backAvatar} alt="" loading="lazy" />
+            </button>
             <strong>Settings</strong>
             <span></span>
           </header>
@@ -3117,10 +3125,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           {showAdminDashboard ? (
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
           ) : null}
-          <IconButton label="Rankings" onClick={openRankings}><i className="buzzcast-glyph glyph-trophy" aria-hidden="true"></i></IconButton>
+          <IconButton label="Rankings" onClick={openRankings}>
+            <span className="buzzcast-action-avatar ranking" aria-hidden="true"><img src={rankingAvatar} alt="" loading="lazy" /></span>
+          </IconButton>
           <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
             <span className="buzzcast-message-icon" aria-hidden="true">
-              <i className="buzzcast-glyph glyph-message"></i>
+              <img src={messageAvatar} alt="" loading="lazy" />
             </span>
           </IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
@@ -3233,7 +3243,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     setDmDeleteForEveryone(false)
                     setDmImagePreview(null)
                     setShowMessages(false)
-                  }} aria-label="Back to rooms">‹</button>
+                  }} aria-label="Back to rooms">
+                    <img src={backAvatar} alt="" loading="lazy" />
+                  </button>
                   <span className="buzzcast-dm-peer-avatar image-avatar">
                     <img src={activeThreadData.avatarUrl} alt={activeThreadData.name} loading="lazy" />
                   </span>
@@ -3441,7 +3453,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <section className="buzzcast-rankings-modal" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <div>
-                <h2>Rankings</h2>
+                <h2><img src={rankingAvatar} alt="" loading="lazy" />Rankings</h2>
                 <p>Calculated from room viewers, active participants, and host activity.</p>
               </div>
               <button type="button" onClick={() => setShowRankings(false)}>x</button>

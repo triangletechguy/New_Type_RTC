@@ -4,6 +4,101 @@
   --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+.buzzcast-action-avatar,
+.buzzcast-message-icon,
+.buzzcast-rail-icon.rail-back-avatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+}
+
+.buzzcast-action-avatar img,
+.buzzcast-message-icon img,
+.buzzcast-rail-icon.rail-back-avatar img,
+.buzzcast-avatar-back-button img,
+.buzzcast-dm-back img,
+.buzzcast-mobile-room-tools-sheet .action-avatar img,
+.buzzcast-rankings-modal h2 img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.buzzcast-action-avatar::before,
+.buzzcast-action-avatar::after,
+.buzzcast-message-icon::before,
+.buzzcast-message-icon::after,
+.buzzcast-rail-icon.rail-back-avatar::before,
+.buzzcast-rail-icon.rail-back-avatar::after,
+.buzzcast-mobile-room-tools-sheet .action-avatar::before,
+.buzzcast-mobile-room-tools-sheet .action-avatar::after {
+  content: none !important;
+  display: none !important;
+}
+
+.buzzcast-message-icon {
+  background: transparent !important;
+}
+
+.buzzcast-icon-button .buzzcast-action-avatar,
+.buzzcast-icon-button .buzzcast-message-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.buzzcast-rail-icon.rail-back-avatar {
+  width: 34px;
+  height: 34px;
+}
+
+.buzzcast-avatar-back-button {
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 1 !important;
+}
+
+.buzzcast-avatar-back-button img,
+.buzzcast-dm-back img {
+  width: 34px;
+  height: 34px;
+}
+
+.buzzcast-dm-back {
+  font-size: 0 !important;
+  color: transparent !important;
+}
+
+.buzzcast-rankings-modal h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.buzzcast-rankings-modal h2 img {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+}
+
+.buzzcast-mobile-room-tools-sheet .action-avatar {
+  width: 34px !important;
+  height: 34px !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow: visible !important;
+  color: transparent !important;
+}
+
 @media (max-width: 860px) {
   html,
   body,
