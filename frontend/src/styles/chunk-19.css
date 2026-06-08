@@ -1065,7 +1065,7 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) {
-    --mobile-rail-width: 92px;
+    --mobile-rail-width: clamp(118px, 31vw, 154px);
     --mobile-lobby-top: calc(66px + env(safe-area-inset-top));
     min-height: 100svh !important;
     background: #242331 !important;
@@ -1245,12 +1245,12 @@
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 8px !important;
-    padding: 10px 8px calc(12px + env(safe-area-inset-bottom)) !important;
+    gap: 12px !important;
+    padding: 12px 10px calc(14px + env(safe-area-inset-bottom)) 12px !important;
     border: 0 !important;
     border-right: 1px solid rgba(255, 255, 255, .08) !important;
     border-radius: 0 !important;
-    background: #1d1c29 !important;
+    background: #22222e !important;
     box-shadow: 8px 0 22px rgba(12, 11, 18, .22) !important;
   }
 
@@ -1262,20 +1262,20 @@
     position: relative !important;
     width: 100% !important;
     min-width: 0 !important;
-    min-height: 68px !important;
+    min-height: 42px !important;
     height: auto !important;
     display: grid !important;
-    grid-template-columns: 1fr !important;
-    grid-template-rows: 28px minmax(20px, auto) !important;
-    align-items: start !important;
-    justify-items: center !important;
-    gap: 6px !important;
-    padding: 8px 4px !important;
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(30px, auto) !important;
+    align-items: center !important;
+    justify-items: stretch !important;
+    gap: 8px !important;
+    padding: 5px 8px !important;
     border: 1px solid transparent !important;
-    border-radius: 8px !important;
+    border-radius: 6px !important;
     background: transparent !important;
-    color: #bab5ca !important;
-    text-align: center !important;
+    color: #d7d2ee !important;
+    text-align: left !important;
     text-shadow: none !important;
   }
 
@@ -1286,20 +1286,20 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
-    border-color: rgba(157, 80, 255, .38) !important;
-    background: #343244 !important;
+    border-color: rgba(255, 255, 255, .08) !important;
+    background: #47465a !important;
     color: #fff !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-icon {
-    width: 28px !important;
-    height: 28px !important;
+    width: 26px !important;
+    height: 26px !important;
     display: grid !important;
     place-items: center !important;
     border: 0 !important;
-    border-radius: 8px !important;
+    border-radius: 7px !important;
     overflow: hidden !important;
-    background: rgba(255, 255, 255, .08) !important;
+    background: rgba(255, 255, 255, .07) !important;
     box-shadow: none !important;
   }
 
@@ -1315,12 +1315,12 @@
     width: 100% !important;
     overflow: hidden !important;
     color: inherit !important;
-    font-size: 11px !important;
-    font-weight: 850 !important;
-    line-height: 1.1 !important;
-    text-align: center !important;
+    font-size: 14px !important;
+    font-weight: 650 !important;
+    line-height: 1.12 !important;
+    text-align: left !important;
     text-overflow: ellipsis !important;
-    white-space: normal !important;
+    white-space: nowrap !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-main {
