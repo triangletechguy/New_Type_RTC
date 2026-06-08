@@ -19,9 +19,9 @@ const recordingAudioConstraints = {
 const roomChatSyncIntervalMs = 5000
 const inboxSyncIntervalMs = 5000
 const roomGifts = [
-  { id: 'star', label: 'Star' },
-  { id: 'heart', label: 'Heart' },
-  { id: 'cheer', label: 'Cheer' },
+  { id: 'star', label: 'Star', emoji: '⭐' },
+  { id: 'heart', label: 'Heart', emoji: '❤️' },
+  { id: 'cheer', label: 'Cheer', emoji: '🎉' },
 ]
 
 function EmojiPicker({ open, query, onQueryChange, onPick, onClose, label = 'Emoji picker' }) {
@@ -55,7 +55,7 @@ function EmojiPicker({ open, query, onQueryChange, onPick, onClose, label = 'Emo
                   aria-label={`Insert ${emoji}`}
                   title={emoji}
                 >
-                  {emoji}
+                  <span className="chat-emoji-glyph" aria-hidden="true">{emoji}</span>
                 </button>
               ))}
             </div>
@@ -70,6 +70,17 @@ function EmojiPicker({ open, query, onQueryChange, onPick, onClose, label = 'Emo
 
 function reactionSummaries(message) {
   return Array.isArray(message?.reactions) ? message.reactions.filter((reaction) => reaction?.emoji) : []
+}
+
+function roomGiftForMessage(message) {
+  const mediaId = String(message?.media_url || '').trim().toLowerCase()
+  const body = String(message?.message_body || '').trim().toLowerCase()
+
+  return roomGifts.find((gift) => (
+    gift.id === mediaId
+    || gift.label.toLowerCase() === body
+    || `${gift.emoji} ${gift.label}`.toLowerCase() === body
+  )) || null
 }
 
 function MessageReactions({
@@ -97,7 +108,7 @@ function MessageReactions({
           aria-label={`${reaction.reacted_by_me ? 'Remove' : 'Add'} ${reaction.emoji} reaction`}
           title={`${reaction.emoji} ${reaction.count || 0}`}
         >
-          <span>{reaction.emoji}</span>
+          <span className="chat-emoji-glyph" aria-hidden="true">{reaction.emoji}</span>
           <b>{reaction.count || 0}</b>
         </button>
       ))}
@@ -109,7 +120,7 @@ function MessageReactions({
         aria-label="Add emoji reaction"
         title="Add reaction"
       >
-        +
+        <span className="chat-emoji-glyph" aria-hidden="true">🙂</span>
       </button>
       {pickerOpen ? (
         <div className="chat-reaction-picker">
@@ -123,7 +134,7 @@ function MessageReactions({
                 aria-label={`React with ${emoji}`}
                 title={`React with ${emoji}`}
               >
-                {emoji}
+                <span className="chat-emoji-glyph" aria-hidden="true">{emoji}</span>
               </button>
             ))}
           </div>
@@ -979,8 +990,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
         method: 'POST',
         body: JSON.stringify({
           message_type: 'gift',
-          message_body: gift.label,
-          media_url: gift.id,
+          message_body: `${gift.emoji} ${gift.label}`,
         }),
       })
       appendMessage(data.chat_message)
@@ -1734,6 +1744,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const avatarMessage = imageMessage && String(message.message_body || '').trim() === 'sent an avatar'
           const voiceMessage = message.message_type === 'voice'
           const giftMessage = message.message_type === 'gift'
+          const gift = giftMessage ? roomGiftForMessage(message) : null
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
@@ -1776,7 +1787,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                     />
                     <div className="chat-edit-tools">
                       <button type="button" className="chat-emoji-button compact" onClick={() => toggleEmojiPicker(`edit:${messageActionKey(message)}`)} aria-label="Emoji" title="Emoji">
-                        🙂
+                        <span className="chat-emoji-glyph" aria-hidden="true">🙂</span>
                       </button>
                       <span>{editText.length}/1200</span>
                     </div>
@@ -1821,7 +1832,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   </div>
                 ) : giftMessage ? (
                   <div className="chat-gift-message">
-                    <strong>{message.message_body || 'Gift'}</strong>
+                    <span className="chat-gift-emoji chat-emoji-glyph" aria-hidden="true">{gift?.emoji || '🎁'}</span>
+                    <strong>{gift?.label || message.message_body || 'Gift'}</strong>
                     <span>sent a gift</span>
                   </div>
                 ) : (
@@ -1935,7 +1947,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               disabled={!chatEnabled || sending}
             />
             <button type="button" className="secondary-button chat-emoji-button" onClick={() => toggleEmojiPicker('room')} disabled={!chatEnabled || sending || recording} aria-label="Emoji" title="Emoji">
-              🙂
+              <span className="chat-emoji-glyph" aria-hidden="true">🙂</span>
             </button>
             <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending} aria-label="Photo" title="Photo">
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
@@ -1962,7 +1974,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 aria-label={`Send ${gift.label} gift`}
                 title={`Send ${gift.label} gift`}
               >
-                <span>{gift.label}</span>
+                <span className="chat-emoji-glyph" aria-hidden="true">{gift.emoji}</span>
+                <small>{gift.label}</small>
               </button>
             ))}
             <button className="primary-button" type="submit" disabled={!canSend}>
@@ -2046,7 +2059,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                       />
                       <div className="chat-edit-tools">
                         <button type="button" className="chat-emoji-button compact" onClick={() => toggleEmojiPicker(`edit:${messageActionKey({ ...message, __scope: 'inbox' })}`)} aria-label="Emoji" title="Emoji">
-                          🙂
+                          <span className="chat-emoji-glyph" aria-hidden="true">🙂</span>
                         </button>
                         <span>{editText.length}/1200</span>
                       </div>
@@ -2180,7 +2193,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               disabled={!inboxTarget || sendingInbox}
             />
             <button type="button" className="secondary-button chat-emoji-button" onClick={() => toggleEmojiPicker('inbox')} disabled={!inboxTarget || sendingInbox || recording} aria-label="Emoji" title="Emoji">
-              🙂
+              <span className="chat-emoji-glyph" aria-hidden="true">🙂</span>
             </button>
             <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!inboxTarget || sendingInbox} aria-label="Photo" title="Photo">
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
