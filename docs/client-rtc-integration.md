@@ -43,6 +43,25 @@ Authorization: Bearer CLIENT_API_KEY
 
 The API key is created/rotated from the admin client-company SDK/app section.
 
+## Browser Local Testing And CORS
+
+For secure production integration, the client API key should live on the
+client company's backend. The browser should call that backend and receive only
+the short-lived RTC room token.
+
+If a client needs to run a temporary browser-only test from a local HTML file,
+add that exact browser origin to the client app allowed origins in the admin SDK
+access section, for example:
+
+```text
+http://127.0.0.1:5500
+http://localhost:5500
+```
+
+The backend CORS layer reads those client app allowed origins for `/api/client/*`
+and Socket.IO requests. The request still must use a valid client API key, and
+the same origin must be allowed on that specific client app.
+
 ## Client Integration Flow
 
 ### 1. Verify API Key

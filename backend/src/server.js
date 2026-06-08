@@ -23,12 +23,25 @@ function positiveIntegerEnv(key, fallback) {
 }
 
 const SOCKET_MAX_HTTP_BUFFER_SIZE = positiveIntegerEnv('SOCKET_MAX_HTTP_BUFFER_SIZE', 20 * 1024 * 1024)
+const CLIENT_APP_CORS_CACHE_TTL_MS = positiveIntegerEnv('CLIENT_APP_CORS_CACHE_TTL_MS', 15000)
 
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => normalizeCorsOrigin(origin))
   .filter(Boolean)
 const isProduction = process.env.NODE_ENV === 'production'
+const clientAppCorsCache = new Map()
+
+function normalizeCorsOrigin(origin) {
+  const value = String(origin || '').trim()
+  if (!value) return ''
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return value.replace(/\/+$/g, '')
+  }
+}
 
 function isLocalDevOrigin(origin) {
   if (isProduction) return false
@@ -41,11 +54,86 @@ function isLocalDevOrigin(origin) {
   }
 }
 
-function corsOrigin(origin, callback) {
-  if (!origin || allowedOrigins.includes(origin) || isLocalDevOrigin(origin)) {
-    return callback(null, true)
+function isStaticAllowedOrigin(origin) {
+  const normalizedOrigin = normalizeCorsOrigin(origin)
+  return !normalizedOrigin || allowedOrigins.includes(normalizedOrigin) || isLocalDevOrigin(normalizedOrigin)
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
   }
-  return callback(new Error(`CORS blocked origin: ${origin}`), false)
+}
+
+function allowedOriginListIncludes(origin, allowedOriginList = []) {
+  const normalizedOrigin = normalizeCorsOrigin(origin)
+  return allowedOriginList.some((allowedOrigin) => {
+    const normalizedAllowedOrigin = normalizeCorsOrigin(allowedOrigin)
+    return normalizedAllowedOrigin === '*' || normalizedAllowedOrigin === normalizedOrigin
+  })
+}
+
+async function isClientAppAllowedOrigin(origin) {
+  const normalizedOrigin = normalizeCorsOrigin(origin)
+  if (isStaticAllowedOrigin(normalizedOrigin)) return true
+
+  const cached = clientAppCorsCache.get(normalizedOrigin)
+  if (cached && cached.expiresAt > Date.now()) return cached.allowed
+
+  const rows = await query(
+    `
+    SELECT ca.allowed_origins
+    FROM client_apps ca
+    INNER JOIN tenants t ON t.id = ca.tenant_id
+    WHERE ca.status = 'active'
+    AND t.status IN ('active', 'pending')
+    AND ca.allowed_origins IS NOT NULL
+    `
+  )
+  const allowed = rows.some((row) => allowedOriginListIncludes(normalizedOrigin, parseJsonArray(row.allowed_origins)))
+  clientAppCorsCache.set(normalizedOrigin, {
+    allowed,
+    expiresAt: Date.now() + CLIENT_APP_CORS_CACHE_TTL_MS,
+  })
+
+  return allowed
+}
+
+function isClientApiRequest(req) {
+  return req.path === '/api/client' || req.path.startsWith('/api/client/')
+}
+
+function httpCorsOptions(req, callback) {
+  const origin = normalizeCorsOrigin(req.headers.origin)
+  if (isStaticAllowedOrigin(origin)) {
+    return callback(null, { origin: true, credentials: false })
+  }
+
+  if (!isClientApiRequest(req)) {
+    return callback(null, { origin: false, credentials: false })
+  }
+
+  isClientAppAllowedOrigin(origin)
+    .then((allowed) => callback(null, { origin: allowed, credentials: false }))
+    .catch((error) => callback(error))
+}
+
+function corsOrigin(origin, callback) {
+  const normalizedOrigin = normalizeCorsOrigin(origin)
+  if (isStaticAllowedOrigin(normalizedOrigin)) return callback(null, true)
+
+  isClientAppAllowedOrigin(normalizedOrigin)
+    .then((allowed) => {
+      if (allowed) return callback(null, true)
+      return callback(new Error(`CORS blocked origin: ${normalizedOrigin}`), false)
+    })
+    .catch((error) => callback(error, false))
 }
 
 function splitUrls(value) {
@@ -184,10 +272,7 @@ function buildRtcConfig() {
 
 const app = express()
 
-app.use(cors({
-  origin: corsOrigin,
-  credentials: false,
-}))
+app.use(cors(httpCorsOptions))
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '40mb' }))
 
