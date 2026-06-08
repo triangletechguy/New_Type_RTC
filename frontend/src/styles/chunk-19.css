@@ -918,6 +918,11 @@
   left: auto;
 }
 
+.buzzcast-live-side .chat-bubble.reaction-picker-open {
+  overflow: visible;
+  z-index: 12;
+}
+
 .chat-row.standalone-emoji-row {
   align-items: center;
 }

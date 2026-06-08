@@ -1767,9 +1767,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const photoCaption = imageMessage && !['sent a photo', 'sent an avatar'].includes(String(message.message_body || '').trim())
             ? String(message.message_body || '').trim()
             : ''
-          const bubbleClass = imageMessage
-            ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'
           const reactionKey = reactionTarget('room', message)
+          const reactionPickerOpen = reactionPickerTarget === reactionKey
+          const bubbleClass = `${imageMessage
+            ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : giftMessage ? 'chat-bubble gift-message' : systemMessage ? 'chat-bubble system-message' : 'chat-bubble'}${reactionPickerOpen ? ' reaction-picker-open' : ''}`
 
           return (
             <div className={`${mine ? 'chat-row mine' : 'chat-row'}${standaloneEmoji ? ' standalone-emoji-row' : ''}${giftMessage ? ' gift-row' : ''}`} key={`${message.id}-${message.created_at || ''}`}>
@@ -1853,7 +1854,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 {!editing && !systemMessage && !standaloneEmoji ? (
                   <MessageReactions
                     message={message}
-                    pickerOpen={reactionPickerTarget === reactionKey}
+                    pickerOpen={reactionPickerOpen}
                     pickerQuery={reactionQuery}
                     onPickerQueryChange={setReactionQuery}
                     onToggle={toggleRoomReaction}
@@ -2047,13 +2048,15 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             const savingEdit = savingEditId === editKey
             const deleting = Boolean(deletingMessageIds[editKey])
             const reactionKey = reactionTarget('inbox', message)
+            const reactionPickerOpen = reactionPickerTarget === reactionKey
+            const bubbleClass = `${imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}${reactionPickerOpen ? ' reaction-picker-open' : ''}`
 
             return (
               <div className={`${mine ? 'chat-row mine' : 'chat-row'}${emojiOnlyBody ? ' standalone-emoji-row' : ''}`} key={`dm-${message.id}`}>
                 <div className="chat-avatar image-avatar">
                   <img src={mine ? avatarForUser(user, user?.id || message.sender_id || 0) : avatarForUser({ ...inboxTarget, sender_gender: message.sender_gender }, message.sender_id || 0)} alt={senderName} loading="lazy" />
                 </div>
-                <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
+                <div className={bubbleClass}>
                   {!emojiOnlyBody ? (
                     <div className="chat-meta">
                       <strong>{senderName}</strong>
@@ -2126,7 +2129,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   {!editing && !emojiOnlyBody ? (
                     <MessageReactions
                       message={message}
-                      pickerOpen={reactionPickerTarget === reactionKey}
+                      pickerOpen={reactionPickerOpen}
                       pickerQuery={reactionQuery}
                       onPickerQueryChange={setReactionQuery}
                       onToggle={toggleInboxReaction}
