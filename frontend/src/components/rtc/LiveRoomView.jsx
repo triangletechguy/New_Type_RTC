@@ -214,6 +214,69 @@ function uniqueStatValues(statsList, key) {
   ))
 }
 
+function roomRoleName(value) {
+  const text = String(value || '').trim()
+  return text || 'User'
+}
+
+function roomRoleOptionLabel(target) {
+  if (!target) return 'Select user'
+  return target.email ? `${target.name} (${target.email})` : target.name
+}
+
+function buildRoomRoleTargets(roomControls) {
+  const ownerId = Number(roomControls?.room?.owner_id || 0)
+  const targets = new Map()
+
+  function upsert({ userId, name, email = '', active = false, currentRole = '' }) {
+    const normalizedUserId = Number(userId || 0)
+    if (!normalizedUserId || normalizedUserId === ownerId) return
+
+    const key = String(normalizedUserId)
+    const fallbackName = `User #${normalizedUserId}`
+    const previous = targets.get(key) || {
+      userId: key,
+      name: fallbackName,
+      email: '',
+      active: false,
+      currentRole: '',
+    }
+    const nextName = roomRoleName(name || previous.name || fallbackName)
+
+    targets.set(key, {
+      ...previous,
+      name: previous.name === fallbackName ? nextName : previous.name,
+      email: previous.email || email || '',
+      active: previous.active || active,
+      currentRole: currentRole || previous.currentRole,
+    })
+  }
+
+  for (const participant of roomControls?.participants || []) {
+    upsert({
+      userId: participant.user_id,
+      name: participant.user_name,
+      email: participant.user_email,
+      active: true,
+    })
+  }
+
+  for (const role of roomControls?.roles || []) {
+    if (!['admin', 'moderator'].includes(role.role)) continue
+    upsert({
+      userId: role.user_id,
+      name: role.user_name,
+      email: role.user_email,
+      currentRole: role.role,
+    })
+  }
+
+  return Array.from(targets.values()).sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+}
+
 function sumMediaBitrate(statsList, direction, kind) {
   return statsList.reduce((total, stats) => total + numericStat(stats?.media?.[direction]?.[kind]?.bitrateKbps), 0)
 }
@@ -300,6 +363,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [moderatingUserIds, setModeratingUserIds] = useState({})
   const [roleForm, setRoleForm] = useState({ userId: '', role: 'moderator' })
   const [roleSaving, setRoleSaving] = useState(false)
+  const [roleSavingAction, setRoleSavingAction] = useState('')
+  const [roleFeedback, setRoleFeedback] = useState({ type: '', text: '' })
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
@@ -1704,9 +1769,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function saveRoomRole(removeRole = false) {
     const targetRoomId = activeRoomIdRef.current || Number(room?.id || roomId || 0)
     const targetUserId = Number(roleForm.userId || 0)
-    if (!targetRoomId || !targetUserId || roleSaving) return
+    const roleTargets = buildRoomRoleTargets(roomControls)
+    const targetUser = roleTargets.find((target) => Number(target.userId) === targetUserId)
+    const targetName = targetUser?.name || `User #${targetUserId}`
+
+    if (!targetRoomId) {
+      setRoleFeedback({ type: 'error', text: 'Room is not ready yet.' })
+      return
+    }
+    if (!targetUserId) {
+      setRoleFeedback({ type: 'error', text: 'Choose a user first.' })
+      return
+    }
+    if (roleSaving) return
 
     setRoleSaving(true)
+    setRoleSavingAction(removeRole ? 'remove' : 'assign')
+    setRoleFeedback({ type: 'pending', text: `${removeRole ? 'Removing role for' : `Assigning ${roleForm.role} to`} ${targetName}...` })
     setStatus('')
 
     try {
@@ -1717,11 +1796,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         body: removeRole ? undefined : JSON.stringify({ user_id: targetUserId, role: roleForm.role }),
       })
       if (data.controls) setRoomControls(data.controls)
-      setStatus(data.message || (removeRole ? 'Room role removed.' : 'Room role assigned.'))
+      const message = data.message || (removeRole ? 'Room role removed.' : 'Room role assigned.')
+      setRoleFeedback({ type: 'success', text: `${targetName}: ${message}` })
+      setStatus(message)
     } catch (error) {
-      setStatus(`Role update failed: ${error.message}`)
+      const message = `Role update failed: ${error.message}`
+      setRoleFeedback({ type: 'error', text: `${targetName}: ${message}` })
+      setStatus(message)
     } finally {
       setRoleSaving(false)
+      setRoleSavingAction('')
     }
   }
 
@@ -3306,6 +3390,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const activeFollowRequest = followRelations.incoming.find((request) => Number(request.id) === Number(activeFollowRequestId))
     || followRelations.incoming[0]
     || null
+  const roleTargetOptions = buildRoomRoleTargets(roomControls)
+  const selectedRoleTarget = roleTargetOptions.find((target) => target.userId === String(roleForm.userId))
+  const roleTargetUnavailable = roleTargetOptions.length === 0
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -3646,18 +3733,43 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                             event.preventDefault()
                             saveRoomRole(false)
                           }}>
-                            <input
-                              inputMode="numeric"
+                            <select
+                              className="room-role-user-select"
                               value={roleForm.userId}
-                              onChange={(event) => setRoleForm((current) => ({ ...current, userId: event.target.value.replace(/\D/g, '') }))}
-                              placeholder="User ID"
-                            />
-                            <select value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value }))}>
+                              onChange={(event) => {
+                                setRoleForm((current) => ({ ...current, userId: event.target.value }))
+                                setRoleFeedback({ type: '', text: '' })
+                              }}
+                              disabled={roleSaving || roleTargetUnavailable}
+                              aria-label="Room member"
+                            >
+                              <option value="">{roleTargetUnavailable ? 'No users available' : 'Select user'}</option>
+                              {roleTargetOptions.map((target) => (
+                                <option key={target.userId} value={target.userId}>
+                                  {roomRoleOptionLabel(target)}
+                                </option>
+                              ))}
+                            </select>
+                            <select value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value }))} disabled={roleSaving} aria-label="Room role">
                               <option value="moderator">Moderator</option>
                               <option value="admin">Admin</option>
                             </select>
-                            <button type="submit" disabled={roleSaving || !roleForm.userId}>Assign</button>
-                            <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleForm.userId}>Remove</button>
+                            <button type="submit" disabled={roleSaving || !roleForm.userId}>
+                              {roleSavingAction === 'assign' ? 'Assigning...' : 'Assign'}
+                            </button>
+                            <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleForm.userId || !selectedRoleTarget?.currentRole}>
+                              {roleSavingAction === 'remove' ? 'Removing...' : 'Remove'}
+                            </button>
+                            {selectedRoleTarget ? (
+                              <small className="room-role-selected">
+                                {selectedRoleTarget.name}{selectedRoleTarget.currentRole ? ` - ${selectedRoleTarget.currentRole}` : selectedRoleTarget.active ? ' - active' : ''}
+                              </small>
+                            ) : null}
+                            {roleFeedback.text ? (
+                              <small className={`room-role-feedback ${roleFeedback.type}`} role="status">
+                                {roleFeedback.text}
+                              </small>
+                            ) : null}
                           </form>
                         ) : null}
                       </>
