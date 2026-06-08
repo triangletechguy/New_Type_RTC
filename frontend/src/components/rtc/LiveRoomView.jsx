@@ -252,6 +252,14 @@ function buildRoomRoleTargets(roomControls) {
     })
   }
 
+  for (const assignableUser of roomControls?.assignable_users || []) {
+    upsert({
+      userId: assignableUser.id,
+      name: assignableUser.name,
+      email: assignableUser.email,
+    })
+  }
+
   for (const participant of roomControls?.participants || []) {
     upsert({
       userId: participant.user_id,
