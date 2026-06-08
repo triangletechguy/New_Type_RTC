@@ -287,6 +287,7 @@ export function avatarForUser(user = {}, fallbackIndex = 0) {
     profile.sender_avatar_url,
     profile.peer_avatar_url,
     profile.user_avatar_url,
+    profile.userAvatarUrl,
   ].map((value) => String(value || '').trim()).find(Boolean) || ''
   if (avatar) return avatar
 

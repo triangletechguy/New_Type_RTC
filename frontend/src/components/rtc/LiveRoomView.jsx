@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForUser, brandAssets, coverForRoomType, navigationAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, brandAssets } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -240,6 +240,17 @@ function roomRoleOptionLabel(target) {
   return target.email ? `${target.name} (${target.email})` : target.name
 }
 
+function profileAvatarUrl(profile = {}) {
+  return [
+    profile?.avatar_url,
+    profile?.avatarUrl,
+    profile?.user_avatar_url,
+    profile?.userAvatarUrl,
+    profile?.sender_avatar_url,
+    profile?.peer_avatar_url,
+  ].map((value) => String(value || '').trim()).find(Boolean) || ''
+}
+
 function buildRoomRoleTargets(roomControls) {
   const ownerId = Number(roomControls?.room?.owner_id || 0)
   const targets = new Map()
@@ -475,8 +486,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     )) || null
   }, [expandedScreenShareId, remoteTiles])
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
-  const roomVisualIndex = Number(room?.id || roomId || 0)
-  const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
 
   function isLiveTrack(track) {
     return Boolean(track && track.readyState === 'live')
@@ -1628,7 +1637,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       userId: user?.id,
       userName: user?.name || 'User',
       userGender: user?.gender || '',
-      userAvatarUrl: user?.avatar_url || '',
+      userAvatarUrl: profileAvatarUrl(user),
       rtcMode: normalizedMode,
       micEnabled: Boolean(micEnabled),
       cameraEnabled: allowedCameraEnabled,
@@ -1860,7 +1869,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return {
       id: Number(peer?.id || fallbackId || 0),
       name: peer?.name || `User #${fallbackId}`,
-      avatar_url: peer?.avatar_url || '',
+      avatar_url: profileAvatarUrl(peer),
       gender: peer?.gender || '',
     }
   }
@@ -3418,8 +3427,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     .slice(-5)
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
-  const backAvatar = actionAvatarAssets.back
-  const liveRoomsAvatar = navigationAssets.liveRooms.avatar
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
@@ -3445,6 +3452,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
+  const currentUserAvatarUrl = profileAvatarUrl(user)
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">
@@ -3467,9 +3475,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       <aside className="buzzcast-left-rail buzzcast-live-rail">
         <button type="button" className="active" onClick={handleBack}>
-          <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
-            <img src={liveRoomsAvatar} alt="" loading="lazy" />
-          </span>
+          <span className="buzzcast-rail-icon rail-live" aria-hidden="true"></span>
           <b>Live</b>
         </button>
         <button type="button" onClick={onProfile}>
@@ -3478,9 +3484,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button type="button" onClick={handleBack}>
-          <span className="buzzcast-rail-icon rail-back-avatar image-avatar" aria-hidden="true">
-            <img src={backAvatar} alt="" loading="lazy" />
-          </span>
+          <span className="buzzcast-rail-icon rail-back" aria-hidden="true"></span>
           <b>Back</b>
         </button>
       </aside>
@@ -3488,7 +3492,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       <main className="buzzcast-live-main">
         <section className="buzzcast-live-stage-panel">
           <div className="buzzcast-stage buzzcast-rtc-stage">
-            <img className="buzzcast-stage-image" src={roomCover} alt="" />
           {joinEffect && (
             <div className="join-effect" key={joinEffect.key}>
               <span></span>
@@ -3509,7 +3512,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     label={user?.name || 'You'}
                     userId={user?.id}
                     gender={user?.gender}
-                    avatarUrl={user?.avatar_url}
+                    avatarUrl={currentUserAvatarUrl}
                     badge={screenSharing ? 'screen' : mediaMode}
                     micOn={micOn}
                     cameraOn={cameraOn}
@@ -3888,7 +3891,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={micOn}
                 title={micButtonTitle}
               >
-                <img className="control-avatar" src={rtcToolbarAssets.audio} alt="" aria-hidden="true" />
+                <span className="control-glyph mic" aria-hidden="true"></span>
               </button>
               <button
                 className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
@@ -3907,7 +3910,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'audio'}
                 title="Audio effects"
               >
-                <img className="control-avatar" src={rtcToolbarAssets.audioFilter} alt="" aria-hidden="true" />
+                <span className="control-glyph effects" aria-hidden="true"></span>
                 <span>Audio</span>
               </button>
               <button
@@ -3918,7 +3921,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'filters'}
                 title="Beauty and background"
               >
-                <img className="control-avatar" src={rtcToolbarAssets.beauty} alt="" aria-hidden="true" />
+                <span className="control-glyph beauty" aria-hidden="true"></span>
                 <span>Beauty</span>
               </button>
               <button
@@ -3929,13 +3932,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={screenSharing}
                 title={screenSharing ? 'Stop screen share' : 'Screen share'}
               >
-                <img className="control-avatar" src={rtcToolbarAssets.screenShare} alt="" aria-hidden="true" />
+                <span className="control-glyph screen" aria-hidden="true"></span>
               </button>
               <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
-                <img className="control-avatar" src={rtcToolbarAssets.aiGuard} alt="" aria-hidden="true" />
+                <span className="control-glyph guard" aria-hidden="true"></span>
               </button>
               <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
-                <img className="control-avatar" src={rtcToolbarAssets.roomOperations} alt="" aria-hidden="true" />
+                <span className="control-glyph ops" aria-hidden="true"></span>
               </button>
             </div>
 

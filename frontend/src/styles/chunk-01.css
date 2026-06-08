@@ -544,6 +544,25 @@
   display: none;
 }
 
+.rail-back::before {
+  left: 5px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.rail-back::after {
+  left: 6px;
+  top: 11px;
+  width: 15px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .rail-app::before {
   left: 4px;
   top: 4px;
