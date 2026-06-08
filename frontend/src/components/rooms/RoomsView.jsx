@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, navigationAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -609,6 +609,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const backAvatar = actionAvatarAssets.back
   const messageAvatar = actionAvatarAssets.message
   const rankingAvatar = actionAvatarAssets.ranking
+  const liveRoomsAvatar = navigationAssets.liveRooms.avatar
+  const settingsAvatar = navigationAssets.adminDashboard.avatar
+  const feedbackHelpAvatar = navigationAssets.feedbackHelp.avatar
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -3123,7 +3126,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </div>
         <div className="buzzcast-actions">
           {showAdminDashboard ? (
-            <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}><i className="buzzcast-glyph glyph-admin" aria-hidden="true"></i></IconButton>
+            <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
+              <span className="buzzcast-action-avatar admin-dashboard" aria-hidden="true"><img src={settingsAvatar} alt="" loading="lazy" /></span>
+            </IconButton>
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}>
             <span className="buzzcast-action-avatar ranking" aria-hidden="true"><img src={rankingAvatar} alt="" loading="lazy" /></span>
@@ -3149,7 +3154,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openLiveSection}
           aria-label="Home"
         >
-          <span className="buzzcast-rail-icon rail-live" aria-hidden="true"></span>
+          <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
+            <img src={liveRoomsAvatar} alt="" loading="lazy" />
+          </span>
           <b>Live</b>
         </button>
         <button
@@ -3168,22 +3175,24 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'settings' ? 'active buzzcast-rail-tab buzzcast-rail-moments' : 'buzzcast-rail-tab buzzcast-rail-moments'}
-          data-mobile-label="Moments"
+          data-mobile-label="Settings"
           onClick={openMobileMomentsSection}
-          aria-label="Moments"
+          aria-label="Settings"
         >
-          <span className="buzzcast-rail-icon rail-settings" aria-hidden="true"></span>
+          <span className="buzzcast-rail-icon rail-settings rail-image-icon" aria-hidden="true">
+            <img src={settingsAvatar} alt="" loading="lazy" />
+          </span>
           <b>Settings</b>
         </button>
         <button
           type="button"
           className={showMessages || activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
-          data-mobile-label="Message"
+          data-mobile-label="Help"
           onClick={openMobileMessageSection}
-          aria-label="Messages"
+          aria-label="Feedback and Help"
         >
-          <span className="buzzcast-rail-icon rail-message-avatar image-avatar" aria-hidden="true">
-            <img src={messageAvatar} alt="" loading="lazy" />
+          <span className="buzzcast-rail-icon rail-feedback-avatar rail-image-icon" aria-hidden="true">
+            <img src={feedbackHelpAvatar} alt="" loading="lazy" />
           </span>
           <b>Feedback and Help</b>
         </button>

@@ -6,6 +6,7 @@
 
 .buzzcast-action-avatar,
 .buzzcast-message-icon,
+.buzzcast-rail-icon.rail-image-icon,
 .buzzcast-rail-icon.rail-back-avatar {
   width: 32px;
   height: 32px;
@@ -20,6 +21,7 @@
 
 .buzzcast-action-avatar img,
 .buzzcast-message-icon img,
+.buzzcast-rail-icon.rail-image-icon img,
 .buzzcast-rail-icon.rail-back-avatar img,
 .buzzcast-avatar-back-button img,
 .buzzcast-dm-back img,
@@ -35,6 +37,8 @@
 .buzzcast-action-avatar::after,
 .buzzcast-message-icon::before,
 .buzzcast-message-icon::after,
+.buzzcast-rail-icon.rail-image-icon::before,
+.buzzcast-rail-icon.rail-image-icon::after,
 .buzzcast-rail-icon.rail-back-avatar::before,
 .buzzcast-rail-icon.rail-back-avatar::after,
 .buzzcast-mobile-room-tools-sheet .action-avatar::before,
@@ -45,6 +49,21 @@
 
 .buzzcast-message-icon {
   background: transparent !important;
+}
+
+.buzzcast-rail-icon.rail-image-icon {
+  width: 34px;
+  height: 34px;
+  background: transparent !important;
+}
+
+.buzzcast-rail-icon.rail-image-icon img {
+  object-fit: contain;
+}
+
+.buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-image-icon {
+  background: transparent !important;
+  background-image: none !important;
 }
 
 .buzzcast-icon-button .buzzcast-action-avatar,

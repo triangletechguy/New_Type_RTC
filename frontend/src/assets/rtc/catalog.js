@@ -8,6 +8,15 @@ import assetImage2HomeIcon from './asset-image2/smart-home-icon.png'
 import assetImage2LockIcon from './asset-image2/smart-lock-icon.png'
 import assetImage2SearchIcon from './asset-image2/smart-search-icon.png'
 
+import adminDashboardAvatar from './modern-project-svgs/admin_dashboard_avatar.svg'
+import adminDashboardIcon from './modern-project-svgs/admin_dashboard_icon.svg'
+import feedbackHelpAvatar from './modern-project-svgs/feedback_help_avatar.svg'
+import feedbackHelpIcon from './modern-project-svgs/feedback_help_icon.svg'
+import liveRoomsAvatar from './modern-project-svgs/live_rooms_avatar.svg'
+import liveRoomsIcon from './modern-project-svgs/live_rooms_icon.svg'
+import siteAvatar from './modern-project-svgs/site_avatar.svg'
+import siteIcon from './modern-project-svgs/site_icon.svg'
+
 import liveComposerMic from './live-ui/composer-mic.svg'
 import liveComposerPhoto from './live-ui/photo.svg'
 import liveSeatLock from './live-ui/seat-lock.svg'
@@ -43,8 +52,28 @@ import studioStage from './rooms/studio-stage.png'
 import videoRoom from './rooms/video-room.png'
 
 export const brandAssets = {
-  appIconSmall: assetImage2GroupIcon,
+  appIcon: siteIcon,
+  appIconSmall: siteAvatar,
   appScreenshots,
+}
+
+export const navigationAssets = {
+  adminDashboard: {
+    avatar: adminDashboardAvatar,
+    icon: adminDashboardIcon,
+  },
+  feedbackHelp: {
+    avatar: feedbackHelpAvatar,
+    icon: feedbackHelpIcon,
+  },
+  liveRooms: {
+    avatar: liveRoomsAvatar,
+    icon: liveRoomsIcon,
+  },
+  site: {
+    avatar: siteAvatar,
+    icon: siteIcon,
+  },
 }
 
 export const assetImage2Assets = {
