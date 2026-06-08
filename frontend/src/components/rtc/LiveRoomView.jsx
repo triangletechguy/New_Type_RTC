@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { avatarForUser, brandAssets } from '../../assets/rtc/catalog'
+import { avatarForUser, brandAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -3891,7 +3891,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={micOn}
                 title={micButtonTitle}
               >
-                <span className="control-glyph mic" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.audio} alt="" aria-hidden="true" draggable="false" />
               </button>
               <button
                 className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
@@ -3910,7 +3910,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'audio'}
                 title="Audio effects"
               >
-                <span className="control-glyph effects" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.audioFilter} alt="" aria-hidden="true" draggable="false" />
                 <span>Audio</span>
               </button>
               <button
@@ -3921,7 +3921,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'filters'}
                 title="Beauty and background"
               >
-                <span className="control-glyph beauty" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.beauty} alt="" aria-hidden="true" draggable="false" />
                 <span>Beauty</span>
               </button>
               <button
@@ -3932,13 +3932,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={screenSharing}
                 title={screenSharing ? 'Stop screen share' : 'Screen share'}
               >
-                <span className="control-glyph screen" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.screenShare} alt="" aria-hidden="true" draggable="false" />
               </button>
               <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
-                <span className="control-glyph guard" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.aiGuard} alt="" aria-hidden="true" draggable="false" />
               </button>
               <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
-                <span className="control-glyph ops" aria-hidden="true"></span>
+                <img className="control-avatar" src={rtcToolbarAssets.roomOperations} alt="" aria-hidden="true" draggable="false" />
               </button>
             </div>
 
