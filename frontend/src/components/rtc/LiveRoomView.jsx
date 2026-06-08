@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType, navigationAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForUser, brandAssets, coverForRoomType, navigationAssets, rtcToolbarAssets } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -476,7 +476,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [expandedScreenShareId, remoteTiles])
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
   const roomVisualIndex = Number(room?.id || roomId || 0)
-  const roomAvatar = avatarForIndex(roomVisualIndex)
   const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
 
   function isLiveTrack(track) {
@@ -3551,7 +3550,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </>
               ) : (
                 <div className="buzzcast-waiting-card">
-                  <img src={roomAvatar} alt="" />
+                  <img src={profileAvatar} alt="" />
                   <strong>{roomTitle}</strong>
                   <span>Room ID: {room?.id || roomId}</span>
                 </div>

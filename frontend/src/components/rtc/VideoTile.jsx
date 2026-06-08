@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { avatarForUser, roomAssets } from '../../assets/rtc/catalog'
+import { avatarForUser } from '../../assets/rtc/catalog'
 
 function visualIndexFromLabel(label) {
   return String(label || 'User')
@@ -74,11 +74,6 @@ export function VideoTile({
   const followDisabled = followStatus === 'requested' || followStatus === 'loading'
   const visualIndex = visualIndexFromLabel(label)
   const avatar = avatarForUser({ id: userId, name: label, gender, avatar_url: avatarUrl }, userId || visualIndex)
-  const placeholderArt = rtcMode === 'audio'
-    ? roomAssets.audioStage
-    : cameraOn === false
-      ? roomAssets.cameraOff
-      : roomAssets.avatarGrid
 
   function playRemoteAudio() {
     const audio = audioRef.current
@@ -243,7 +238,6 @@ export function VideoTile({
       ) : stream ? (
         <>
           <div className="video-placeholder media-avatar-panel">
-            <img className="video-placeholder-art" src={placeholderArt} alt="" />
             <div className="avatar-stage">
               <div className="avatar-ring"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
               {showMediaState && (
@@ -257,7 +251,6 @@ export function VideoTile({
         </>
       ) : (
         <div className="video-placeholder">
-          <img className="video-placeholder-art" src={placeholderArt} alt="" />
           <div className="avatar-stage">
             <div className="avatar-ring idle"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
             {showMediaState && (
