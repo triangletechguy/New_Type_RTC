@@ -690,6 +690,13 @@ async function getRoomControls(connection, room, userId, options = {}) {
     `
     SELECT
       p.id, p.session_id, p.room_id, p.user_id, p.peer_uid, p.role_in_room,
+      CASE
+        WHEN p.user_id = ? THEN 'owner'
+        ELSE COALESCE(
+          current_roles.effective_role,
+          CASE WHEN p.role_in_room IN ('speaker', 'audience') THEN p.role_in_room ELSE 'end_user' END
+        )
+      END AS effective_role_in_room,
       p.joined_at, p.left_at, p.duration_seconds, p.mic_enabled, p.camera_enabled,
       p.screen_shared, p.connection_status, p.created_at, p.updated_at,
       u.name AS user_name,
@@ -698,11 +705,25 @@ async function getRoomControls(connection, room, userId, options = {}) {
       u.gender AS user_gender
     FROM rtc_session_participants p
     LEFT JOIN users u ON u.id = p.user_id
+    LEFT JOIN (
+      SELECT
+        room_id,
+        user_id,
+        CASE
+          WHEN SUM(role = 'owner') > 0 THEN 'owner'
+          WHEN SUM(role = 'admin') > 0 THEN 'admin'
+          WHEN SUM(role = 'moderator') > 0 THEN 'moderator'
+          ELSE NULL
+        END AS effective_role
+      FROM room_roles
+      WHERE room_id = ?
+      GROUP BY room_id, user_id
+    ) current_roles ON current_roles.room_id = p.room_id AND current_roles.user_id = p.user_id
     WHERE p.room_id = ?
     AND p.left_at IS NULL
-    ORDER BY FIELD(p.role_in_room, 'owner', 'admin', 'moderator', 'speaker', 'audience', 'end_user'), p.joined_at ASC
+    ORDER BY FIELD(effective_role_in_room, 'owner', 'admin', 'moderator', 'speaker', 'audience', 'end_user'), p.joined_at ASC
     `,
-    [room.id]
+    [room.owner_id, room.id, room.id]
   )
   const [roles] = await connection.execute(
     `
@@ -753,27 +774,33 @@ async function getRoomControls(connection, room, userId, options = {}) {
       email: assignableUser.email,
       avatar_url: assignableUser.avatar_url,
     })),
-    participants: participants.map((participant) => ({
-      id: participant.id,
-      session_id: participant.session_id,
-      room_id: participant.room_id,
-      user_id: participant.user_id,
-      peer_uid: participant.peer_uid,
-      role_in_room: participant.role_in_room,
-      joined_at: participant.joined_at,
-      left_at: participant.left_at,
-      duration_seconds: Number(participant.duration_seconds || 0),
-      mic_enabled: Boolean(Number(participant.mic_enabled)),
-      camera_enabled: Boolean(Number(participant.camera_enabled)),
-      screen_shared: Boolean(Number(participant.screen_shared)),
-      connection_status: participant.connection_status,
-      user_name: participant.user_name || `User #${participant.user_id}`,
-      user_email: participant.user_email,
-      user_avatar_url: participant.user_avatar_url,
-      user_gender: participant.user_gender,
-      created_at: participant.created_at,
-      updated_at: participant.updated_at,
-    })),
+    participants: participants.map((participant) => {
+      const effectiveRole = participant.effective_role_in_room || participant.role_in_room || 'end_user'
+
+      return {
+        id: participant.id,
+        session_id: participant.session_id,
+        room_id: participant.room_id,
+        user_id: participant.user_id,
+        peer_uid: participant.peer_uid,
+        role_in_room: effectiveRole,
+        session_role_in_room: participant.role_in_room,
+        joined_at: participant.joined_at,
+        left_at: participant.left_at,
+        duration_seconds: Number(participant.duration_seconds || 0),
+        mic_enabled: Boolean(Number(participant.mic_enabled)),
+        camera_enabled: Boolean(Number(participant.camera_enabled)),
+        screen_shared: Boolean(Number(participant.screen_shared)),
+        connection_status: participant.connection_status,
+        can_moderate: Number(participant.user_id) !== Number(userId) && canModerateTarget(role, effectiveRole),
+        user_name: participant.user_name || `User #${participant.user_id}`,
+        user_email: participant.user_email,
+        user_avatar_url: participant.user_avatar_url,
+        user_gender: participant.user_gender,
+        created_at: participant.created_at,
+        updated_at: participant.updated_at,
+      }
+    }),
   }
 }
 

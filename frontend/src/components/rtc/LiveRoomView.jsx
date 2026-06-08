@@ -60,6 +60,14 @@ const roomAccessCodeInputProps = {
   className: 'room-access-code-input',
 }
 const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
+const ROOM_ROLE_RANK = {
+  end_user: 0,
+  audience: 0,
+  speaker: 0,
+  moderator: 1,
+  admin: 2,
+  owner: 3,
+}
 
 function formatRtcBitrate(value) {
   const number = Number(value || 0)
@@ -217,6 +225,14 @@ function uniqueStatValues(statsList, key) {
 function roomRoleName(value) {
   const text = String(value || '').trim()
   return text || 'User'
+}
+
+function roomRoleRankValue(value) {
+  return ROOM_ROLE_RANK[String(value || 'end_user').trim().toLowerCase()] ?? 0
+}
+
+function canModerateRoomRole(actorRole, targetRole) {
+  return roomRoleRankValue(actorRole) > roomRoleRankValue(targetRole)
 }
 
 function roomRoleOptionLabel(target) {
@@ -406,6 +422,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const peerStatsRef = useRef(peerStats)
   const peerMediaStatesRef = useRef(peerMediaStates)
   const peerVideoWatchdogStatesRef = useRef(peerVideoWatchdogStates)
+  const roomControlsRef = useRef(roomControls)
   const videoWatchdogTimersRef = useRef({})
   const videoWatchdogAttemptsRef = useRef({})
   const negotiationRetryTimersRef = useRef({})
@@ -2822,7 +2839,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('moderation-action', (payload) => {
         if (!payload?.targetUserId) return
-        if (payload.controls) setRoomControls(payload.controls)
+        if (payload.controls) {
+          if (Number(payload.moderatorUserId || 0) === Number(user?.id || 0)) {
+            setRoomControls(payload.controls)
+          } else if (roomControlsRef.current) {
+            loadRoomControls({ quiet: true })
+          }
+        }
 
         if (payload.targetUserId === user?.id) {
           if (payload.action === 'mute_mic') {
@@ -2872,13 +2895,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         }
       })
       socket.on('room-controls-updated', (payload) => {
+        if (payload?.controls?.room) setRoom(payload.controls.room)
         if (payload?.controls) {
-          setRoomControls(payload.controls)
-          if (payload.controls.room) setRoom(payload.controls.room)
+          if (Number(payload.updatedByUserId || 0) === Number(user?.id || 0)) {
+            setRoomControls(payload.controls)
+          } else if (roomControlsRef.current) {
+            loadRoomControls({ quiet: true })
+          }
         }
       })
       socket.on('room-roles-updated', (payload) => {
-        if (payload?.controls) setRoomControls(payload.controls)
+        if (Number(payload?.targetUserId || 0) === Number(user?.id || 0) || roomControlsRef.current) {
+          loadRoomControls({ quiet: true })
+        }
       })
       socket.on('disconnect', (reason) => {
         if (socketRef.current === socket) {
@@ -2890,7 +2919,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           }
         }
       })
-
       const socketReady = await socketReadyPromise
       if (!socketReady.ok) throw socketReady.error
       if (socket.id) localSocketIdRef.current = socket.id
@@ -3142,6 +3170,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     cameraOnRef.current = cameraOn
   }, [cameraOn])
+
+  useEffect(() => {
+    roomControlsRef.current = roomControls
+  }, [roomControls])
 
   useEffect(() => {
     noiseCancellationRef.current = noiseCancellation
@@ -3401,6 +3433,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roleTargetOptions = buildRoomRoleTargets(roomControls)
   const selectedRoleTarget = roleTargetOptions.find((target) => target.userId === String(roleForm.userId))
   const roleTargetUnavailable = roleTargetOptions.length === 0
+  const roomOpsParticipants = Array.isArray(roomControls?.participants) ? roomControls.participants : []
+  const currentUserId = Number(user?.id || 0)
+  const roomOpsOnlySelf = roomOpsParticipants.length > 0
+    && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -3711,30 +3747,40 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       <>
                         <div className="guard-summary">
                           <span>{roomControls.role}</span>
-                          <strong>{roomControls.participants?.length || 0}</strong>
-                          <small>active participant{roomControls.participants?.length === 1 ? '' : 's'}</small>
+                          <strong>{roomOpsParticipants.length}</strong>
+                          <small>active participant{roomOpsParticipants.length === 1 ? '' : 's'}</small>
                         </div>
                         <div className="room-ops-list">
-                          {(roomControls.participants || []).map((participant) => {
+                          {roomOpsParticipants.map((participant) => {
                             const targetUserId = Number(participant.user_id || 0)
-                            const isSelf = targetUserId === Number(user?.id || 0)
+                            const isSelf = targetUserId === currentUserId
                             const busy = Boolean(moderatingUserIds[targetUserId])
+                            const targetRole = participant.role_in_room || 'end_user'
+                            const canModerateParticipant = participant.can_moderate ?? (!isSelf && canModerateRoomRole(roomControls.role, targetRole))
+                            const moderationDisabledReason = isSelf
+                              ? 'You cannot moderate your own session.'
+                              : canModerateParticipant
+                                ? ''
+                                : `Your ${roomControls.role} role cannot moderate ${targetRole}.`
+                            const moderationDisabled = busy || Boolean(moderationDisabledReason)
+                            const moderationTitle = busy ? 'Moderation in progress' : moderationDisabledReason || undefined
                             return (
                               <article key={`${participant.session_id}-${targetUserId}`} className="room-ops-row">
                                 <span>
                                   <strong>{participant.user_name || `User #${targetUserId}`}</strong>
-                                  <small>{participant.role_in_room} · {participant.mic_enabled ? 'mic on' : 'mic off'} · {participant.camera_enabled ? 'cam on' : 'cam off'}</small>
+                                  <small>{targetRole}{isSelf ? ' (you)' : ''} · {participant.mic_enabled ? 'mic on' : 'mic off'} · {participant.camera_enabled ? 'cam on' : 'cam off'}</small>
                                 </span>
                                 <div className="chat-actions">
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={isSelf || busy}>Mute</button>
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={isSelf || busy}>Camera</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={isSelf || busy}>Kick</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={isSelf || busy}>Ban</button>
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={moderationDisabled} title={moderationTitle}>Mute</button>
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={moderationDisabled} title={moderationTitle}>Camera</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={moderationDisabled} title={moderationTitle}>Kick</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={moderationDisabled} title={moderationTitle}>Ban</button>
                                 </div>
                               </article>
                             )
                           })}
-                          {!(roomControls.participants || []).length ? <small>No active participants yet.</small> : null}
+                          {!roomOpsParticipants.length ? <small>No active participants yet.</small> : null}
+                          {roomOpsOnlySelf ? <small>No other active participants.</small> : null}
                         </div>
                         {roomControls.can_assign_roles ? (
                           <form className="chat-edit-form room-role-form" onSubmit={(event) => {
