@@ -2034,9 +2034,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
-    const featuredMobileCard = ownRoomCard
-    const featuredMobileTitle = featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard.title
     const mobileRoomListCards = recentRoomCards.length ? recentRoomCards : visibleCards
+    const featuredMobileCard = mobileRoomListCards[0] || visibleCards[0] || ownRoomCard
+    const featuredMobileTitle = featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard.title
 
     return (
       <section className="buzzcast-discover">
@@ -2088,7 +2088,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
               </small>
             </span>
-            <span className="mp4-feature-ribbon"><span>Mine</span></span>
           </button>
         </div>
 

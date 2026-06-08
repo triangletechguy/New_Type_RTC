@@ -388,6 +388,10 @@
     display: none !important;
   }
 
+  .mp4-feature-ribbon {
+    display: none !important;
+  }
+
   .buzzcast-live-side .chat-form > .chat-emoji-picker {
     right: 0 !important;
     bottom: calc(100% + 10px) !important;
