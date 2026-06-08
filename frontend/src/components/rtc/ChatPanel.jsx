@@ -1832,9 +1832,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   </div>
                 ) : giftMessage ? (
                   <div className="chat-gift-message">
-                    <span className="chat-gift-emoji chat-emoji-glyph" aria-hidden="true">{gift?.emoji || '🎁'}</span>
-                    <strong>{gift?.label || message.message_body || 'Gift'}</strong>
-                    <span>sent a gift</span>
+                    <span className="chat-gift-emoji chat-emoji-glyph" role="img" aria-label={gift?.label || 'Gift'}>{gift?.emoji || '🎁'}</span>
                   </div>
                 ) : (
                   <p>{message.message_body}</p>
