@@ -31,6 +31,7 @@ import {
 import {
   faqAnswers,
   faqTopics,
+  exploreFilters,
   feedTabs,
   feedbackCategories,
   feedbackTypes,
@@ -43,6 +44,12 @@ import {
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
+const mobileFeedTabs = [
+  { value: 'following', label: 'Following' },
+  { value: 'explore', label: 'Explore' },
+  { value: 'for_you', label: 'For You' },
+  { value: 'party', label: 'Party' },
+]
 const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
@@ -2096,11 +2103,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button
               key={tab.value}
               type="button"
-              className={activeFeed === tab.value ? 'active' : ''}
+              className={activeFeed === tab.value ? 'active desktop-feed-tab' : 'desktop-feed-tab'}
               onClick={() => switchFeed(tab.value)}
             >
               <span className="feed-label-full">{tab.label}</span>
               <span className="feed-label-mobile">{tab.mobileLabel || tab.label}</span>
+            </button>
+          ))}
+          {mobileFeedTabs.map((tab) => (
+            <button
+              key={`mobile-${tab.value}`}
+              type="button"
+              className={activeFeed === tab.value ? 'active mobile-feed-tab' : 'mobile-feed-tab'}
+              onClick={() => switchFeed(tab.value)}
+            >
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -2116,6 +2133,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <span>
             {visibleCards.length} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
           </span>
+          <div className="buzzcast-mobile-filter-row" aria-label="Explore filters">
+            {exploreFilters.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={filter === item.filter ? 'active' : ''}
+                onClick={() => setFilter(item.filter)}
+              >
+                {item.label}
+              </button>
+            ))}
+            <button type="button" className="mobile-filter-orbit" onClick={() => setPrivacyFilter(privacyFilter === 'all' ? 'public' : 'all')} aria-label="Toggle access filter">
+              <span></span>
+            </button>
+          </div>
           <div>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
               {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -3177,6 +3209,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <img src={settingsAvatar} alt="" loading="lazy" />
           </span>
           <b>Settings</b>
+        </button>
+        <button
+          type="button"
+          className="buzzcast-rail-tab buzzcast-rail-watch buzzcast-mobile-only-rail-tab"
+          data-mobile-label="Discover"
+          onClick={openRankings}
+          aria-label="Discover"
+        >
+          <span className="buzzcast-rail-icon rail-watch" aria-hidden="true"></span>
+          <b>Discover</b>
         </button>
         <button
           type="button"
