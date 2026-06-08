@@ -3101,11 +3101,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <label className="sr-only" htmlFor="buzzcast-search">Search</label>
           <input
             id="buzzcast-search"
+            type="search"
+            name="buzzcast-room-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={handleSearchKeyDown}
             onFocus={() => setShowSearchPanel(true)}
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             placeholder="Search"
           />
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label="Search rooms">
