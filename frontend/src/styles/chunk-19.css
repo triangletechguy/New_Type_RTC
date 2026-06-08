@@ -69,10 +69,6 @@
   color: #cbd5e1;
 }
 
-.buzzcast-mobile-only-rail-tab {
-  display: none;
-}
-
 .buzzcast-feed-nav .mobile-feed-tab,
 .buzzcast-mobile-filter-row {
   display: none;
@@ -459,7 +455,7 @@
     min-height: 100svh !important;
     display: grid !important;
     grid-template-columns: 1fr !important;
-    grid-template-rows: 78px 52px 52px minmax(0, 1fr) 52px 52px 52px !important;
+    grid-template-rows: 78px 52px 52px minmax(0, 1fr) 52px 52px !important;
     align-items: start !important;
     justify-items: center !important;
     gap: 0 !important;
@@ -490,10 +486,6 @@
     background: transparent !important;
     color: #b7b3ca !important;
     text-shadow: none !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-only-rail-tab {
-    display: grid !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
@@ -542,12 +534,8 @@
     grid-row: 5 !important;
   }
 
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-watch {
-    grid-row: 6 !important;
-  }
-
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-message-tab {
-    grid-row: 7 !important;
+    grid-row: 6 !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer {
@@ -586,32 +574,6 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-moments .buzzcast-rail-icon {
-    display: none !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-watch::before {
-    content: "" !important;
-    width: 18px !important;
-    height: 18px !important;
-    display: block !important;
-    border: 2px solid currentColor !important;
-    border-radius: 50% !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-watch::after {
-    content: "" !important;
-    position: absolute !important;
-    top: 17px !important;
-    left: 50% !important;
-    width: 5px !important;
-    height: 5px !important;
-    display: block !important;
-    border-radius: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    background: currentColor !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-rail-watch .buzzcast-rail-icon {
     display: none !important;
   }
 

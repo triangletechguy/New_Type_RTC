@@ -44,12 +44,9 @@ import {
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
-const mobileFeedTabs = [
-  { value: 'following', label: 'Following' },
-  { value: 'explore', label: 'Explore' },
-  { value: 'for_you', label: 'For You' },
-  { value: 'party', label: 'Party' },
-]
+const mobileFeedTabs = feedTabs
+  .filter((item) => ['following', 'for_you', 'explore', 'nearby'].includes(item.value))
+  .map((item) => ({ value: item.value, label: item.mobileLabel || item.label }))
 const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
@@ -3209,16 +3206,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <img src={settingsAvatar} alt="" loading="lazy" />
           </span>
           <b>Settings</b>
-        </button>
-        <button
-          type="button"
-          className="buzzcast-rail-tab buzzcast-rail-watch buzzcast-mobile-only-rail-tab"
-          data-mobile-label="Discover"
-          onClick={openRankings}
-          aria-label="Discover"
-        >
-          <span className="buzzcast-rail-icon rail-watch" aria-hidden="true"></span>
-          <b>Discover</b>
         </button>
         <button
           type="button"
