@@ -4,6 +4,11 @@ const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { verifyPassword } = require('../utils/password')
 const { authMiddleware } = require('../middleware/auth')
+const {
+  ensureUserPrivacySettingsSchema,
+  formatUserPrivacySettings,
+  privacyPatchFromBody,
+} = require('../utils/userPrivacySettings')
 
 const router = express.Router()
 const MAX_AVATAR_DATA_URL_LENGTH = 650000
@@ -120,6 +125,7 @@ async function ensureAuthSchema() {
       await addColumnIfMissing('users', 'age', 'ALTER TABLE users ADD COLUMN age INT UNSIGNED NULL AFTER gender')
       await addColumnIfMissing('users', 'birthday', 'ALTER TABLE users ADD COLUMN birthday DATE NULL AFTER age')
       await addColumnIfMissing('users', 'current_residence', 'ALTER TABLE users ADD COLUMN current_residence VARCHAR(120) NULL AFTER birthday')
+      await ensureUserPrivacySettingsSchema()
       await query('ALTER TABLE users MODIFY COLUMN avatar_url MEDIUMTEXT NULL')
 
       await query(
@@ -211,6 +217,8 @@ async function loginResponse(user, message = 'Login successful') {
 }
 
 function formatUser(user, roles = []) {
+  const privacySettings = formatUserPrivacySettings(user)
+
   return {
     id: user.id,
     tenant_id: user.tenant_id,
@@ -222,6 +230,10 @@ function formatUser(user, roles = []) {
     age: user.age === null || user.age === undefined ? null : Number(user.age),
     birthday: formatDateOnly(user.birthday),
     current_residence: user.current_residence,
+    message_privacy: privacySettings.messagePrivacy,
+    private_live_invitation: privacySettings.privateInvite,
+    hide_sensitive_content: privacySettings.hideSensitive,
+    privacy_settings: privacySettings,
     status: user.status,
     last_login_at: user.last_login_at,
     roles,
@@ -668,6 +680,101 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     return res.json({
       message: 'Profile updated successfully.',
       user: formatUser(users[0] || req.user, roles),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/me/privacy-settings', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const users = await query(
+      `
+      SELECT id, tenant_id, message_privacy, private_live_invitation, hide_sensitive_content
+      FROM users
+      WHERE id = :id
+      AND tenant_id = :tenantId
+      LIMIT 1
+      `,
+      { id: req.user.id, tenantId: req.user.tenant_id }
+    )
+
+    return res.json({
+      privacy_settings: formatUserPrivacySettings(users[0] || req.user),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/me/privacy-settings', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const { patch, errors } = privacyPatchFromBody(req.body || {})
+    const fields = Object.keys(patch)
+
+    if (Object.keys(errors).length) {
+      return res.status(422).json({
+        message: 'Privacy settings could not be updated.',
+        errors,
+      })
+    }
+
+    if (!fields.length) {
+      return res.status(422).json({ message: 'Choose a privacy setting to update.' })
+    }
+
+    const assignments = []
+    const params = {
+      id: req.user.id,
+      tenantId: req.user.tenant_id,
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'message_privacy')) {
+      assignments.push('message_privacy = :messagePrivacy')
+      params.messagePrivacy = patch.message_privacy
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'private_live_invitation')) {
+      assignments.push('private_live_invitation = :privateLiveInvitation')
+      params.privateLiveInvitation = patch.private_live_invitation
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'hide_sensitive_content')) {
+      assignments.push('hide_sensitive_content = :hideSensitiveContent')
+      params.hideSensitiveContent = patch.hide_sensitive_content
+    }
+
+    await query(
+      `
+      UPDATE users
+      SET ${assignments.join(', ')},
+          updated_at = NOW()
+      WHERE id = :id
+      AND tenant_id = :tenantId
+      `,
+      params
+    )
+
+    const users = await query(
+      `
+      SELECT *
+      FROM users
+      WHERE id = :id
+      LIMIT 1
+      `,
+      { id: req.user.id }
+    )
+    const roles = await getUserRoles(req.user.id)
+    const user = formatUser(users[0] || req.user, roles)
+
+    return res.json({
+      message: 'Privacy settings updated.',
+      privacy_settings: user.privacy_settings,
+      user,
     })
   } catch (error) {
     next(error)
