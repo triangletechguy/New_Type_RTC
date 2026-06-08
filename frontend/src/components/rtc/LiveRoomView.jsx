@@ -3720,7 +3720,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 aria-pressed={activeToolPanel === 'audio'}
                 title="Audio effects"
               >
-                <span className="control-glyph mic"></span>
+                <span className="control-glyph effects"></span>
                 <span>Audio</span>
               </button>
               <button
@@ -3748,7 +3748,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph guard"></span>
               </button>
               <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
-                <span className="control-glyph guard"></span>
+                <span className="control-glyph ops"></span>
               </button>
             </div>
 
