@@ -31,7 +31,6 @@ import {
 import {
   faqAnswers,
   faqTopics,
-  exploreFilters,
   feedTabs,
   feedbackCategories,
   feedbackTypes,
@@ -2130,21 +2129,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           <span>
             {visibleCards.length} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
           </span>
-          <div className="buzzcast-mobile-filter-row" aria-label="Explore filters">
-            {exploreFilters.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className={filter === item.filter ? 'active' : ''}
-                onClick={() => setFilter(item.filter)}
-              >
-                {item.label}
-              </button>
-            ))}
-            <button type="button" className="mobile-filter-orbit" onClick={() => setPrivacyFilter(privacyFilter === 'all' ? 'public' : 'all')} aria-label="Toggle access filter">
-              <span></span>
-            </button>
-          </div>
           <div>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
               {roomFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}

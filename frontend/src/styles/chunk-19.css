@@ -69,8 +69,7 @@
   color: #cbd5e1;
 }
 
-.buzzcast-feed-nav .mobile-feed-tab,
-.buzzcast-mobile-filter-row {
+.buzzcast-feed-nav .mobile-feed-tab {
   display: none;
 }
 
@@ -84,7 +83,7 @@
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) {
     --mobile-rail-width: 66px;
-    --mobile-lobby-top: calc(146px + env(safe-area-inset-top));
+    --mobile-lobby-top: calc(114px + env(safe-area-inset-top));
     min-height: 100svh !important;
     overflow-x: hidden !important;
     background: #ebebf1 !important;
@@ -292,90 +291,7 @@
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-feed-controls {
-    position: fixed !important;
-    top: calc(114px + env(safe-area-inset-top)) !important;
-    right: 0 !important;
-    left: var(--mobile-rail-width) !important;
-    z-index: 118 !important;
-    height: 32px !important;
-    display: block !important;
-    margin: 0 !important;
-    padding: 0 20px 0 20px !important;
-    border: 0 !important;
-    background: #22212d !important;
-    box-shadow: none !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-feed-controls > span,
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-feed-controls > div:not(.buzzcast-mobile-filter-row) {
     display: none !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row {
-    height: 28px !important;
-    display: grid !important;
-    grid-template-columns: repeat(4, max-content) minmax(24px, 1fr) !important;
-    align-items: center !important;
-    gap: 11px !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row button {
-    min-width: 0 !important;
-    min-height: 25px !important;
-    height: 25px !important;
-    padding: 0 12px !important;
-    border: 0 !important;
-    border-radius: 999px !important;
-    background: #343241 !important;
-    color: #9d99ad !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row button.active {
-    background: #5a596d !important;
-    color: #fff !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row .mobile-filter-orbit {
-    justify-self: end !important;
-    width: 28px !important;
-    min-width: 28px !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-filter-orbit span {
-    position: relative !important;
-    width: 20px !important;
-    height: 20px !important;
-    display: block !important;
-    margin: 0 auto !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-filter-orbit span::before,
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-filter-orbit span::after {
-    content: "" !important;
-    position: absolute !important;
-    width: 6px !important;
-    height: 6px !important;
-    border: 2px solid currentColor !important;
-    border-radius: 50% !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-filter-orbit span::before {
-    top: 2px !important;
-    right: 1px !important;
-    color: #4db4ff !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-filter-orbit span::after {
-    left: 1px !important;
-    bottom: 2px !important;
-    color: #ff4095 !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .mobile-recent-grid {
@@ -616,17 +532,6 @@
     font-size: 14px !important;
   }
 
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-feed-controls {
-    padding-inline: 12px !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row {
-    gap: 7px !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-filter-row button {
-    padding-inline: 9px !important;
-  }
 }
 
 /* Mobile composer icon polish: audio avatar, larger emoji, cleaner send button. */
