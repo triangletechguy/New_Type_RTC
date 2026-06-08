@@ -880,8 +880,33 @@
 }
 
 .room-role-form {
-  grid-template-columns: minmax(90px, 1fr) minmax(100px, .8fr) auto auto;
+  grid-template-columns: minmax(160px, 1.4fr) minmax(100px, .75fr) auto auto;
   align-items: center;
+}
+
+.room-role-form select {
+  min-width: 0;
+}
+
+.room-role-user-select {
+  text-overflow: ellipsis;
+}
+
+.room-role-selected,
+.room-role-feedback {
+  grid-column: 1 / -1;
+}
+
+.room-role-feedback.success {
+  color: #bbf7d0;
+}
+
+.room-role-feedback.pending {
+  color: #bfdbfe;
+}
+
+.room-role-feedback.error {
+  color: #fecaca;
 }
 
 .camera-filter-panel p {
