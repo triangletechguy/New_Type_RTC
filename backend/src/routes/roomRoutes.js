@@ -725,6 +725,18 @@ async function getRoomControls(connection, room, userId, options = {}) {
     `,
     [room.id]
   )
+  const [assignableUsers] = await connection.execute(
+    `
+    SELECT id, name, email, avatar_url
+    FROM users
+    WHERE tenant_id = ?
+    AND status = 'active'
+    AND id <> ?
+    ORDER BY name ASC, email ASC, id ASC
+    LIMIT 500
+    `,
+    [room.tenant_id, room.owner_id]
+  )
 
   return {
     role,
@@ -741,6 +753,12 @@ async function getRoomControls(connection, room, userId, options = {}) {
       user_email: roomRole.user_email,
       user_avatar_url: roomRole.user_avatar_url,
       created_at: roomRole.created_at,
+    })),
+    assignable_users: assignableUsers.map((assignableUser) => ({
+      id: assignableUser.id,
+      name: assignableUser.name || `User #${assignableUser.id}`,
+      email: assignableUser.email,
+      avatar_url: assignableUser.avatar_url,
     })),
     participants: participants.map((participant) => ({
       id: participant.id,
