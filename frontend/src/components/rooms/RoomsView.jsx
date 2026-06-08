@@ -2090,11 +2090,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </span>
             <span className="mp4-feature-ribbon"><span>Mine</span></span>
           </button>
-          <nav className="mp4-room-tabs" aria-label="Mobile room groups">
-            <button type="button" className={mobileRoomGroup === 'recently' ? 'active' : ''} onClick={() => switchMobileRoomGroup('recently')}>Recently</button>
-            <button type="button" className={mobileRoomGroup === 'follow' ? 'active' : ''} onClick={() => switchMobileRoomGroup('follow')}>Follow</button>
-            <button type="button" className={mobileRoomGroup === 'group' ? 'active' : ''} onClick={() => switchMobileRoomGroup('group')}>Group</button>
-          </nav>
         </div>
 
         <nav className="buzzcast-feed-nav" aria-label="Room feed">

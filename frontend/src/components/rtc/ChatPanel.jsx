@@ -83,6 +83,11 @@ function roomGiftForMessage(message) {
   )) || null
 }
 
+function standaloneEmojiBody(value) {
+  const compactEmoji = String(value || '').replace(/\s+/g, '')
+  return isValidEmoji(compactEmoji) ? compactEmoji : ''
+}
+
 function MessageReactions({
   message,
   disabled = false,
@@ -1745,6 +1750,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const voiceMessage = message.message_type === 'voice'
           const giftMessage = message.message_type === 'gift'
           const gift = giftMessage ? roomGiftForMessage(message) : null
+          const emojiOnlyBody = message.message_type === 'text' ? standaloneEmojiBody(message.message_body) : ''
+          const standaloneEmoji = giftMessage || Boolean(emojiOnlyBody)
           const systemMessage = message.message_type === 'system'
           const canModify = mine && message.message_type === 'text'
           const canDelete = canDeleteMessage(message)
@@ -1765,12 +1772,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           const reactionKey = reactionTarget('room', message)
 
           return (
-            <div className={`${mine ? 'chat-row mine' : 'chat-row'}${giftMessage ? ' gift-row' : ''}`} key={`${message.id}-${message.created_at || ''}`}>
+            <div className={`${mine ? 'chat-row mine' : 'chat-row'}${standaloneEmoji ? ' standalone-emoji-row' : ''}${giftMessage ? ' gift-row' : ''}`} key={`${message.id}-${message.created_at || ''}`}>
               <div className="chat-avatar image-avatar">
                 <img src={senderAvatar} alt={senderName} loading="lazy" />
               </div>
               <div className={bubbleClass}>
-                {!giftMessage ? (
+                {!standaloneEmoji ? (
                   <div className="chat-meta">
                     <strong>{senderName}</strong>
                     <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
@@ -1836,10 +1843,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   <div className="chat-gift-message">
                     <span className="chat-gift-emoji chat-emoji-glyph" role="img" aria-label={gift?.label || 'Gift'}>{gift?.emoji || '🎁'}</span>
                   </div>
+                ) : emojiOnlyBody ? (
+                  <div className="chat-standalone-emoji-message">
+                    <span className="chat-standalone-emoji chat-emoji-glyph" role="img" aria-label="Emoji">{emojiOnlyBody}</span>
+                  </div>
                 ) : (
                   <p>{message.message_body}</p>
                 )}
-                {!editing && !systemMessage && !giftMessage ? (
+                {!editing && !systemMessage && !standaloneEmoji ? (
                   <MessageReactions
                     message={message}
                     pickerOpen={reactionPickerTarget === reactionKey}
@@ -1851,7 +1862,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                     onPickEmoji={toggleRoomReaction}
                   />
                 ) : null}
-                {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && !giftMessage && (
+                {(canModify || canDelete || canBlock || canMessage || canFollow) && !editing && !standaloneEmoji && (
                   <div className="chat-actions">
                     {canFollow ? (
                       <button type="button" className="neutral" onClick={() => requestFollowFromMessage(message)} disabled={following || requested}>
@@ -2028,6 +2039,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             const imageMessage = message.message_type === 'image'
             const voiceMessage = message.message_type === 'voice'
             const body = message.message_body || ''
+            const emojiOnlyBody = message.message_type === 'text' ? standaloneEmojiBody(body) : ''
             const editKey = inboxEditKey(message)
             const canModify = mine && message.message_type === 'text'
             const canDelete = canDeleteMessage(message)
@@ -2037,15 +2049,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
             const reactionKey = reactionTarget('inbox', message)
 
             return (
-              <div className={mine ? 'chat-row mine' : 'chat-row'} key={`dm-${message.id}`}>
+              <div className={`${mine ? 'chat-row mine' : 'chat-row'}${emojiOnlyBody ? ' standalone-emoji-row' : ''}`} key={`dm-${message.id}`}>
                 <div className="chat-avatar image-avatar">
                   <img src={mine ? avatarForUser(user, user?.id || message.sender_id || 0) : avatarForUser({ ...inboxTarget, sender_gender: message.sender_gender }, message.sender_id || 0)} alt={senderName} loading="lazy" />
                 </div>
                 <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
-                  <div className="chat-meta">
-                    <strong>{senderName}</strong>
-                    <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
-                  </div>
+                  {!emojiOnlyBody ? (
+                    <div className="chat-meta">
+                      <strong>{senderName}</strong>
+                      <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
+                    </div>
+                  ) : null}
                   {editing ? (
                     <form className="chat-edit-form" onSubmit={(event) => saveInboxEdit(message, event)}>
                       <textarea
@@ -2102,10 +2116,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                       <audio controls src={message.media_url}></audio>
                       <span>{body || 'Voice message'}</span>
                     </div>
+                  ) : emojiOnlyBody ? (
+                    <div className="chat-standalone-emoji-message">
+                      <span className="chat-standalone-emoji chat-emoji-glyph" role="img" aria-label="Emoji">{emojiOnlyBody}</span>
+                    </div>
                   ) : (
                     <p>{body}</p>
                   )}
-                  {!editing ? (
+                  {!editing && !emojiOnlyBody ? (
                     <MessageReactions
                       message={message}
                       pickerOpen={reactionPickerTarget === reactionKey}
@@ -2117,7 +2135,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                       onPickEmoji={toggleInboxReaction}
                     />
                   ) : null}
-                  {(canModify || canDelete) && !editing ? (
+                  {(canModify || canDelete) && !editing && !emojiOnlyBody ? (
                     <div className="chat-actions">
                       {canModify ? (
                         <button type="button" className="neutral" onClick={() => startInboxEdit(message)} disabled={deleting}>
