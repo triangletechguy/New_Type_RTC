@@ -3170,16 +3170,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </span>
           <b>Me</b>
         </button>
-        <button
-          type="button"
-          className="buzzcast-rail-tab buzzcast-rail-app"
-          data-mobile-label="Get app"
-          onClick={() => setShowInstall(true)}
-          aria-label="Get the app"
-        >
-          <span className="buzzcast-rail-icon rail-app" aria-hidden="true"></span>
-          <b>Get the app</b>
-        </button>
         <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"

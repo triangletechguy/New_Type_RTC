@@ -1613,24 +1613,6 @@
     display: grid !important;
   }
 
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .rail-app::before {
-    content: "" !important;
-    width: 18px !important;
-    height: 18px !important;
-    display: block !important;
-    border-radius: 5px !important;
-    background:
-      linear-gradient(currentColor 0 0) left top / 7px 7px no-repeat,
-      linear-gradient(currentColor 0 0) right top / 7px 7px no-repeat,
-      linear-gradient(currentColor 0 0) left bottom / 7px 7px no-repeat,
-      linear-gradient(currentColor 0 0) right bottom / 7px 7px no-repeat !important;
-  }
-
-  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .rail-app::after {
-    content: none !important;
-    display: none !important;
-  }
-
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media::before {
     content: none !important;
     display: none !important;
