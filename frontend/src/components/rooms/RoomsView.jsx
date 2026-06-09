@@ -822,11 +822,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     return Boolean(room?.id && user?.id && Number(room.owner_id) === Number(user.id))
   }
 
-  function isMobileViewport() {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 860px)').matches
-  }
-
   function showMobileActionToast(message) {
     setMobileToast(message)
     if (typeof window !== 'undefined') {
@@ -1360,26 +1355,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openMobileMomentsSection() {
-    if (!isMobileViewport()) {
-      openSettingsSection()
-      return
-    }
-
-    setActiveFeed('latest')
-    setSort('newest')
-    setActiveSection('live')
-    setPreviewCard(null)
-    showMobileActionToast('Showing moments')
+    openSettingsSection()
   }
 
   function openMobileMessageSection() {
-    if (!isMobileViewport()) {
-      pushSectionHistory('help')
-      setActiveSection('help')
-      return
-    }
-
-    toggleMessagesDrawer()
+    pushSectionHistory('help')
+    setActiveSection('help')
+    setPreviewCard(null)
+    setShowMessages(false)
   }
 
   function updateSettings(field, value, message) {
@@ -3166,9 +3149,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'live' || activeSection === 'room' ? 'active buzzcast-rail-tab buzzcast-rail-home' : 'buzzcast-rail-tab buzzcast-rail-home'}
-          data-mobile-label="Home"
+          data-mobile-label="Live"
           onClick={openLiveSection}
-          aria-label="Home"
+          aria-label="Live"
         >
           <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
             <img src={liveRoomsAvatar} alt="" loading="lazy" />

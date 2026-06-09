@@ -1542,3 +1542,186 @@
     font-size: 10px !important;
   }
 }
+
+/* Mobile lobby final pass: real artwork, real rail icons, and modal above fixed chrome. */
+@media (max-width: 860px) {
+  .buzzcast-modal-backdrop {
+    z-index: 320 !important;
+    place-items: center !important;
+    padding: calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom)) !important;
+    background: rgba(10, 9, 16, .58) !important;
+  }
+
+  .buzzcast-install-modal {
+    width: min(340px, calc(100vw - 32px)) !important;
+    gap: 16px !important;
+    padding: 18px !important;
+    border-radius: 12px !important;
+  }
+
+  .buzzcast-install-modal footer {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) {
+    --mobile-rail-width: clamp(108px, 28vw, 142px);
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(112px, 150px) minmax(96px, 1fr) auto !important;
+    gap: 8px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    gap: 10px !important;
+    padding: 12px 10px calc(14px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-tab {
+    width: 100% !important;
+    min-height: 46px !important;
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+    gap: 8px !important;
+    padding: 6px 8px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-tab b {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    color: inherit !important;
+    font-size: 13px !important;
+    font-weight: 750 !important;
+    line-height: 1.08 !important;
+    text-align: left !important;
+    text-overflow: ellipsis !important;
+    white-space: normal !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-profile::before,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-moments::before,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-message-tab::before,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-message-tab::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-profile .buzzcast-rail-icon,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-moments .buzzcast-rail-icon,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-message-tab .buzzcast-rail-icon {
+    display: grid !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .rail-app::before {
+    content: "" !important;
+    width: 18px !important;
+    height: 18px !important;
+    display: block !important;
+    border-radius: 5px !important;
+    background:
+      linear-gradient(currentColor 0 0) left top / 7px 7px no-repeat,
+      linear-gradient(currentColor 0 0) right top / 7px 7px no-repeat,
+      linear-gradient(currentColor 0 0) left bottom / 7px 7px no-repeat,
+      linear-gradient(currentColor 0 0) right bottom / 7px 7px no-repeat !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .rail-app::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media::after {
+    content: "" !important;
+    display: block !important;
+    inset: 0 !important;
+    background: linear-gradient(180deg, rgba(8, 7, 12, 0) 44%, rgba(8, 7, 12, .68) 100%) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media-image {
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-seat-dots {
+    display: flex !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-copy span {
+    text-align: left !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) {
+    --mobile-rail-width: 104px;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(94px, 116px) minmax(0, 1fr) auto !important;
+    gap: 6px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo {
+    gap: 6px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo-mark {
+    width: 28px !important;
+    height: 28px !important;
+    flex-basis: 28px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo strong {
+    font-size: 12px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-logo span {
+    font-size: 8px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap {
+    height: 36px !important;
+    grid-template-columns: minmax(0, 1fr) 34px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap input,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap button {
+    height: 34px !important;
+    min-height: 34px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap input {
+    padding: 0 9px !important;
+    font-size: 12px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap button {
+    width: 34px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-get-app-button {
+    min-width: 68px !important;
+    height: 32px !important;
+    padding: 0 7px !important;
+    font-size: 9px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-grid,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-grid.party-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 18px !important;
+    padding: 14px 10px calc(28px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-media,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-card-grid.party-grid .buzzcast-media {
+    aspect-ratio: 16 / 10 !important;
+  }
+}
