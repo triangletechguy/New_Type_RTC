@@ -42,7 +42,7 @@ export function VideoTile({
   followStatus = '',
   onFollowAction,
   onExpand,
-  expandLabel = 'Open screen share full screen',
+  expandLabel = 'Open screen share in a new tab',
 }) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)

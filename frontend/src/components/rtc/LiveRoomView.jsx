@@ -98,6 +98,20 @@ function hasInboundVideoTrack(stream) {
   return stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended') || false
 }
 
+function liveVideoTracks(stream) {
+  return stream?.getVideoTracks?.().filter((track) => track.readyState !== 'ended') || []
+}
+
+function escapeScreenShareViewerText(value) {
+  return String(value || '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]))
+}
+
 function remoteVideoExpectedFromState(mediaState = {}) {
   if (mediaState.screenShared === true) return true
   return String(mediaState.rtcMode || 'video') !== 'audio' && mediaState.cameraOn === true
@@ -2140,6 +2154,169 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return startScreenShare()
   }
 
+  function openScreenShareInNewTab(stream, title = 'Screen share') {
+    const videoTracks = liveVideoTracks(stream)
+    if (!videoTracks.length || typeof window === 'undefined') return false
+
+    const viewerWindow = window.open('', '_blank')
+    if (!viewerWindow) {
+      setStatus('Popup blocked. Allow popups to open screen share in a new tab.')
+      return false
+    }
+
+    try {
+      const safeTitle = escapeScreenShareViewerText(title)
+      const safeRoomTitle = escapeScreenShareViewerText(roomTitle)
+      const safeRoomId = escapeScreenShareViewerText(room?.id || roomId || '')
+
+      viewerWindow.document.open()
+      viewerWindow.document.write(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeTitle}</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #07060b;
+      color: #f6f3ff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    header {
+      min-height: 64px;
+      padding: 12px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, .1);
+      background: #171421;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    header div {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+    strong,
+    span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    strong {
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+    span {
+      color: #bbb3d4;
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 650;
+    }
+    button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .08);
+      color: #f6f3ff;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    main {
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      position: relative;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      max-width: 100vw;
+      max-height: calc(100vh - 88px);
+      object-fit: contain;
+      background: #050409;
+      outline: 1px solid rgba(255, 255, 255, .08);
+    }
+    #screen-share-status {
+      position: fixed;
+      left: 16px;
+      bottom: 14px;
+      max-width: calc(100vw - 32px);
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: rgba(8, 7, 13, .82);
+      color: #dcd7ef;
+      font-size: 12px;
+      font-weight: 750;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>${safeTitle}</strong>
+      <span>${safeRoomTitle}${safeRoomId ? ` - Room ID: ${safeRoomId}` : ''}</span>
+    </div>
+    <button type="button" onclick="window.close()">Close</button>
+  </header>
+  <main>
+    <video id="screen-share-video" autoplay playsinline controls></video>
+    <p id="screen-share-status">Live screen share</p>
+  </main>
+</body>
+</html>`)
+      viewerWindow.document.close()
+
+      const video = viewerWindow.document.getElementById('screen-share-video')
+      const status = viewerWindow.document.getElementById('screen-share-status')
+      if (video) {
+        video.srcObject = stream
+        video.muted = true
+        const playPromise = video.play()
+        if (playPromise?.catch) {
+          playPromise.catch(() => {
+            if (status) status.textContent = 'Click play to view the screen share.'
+          })
+        }
+      }
+
+      const handleTrackEnded = () => {
+        if (liveVideoTracks(stream).length) return
+        if (status) status.textContent = 'Screen share ended.'
+        if (video) video.srcObject = null
+      }
+
+      videoTracks.forEach((track) => track.addEventListener?.('ended', handleTrackEnded, { once: true }))
+      viewerWindow.addEventListener?.('beforeunload', () => {
+        videoTracks.forEach((track) => track.removeEventListener?.('ended', handleTrackEnded))
+      })
+      viewerWindow.focus?.()
+      setStatus('Screen share opened in a new tab.')
+      return true
+    } catch (error) {
+      try { viewerWindow.close() } catch {}
+      setStatus(`Screen share tab failed: ${error.message}`)
+      return false
+    }
+  }
+
+  function openRemoteScreenShare(stream, socketId, ownerName) {
+    const opened = openScreenShareInNewTab(stream, `${ownerName || 'Remote user'} screen share`)
+    if (!opened) setExpandedScreenShareId(socketId)
+  }
+
   async function changeCameraFilter(filterId) {
     if (mediaUpdating.filter) return
 
@@ -3428,6 +3605,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
+  const canOpenLocalScreenShare = screenSharing && hasInboundVideoTrack(localStream)
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -3518,6 +3696,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     cameraOn={cameraOn}
                     rtcMode={rtcMode}
                     showMediaState
+                    onExpand={canOpenLocalScreenShare ? () => openScreenShareInNewTab(localStream, 'Your screen share') : undefined}
+                    expandLabel="Open your screen share in a new tab"
                   />
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
@@ -3545,8 +3725,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         showMediaState
                         followStatus={followStatusForPeer(peer.id)}
                         onFollowAction={peer.id ? () => handlePeerFollowAction(peer) : undefined}
-                        onExpand={canExpandScreenShare ? () => setExpandedScreenShareId(socketId) : undefined}
-                        expandLabel={`Open ${screenShareOwner} screen share full screen`}
+                        onExpand={canExpandScreenShare ? () => openRemoteScreenShare(stream, socketId, screenShareOwner) : undefined}
+                        expandLabel={`Open ${screenShareOwner} screen share in a new tab`}
                       />
                     )
                   })}
