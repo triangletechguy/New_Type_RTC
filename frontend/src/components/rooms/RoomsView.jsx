@@ -598,6 +598,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [feedbackRecords, setFeedbackRecords] = useState(savedFeedbackRecords)
   const [feedbackStatus, setFeedbackStatus] = useState('')
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
+  const [showDownloadApp, setShowDownloadApp] = useState(false)
+  const [hasClickedGetApp, setHasClickedGetApp] = useState(false)
   const dmPhotoInputRef = useRef(null)
   const dmRecorderRef = useRef(null)
   const dmRecordingStreamRef = useRef(null)
@@ -2397,6 +2399,37 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     )
   }
 
+  function renderDownloadAppModal() {
+    if (!showDownloadApp) return null
+
+    return (
+      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setShowDownloadApp(false)}>
+        <section className="buzzcast-download-app-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="download-app-title">
+          <header>
+            <h2 id="download-app-title">Get the App</h2>
+            <button type="button" onClick={() => setShowDownloadApp(false)} aria-label="Close download app modal">x</button>
+          </header>
+
+          <div className="download-app-content">
+            <p>Download our mobile app for the best experience:</p>
+            <div className="app-store-links">
+              <a href="https://apps.apple.com" target="_blank" rel="noopener noreferrer" className="app-store-button ios-button">
+                <span>📱 Download on App Store</span>
+              </a>
+              <a href="https://play.google.com" target="_blank" rel="noopener noreferrer" className="app-store-button android-button">
+                <span>🤖 Get it on Google Play</span>
+              </a>
+            </div>
+          </div>
+
+          <footer className="download-app-footer">
+            <button type="button" onClick={() => setShowDownloadApp(false)} className="secondary-button">Close</button>
+          </footer>
+        </section>
+      </div>
+    )
+  }
+
   function renderSecurityActionModal() {
     if (!securityAction) return null
 
@@ -3176,11 +3209,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           type="button"
           className="buzzcast-rail-tab buzzcast-rail-get-app"
           data-mobile-label="Get the app"
-          onClick={() => window.open('https://appstore.example.com', '_blank')}
+          onClick={() => {
+            setShowDownloadApp(true)
+            setHasClickedGetApp(true)
+          }}
           aria-label="Get the app"
         >
           <span className="buzzcast-rail-icon rail-get-app rail-image-icon" aria-hidden="true">
-            📲
+            {hasClickedGetApp ? '✅' : '📲'}
           </span>
           <b>Get the app</b>
         </button>
@@ -3702,6 +3738,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ) : null}
 
       {renderSecurityActionModal()}
+
+      {renderDownloadAppModal()}
 
       {showFeedback ? (
         <div className="buzzcast-modal-backdrop dark">
