@@ -2154,11 +2154,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return startScreenShare()
   }
 
-  function openScreenShareInNewTab(stream, title = 'Screen share') {
+  function openScreenShareInNewTab(stream, title = 'Screen share', { preferDetachedWindow = false } = {}) {
     const videoTracks = liveVideoTracks(stream)
     if (!videoTracks.length || typeof window === 'undefined') return false
 
-    const viewerWindow = window.open('', '_blank')
+    const windowFeatures = preferDetachedWindow ? 'popup=yes,width=1280,height=820,left=80,top=80' : ''
+    const viewerWindow = window.open('', '_blank', windowFeatures)
     if (!viewerWindow) {
       setStatus('Popup blocked. Allow popups to open screen share in a new tab.')
       return false
@@ -2315,6 +2316,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function openRemoteScreenShare(stream, socketId, ownerName) {
     const opened = openScreenShareInNewTab(stream, `${ownerName || 'Remote user'} screen share`)
     if (!opened) setExpandedScreenShareId(socketId)
+  }
+
+  function openLocalScreenShare() {
+    openScreenShareInNewTab(localStream, 'Your screen share', { preferDetachedWindow: true })
   }
 
   async function changeCameraFilter(filterId) {
@@ -3605,6 +3610,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
+  const canOpenLocalScreenShare = screenSharing && hasInboundVideoTrack(localStream)
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -3695,6 +3701,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     cameraOn={cameraOn}
                     rtcMode={rtcMode}
                     showMediaState
+                    onExpand={canOpenLocalScreenShare ? openLocalScreenShare : undefined}
+                    expandLabel="Open your screen share viewer"
                   />
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
