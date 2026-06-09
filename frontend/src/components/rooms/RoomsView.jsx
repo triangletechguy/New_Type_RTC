@@ -3157,6 +3157,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </span>
           </button>
         </div>
+        <button type="button" className="buzzcast-mobile-get-app-button" onClick={() => setShowInstall(true)} aria-label="Get the app">
+          <span>Get the app</span>
+        </button>
       </header>
 
       <aside className="buzzcast-left-rail">
@@ -3183,6 +3186,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <img src={profileAvatar} alt="" loading="lazy" />
           </span>
           <b>Me</b>
+        </button>
+        <button
+          type="button"
+          className="buzzcast-rail-tab buzzcast-rail-app"
+          data-mobile-label="Get app"
+          onClick={() => setShowInstall(true)}
+          aria-label="Get the app"
+        >
+          <span className="buzzcast-rail-icon rail-app" aria-hidden="true"></span>
+          <b>Get the app</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button

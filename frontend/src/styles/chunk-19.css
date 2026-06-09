@@ -1494,3 +1494,51 @@
     color: #f7f5ff !important;
   }
 }
+
+/* Mobile app install CTA: keep it visible even when the lobby hides topbar actions. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(112px, 150px) minmax(0, 1fr) auto !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-get-app-button {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    justify-self: end !important;
+    align-self: center !important;
+    min-width: 82px !important;
+    height: 36px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 10px !important;
+    border: 1px solid rgba(255, 255, 255, .18) !important;
+    border-radius: 8px !important;
+    background: linear-gradient(135deg, #f9fafb, #dbeafe) !important;
+    color: #1f1b33 !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap !important;
+    box-shadow: 0 8px 20px rgba(12, 11, 18, .22) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    white-space: normal !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(94px, 126px) minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-mobile-get-app-button {
+    min-width: 76px !important;
+    height: 34px !important;
+    padding: 0 8px !important;
+    font-size: 10px !important;
+  }
+}

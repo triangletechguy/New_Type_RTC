@@ -284,6 +284,10 @@
   min-width: 0;
 }
 
+.buzzcast-mobile-get-app-button {
+  display: none;
+}
+
 .buzzcast-icon-button,
 .buzzcast-avatar-button {
   position: relative;
