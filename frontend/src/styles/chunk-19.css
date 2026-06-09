@@ -1596,10 +1596,108 @@
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel {
     top: calc(100% + 10px) !important;
+    left: 50% !important;
+    right: auto !important;
     z-index: 340 !important;
-    width: min(100%, calc(100vw - 24px)) !important;
+    width: min(300px, calc(100vw - 28px)) !important;
     max-height: min(360px, calc(100svh - var(--mobile-lobby-top) - 24px)) !important;
+    padding: 8px !important;
+    border: 1px solid rgba(124, 118, 150, .64) !important;
+    border-radius: 10px !important;
+    background: #2b2a39 !important;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .38) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel > span {
+    min-height: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    margin: 0 2px 7px !important;
+    overflow: hidden !important;
+    color: #d9d5ee !important;
+    font-size: 12px !important;
+    font-weight: 750 !important;
+    line-height: 1.2 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel button {
+    width: 100% !important;
+    min-height: 48px !important;
+    display: grid !important;
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    gap: 9px !important;
+    align-items: center !important;
+    padding: 6px !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 9px !important;
+    background: rgba(255, 255, 255, .04) !important;
+    color: #f8f7ff !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel button + button {
+    margin-top: 5px !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel i {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    overflow: hidden !important;
+    border-radius: 50% !important;
+    background: #3b394b !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel i img {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    object-fit: cover !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel button span {
+    min-width: 0 !important;
+    display: block !important;
+    overflow: hidden !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel strong,
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel small {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    line-height: 1.15 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel strong {
+    color: #fff !important;
+    font-size: 12px !important;
+    font-weight: 850 !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel small {
+    margin-top: 3px !important;
+    color: #b4aec8 !important;
+    font-size: 10px !important;
+    font-weight: 650 !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel > em {
+    min-width: 0 !important;
+    height: auto !important;
+    display: block !important;
+    padding: 10px 4px 4px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #b4aec8 !important;
+    font-size: 12px !important;
+    font-style: normal !important;
+    line-height: 1.35 !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail {
