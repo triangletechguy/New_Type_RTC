@@ -1571,6 +1571,35 @@
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-topbar {
     grid-template-columns: minmax(112px, 150px) minmax(96px, 1fr) auto !important;
     gap: 8px !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap {
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap input {
+    appearance: none !important;
+    line-height: normal !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap input::placeholder {
+    color: #a9a5b8 !important;
+    opacity: 1 !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-wrap:has(input:placeholder-shown) .buzzcast-search-panel {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-search-panel {
+    top: calc(100% + 10px) !important;
+    z-index: 340 !important;
+    width: min(100%, calc(100vw - 24px)) !important;
+    max-height: min(360px, calc(100svh - var(--mobile-lobby-top) - 24px)) !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .38) !important;
   }
 
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail {
