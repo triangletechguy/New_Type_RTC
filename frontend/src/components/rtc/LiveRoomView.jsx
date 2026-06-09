@@ -3605,7 +3605,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
-  const canOpenLocalScreenShare = screenSharing && hasInboundVideoTrack(localStream)
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
   const normalizedBeautySettings = normalizeBeautySettings(beautySettings)
@@ -3696,8 +3695,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     cameraOn={cameraOn}
                     rtcMode={rtcMode}
                     showMediaState
-                    onExpand={canOpenLocalScreenShare ? () => openScreenShareInNewTab(localStream, 'Your screen share') : undefined}
-                    expandLabel="Open your screen share in a new tab"
                   />
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
