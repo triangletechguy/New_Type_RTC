@@ -3174,6 +3174,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
+          className="buzzcast-rail-tab buzzcast-rail-get-app"
+          data-mobile-label="Get the app"
+          onClick={() => window.open('https://appstore.example.com', '_blank')}
+          aria-label="Get the app"
+        >
+          <span className="buzzcast-rail-icon rail-get-app rail-image-icon" aria-hidden="true">
+            📲
+          </span>
+          <b>Get the app</b>
+        </button>
+        <button
+          type="button"
           className={activeSection === 'settings' ? 'active buzzcast-rail-tab buzzcast-rail-moments' : 'buzzcast-rail-tab buzzcast-rail-moments'}
           data-mobile-label="Settings"
           onClick={openMobileMomentsSection}
