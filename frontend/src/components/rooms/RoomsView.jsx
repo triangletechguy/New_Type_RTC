@@ -3101,21 +3101,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <span className="buzzcast-search-icon" aria-hidden="true"></span>
           </button>
           {showSearchPanel ? (
-            <div className="buzzcast-search-panel">
-              <span>{loadingRooms ? <LoadingMovie label="Searching rooms" inline /> : searchPanelTitle}</span>
+            <div className={search.trim() ? 'buzzcast-search-panel has-query' : 'buzzcast-search-panel'}>
+              <span className="buzzcast-search-summary">{loadingRooms ? <LoadingMovie label="Searching rooms" inline /> : searchPanelTitle}</span>
               {roomSearchResults.map((item, index) => (
                 <button
                   key={`${item.type}-${item.id}`}
                   type="button"
+                  className="buzzcast-search-result"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openSearchResult(item)}
                 >
-                  <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
-                  <span><strong>{item.name}</strong><small>{item.detail}</small></span>
+                  <i className="buzzcast-search-result-avatar image-avatar"><img src={avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
+                  <span className="buzzcast-search-result-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
                 </button>
               ))}
               {!loadingRooms && roomSearchResults.length === 0 ? (
-                <em>{search.trim() ? 'Try another room name, host, or room type.' : 'Type a room name, host, or category.'}</em>
+                <em className="buzzcast-search-empty">{search.trim() ? 'Try another room name, host, or room type.' : 'Type a room name, host, or category.'}</em>
               ) : null}
             </div>
           ) : null}
