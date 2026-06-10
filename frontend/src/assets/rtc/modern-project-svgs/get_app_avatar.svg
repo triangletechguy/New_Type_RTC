@@ -1,0 +1,22 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="getAppBg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2C2A3E"/>
+      <stop offset="1" stop-color="#181827"/>
+    </linearGradient>
+    <linearGradient id="getAppStroke" x1="18" y1="18" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7E2FF"/>
+      <stop offset="1" stop-color="#A8A3C7"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="18" fill="url(#getAppBg)"/>
+  <rect x="1" y="1" width="62" height="62" rx="17" stroke="white" stroke-opacity="0.08"/>
+
+  <g stroke="url(#getAppStroke)" stroke-width="3" stroke-linejoin="round">
+    <rect x="18" y="18" width="9" height="9" rx="1.5"/>
+    <rect x="37" y="18" width="9" height="9" rx="1.5"/>
+    <rect x="18" y="37" width="9" height="9" rx="1.5"/>
+    <rect x="37" y="37" width="9" height="9" rx="1.5"/>
+  </g>
+</svg>

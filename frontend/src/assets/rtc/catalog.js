@@ -73,6 +73,10 @@ export const navigationAssets = {
     avatar: feedbackHelpAvatar,
     icon: feedbackHelpIcon,
   },
+  getApp: {
+    avatar: getAppAvatar,
+    icon: getAppAvatar,
+  },
   liveRooms: {
     avatar: liveRoomsAvatar,
     icon: liveRoomsIcon,

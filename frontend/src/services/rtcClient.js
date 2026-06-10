@@ -582,7 +582,12 @@ export class NativeRtcClient {
       return this.addTunedTrack(peerConnection, track, stream)
     }
 
-    return this.ensureReceiveTransceiver(peerConnection, mediaKind).sender
+    // For audio, ensure sendrecv direction to handle future track additions
+    const receiveTransceiver = this.ensureReceiveTransceiver(peerConnection, mediaKind)
+    if (mediaKind === 'audio') {
+      this.setTransceiverDirection(receiveTransceiver, 'sendrecv')
+    }
+    return receiveTransceiver.sender
   }
 
   addTunedTrack(peerConnection, track, stream, peerCount = this.meshPeerCount()) {
@@ -746,10 +751,14 @@ export class NativeRtcClient {
 
     const projectedPeerCount = this.meshPeerCount(1)
 
-    if (localAudioTrack) {
+    if (localAudioTrack && localAudioTrack.enabled) {
       this.addTunedTrack(peerConnection, localAudioTrack, this.localStream, projectedPeerCount)
     } else {
-      this.ensureReceiveTransceiver(peerConnection, 'audio')
+      // Always create sendrecv for audio to support late audio track additions
+      const audioTransceiver = this.ensureReceiveTransceiver(peerConnection, 'audio')
+      if (audioTransceiver && !localAudioTrack) {
+        this.setTransceiverDirection(audioTransceiver, 'sendrecv')
+      }
     }
 
     if (this.rtcMode === 'video') {
@@ -804,6 +813,11 @@ export class NativeRtcClient {
     this.emitPeerState(remoteSocketId, peerConnection)
     this.startStats(remoteSocketId)
     this.tuneAllSenders().catch(() => {})
+    
+    // Immediately sync local tracks to ensure audio/video are sent
+    // This handles the case where tracks are added after peer connection creation
+    this.syncLocalTracksToPeerConnection(peerConnection).catch(() => {})
+    
     return peerConnection
   }
 

@@ -617,6 +617,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const liveRoomsAvatar = navigationAssets.liveRooms.avatar
   const settingsAvatar = navigationAssets.adminDashboard.avatar
   const feedbackHelpAvatar = navigationAssets.feedbackHelp.avatar
+  const getAppAvatar = navigationAssets.getApp?.avatar || brandAssets.appIconSmall
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -769,8 +770,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   )
   const activeFilterLabel = roomFilterOptions.find((option) => option.value === filter)?.label || 'All types'
   const searchPanelTitle = search.trim()
-      ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
-      : `${activeFilterLabel} rooms`
+    ? `${roomSearchResults.length} ${activeFilterLabel} result${roomSearchResults.length === 1 ? '' : 's'}`
+    : `${activeFilterLabel} rooms`
   const activeThreadFollowed = Boolean(activeThreadData?.following)
   const unreadThreadCount = messageThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
   const dmNotice = !activeThreadData
@@ -1191,7 +1192,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function stopDmRecordingTracks() {
     dmRecordingStreamRef.current?.getTracks?.().forEach((track) => {
-      try { track.stop() } catch {}
+      try { track.stop() } catch { }
     })
     dmRecordingStreamRef.current = null
   }
@@ -1327,7 +1328,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       try {
         recorder.onstop = null
         if (recorder.state !== 'inactive') recorder.stop()
-      } catch {}
+      } catch { }
     }
     dmRecorderRef.current = null
     dmRecordingChunksRef.current = []
@@ -3183,15 +3184,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'live' || activeSection === 'room' ? 'active buzzcast-rail-tab buzzcast-rail-home' : 'buzzcast-rail-tab buzzcast-rail-home'}
-          data-mobile-label="Live"
+          data-mobile-label="Home"
           onClick={openLiveSection}
-          aria-label="Live"
+          aria-label="Home"
         >
           <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
             <img src={liveRoomsAvatar} alt="" loading="lazy" />
           </span>
           <b>Live</b>
         </button>
+
         <button
           type="button"
           className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
@@ -3204,6 +3206,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </span>
           <b>Me</b>
         </button>
+
+        <button
+          type="button"
+          className={showInstall ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
+          data-mobile-label="Get App"
+          onClick={() => setShowInstall(true)}
+          aria-label="Get the App"
+        >
+          <span className="buzzcast-rail-icon rail-app rail-image-icon" aria-hidden="true">
+            <img src={getAppAvatar} alt="" loading="lazy" />
+          </span>
+          <b>Get the App</b>
+        </button>
+
         <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
@@ -3555,7 +3571,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <h2>Install app</h2>
             <div>
               <div className="buzzcast-logo-mark image-mark">
-                <img src={brandAssets.appIconSmall} alt="" decoding="async" />
+                <img src={getAppAvatar} alt="" decoding="async" />
               </div>
               <span><strong>TalkEachOther</strong><small>TalkEachOther RTC</small></span>
             </div>
