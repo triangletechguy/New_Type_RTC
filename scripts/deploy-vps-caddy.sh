@@ -448,6 +448,20 @@ verify() {
   log "Verifying deployment"
 
   sleep 3
+
+  if ! getent hosts "$DOMAIN_HOST" >/dev/null 2>&1; then
+    cat >&2 <<EOF
+ERROR: $DOMAIN_HOST does not resolve from this VPS.
+
+Point the domain DNS A record to $PUBLIC_IP, wait for DNS to propagate, then run:
+  DOMAIN_HOST=$DOMAIN_HOST PUBLIC_IP=$PUBLIC_IP bash scripts/deploy-vps-caddy.sh
+
+The backend may still be running locally. Check it with:
+  curl -fsS http://127.0.0.1:8000/api/health
+EOF
+    exit 1
+  fi
+
   health="$(curl -fsS "$DOMAIN/api/health")"
   printf '%s\n' "$health"
   case "$health" in
