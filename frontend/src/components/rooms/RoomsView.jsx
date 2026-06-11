@@ -544,12 +544,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     return {
       phoneBound: Boolean(saved.phoneBound),
       emailBound: Boolean(saved.emailBound || user?.email),
+      walletBound: Boolean(saved.walletBound),
       loginPasswordSet: saved.loginPasswordSet !== false,
+      paymentPasswordSet: Boolean(saved.paymentPasswordSet),
       deviceAlerts: saved.deviceAlerts !== false,
       messagePrivacy: saved.messagePrivacy || 'everyone',
       privateInvite: saved.privateInvite !== false,
       hideSensitive: saved.hideSensitive !== false,
       contentMode: saved.contentMode || 'warning',
+      language: saved.language || 'English',
       region: user?.current_residence || saved.region || 'United States',
     }
   })
@@ -955,6 +958,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     window.history.pushState(state, '', path)
   }
 
+  function scrollMobileShellToTop() {
+    if (!isMobileViewport()) return
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    })
+  }
+
   function applySectionFromHistory(state = {}) {
     const section = state.buzzcastSection || 'live'
     if (section === 'room') {
@@ -974,6 +984,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowDownloadQr(false)
     pushSectionHistory('me')
     setActiveSection('me')
+    scrollMobileShellToTop()
   }
 
   function openSettingsSection(nextSettings = activeSettings) {
@@ -982,6 +993,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     pushSectionHistory('settings')
     setActiveSettings(nextSettings)
     setActiveSection('settings')
+    scrollMobileShellToTop()
   }
 
   function openHostPanel(reason = 'Log in or sign up to create a live room.') {
@@ -1360,6 +1372,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setActiveSection('help')
     setPreviewCard(null)
     setShowMessages(false)
+    scrollMobileShellToTop()
   }
 
   function updateSettings(field, value, message) {
@@ -2278,6 +2291,24 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       )
     }
 
+    if (activeSettings === 'language') {
+      const languageOptions = ['English', 'Spanish', 'French', 'Korean', 'Japanese', 'Chinese']
+
+      return (
+        <div className="buzzcast-settings-list">
+          <label className="buzzcast-select-row">
+            <span><strong>{t('Current language')}</strong><small>{t('Choose the language used by mobile account screens.')}</small></span>
+            <select
+              value={settingsDraft.language || 'English'}
+              onChange={(event) => updateSettings('language', event.target.value, `${event.target.value} selected.`)}
+            >
+              {languageOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+            </select>
+          </label>
+        </div>
+      )
+    }
+
     if (activeSettings === 'terms') {
       const selectedPolicy = policyDocuments.find((item) => item.id === selectedPolicyId)
 
@@ -2333,11 +2364,25 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         offKey: 'Bind email',
       },
       {
+        field: 'walletBound',
+        labelKey: 'Binding Wallet',
+        helperKey: 'Binding in the above way to prevent account loss',
+        onKey: 'Bound',
+        offKey: 'Bind wallet',
+      },
+      {
         field: 'loginPasswordSet',
         labelKey: 'Set login password',
         helperKey: 'Protect this account when signing in on a new device.',
         onKey: 'Set',
         offKey: 'Set password',
+      },
+      {
+        field: 'paymentPasswordSet',
+        labelKey: 'Set payment password',
+        helperKey: 'Protect wallet and payment actions.',
+        onKey: 'Set',
+        offKey: 'Set payment password',
       },
       {
         field: 'deviceAlerts',
@@ -2358,6 +2403,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               onClick={() => {
                 if (item.field === 'deviceAlerts') {
                   updateSettings(item.field, !settingsDraft[item.field], t('Device login alerts updated.'))
+                  return
+                }
+                if (item.field === 'walletBound') {
+                  updateSettings(item.field, true, t('Wallet binding saved for this session.'))
+                  return
+                }
+                if (item.field === 'paymentPasswordSet') {
+                  updateSettings(item.field, true, t('Payment password setting saved for this session.'))
                   return
                 }
                 openSecurityAction(item.field)
@@ -2973,12 +3026,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       window.localStorage.setItem('rtc_room_settings', JSON.stringify({
         phoneBound: settingsDraft.phoneBound,
         emailBound: settingsDraft.emailBound,
+        walletBound: settingsDraft.walletBound,
         loginPasswordSet: settingsDraft.loginPasswordSet,
+        paymentPasswordSet: settingsDraft.paymentPasswordSet,
         deviceAlerts: settingsDraft.deviceAlerts,
         messagePrivacy: settingsDraft.messagePrivacy,
         privateInvite: settingsDraft.privateInvite,
         hideSensitive: settingsDraft.hideSensitive,
         contentMode: settingsDraft.contentMode,
+        language: settingsDraft.language,
         region: settingsDraft.region,
       }))
     }

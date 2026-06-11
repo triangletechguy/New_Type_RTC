@@ -1901,3 +1901,1067 @@
     background: #302f3d !important;
   }
 }
+
+/* Keep the account page in the same mobile shell as the room feed. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) {
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-topbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-main {
+    width: 100% !important;
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    padding: 0 0 calc(78px + var(--mobile-safe-bottom)) !important;
+    background: #f4f5f7 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    position: fixed !important;
+    z-index: 120 !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: calc(66px + var(--mobile-safe-bottom)) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 0 !important;
+    padding: 5px 10px calc(6px + var(--mobile-safe-bottom)) !important;
+    border: 0 !important;
+    background: linear-gradient(180deg, #43b68f 0%, #17836e 100%) !important;
+    box-shadow: 0 -14px 26px rgba(15, 23, 42, .16) !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button {
+    min-width: 0 !important;
+    width: auto !important;
+    min-height: 54px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 30px 16px !important;
+    justify-items: center !important;
+    align-content: center !important;
+    gap: 2px !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, .9) !important;
+    font-size: 11px !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button::after {
+    content: attr(data-mobile-label);
+    max-width: 100%;
+    overflow: hidden;
+    color: currentColor;
+    font-size: 11px;
+    font-weight: 1000;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
+    color: #ffd95a !important;
+    background: rgba(255, 255, 255, .1) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-home {
+    order: 1 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-profile {
+    order: 2 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-install {
+    order: 3 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-moments {
+    order: 4 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-message-tab {
+    order: 5 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: currentColor !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: calc(100svh - 78px - var(--mobile-safe-bottom)) !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: calc(14px + var(--mobile-safe-top)) 12px 16px !important;
+    overflow-x: hidden !important;
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero {
+    position: relative !important;
+    min-height: 128px !important;
+    display: grid !important;
+    grid-template-columns: 76px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 18px !important;
+    border-radius: 18px !important;
+    background:
+      radial-gradient(circle at 90% 0%, rgba(255, 218, 99, .62), transparent 34%),
+      linear-gradient(135deg, #67d7cb 0%, #45c39f 48%, #f0d769 100%) !important;
+    color: #111827 !important;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, .12) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-avatar {
+    width: 76px !important;
+    height: 76px !important;
+    border: 3px solid rgba(255, 255, 255, .9) !important;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, .15) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero > div:last-child {
+    min-width: 0 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero h1,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero span,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero p,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero small {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    color: #152033 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero h1 {
+    margin: 0 0 5px !important;
+    font-size: 19px !important;
+    line-height: 1.1 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero p {
+    margin: 8px 0 4px !important;
+    font-size: 12px !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-hero b {
+    color: #0f172a !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-badges {
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-badges strong {
+    min-width: 38px !important;
+    max-width: 116px !important;
+    height: 22px !important;
+    background: rgba(80, 108, 255, .9) !important;
+    color: #fff !important;
+    font-size: 11px !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid {
+    margin: 12px 0 0 !important;
+    overflow: hidden !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid h2 {
+    margin: 0 !important;
+    padding: 14px 14px 10px !important;
+    color: #111827 !important;
+    font-size: 15px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid dl {
+    display: grid !important;
+    grid-template-columns: minmax(96px, 38%) minmax(0, 1fr) !important;
+    gap: 0 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid dt,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid dd {
+    min-height: 46px !important;
+    display: flex !important;
+    align-items: center !important;
+    margin: 0 !important;
+    padding: 0 14px !important;
+    border-top: 1px solid rgba(15, 23, 42, .07) !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.2 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid dt {
+    color: #667085 !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-grid dd {
+    justify-content: flex-end !important;
+    color: #111827 !important;
+    text-align: right !important;
+    font-size: 13px !important;
+    font-weight: 900 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-links {
+    width: 100% !important;
+    max-width: none !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    margin: 12px 0 0 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-links button {
+    min-height: 46px !important;
+    display: grid !important;
+    place-items: center !important;
+    padding: 0 12px !important;
+    border: 1px solid rgba(15, 23, 42, .08) !important;
+    border-radius: 14px !important;
+    background: #fff !important;
+    color: #344054 !important;
+    text-align: center !important;
+    font-size: 14px !important;
+    font-weight: 1000 !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .07) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-links button:first-child {
+    border-color: transparent !important;
+    background: linear-gradient(180deg, #4aba94 0%, #18836e 100%) !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-profile-links button:last-child:not(:first-child) {
+    color: #b42318 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-form {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 12px 0 0 !important;
+    padding: 14px !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-row,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-row.residence-fields {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-form label,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-row label span {
+    color: #344054 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-form input,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-form select {
+    width: 100% !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    background: #f8fafc !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-edit-form footer {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .profile-status {
+    border-color: rgba(22, 163, 127, .22) !important;
+    background: #ecfdf5 !important;
+    color: #067647 !important;
+  }
+}
+
+/* Settings and Help should also stay in the mobile bottom-nav app shell. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) {
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-topbar,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-topbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-main,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-main {
+    width: 100% !important;
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    padding: 0 0 calc(78px + var(--mobile-safe-bottom)) !important;
+    background: #f4f5f7 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    position: fixed !important;
+    z-index: 120 !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: calc(66px + var(--mobile-safe-bottom)) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 0 !important;
+    padding: 5px 10px calc(6px + var(--mobile-safe-bottom)) !important;
+    border: 0 !important;
+    background: linear-gradient(180deg, #43b68f 0%, #17836e 100%) !important;
+    box-shadow: 0 -14px 26px rgba(15, 23, 42, .16) !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button {
+    min-width: 0 !important;
+    width: auto !important;
+    min-height: 54px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 30px 16px !important;
+    justify-items: center !important;
+    align-content: center !important;
+    gap: 2px !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, .9) !important;
+    font-size: 11px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button::after {
+    content: attr(data-mobile-label);
+    max-width: 100%;
+    overflow: hidden;
+    color: currentColor;
+    font-size: 11px;
+    font-weight: 1000;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button.active,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
+    color: #ffd95a !important;
+    background: rgba(255, 255, 255, .1) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail b,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-home,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-home {
+    order: 1 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-profile,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-profile {
+    order: 2 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-install,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-install {
+    order: 3 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-moments,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-moments {
+    order: 4 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-message-tab,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-message-tab {
+    order: 5 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: currentColor !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-download-qr-panel,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-download-qr-panel {
+    top: auto !important;
+    left: 50% !important;
+    bottom: calc(78px + var(--mobile-safe-bottom)) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-shell,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: calc(100svh - 78px - var(--mobile-safe-bottom)) !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    margin: 0 !important;
+    padding: calc(12px + var(--mobile-safe-top)) 12px 16px !important;
+    overflow-x: hidden !important;
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu {
+    width: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 6px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+    scrollbar-width: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav::-webkit-scrollbar,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button {
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 42px !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+    padding: 0 12px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: #f4f5f7 !important;
+    color: #475467 !important;
+    font-size: 12px !important;
+    font-weight: 1000 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button.active,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button.active {
+    background: linear-gradient(180deg, #4aba94 0%, #18836e 100%) !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav i {
+    width: 20px !important;
+    height: 20px !important;
+    border-color: currentColor !important;
+    font-size: 10px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav b {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav span {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-content,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-content {
+    width: 100% !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 16px !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading {
+    min-height: 0 !important;
+    display: grid !important;
+    gap: 6px !important;
+    margin: 0 0 10px !important;
+    padding: 0 0 12px !important;
+    border-bottom: 1px solid rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading h2,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-shell h1 {
+    margin: 0 !important;
+    color: #111827 !important;
+    font-size: 19px !important;
+    line-height: 1.15 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading p {
+    max-width: none !important;
+    margin: 0 !important;
+    color: #667085 !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    text-align: left !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-radio-row,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-switch-row {
+    width: 100% !important;
+    min-height: 62px !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 10px !important;
+    align-items: center !important;
+    padding: 12px 0 !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(15, 23, 42, .07) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #111827 !important;
+    text-align: left !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > :last-child {
+    border-bottom: 0 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    display: block !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.22 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong {
+    color: #111827 !important;
+    font-size: 14px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    margin-top: 4px !important;
+    color: #667085 !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list em,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list b {
+    color: #16a070 !important;
+    font-size: 12px !important;
+    font-style: normal !important;
+    font-weight: 1000 !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-select-row select,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list select {
+    width: min(46vw, 160px) !important;
+    min-height: 38px !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    background: #f8fafc !important;
+    color: #111827 !important;
+    font-size: 12px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-panel,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail {
+    width: 100% !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-select {
+    width: 100% !important;
+    min-height: 44px !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    background: #f8fafc !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-shell > header {
+    display: grid !important;
+    gap: 10px !important;
+    padding: 16px !important;
+    border-radius: 18px !important;
+    background:
+      radial-gradient(circle at 90% 0%, rgba(255, 218, 99, .62), transparent 34%),
+      linear-gradient(135deg, #67d7cb 0%, #45c39f 48%, #f0d769 100%) !important;
+    color: #111827 !important;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, .12) !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button {
+    min-height: 40px !important;
+    padding: 0 10px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, .78) !important;
+    color: #111827 !important;
+    font-size: 12px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button.primary {
+    background: #111827 !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-layout {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-answer h2 {
+    margin-top: 0 !important;
+    color: #111827 !important;
+    font-size: 18px !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-answer p,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-feedback-empty p,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-faq-item p {
+    color: #667085 !important;
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-feedback-record,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-faq-item {
+    border-color: rgba(15, 23, 42, .08) !important;
+    background: #f8fafc !important;
+    color: #111827 !important;
+  }
+}
+
+/* Mobile settings vision: dark topbar, left icon rail, settings menu, and account panel. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) {
+    width: 100% !important;
+    min-height: 100svh !important;
+    overflow: hidden !important;
+    background: #242436 !important;
+    color: #f8f7ff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-topbar {
+    position: fixed !important;
+    z-index: 140 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: calc(70px + var(--mobile-safe-top)) !important;
+    min-height: calc(70px + var(--mobile-safe-top)) !important;
+    display: grid !important;
+    grid-template-columns: 70px minmax(0, 230px) 1fr !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: var(--mobile-safe-top) 10px 0 12px !important;
+    border: 0 !important;
+    background: #242436 !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-logo {
+    width: 48px !important;
+    justify-content: flex-start !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-logo > div:last-child {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-logo-mark {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 9px !important;
+    border-color: rgba(255, 255, 255, .58) !important;
+    background: #fff !important;
+    box-shadow: 0 8px 20px rgba(99, 102, 241, .32) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-search-wrap {
+    width: 100% !important;
+    max-width: 230px !important;
+    height: 40px !important;
+    grid-template-columns: minmax(0, 1fr) 42px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-search-wrap input,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-search-wrap button {
+    height: 40px !important;
+    border-color: #4d4b62 !important;
+    background: #302f3f !important;
+    color: #efeefe !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-search-wrap input {
+    padding: 0 18px !important;
+    border-radius: 8px 0 0 8px !important;
+    font-size: 14px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-search-wrap button {
+    border-radius: 0 8px 8px 0 !important;
+    color: #bab7c9 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-actions {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    position: fixed !important;
+    z-index: 130 !important;
+    top: calc(70px + var(--mobile-safe-top)) !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 58px !important;
+    height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 0 8px calc(12px + var(--mobile-safe-bottom)) !important;
+    border: 0 !important;
+    background: #242436 !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button {
+    width: 42px !important;
+    min-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    place-items: center !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    color: #c9c5dc !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
+    background: #4d4a60 !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer {
+    display: block !important;
+    flex: 1 1 auto !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon {
+    width: 21px !important;
+    height: 21px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: currentColor !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-main {
+    width: 100% !important;
+    height: 100svh !important;
+    min-height: 100svh !important;
+    padding: calc(70px + var(--mobile-safe-top)) 0 0 58px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    background: #242436 !important;
+    scrollbar-width: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-main::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-shell {
+    width: max(calc(100vw - 58px), 420px) !important;
+    max-width: none !important;
+    min-height: calc(100svh - 70px - var(--mobile-safe-top)) !important;
+    display: grid !important;
+    grid-template-columns: 200px minmax(210px, 1fr) !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    margin: 0 !important;
+    padding: 0 10px 10px 12px !important;
+    overflow: visible !important;
+    background: #242436 !important;
+    color: #f8f7ff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav {
+    width: 200px !important;
+    min-height: calc(100svh - 88px - var(--mobile-safe-top)) !important;
+    display: block !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 7px !important;
+    background: #30303f !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 64px !important;
+    display: grid !important;
+    grid-template-columns: 28px minmax(0, 1fr) 16px !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 0 16px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #d7d2ee !important;
+    text-align: left !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button.active {
+    background: #4a495d !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav i {
+    width: 20px !important;
+    height: 20px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 1px solid #b8b4ca !important;
+    border-radius: 50% !important;
+    color: #d7d2ee !important;
+    font-size: 10px !important;
+    font-style: normal !important;
+    line-height: 1 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav span {
+    min-width: 0 !important;
+    overflow: visible !important;
+    color: inherit !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav b {
+    display: block !important;
+    color: inherit !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-content {
+    width: 100% !important;
+    min-width: 210px !important;
+    min-height: calc(100svh - 88px - var(--mobile-safe-top)) !important;
+    overflow: hidden !important;
+    padding: 22px 14px 18px !important;
+    border: 0 !important;
+    border-radius: 7px !important;
+    background: #30303f !important;
+    color: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading {
+    min-height: 0 !important;
+    display: block !important;
+    margin: 0 0 18px !important;
+    padding: 0 0 14px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading h2 {
+    margin: 0 0 8px !important;
+    color: #fff !important;
+    font-size: 18px !important;
+    line-height: 1.1 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading p {
+    max-width: none !important;
+    margin: 0 !important;
+    color: #8f8ba2 !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    text-align: left !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list {
+    display: grid !important;
+    gap: 0 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-radio-row,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-switch-row {
+    width: 100% !important;
+    min-height: 72px !important;
+    display: block !important;
+    padding: 12px 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #fff !important;
+    text-align: left !important;
+    box-shadow: inset 0 -1px rgba(255, 255, 255, .055) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list em,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list b {
+    display: block !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.2 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong {
+    color: #fff !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    margin-top: 8px !important;
+    color: #aaa6bb !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list em,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list b {
+    margin-top: 6px !important;
+    color: #6d61ff !important;
+    font-size: 13px !important;
+    font-style: normal !important;
+    font-weight: 500 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-select-row select,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list select,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-select {
+    width: 100% !important;
+    min-height: 42px !important;
+    margin-top: 10px !important;
+    border-color: #4d4b62 !important;
+    background: #242436 !important;
+    color: #fff !important;
+    font-size: 14px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-panel,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail {
+    color: #fff !important;
+    background: transparent !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail h3,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail h4 {
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail p,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-current {
+    color: #aaa6bb !important;
+  }
+}
