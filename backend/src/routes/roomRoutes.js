@@ -360,7 +360,7 @@ function roomSelectSql(options = {}) {
       SELECT
         active_sessions.room_id,
         COUNT(active_participants.id) AS active_participants,
-        JSON_ARRAYAGG(
+        CONCAT('[', GROUP_CONCAT(
           CASE
             WHEN active_participants.id IS NULL THEN NULL
             ELSE JSON_OBJECT(
@@ -369,7 +369,9 @@ function roomSelectSql(options = {}) {
               'avatar_url', active_users.avatar_url
             )
           END
-        ) AS active_participant_previews
+          ORDER BY active_participants.updated_at DESC, active_participants.id DESC
+          SEPARATOR ','
+        ), ']') AS active_participant_previews
       FROM rtc_sessions active_sessions
       LEFT JOIN rtc_session_participants active_participants
         ON active_participants.session_id = active_sessions.id
@@ -535,16 +537,20 @@ function buildRoomListWhere(options, tenantId, userId, user) {
     }
   }
 
-  if (options.feed === 'nearby' && options.region) {
-    params.feedRegion = options.region.toLowerCase()
-    conditions.push(`
-      EXISTS (
-        SELECT 1
-        FROM users nearby_owner
-        WHERE nearby_owner.id = r.owner_id
-        AND LOWER(nearby_owner.current_residence) = :feedRegion
-      )
-    `)
+  if (options.feed === 'nearby') {
+    if (!options.region) {
+      conditions.push('1 = 0')
+    } else {
+      params.feedRegion = options.region.toLowerCase()
+      conditions.push(`
+        EXISTS (
+          SELECT 1
+          FROM users nearby_owner
+          WHERE nearby_owner.id = r.owner_id
+          AND LOWER(nearby_owner.current_residence) = :feedRegion
+        )
+      `)
+    }
   }
 
   return { whereSql: conditions.length ? conditions.join(' AND ') : '1 = 1', params }

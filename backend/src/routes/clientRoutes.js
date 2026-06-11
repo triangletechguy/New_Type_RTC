@@ -987,7 +987,7 @@ function clientRoomSelectSql() {
       SELECT
         active_sessions.room_id,
         COUNT(active_participants.id) AS active_participants,
-        JSON_ARRAYAGG(
+        CONCAT('[', GROUP_CONCAT(
           CASE
             WHEN active_participants.id IS NULL THEN NULL
             ELSE JSON_OBJECT(
@@ -996,7 +996,9 @@ function clientRoomSelectSql() {
               'avatar_url', active_users.avatar_url
             )
           END
-        ) AS active_participant_previews
+          ORDER BY active_participants.updated_at DESC, active_participants.id DESC
+          SEPARATOR ','
+        ), ']') AS active_participant_previews
       FROM rtc_sessions active_sessions
       LEFT JOIN rtc_session_participants active_participants
         ON active_participants.session_id = active_sessions.id

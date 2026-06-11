@@ -44,6 +44,9 @@ import {
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
 const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
+const appDownloadName = 'BuzzCast'
+const appDownloadUrl = 'https://www.buzzcast.com'
+const appDownloadQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=176x176&margin=1&data=${encodeURIComponent(appDownloadUrl)}`
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
 const dmAudioBitsPerSecond = 32000
@@ -136,10 +139,6 @@ function compactText(value, maxLength = 56) {
   const text = String(value || '').trim().replace(/\s+/g, ' ')
   if (text.length <= maxLength) return text
   return `${text.slice(0, maxLength - 1)}...`
-}
-
-function normalizedRegion(value) {
-  return String(value || '').trim().toLowerCase()
 }
 
 function directMessageThreadId(peerId) {
@@ -342,31 +341,8 @@ function defaultLiveRoomName(displayName) {
   return ownerName ? `${ownerName} Live Room` : 'Enterprise Live Room'
 }
 
-function cardMatchesActiveFeed(card, activeFeed, context = {}) {
-  const roomType = card.room?.room_type || card.roomType
-  const userId = Number(context.user?.id || 0)
-  const selectedRegion = normalizedRegion(context.region || context.user?.current_residence)
-  const cardRegion = normalizedRegion(card.region || card.country || card.room?.owner_region || card.room?.owner_current_residence)
-
-  if (activeFeed === 'latest') return Boolean(card.tab === 'latest' || card.room)
-  if (activeFeed === 'nearby') {
-    return Boolean(card.tab === 'nearby' || card.nearby || (selectedRegion && cardRegion && selectedRegion === cardRegion))
-  }
-  if (activeFeed === 'party') return card.party || card.tab === 'party' || card.room?.room_type === 'pk_live'
-  if (activeFeed === 'following') {
-    return Boolean(
-      card.isOwnRoom
-      || card.following
-      || card.room?.owner_followed
-      || (userId && Number(card.room?.owner_id) === userId)
-    )
-  }
-  if (activeFeed === 'global') return Boolean(card.tab === 'global' || card.tab === 'latest' || card.room || card.country || card.host === 'TalkEachOther')
-  if (activeFeed === 'explore') {
-    return card.tab !== 'party'
-  }
-
-  return true
+function tabConfigForFeed(feed) {
+  return feedTabs.find((item) => item.value === feed) || defaultFeedTab
 }
 
 function cardMatchesRoomFilters(card, filter, privacyFilter) {
@@ -395,32 +371,47 @@ function roomAccessType(card) {
   return accessFilterValues.has(normalized) && normalized !== 'all' ? normalized : 'public'
 }
 
-function sortCardsForView(cards, sort) {
-  const nextCards = [...cards]
-
-  if (sort === 'name') {
-    nextCards.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
-  } else if (sort === 'active') {
-    nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0))
-  } else if (sort === 'newest') {
-    nextCards.sort((a, b) => {
-      const aDate = new Date(a.room?.created_at || a.createdAt || 0).getTime() || 0
-      const bDate = new Date(b.room?.created_at || b.createdAt || 0).getTime() || 0
-      return bDate - aDate || Number(cardAvatarIndex(b)) - Number(cardAvatarIndex(a))
-    })
-  } else if (sort === 'oldest') {
-    nextCards.sort((a, b) => Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b)))
-  }
-
-  return nextCards
-}
-
 function IconButton({ label, children, badge, className = '', onClick }) {
   return (
     <button type="button" className={`buzzcast-icon-button ${className}`} onClick={onClick} aria-label={label} title={label}>
       <span className="buzzcast-icon-inner">{children}</span>
       {badge ? <em>{badge}</em> : null}
     </button>
+  )
+}
+
+function AppIconSprite() {
+  return (
+    <svg className="buzzcast-svg-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-getTheAppIcon" viewBox="0 0 24 24">
+        <path d="M7.25 2.75h9.5a2 2 0 0 1 2 2v14.5a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2V4.75a2 2 0 0 1 2-2Zm1 1.8a1.2 1.2 0 0 0-1.2 1.2v12.5a1.2 1.2 0 0 0 1.2 1.2h7.5a1.2 1.2 0 0 0 1.2-1.2V5.75a1.2 1.2 0 0 0-1.2-1.2h-7.5Z" />
+        <path d="M9.6 5.8h4.8a.8.8 0 0 1 0 1.6H9.6a.8.8 0 0 1 0-1.6Zm1.6 10.7h1.6a.8.8 0 0 1 0 1.6h-1.6a.8.8 0 0 1 0-1.6Zm.8-7.6a.8.8 0 0 1 .8.8v2.85l.78-.78a.8.8 0 0 1 1.13 1.13l-2.15 2.15a.8.8 0 0 1-1.12 0L9.29 12.9a.8.8 0 1 1 1.13-1.13l.78.78V9.7a.8.8 0 0 1 .8-.8Z" />
+      </symbol>
+      <symbol id="icon-settingsIcon" viewBox="0 0 24 24">
+        <path d="M12 8.1a3.9 3.9 0 1 1 0 7.8 3.9 3.9 0 0 1 0-7.8Zm0 1.75a2.15 2.15 0 1 0 0 4.3 2.15 2.15 0 0 0 0-4.3Z" />
+        <path d="M13.3 2.75a1.15 1.15 0 0 1 1.08.78l.45 1.33c.38.16.75.37 1.09.61l1.37-.29a1.15 1.15 0 0 1 1.2.54l1.3 2.25a1.15 1.15 0 0 1-.13 1.31l-.92 1.04a7.46 7.46 0 0 1 0 1.36l.92 1.04c.33.37.38.9.13 1.31l-1.3 2.25a1.15 1.15 0 0 1-1.2.54l-1.37-.29c-.34.24-.71.45-1.09.61l-.45 1.33a1.15 1.15 0 0 1-1.08.78h-2.6a1.15 1.15 0 0 1-1.08-.78l-.45-1.33a7.02 7.02 0 0 1-1.09-.61l-1.37.29a1.15 1.15 0 0 1-1.2-.54l-1.3-2.25a1.15 1.15 0 0 1 .13-1.31l.92-1.04a7.46 7.46 0 0 1 0-1.36l-.92-1.04a1.15 1.15 0 0 1-.13-1.31l1.3-2.25a1.15 1.15 0 0 1 1.2-.54l1.37.29c.34-.24.71-.45 1.09-.61l.45-1.33a1.15 1.15 0 0 1 1.08-.78h2.6Zm-.36 1.8h-1.88l-.5 1.5a.9.9 0 0 1-.57.56c-.52.18-1 .46-1.43.82a.9.9 0 0 1-.76.19l-1.55-.33-.94 1.62 1.04 1.17a.9.9 0 0 1 .2.77 5.71 5.71 0 0 0 0 1.72.9.9 0 0 1-.2.77L5.3 14.5l.94 1.62 1.55-.33a.9.9 0 0 1 .76.19c.43.36.91.64 1.43.82.27.09.48.3.57.56l.5 1.5h1.88l.5-1.5a.9.9 0 0 1 .57-.56c.52-.18 1-.46 1.43-.82a.9.9 0 0 1 .76-.19l1.55.33.94-1.62-1.04-1.17a.9.9 0 0 1-.2-.77 5.71 5.71 0 0 0 0-1.72.9.9 0 0 1 .2-.77l1.04-1.17-.94-1.62-1.55.33a.9.9 0 0 1-.76-.19A5.32 5.32 0 0 0 14 6.61a.9.9 0 0 1-.57-.56l-.5-1.5Z" />
+      </symbol>
+      <symbol id="icon-feedbackAndHelpIcon" viewBox="0 0 24 24">
+        <path d="M4.25 4.25h15.5a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2h-6.2l-4.13 3.1a.9.9 0 0 1-1.44-.72v-2.38H4.25a2 2 0 0 1-2-2v-9.5a2 2 0 0 1 2-2Zm0 1.8a.2.2 0 0 0-.2.2v9.5c0 .11.09.2.2.2h4.63c.5 0 .9.4.9.9v1.48l2.95-2.21a.9.9 0 0 1 .54-.18h6.48a.2.2 0 0 0 .2-.2v-9.5a.2.2 0 0 0-.2-.2H4.25Z" />
+        <path d="M7.2 9.1h9.6a.85.85 0 0 1 0 1.7H7.2a.85.85 0 1 1 0-1.7Zm0 3.4h5.9a.85.85 0 0 1 0 1.7H7.2a.85.85 0 1 1 0-1.7Z" />
+      </symbol>
+      <symbol id="icon-homeLiveIcon" viewBox="0 0 28 28">
+        <path d="M5 7.5a2.5 2.5 0 0 1 2.5-2.5h8.7a2.5 2.5 0 0 1 2.5 2.5v1.82l3.2-2.02A1.35 1.35 0 0 1 24 8.44v11.12a1.35 1.35 0 0 1-2.1 1.14l-3.2-2.02v1.82a2.5 2.5 0 0 1-2.5 2.5H7.5A2.5 2.5 0 0 1 5 20.5v-13Zm2 0v13c0 .28.22.5.5.5h8.7a.5.5 0 0 0 .5-.5v-13a.5.5 0 0 0-.5-.5H7.5a.5.5 0 0 0-.5.5Zm11.7 4.18v4.64l3.3 2.08V9.6l-3.3 2.08Z" />
+        <path d="M11.2 10.15a1 1 0 0 1 1.03.05l3.4 2.35a1 1 0 0 1 0 1.64l-3.4 2.36a1 1 0 0 1-1.57-.82V11a1 1 0 0 1 .54-.86Zm1.46 2.76v1.91l1.38-.95-1.38-.96Z" />
+      </symbol>
+      <symbol id="icon-icon_share" viewBox="0 0 20 20">
+        <path d="M10 2.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2Zm0 1.7a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8Z" />
+        <path d="M4.2 17.6a5.8 5.8 0 1 1 11.6 0 .85.85 0 0 1-1.7 0 4.1 4.1 0 0 0-8.2 0 .85.85 0 0 1-1.7 0Z" />
+      </symbol>
+    </svg>
+  )
+}
+
+function SvgIcon({ id, className = '' }) {
+  return (
+    <svg className={`buzzcast-svg-icon ${className}`} aria-hidden="true" focusable="false">
+      <use href={`#${id}`} xlinkHref={`#${id}`}></use>
+    </svg>
   )
 }
 
@@ -528,6 +519,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [showMobileMembers, setShowMobileMembers] = useState(false)
   const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
+  const [showDownloadQr, setShowDownloadQr] = useState(false)
   const [showHostPanel, setShowHostPanel] = useState(false)
   const [showJoinPanel, setShowJoinPanel] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
@@ -609,9 +601,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const backAvatar = actionAvatarAssets.back
   const messageAvatar = actionAvatarAssets.message
   const rankingAvatar = actionAvatarAssets.ranking
-  const liveRoomsAvatar = navigationAssets.liveRooms.avatar
-  const settingsAvatar = navigationAssets.adminDashboard.avatar
-  const feedbackHelpAvatar = navigationAssets.feedbackHelp.avatar
+  const adminDashboardIcon = navigationAssets.adminDashboard.icon
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -665,14 +655,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
-    let cards = roomCards.filter((card) => cardMatchesActiveFeed(card, activeFeed, {
-      user,
-      region: settingsDraft.region,
-    }))
-
-    cards = cards.filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
-    return sortCardsForView(cards, sort).slice(0, 48)
-  }, [activeFeed, filter, privacyFilter, roomCards, settingsDraft.region, sort, user])
+    return roomCards
+      .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+      .slice(0, 48)
+  }, [filter, privacyFilter, roomCards])
   const recentRoomCards = useMemo(() => {
     const cardsById = new Map(visibleCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
@@ -686,10 +672,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
     const candidateCards = roomCards
-      .filter((card) => cardMatchesActiveFeed(card, activeFeed, {
-        user,
-        region: settingsDraft.region,
-      }))
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
       .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country}`))
 
@@ -702,7 +684,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       room: card.room,
       card,
     }))
-  }, [activeFeed, filter, privacyFilter, roomCards, searchTerm, settingsDraft.region, user])
+  }, [filter, privacyFilter, roomCards, searchTerm])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const directMessageThreads = useMemo(() => {
@@ -979,12 +961,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   function openProfileSection() {
     if (!requireAuth('Log in or sign up to open your profile.', 'login')) return
+    setShowDownloadQr(false)
     pushSectionHistory('me')
     setActiveSection('me')
   }
 
   function openSettingsSection(nextSettings = activeSettings) {
     if (!requireAuth('Log in to manage your account settings.', 'login')) return
+    setShowDownloadQr(false)
     pushSectionHistory('settings')
     setActiveSettings(nextSettings)
     setActiveSection('settings')
@@ -1357,26 +1341,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openMobileMomentsSection() {
-    if (!isMobileViewport()) {
-      openSettingsSection()
-      return
-    }
-
-    setActiveFeed('latest')
-    setSort('newest')
-    setActiveSection('live')
-    setPreviewCard(null)
-    showMobileActionToast('Showing moments')
+    openSettingsSection()
   }
 
   function openMobileMessageSection() {
-    if (!isMobileViewport()) {
-      pushSectionHistory('help')
-      setActiveSection('help')
-      return
-    }
-
-    toggleMessagesDrawer()
+    setShowDownloadQr(false)
+    pushSectionHistory('help')
+    setActiveSection('help')
+    setPreviewCard(null)
+    setShowMessages(false)
   }
 
   function updateSettings(field, value, message) {
@@ -1554,6 +1527,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openLiveSection() {
+    setShowDownloadQr(false)
     pushSectionHistory('live')
     setActiveSection('live')
     setPreviewCard(null)
@@ -1566,12 +1540,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function switchFeed(nextFeed) {
-    const tab = feedTabs.find((item) => item.value === nextFeed)
+    if (nextFeed === 'following' && !user) {
+      requireAuth('Log in to see rooms from people you follow.', 'login')
+      return
+    }
+
+    const tab = tabConfigForFeed(nextFeed)
     setActiveSection('live')
     setPreviewCard(null)
     setActiveFeed(nextFeed)
     setFilter(tab?.filter || 'all')
     setSort(tab?.sort || 'newest')
+    setRoomMeta((previous) => ({ ...previous, page: 1 }))
   }
 
   function showAllLiveRooms() {
@@ -1585,27 +1565,26 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function switchMobileRoomGroup(nextGroup) {
+    if (nextGroup === 'follow' && !user) {
+      requireAuth('Log in to see rooms from people you follow.', 'login')
+      return
+    }
+
     setMobileRoomGroup(nextGroup)
     setActiveSection('live')
     setPreviewCard(null)
 
     if (nextGroup === 'recently') {
-      setActiveFeed('latest')
-      setSort('newest')
-      setFilter('all')
+      switchFeed('latest')
       return
     }
 
     if (nextGroup === 'follow') {
-      setActiveFeed('following')
-      setFilter('all')
-      setSort('active')
+      switchFeed('following')
       return
     }
 
-    setActiveFeed('for_you')
-    setFilter(defaultFeedTab.filter || 'all')
-    setSort(defaultFeedTab.sort || 'newest')
+    switchFeed('global')
   }
 
   async function loadRooms({
@@ -2033,6 +2012,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowInstall(false)
   }
 
+  function openInstallAppModal() {
+    setShowDownloadQr(false)
+    setShowInstall(true)
+  }
+
+  function toggleDownloadQrPanel() {
+    setShowInstall(false)
+    setShowDownloadQr((current) => !current)
+  }
+
   function renderLiveFeed() {
     const featuredMobileCard = ownRoomCard
     const featuredMobileTitle = featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard.title
@@ -2120,7 +2109,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
         <div className="buzzcast-feed-controls">
           <span>
-            {visibleCards.length} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
+            {roomMeta.total} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
           </span>
           <div>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
@@ -3088,6 +3077,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   return (
     <div className={`buzzcast-shell section-${activeSection}`}>
+      <AppIconSprite />
       <header className="buzzcast-topbar">
         <BuzzLogo />
         <div className="buzzcast-search-wrap">
@@ -3125,9 +3115,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
         </div>
         <div className="buzzcast-actions">
+          <IconButton label="Install app" className="get-app" onClick={openInstallAppModal}>
+            <SvgIcon id="icon-getTheAppIcon" />
+          </IconButton>
           {showAdminDashboard ? (
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
-              <span className="buzzcast-action-avatar admin-dashboard" aria-hidden="true"><img src={settingsAvatar} alt="" loading="lazy" /></span>
+              <span className="buzzcast-action-avatar admin-dashboard" aria-hidden="true">
+                <img src={adminDashboardIcon} alt="" loading="lazy" />
+              </span>
             </IconButton>
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}>
@@ -3150,12 +3145,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'live' || activeSection === 'room' ? 'active buzzcast-rail-tab buzzcast-rail-home' : 'buzzcast-rail-tab buzzcast-rail-home'}
-          data-mobile-label="Home"
+          data-mobile-label="Live"
           onClick={openLiveSection}
           aria-label="Home"
         >
-          <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
-            <img src={liveRoomsAvatar} alt="" loading="lazy" />
+          <span className="buzzcast-rail-icon rail-live rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-homeLiveIcon" />
           </span>
           <b>Live</b>
         </button>
@@ -3166,10 +3161,22 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openProfileSection}
           aria-label="Me"
         >
-          <span className="buzzcast-rail-icon rail-me image-avatar" aria-hidden="true">
-            <img src={profileAvatar} alt="" loading="lazy" />
+          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-icon_share" />
           </span>
           <b>Me</b>
+        </button>
+        <button
+          type="button"
+          className={showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
+          data-mobile-label="App"
+          onClick={toggleDownloadQrPanel}
+          aria-label="Scan to download app"
+        >
+          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-getTheAppIcon" />
+          </span>
+          <b>Download app</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button
@@ -3179,8 +3186,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openMobileMomentsSection}
           aria-label="Settings"
         >
-          <span className="buzzcast-rail-icon rail-settings rail-image-icon" aria-hidden="true">
-            <img src={settingsAvatar} alt="" loading="lazy" />
+          <span className="buzzcast-rail-icon rail-settings rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-settingsIcon" />
           </span>
           <b>Settings</b>
         </button>
@@ -3191,12 +3198,32 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           onClick={openMobileMessageSection}
           aria-label="Feedback and Help"
         >
-          <span className="buzzcast-rail-icon rail-feedback-avatar rail-image-icon" aria-hidden="true">
-            <img src={feedbackHelpAvatar} alt="" loading="lazy" />
+          <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-feedbackAndHelpIcon" />
           </span>
           <b>Feedback and Help</b>
         </button>
       </aside>
+
+      {showDownloadQr ? (
+        <section className="buzzcast-download-qr-panel" role="dialog" aria-label={`Scan to download ${appDownloadName} app`}>
+          <button type="button" className="buzzcast-download-qr-close" onClick={() => setShowDownloadQr(false)} aria-label="Close download QR">×</button>
+          <div className="buzzcast-download-qr-code">
+            <img className="buzzcast-download-qr-image" src={appDownloadQrUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+            <span className="buzzcast-download-qr-logo">
+              <img src={brandAssets.appIconSmall} alt="" decoding="async" />
+            </span>
+          </div>
+          <strong>Scan to download {appDownloadName} APP</strong>
+          <small>{appDownloadUrl.replace(/^https?:\/\//, '')}</small>
+          <div className="buzzcast-download-platforms" aria-label="Supported app platforms">
+            <span className="android">Android</span>
+            <span className="play">Play</span>
+            <span className="ios">iOS</span>
+            <span className="pwa">PWA</span>
+          </div>
+        </section>
+      ) : null}
 
       <main className="buzzcast-main">
         {activeSection === 'live' && renderLiveFeed()}
@@ -3509,7 +3536,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div className="buzzcast-logo-mark image-mark">
                 <img src={brandAssets.appIconSmall} alt="" decoding="async" />
               </div>
-              <span><strong>TalkEachOther</strong><small>TalkEachOther RTC</small></span>
+              <span><strong>{appDownloadName}</strong><small>{appDownloadUrl.replace(/^https?:\/\//, '')}</small></span>
             </div>
             <footer>
               <button type="button" className="primary" onClick={handleInstallApp}>Install</button>
