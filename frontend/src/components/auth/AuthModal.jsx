@@ -5,10 +5,11 @@ import {
   register as registerApi,
 } from '../../services/api'
 import { getPasswordError, normalizeEmail, validateAuthFields } from '../../utils/authValidation'
+import { translateApp } from '../rooms/roomsStaticData'
 
-function titleForMode(mode) {
-  if (mode === 'register') return 'Create your account'
-  return 'Welcome back'
+function titleForMode(mode, t) {
+  if (mode === 'register') return t('Create your account')
+  return t('Welcome back')
 }
 
 function messageForAuthError(error) {
@@ -17,7 +18,7 @@ function messageForAuthError(error) {
   return rawMessage || 'Request failed. Please try again.'
 }
 
-export function AuthModal({ open, initialMode = 'login', initialEmail = '', reason = '', onClose, onAuthenticated }) {
+export function AuthModal({ open, initialMode = 'login', initialEmail = '', reason = '', language = 'English', onClose, onAuthenticated }) {
   const [mode, setMode] = useState(initialMode)
   const [name, setName] = useState('')
   const [gender, setGender] = useState('')
@@ -31,6 +32,7 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
   const [status, setStatus] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const passwordStrong = !getPasswordError(password, { strong: true })
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
   useEffect(() => {
     if (!open) return
@@ -152,74 +154,74 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
             <span className="image-mark"><img src={brandAssets.appIconSmall} alt="" decoding="async" /></span>
             <div>
               <strong>TalkEachOther</strong>
-              <small>Live video and music rooms</small>
+              <small>{t('Live video and music rooms')}</small>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close auth modal">x</button>
+          <button type="button" onClick={onClose} aria-label={t('Close auth modal')}>x</button>
         </header>
 
         <div className="auth-heading">
-          <span className="eyebrow">Account access</span>
-          <h1 id="auth-modal-title">{titleForMode(mode)}</h1>
-          <p>Log in or sign up to join rooms, chat, create rooms, and manage your profile.</p>
+          <span className="eyebrow">{t('Account access')}</span>
+          <h1 id="auth-modal-title">{titleForMode(mode, t)}</h1>
+          <p>{t('Log in or sign up to join rooms, chat, create rooms, and manage your profile.')}</p>
         </div>
 
         <div className="auth-tabs">
-          <button className={mode === 'login' ? 'tab active' : 'tab'} onClick={() => switchMode('login')} type="button">Login</button>
-          <button className={mode === 'register' ? 'tab active' : 'tab'} onClick={() => switchMode('register')} type="button">Signup</button>
+          <button className={mode === 'login' ? 'tab active' : 'tab'} onClick={() => switchMode('login')} type="button">{t('Login')}</button>
+          <button className={mode === 'register' ? 'tab active' : 'tab'} onClick={() => switchMode('register')} type="button">{t('Signup')}</button>
         </div>
 
         <form onSubmit={handleSubmit}>
           {mode === 'register' && (
             <>
-              <label>Name</label>
+              <label>{t('Name')}</label>
               <input value={name} onChange={(event) => updateField('name', event.target.value)} autoComplete="name" aria-invalid={Boolean(fieldErrors.name)} />
-              {fieldErrors.name && <small className="form-error">{fieldErrors.name}</small>}
+              {fieldErrors.name && <small className="form-error">{t(fieldErrors.name)}</small>}
               <div className="auth-inline-fields">
                 <div>
-                  <label>Gender</label>
+                  <label>{t('Gender')}</label>
                   <select value={gender} onChange={(event) => updateField('gender', event.target.value)} aria-invalid={Boolean(fieldErrors.gender)}>
-                    <option value="">Select gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="non_binary">Non-binary</option>
-                    <option value="prefer_not_to_say">Prefer not to say</option>
+                    <option value="">{t('Select gender')}</option>
+                    <option value="male">{t('Male')}</option>
+                    <option value="female">{t('Female')}</option>
+                    <option value="non_binary">{t('Non-binary')}</option>
+                    <option value="prefer_not_to_say">{t('Prefer not to say')}</option>
                   </select>
-                  {fieldErrors.gender && <small className="form-error">{fieldErrors.gender}</small>}
+                  {fieldErrors.gender && <small className="form-error">{t(fieldErrors.gender)}</small>}
                 </div>
                 <div>
-                  <label>Age</label>
+                  <label>{t('Age')}</label>
                   <input type="text" value={age} onChange={(event) => updateField('age', event.target.value)} inputMode="numeric" aria-invalid={Boolean(fieldErrors.age)} />
-                  {fieldErrors.age && <small className="form-error">{fieldErrors.age}</small>}
+                  {fieldErrors.age && <small className="form-error">{t(fieldErrors.age)}</small>}
                 </div>
               </div>
               <div className="auth-inline-fields residence-fields">
                 <div>
-                  <label>Current Residence</label>
+                  <label>{t('Current Residence')}</label>
                   <input
                     value={currentResidence}
                     onChange={(event) => updateField('current_residence', event.target.value)}
                     autoComplete="country-name"
-                    placeholder="Country"
+                    placeholder={t('Country')}
                     aria-invalid={Boolean(fieldErrors.current_residence)}
                   />
-                  {fieldErrors.current_residence && <small className="form-error">{fieldErrors.current_residence}</small>}
+                  {fieldErrors.current_residence && <small className="form-error">{t(fieldErrors.current_residence)}</small>}
                 </div>
                 <div>
-                  <label>Birthday</label>
+                  <label>{t('Birthday')}</label>
                   <input
                     type="date"
                     value={birthday}
                     onChange={(event) => updateField('birthday', event.target.value)}
                     aria-invalid={Boolean(fieldErrors.birthday)}
                   />
-                  {fieldErrors.birthday && <small className="form-error">{fieldErrors.birthday}</small>}
+                  {fieldErrors.birthday && <small className="form-error">{t(fieldErrors.birthday)}</small>}
                 </div>
               </div>
             </>
           )}
 
-          <label>Email</label>
+          <label>{t('Email')}</label>
           <input
             type="email"
             value={email}
@@ -229,35 +231,35 @@ export function AuthModal({ open, initialMode = 'login', initialEmail = '', reas
             placeholder="name@gmail.com or name@company.com"
             aria-invalid={Boolean(fieldErrors.email)}
           />
-          {fieldErrors.email && <small className="form-error">{fieldErrors.email}</small>}
+          {fieldErrors.email && <small className="form-error">{t(fieldErrors.email)}</small>}
 
-          <label>Password</label>
+          <label>{t('Password')}</label>
           <div className="password-field">
             <input
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(event) => updateField('password', event.target.value)}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              placeholder={mode === 'register' ? '10+ chars, upper, lower, number, symbol' : 'Password'}
+              placeholder={mode === 'register' ? t('10+ chars, upper, lower, number, symbol') : t('Password')}
               aria-invalid={Boolean(fieldErrors.password)}
             />
             <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-pressed={showPassword}>
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? t('Hide') : t('Show')}
             </button>
           </div>
-          {fieldErrors.password && <small className="form-error">{fieldErrors.password}</small>}
+          {fieldErrors.password && <small className="form-error">{t(fieldErrors.password)}</small>}
           {mode === 'register' && (
             <div className={passwordStrong ? 'password-strength strong' : 'password-strength'}>
-              <span>{passwordStrong ? 'Strong password' : 'Use 10+ characters with uppercase, lowercase, number, and symbol.'}</span>
+              <span>{passwordStrong ? t('Strong password') : t('Use 10+ characters with uppercase, lowercase, number, and symbol.')}</span>
             </div>
           )}
 
           <button className="primary-button full-width" disabled={submitting} type="submit">
-            {submitting ? 'Please wait...' : mode === 'register' ? 'Create account' : 'Login'}
+            {submitting ? t('Please wait...') : mode === 'register' ? t('Create account') : t('Login')}
           </button>
         </form>
 
-        <div className="status-box">{status}</div>
+        <div className="status-box">{t(status)}</div>
       </section>
     </div>
   )

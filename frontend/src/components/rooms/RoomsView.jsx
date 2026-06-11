@@ -34,12 +34,16 @@ import {
   feedTabs,
   feedbackCategories,
   feedbackTypes,
+  languageStatus,
   maxFeedbackAttachmentSize,
+  normalizeSettingsLanguage,
   policyDocuments,
   popularHelp,
   regions,
-  settingsCopy,
+  settingsLanguageCodes,
+  settingsLanguageOptions,
   settingsNav,
+  translateApp,
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
@@ -239,14 +243,6 @@ function directMessageDownloadName(message) {
   const pathType = !dataType ? mediaUrl.split('?')[0].split('#')[0].match(/\.([a-z0-9]+)$/i)?.[1] : ''
   const extension = String(dataType || pathType || 'jpg').replace(/^jpeg$/i, 'jpg').toLowerCase()
   return `direct-message-${message?.id || Date.now()}.${extension}`
-}
-
-function copyForLanguage(_language, key, replacements = {}) {
-  const template = settingsCopy[key] || key
-  return Object.entries(replacements).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-    template
-  )
 }
 
 function validEmail(value) {
@@ -499,7 +495,7 @@ function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deletin
   )
 }
 
-export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, onAuthRequired }) {
+export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, onAuthRequired, language = 'English', onLanguageChange }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
   const [status, setStatus] = useState('Ready')
@@ -544,15 +540,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     return {
       phoneBound: Boolean(saved.phoneBound),
       emailBound: Boolean(saved.emailBound || user?.email),
-      walletBound: Boolean(saved.walletBound),
       loginPasswordSet: saved.loginPasswordSet !== false,
-      paymentPasswordSet: Boolean(saved.paymentPasswordSet),
       deviceAlerts: saved.deviceAlerts !== false,
       messagePrivacy: saved.messagePrivacy || 'everyone',
       privateInvite: saved.privateInvite !== false,
       hideSensitive: saved.hideSensitive !== false,
       contentMode: saved.contentMode || 'warning',
-      language: saved.language || 'English',
+      language: normalizeSettingsLanguage(saved.language || language || 'English'),
       region: user?.current_residence || saved.region || 'United States',
     }
   })
@@ -623,7 +617,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomLaunchPending = Boolean(pendingRoomDraft && !createdRoom)
   const roomLaunchTitle = createdRoom ? 'Created Room' : roomLaunchPending ? 'Preparing Room' : 'Quick Join'
   const roomLaunchButtonLabel = roomLaunchPending ? 'Preparing Room...' : openingRoom ? 'Opening...' : 'Open Room'
-  const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
+  const t = (key, replacements = {}) => translateApp(settingsDraft.language || 'English', key, replacements)
 
   const roomCards = useMemo(() => {
     const cardRooms = createdRoom?.id ? upsertRoomById(rooms, createdRoom) : rooms
@@ -1454,6 +1448,49 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setFeedbackStatus('')
   }
 
+  function resetFeedbackForm() {
+    setFeedbackForm({
+      category: feedbackCategories[0],
+      type: feedbackTypes[0],
+      description: '',
+      contact: user?.email || '',
+      attachment: null,
+    })
+  }
+
+  function openFeedbackModal(defaults = {}) {
+    setFeedbackStatus('')
+    setFeedbackForm((previous) => ({
+      ...previous,
+      category: defaults.category || previous.category || feedbackCategories[0],
+      type: defaults.type || previous.type || feedbackTypes[0],
+      contact: previous.contact || user?.email || '',
+    }))
+    setShowFeedback(true)
+  }
+
+  function closeFeedbackModal() {
+    if (submittingFeedback) return
+    setShowFeedback(false)
+    setFeedbackStatus('')
+  }
+
+  function selectHelpMode(nextMode) {
+    setHelpMode(nextMode)
+    if (nextMode === 'popular' && !activeHelp) setActiveHelp(popularHelp[0]?.id || '')
+    if (nextMode === 'faq' && !activeFaq) setActiveFaq(faqTopics[0] || '')
+  }
+
+  function selectPopularHelp(helpId) {
+    setHelpMode('popular')
+    setActiveHelp(helpId)
+  }
+
+  function toggleFaqTopic(topic) {
+    setHelpMode('faq')
+    setActiveFaq((current) => current === topic ? '' : topic)
+  }
+
   function handleFeedbackAttachment(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -2023,13 +2060,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       window.setTimeout(() => {
         setShowFeedback(false)
         setFeedbackStatus('')
-        setFeedbackForm({
-          category: feedbackCategories[0],
-          type: feedbackTypes[0],
-          description: '',
-          contact: user?.email || '',
-          attachment: null,
-        })
+        resetFeedbackForm()
       }, 900)
     } catch (error) {
       setFeedbackStatus(error.message || 'Feedback could not be sent. Please try again.')
@@ -2230,7 +2261,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderProfile() {
-    return <ProfilePanel user={user} onSaved={onUserUpdated} onLogout={onLogout} />
+    return <ProfilePanel user={user} language={settingsDraft.language || language} onSaved={onUserUpdated} onLogout={onLogout} />
   }
 
   function renderSettingsContent() {
@@ -2321,17 +2352,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     if (activeSettings === 'language') {
-      const languageOptions = ['English', 'Spanish', 'French', 'Korean', 'Japanese', 'Chinese']
-
       return (
         <div className="buzzcast-settings-list">
           <label className="buzzcast-select-row">
             <span><strong>{t('Current language')}</strong><small>{t('Choose the language used by mobile account screens.')}</small></span>
             <select
               value={settingsDraft.language || 'English'}
-              onChange={(event) => updateSettings('language', event.target.value, `${event.target.value} selected.`)}
+              onChange={(event) => {
+                const nextLanguage = normalizeSettingsLanguage(event.target.value)
+                updateSettings('language', nextLanguage, languageStatus(nextLanguage))
+                onLanguageChange?.(nextLanguage)
+              }}
             >
-              {languageOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+              {settingsLanguageOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
             </select>
           </label>
         </div>
@@ -2350,7 +2383,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             }}>
               &lt; Back
             </button>
-            <h3>{selectedPolicy.title}</h3>
+            <h3>{t(selectedPolicy.title)}</h3>
             <p>{selectedPolicy.summary}</p>
             {selectedPolicy.sections.map(([title, body]) => (
               <section key={title}>
@@ -2369,7 +2402,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               setSelectedPolicyId(item.id)
               setSettingsStatus(item.summary)
             }}>
-              <span><strong>{item.title}</strong><small>{item.summary}</small></span>
+              <span><strong>{t(item.title)}</strong><small>{item.summary}</small></span>
               <b>&gt;</b>
             </button>
           ))}
@@ -2393,25 +2426,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         offKey: 'Bind email',
       },
       {
-        field: 'walletBound',
-        labelKey: 'Binding Wallet',
-        helperKey: 'Binding in the above way to prevent account loss',
-        onKey: 'Bound',
-        offKey: 'Bind wallet',
-      },
-      {
         field: 'loginPasswordSet',
         labelKey: 'Set login password',
         helperKey: 'Protect this account when signing in on a new device.',
         onKey: 'Set',
         offKey: 'Set password',
-      },
-      {
-        field: 'paymentPasswordSet',
-        labelKey: 'Set payment password',
-        helperKey: 'Protect wallet and payment actions.',
-        onKey: 'Set',
-        offKey: 'Set payment password',
       },
       {
         field: 'deviceAlerts',
@@ -2432,14 +2451,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               onClick={() => {
                 if (item.field === 'deviceAlerts') {
                   updateSettings(item.field, !settingsDraft[item.field], t('Device login alerts updated.'))
-                  return
-                }
-                if (item.field === 'walletBound') {
-                  updateSettings(item.field, true, t('Wallet binding saved for this session.'))
-                  return
-                }
-                if (item.field === 'paymentPasswordSet') {
-                  updateSettings(item.field, true, t('Payment password setting saved for this session.'))
                   return
                 }
                 openSecurityAction(item.field)
@@ -2562,36 +2573,76 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderHelp() {
+    const helpTabs = [
+      { value: 'popular', label: 'Help', detail: `${popularHelp.length} guides` },
+      { value: 'faq', label: 'FAQ', detail: `${faqTopics.length} answers` },
+      { value: 'records', label: 'Records', detail: `${feedbackRecords.length} saved` },
+    ]
+    const activeTab = helpTabs.find((item) => item.value === helpMode) || helpTabs[0]
+
     return (
       <section className="buzzcast-help-shell">
-        <header>
-          <h1>Feedback and Help</h1>
+        <header className="buzzcast-help-hero">
+          <div>
+            <span className="buzzcast-help-eyebrow">Support center</span>
+            <h1>Feedback and Help</h1>
+            <p>Find room, chat, account, and safety answers, then send a report if something still needs attention.</p>
+          </div>
           <div className="buzzcast-help-actions">
-            <button type="button" className={helpMode === 'records' ? 'active' : ''} onClick={() => setHelpMode('records')}>Feedback record</button>
-            <button type="button" className="primary" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+            <button type="button" className={helpMode === 'records' ? 'active' : ''} onClick={() => selectHelpMode('records')}>
+              <span>Records</span>
+              <small>{feedbackRecords.length}</small>
+            </button>
+            <button type="button" className="primary" onClick={() => openFeedbackModal()}>
+              Submit feedback
+            </button>
           </div>
         </header>
+
+        <nav className="buzzcast-help-tabs" aria-label="Help sections">
+          {helpTabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              className={helpMode === tab.value ? 'active' : ''}
+              onClick={() => selectHelpMode(tab.value)}
+            >
+              <span>{tab.label}</span>
+              <small>{tab.detail}</small>
+            </button>
+          ))}
+        </nav>
+
         <div className="buzzcast-help-layout">
-          <aside className="buzzcast-help-menu">
-            <button type="button" className={helpMode === 'popular' ? 'active' : ''} onClick={() => setHelpMode('popular')}>Popular Questions</button>
-            {popularHelp.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={helpMode === 'popular' && activeHelp === item.id ? 'active soft' : ''}
-                onClick={() => {
-                  setHelpMode('popular')
-                  setActiveHelp(item.id)
-                }}
-              >
+          <aside className="buzzcast-help-menu" aria-label={`${activeTab.label} navigation`}>
+            {helpMode === 'faq' ? faqTopics.slice(0, 8).map((item) => (
+              <button key={item} type="button" className={activeFaq === item ? 'active soft' : ''} onClick={() => toggleFaqTopic(item)}>
+                {item}
+              </button>
+            )) : helpMode === 'records' ? (
+              <>
+                <button type="button" className="active" onClick={() => selectHelpMode('records')}>Feedback record</button>
+                <button type="button" onClick={() => openFeedbackModal()}>Submit new feedback</button>
+                <button type="button" onClick={() => selectHelpMode('faq')}>Browse FAQ</button>
+                <button type="button" onClick={() => selectHelpMode('popular')}>Popular help</button>
+              </>
+            ) : popularHelp.map((item) => (
+              <button key={item.id} type="button" className={activeHelp === item.id ? 'active soft' : ''} onClick={() => selectPopularHelp(item.id)}>
                 {item.title}
               </button>
             ))}
-            <button type="button" className={helpMode === 'faq' ? 'active' : ''} onClick={() => setHelpMode('faq')}>Frequently Asked Question</button>
           </aside>
+
           <main className="buzzcast-help-content">
             {helpMode === 'records' ? (
-              <div className="buzzcast-feedback-record-list">
+              <section className="buzzcast-feedback-record-list" aria-label="Feedback records">
+                <header className="buzzcast-help-section-head">
+                  <div>
+                    <span>Feedback history</span>
+                    <h2>Your submitted records</h2>
+                  </div>
+                  <button type="button" onClick={() => openFeedbackModal()}>New feedback</button>
+                </header>
                 {feedbackRecords.length ? feedbackRecords.map((record) => (
                   <article key={record.id} className="buzzcast-feedback-record">
                     <div>
@@ -2608,26 +2659,38 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <div className="buzzcast-feedback-empty">
                     <strong>No feedback records yet</strong>
                     <p>Submitted feedback will appear here after it is sent to support.</p>
-                    <button type="button" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+                    <button type="button" onClick={() => openFeedbackModal()}>Submit feedback</button>
                   </div>
                 )}
-              </div>
+              </section>
             ) : helpMode === 'faq' ? (
-              <div className="buzzcast-faq-list">
+              <section className="buzzcast-faq-list" aria-label="Frequently asked questions">
+                <header className="buzzcast-help-section-head">
+                  <div>
+                    <span>FAQ</span>
+                    <h2>Frequently asked questions</h2>
+                  </div>
+                  <button type="button" onClick={() => openFeedbackModal({ type: 'Access issue' })}>Still need help</button>
+                </header>
                 {faqTopics.map((item) => (
                   <article key={item} className={activeFaq === item ? 'buzzcast-faq-item open' : 'buzzcast-faq-item'}>
-                    <button type="button" onClick={() => setActiveFaq(activeFaq === item ? '' : item)}>
+                    <button type="button" onClick={() => toggleFaqTopic(item)} aria-expanded={activeFaq === item}>
                       {item}
                       <span>{activeFaq === item ? '^' : 'v'}</span>
                     </button>
                     {activeFaq === item ? <p>{faqAnswers[item]}</p> : null}
                   </article>
                 ))}
-              </div>
+              </section>
             ) : (
               <article className="buzzcast-help-answer">
+                <span>Popular guide</span>
                 <h2>{activeHelpItem.title}</h2>
                 <p>{activeHelpItem.body}</p>
+                <footer>
+                  <button type="button" onClick={() => selectHelpMode('faq')}>Browse FAQ</button>
+                  <button type="button" className="primary" onClick={() => openFeedbackModal({ type: 'Access issue' })}>Report a problem</button>
+                </footer>
               </article>
             )}
           </main>
@@ -3051,13 +3114,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [user?.email, user?.current_residence])
 
   useEffect(() => {
+    const normalizedLanguage = normalizeSettingsLanguage(language)
+    setSettingsDraft((previous) => (
+      previous.language === normalizedLanguage ? previous : { ...previous, language: normalizedLanguage }
+    ))
+  }, [language])
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('rtc_room_settings', JSON.stringify({
         phoneBound: settingsDraft.phoneBound,
         emailBound: settingsDraft.emailBound,
-        walletBound: settingsDraft.walletBound,
         loginPasswordSet: settingsDraft.loginPasswordSet,
-        paymentPasswordSet: settingsDraft.paymentPasswordSet,
         deviceAlerts: settingsDraft.deviceAlerts,
         messagePrivacy: settingsDraft.messagePrivacy,
         privateInvite: settingsDraft.privateInvite,
@@ -3068,7 +3136,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       }))
     }
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = 'en'
+      document.documentElement.lang = settingsLanguageCodes[settingsDraft.language] || 'en'
     }
   }, [settingsDraft])
 
@@ -3210,9 +3278,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
         </div>
         <div className="buzzcast-actions">
-          <IconButton label="Install app" className="get-app" onClick={openInstallAppModal}>
-            <SvgIcon id="icon-getTheAppIcon" />
-          </IconButton>
           {showAdminDashboard ? (
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
               <SvgIcon id="icon-adminDashboardIcon" />
@@ -3247,15 +3312,28 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </button>
         <button
           type="button"
-          className={activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
-          data-mobile-label="Help"
-          onClick={openHelpSection}
-          aria-label="Feedback and Help"
+          className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
+          data-mobile-label="Me"
+          onClick={openProfileSection}
+          aria-label="Me"
         >
-          <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-feedbackAndHelpIcon" />
+          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-icon_share" />
           </span>
-          <b>Feedback and Help</b>
+          <b>Me</b>
+        </button>
+        <div className="buzzcast-rail-spacer"></div>
+        <button
+          type="button"
+          className={showInstall || showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-app-download' : 'buzzcast-rail-tab buzzcast-rail-app-download'}
+          data-mobile-label="App"
+          onClick={openInstallAppModal}
+          aria-label="Get the app"
+        >
+          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-getTheAppIcon" />
+          </span>
+          <b>Get the app</b>
         </button>
         <button
           type="button"
@@ -3269,7 +3347,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </span>
           <b>Settings</b>
         </button>
-        <div className="buzzcast-rail-spacer"></div>
+        <button
+          type="button"
+          className={activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
+          data-mobile-label="Help"
+          onClick={openHelpSection}
+          aria-label="Feedback and Help"
+        >
+          <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-feedbackAndHelpIcon" />
+          </span>
+          <b>Feedback and Help</b>
+        </button>
         <button
           type="button"
           className={showMessages ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
@@ -3281,18 +3370,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <SvgIcon id="icon-messageTopbarIcon" />
           </span>
           <b>Messages</b>
-        </button>
-        <button
-          type="button"
-          className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
-          data-mobile-label="Me"
-          onClick={openProfileSection}
-          aria-label="Me"
-        >
-          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-icon_share" />
-          </span>
-          <b>Me</b>
         </button>
       </aside>
 
@@ -3810,26 +3887,43 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       {renderSecurityActionModal()}
 
       {showFeedback ? (
-        <div className="buzzcast-modal-backdrop dark">
-          <form className="buzzcast-feedback-modal" onSubmit={submitFeedback}>
-            <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)} disabled={submittingFeedback}>x</button></header>
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={closeFeedbackModal}>
+          <form className="buzzcast-feedback-modal" onSubmit={submitFeedback} onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Support ticket</span>
+                <h2>Submit feedback</h2>
+                <p>Share what happened and add a screenshot or recording when it helps support review the issue.</p>
+              </div>
+              <button type="button" onClick={closeFeedbackModal} disabled={submittingFeedback} aria-label="Close feedback">x</button>
+            </header>
             <div className="buzzcast-feedback-row">
-              <select value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)} disabled={submittingFeedback}>
-                {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-              <select value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)} disabled={submittingFeedback}>
-                {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
+              <label htmlFor="feedback-category">
+                <span>Category</span>
+                <select id="feedback-category" value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)} disabled={submittingFeedback}>
+                  {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label htmlFor="feedback-type">
+                <span>Type</span>
+                <select id="feedback-type" value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)} disabled={submittingFeedback}>
+                  {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
             </div>
-            <label>Problem description</label>
-            <textarea
-              placeholder="Please provide as much detail as possible"
-              maxLength={1000}
-              value={feedbackForm.description}
-              onChange={(event) => updateFeedback('description', event.target.value)}
-              disabled={submittingFeedback}
-            ></textarea>
-            <label>Problem screenshot / screen recording <small>(optional)</small></label>
+            <label htmlFor="feedback-description" className="buzzcast-feedback-field">
+              <span>Problem description</span>
+              <textarea
+                id="feedback-description"
+                placeholder="What happened? Which room or action was affected?"
+                maxLength={1000}
+                value={feedbackForm.description}
+                onChange={(event) => updateFeedback('description', event.target.value)}
+                disabled={submittingFeedback}
+              ></textarea>
+              <small>{feedbackForm.description.length}/1000</small>
+            </label>
+            <span className="buzzcast-feedback-label">Problem screenshot / screen recording <small>(optional)</small></span>
             <div className={`buzzcast-upload-box ${feedbackForm.attachment ? 'has-file' : ''}`}>
               <input id="feedback-attachment" type="file" accept="image/*,video/*" onChange={handleFeedbackAttachment} disabled={submittingFeedback} />
               <label htmlFor="feedback-attachment">
@@ -3840,17 +3934,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <button type="button" onClick={removeFeedbackAttachment} disabled={submittingFeedback}>Remove</button>
               ) : null}
             </div>
-            <label>Contact information <small>(optional)</small></label>
-            <input
-              placeholder="Enter your email account"
-              value={feedbackForm.contact}
-              onChange={(event) => updateFeedback('contact', event.target.value)}
-              disabled={submittingFeedback}
-            />
+            <label htmlFor="feedback-contact" className="buzzcast-feedback-field">
+              <span>Contact information <small>(optional)</small></span>
+              <input
+                id="feedback-contact"
+                placeholder="Email or phone"
+                value={feedbackForm.contact}
+                onChange={(event) => updateFeedback('contact', event.target.value)}
+                disabled={submittingFeedback}
+              />
+            </label>
             {feedbackStatus ? <p className="buzzcast-feedback-status">{feedbackStatus}</p> : null}
-            <button type="submit" className="buzzcast-submit" disabled={submittingFeedback}>
-              {submittingFeedback ? 'Sending...' : 'Submit'}
-            </button>
+            <footer>
+              <button type="button" className="secondary-button" onClick={closeFeedbackModal} disabled={submittingFeedback}>Cancel</button>
+              <button type="submit" className="buzzcast-submit" disabled={submittingFeedback}>
+                {submittingFeedback ? 'Sending...' : 'Submit'}
+              </button>
+            </footer>
           </form>
         </div>
       ) : null}

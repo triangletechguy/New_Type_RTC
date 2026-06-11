@@ -3,6 +3,7 @@ import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { translateApp } from '../rooms/roomsStaticData'
 
 const maxAudioBytes = 5 * 1024 * 1024
 const maxPhotoBytes = 6 * 1024 * 1024
@@ -260,7 +261,7 @@ async function optimizePhotoFile(file) {
   }
 }
 
-export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStream = null, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, onMessagesChange }) {
+export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStream = null, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, language = 'English', onMessagesChange }) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
@@ -309,12 +310,13 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const previousRoomMessageCountRef = useRef(0)
   const previousInboxMessageCountRef = useRef(0)
   const latestRoomMessageIdRef = useRef(0)
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
   const realtimeConnected = Boolean(socket?.connected && signalingRoom)
   const typingNames = Object.values(typingUsers)
     .filter(Boolean)
     .filter((typingUser) => typingUser.id !== user?.id)
-    .map((typingUser) => typingUser.name || 'Someone')
+    .map((typingUser) => typingUser.name || t('Someone'))
   const canSend = chatEnabled && (Boolean(text.trim()) || Boolean(photoDraft) || Boolean(audioDraft)) && !sending && !recording
   const canSendInbox = Boolean(inboxTarget?.id)
     && (Boolean(inboxText.trim()) || Boolean(photoDraft) || Boolean(audioDraft))
@@ -323,8 +325,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
   const typingText = typingNames.length
-    ? `${typingNames.slice(0, 2).join(', ')} ${typingNames.length > 1 ? 'are' : 'is'} typing...`
-    : realtimeConnected ? 'No one is typing' : 'Typing status starts after RTC connects'
+    ? `${typingNames.slice(0, 2).join(', ')} ${t(typingNames.length > 1 ? 'are typing...' : 'is typing...')}`
+    : realtimeConnected ? t('No one is typing') : t('Typing status starts after RTC connects')
 
   function appendMessage(message) {
     if (!message?.id) return
@@ -1351,14 +1353,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     <aside className="chat-panel glass-card">
       <div className="chat-panel-header">
         <div>
-          <span className="eyebrow">{chatMode === 'inbox' ? 'Personal Inbox' : 'Room Comments'}</span>
-          <h3>{chatMode === 'inbox' ? (inboxTarget?.name || 'Inbox') : 'Live Chat'}</h3>
+          <span className="eyebrow">{chatMode === 'inbox' ? t('Personal Inbox') : t('Room Comments')}</span>
+          <h3>{chatMode === 'inbox' ? (inboxTarget?.name || t('Inbox')) : t('Live Chat')}</h3>
         </div>
         <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
-          {chatMode === 'inbox' ? 'Private' : typingNames.length ? 'Typing' : realtimeConnected ? 'Realtime' : 'Saved'}
+          {chatMode === 'inbox' ? t('Private') : typingNames.length ? t('Typing') : realtimeConnected ? t('Realtime') : t('Saved')}
         </span>
       </div>
-      <div className="chat-mode-tabs" role="tablist" aria-label="Message section">
+      <div className="chat-mode-tabs" role="tablist" aria-label={t('Message section')}>
         <button
           type="button"
           className={chatMode === 'comments' ? 'active' : ''}
@@ -1366,7 +1368,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           role="tab"
           aria-selected={chatMode === 'comments'}
         >
-          Room
+          {t('Room')}
         </button>
         <button
           type="button"
@@ -1375,17 +1377,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           role="tab"
           aria-selected={chatMode === 'inbox'}
         >
-          Inbox
+          {t('Inbox')}
         </button>
       </div>
 
       <div className="chat-mode-panel" hidden={chatMode !== 'comments'} data-chat-mode="comments">
-      <div className="messages" ref={messagesRef} role="log" aria-label="Room chat messages">
+      <div className="messages" ref={messagesRef} role="log" aria-label={t('Room chat messages')}>
         {loading ? (
-          <LoadingMovie label="Loading chat" compact />
+          <LoadingMovie label={t('Loading chat')} compact />
         ) : visibleMessages.map((message) => {
           const mine = isOwnMessage(message, user)
-          const senderName = chatSenderName(message, user)
+          const senderName = mine ? t('You') : chatSenderName(message, user)
           const senderAvatar = avatarForUser(message, Number(message.sender_id || 0))
           const imageMessage = message.message_type === 'image'
           const avatarMessage = imageMessage && String(message.message_body || '').trim() === 'sent an avatar'
@@ -1417,7 +1419,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               <div className={bubbleClass}>
                 <div className="chat-meta">
                   <strong>{senderName}</strong>
-                  <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
+                  <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ` ${t('edited')}` : ''}</time>
                 </div>
                 {editing ? (
                   <form className="chat-edit-form" onSubmit={(event) => saveEdit(message, event)}>
@@ -1431,10 +1433,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                     />
                     <div className="chat-edit-actions">
                       <button type="submit" disabled={savingEdit || !editText.trim()}>
-                        {savingEdit ? <LoadingMovie label="Saving" inline /> : 'Save'}
+                        {savingEdit ? <LoadingMovie label={t('Saving')} inline /> : t('Save')}
                       </button>
                       <button type="button" className="secondary" onClick={cancelEdit} disabled={savingEdit}>
-                        Cancel
+                        {t('Cancel')}
                       </button>
                     </div>
                   </form>
@@ -1449,7 +1451,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                         caption: photoCaption,
                         downloadName: photoDownloadName('room', message.id, message.media_url),
                       })}
-                      aria-label={avatarMessage ? 'Preview avatar' : 'Preview image'}
+                      aria-label={avatarMessage ? t('Preview avatar') : t('Preview image')}
                     >
                       <img className={avatarMessage ? 'chat-photo chat-avatar-share' : 'chat-photo'} src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
                     </button>
@@ -1458,12 +1460,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 ) : voiceMessage ? (
                   <div className="chat-voice-message">
                     <audio controls src={message.media_url}></audio>
-                    <span>{message.message_body || 'Voice message'}</span>
+                    <span>{message.message_body || t('Voice message')}</span>
                   </div>
                 ) : giftMessage ? (
                   <div className="chat-gift-message">
-                    <strong>{message.message_body || 'Gift'}</strong>
-                    <span>sent a gift</span>
+                    <strong>{message.message_body || t('Gift')}</strong>
+                    <span>{t('sent a gift')}</span>
                   </div>
                 ) : (
                   <p>{message.message_body}</p>
@@ -1472,27 +1474,27 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   <div className="chat-actions">
                     {canFollow ? (
                       <button type="button" className="neutral" onClick={() => requestFollowFromMessage(message)} disabled={following || requested}>
-                        {following ? 'Requesting' : requested ? 'Requested' : 'Follow'}
+                        {following ? t('Requesting') : requested ? t('Requested') : t('Follow')}
                       </button>
                     ) : null}
                     {canMessage ? (
                       <button type="button" className="neutral" onClick={() => openInboxFromMessage(message)}>
-                        Message
+                        {t('Message')}
                       </button>
                     ) : null}
                     {canModify ? (
                       <button type="button" className="neutral" onClick={() => startEdit(message)} disabled={deleting}>
-                        Edit
+                        {t('Edit')}
                       </button>
                     ) : null}
                     {canDelete ? (
                       <button type="button" className="danger" onClick={() => requestDeleteMessage(message)} disabled={deleting}>
-                        {deleting ? 'Deleting' : 'Delete'}
+                        {deleting ? t('Deleting') : t('Delete')}
                       </button>
                     ) : null}
                     {canBlock ? (
                       <button type="button" className="block" onClick={() => requestBlockUser(message)} disabled={Boolean(blockingUserIds[message.sender_id])}>
-                        {blockingUserIds[message.sender_id] ? 'Blocking' : 'Block'}
+                        {blockingUserIds[message.sender_id] ? t('Blocking') : t('Block')}
                       </button>
                     ) : null}
                   </div>
@@ -1513,23 +1515,23 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           <div className="chat-photo-draft">
             <img src={photoDraft.dataUrl} alt="" />
             <span>
-              <strong>Photo</strong>
-              <small>{photoDraft.name || 'Ready to send'}</small>
+              <strong>{t('Photo')}</strong>
+              <small>{photoDraft.name || t('Ready to send')}</small>
             </span>
-            <button type="button" onClick={clearPhotoDraft} disabled={sending} aria-label="Remove photo">x</button>
+            <button type="button" onClick={clearPhotoDraft} disabled={sending} aria-label={t('Remove photo')}>x</button>
           </div>
         ) : null}
         {audioDraft ? (
           <div className="chat-audio-draft">
             <audio controls src={audioDraft.dataUrl}></audio>
-            <span>{formatDuration(audioDraft.durationMs)} voice note</span>
-            <button type="button" onClick={cancelAudioDraft} disabled={sending} aria-label="Remove audio">x</button>
+            <span>{formatDuration(audioDraft.durationMs)} {t('voice note')}</span>
+            <button type="button" onClick={cancelAudioDraft} disabled={sending} aria-label={t('Remove audio')}>x</button>
           </div>
         ) : null}
         {recording ? (
           <div className="chat-recording-line">
             <span>{formatDuration(recordingMs)}</span>
-            <b>Recording voice message</b>
+            <b>{t('Recording voice message')}</b>
           </div>
         ) : null}
         <textarea
@@ -1538,12 +1540,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           onBlur={stopTyping}
-          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? 'Add a caption' : 'Message this room') : 'Chat is disabled'}
+          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? t('Add a caption') : t('Message this room')) : t('Chat is disabled')}
           maxLength={1200}
           rows={2}
           disabled={!chatEnabled || sending || recording}
         />
-        {!chatEnabled ? <small className="chat-disabled-note">Chat is turned off for this room.</small> : null}
+        {!chatEnabled ? <small className="chat-disabled-note">{t('Chat is turned off for this room.')}</small> : null}
         <div className="chat-form-footer">
           <span>{text.length}/1200</span>
           <div className="chat-form-actions">
@@ -1555,20 +1557,20 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               onChange={stagePhotoDraft}
               disabled={!chatEnabled || sending}
             />
-            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending} aria-label="Photo" title="Photo">
+            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!chatEnabled || sending} aria-label={t('Photo')} title={t('Photo')}>
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
-              <span>Photo</span>
+              <span>{t('Photo')}</span>
             </button>
             <button
               type="button"
               className={recording ? 'secondary-button chat-audio-button recording' : 'secondary-button chat-audio-button'}
               onClick={recording ? stopAudioRecording : startAudioRecording}
               disabled={!chatEnabled || sending}
-              aria-label={recording ? 'Stop recording' : 'Audio'}
-              title={recording ? 'Stop recording' : 'Audio'}
+              aria-label={recording ? t('Stop recording') : t('Audio')}
+              title={recording ? t('Stop recording') : t('Audio')}
             >
               <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
-              <span>{recording ? 'Stop' : 'Audio'}</span>
+              <span>{recording ? t('Stop') : t('Audio')}</span>
             </button>
             {roomGifts.map((gift) => (
               <button
@@ -1577,14 +1579,14 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 className="secondary-button chat-gift-button"
                 onClick={() => sendGift(gift)}
                 disabled={!chatEnabled || room?.gift_enabled === false || sending || recording}
-                aria-label={`Send ${gift.label} gift`}
-                title={`Send ${gift.label} gift`}
+                aria-label={t('Send {gift} gift', { gift: t(gift.label) })}
+                title={t('Send {gift} gift', { gift: t(gift.label) })}
               >
-                <span>{gift.label}</span>
+                <span>{t(gift.label)}</span>
               </button>
             ))}
             <button className="primary-button" type="submit" disabled={!canSend}>
-              {sending ? 'Sending' : 'Send'}
+              {sending ? t('Sending') : t('Send')}
             </button>
           </div>
         </div>
@@ -1595,41 +1597,41 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       <div className="personal-inbox">
         <div className="inbox-thread-strip">
           {loadingInbox && !inboxThreads.length ? (
-            <LoadingMovie label="Loading inbox" inline />
+            <LoadingMovie label={t('Loading inbox')} inline />
           ) : inboxThreads.length ? inboxThreads.map((thread) => {
             const active = Number(inboxTarget?.id) === Number(thread.peer_id)
             const preview = thread.last_message?.message_type === 'voice'
-              ? 'Voice message'
-              : thread.last_message?.message_type === 'image' ? 'Photo' : thread.last_message?.message_body
+              ? t('Voice message')
+              : thread.last_message?.message_type === 'image' ? t('Photo') : thread.last_message?.message_body
 
             return (
               <button key={thread.peer_id} type="button" className={active ? 'active' : ''} onClick={() => loadInboxConversation(thread)}>
                 <span className="image-avatar"><img src={avatarForUser(thread, thread.peer_id)} alt="" loading="lazy" /></span>
                 <b>{thread.peer_name || `User #${thread.peer_id}`}</b>
-                <small>{preview || 'Start chat'}</small>
+                <small>{preview || t('Start chat')}</small>
               </button>
             )
           }) : (
-            <span>No followed contacts yet</span>
+            <span>{t('No followed contacts yet')}</span>
           )}
         </div>
 
-        <div className="messages inbox-messages" ref={inboxMessagesRef} role="log" aria-label="Private inbox messages">
+        <div className="messages inbox-messages" ref={inboxMessagesRef} role="log" aria-label={t('Private inbox messages')}>
           {!inboxTarget ? (
             <div className="empty-chat">
-              <strong>Personal inbox</strong>
-              <span>Follow a user first, then choose them here to start a private chat.</span>
+              <strong>{t('Personal inbox')}</strong>
+              <span>{t('Follow a user first, then choose them here to start a private chat.')}</span>
             </div>
           ) : loadingInbox ? (
-            <LoadingMovie label="Loading conversation" compact />
+            <LoadingMovie label={t('Loading conversation')} compact />
           ) : inboxMessages.length === 0 ? (
             <div className="empty-chat">
               <strong>{inboxTarget.name}</strong>
-              <span>No private messages yet.</span>
+              <span>{t('No private messages yet.')}</span>
             </div>
           ) : inboxMessages.map((message) => {
             const mine = Number(message.sender_id) === Number(user?.id)
-            const senderName = mine ? 'You' : message.sender_name || inboxTarget.name
+            const senderName = mine ? t('You') : message.sender_name || inboxTarget.name
             const imageMessage = message.message_type === 'image'
             const voiceMessage = message.message_type === 'voice'
             const body = message.message_body || ''
@@ -1648,7 +1650,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 <div className={imageMessage ? 'chat-bubble image-message' : voiceMessage ? 'chat-bubble voice-message' : 'chat-bubble'}>
                   <div className="chat-meta">
                     <strong>{senderName}</strong>
-                    <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ' edited' : ''}</time>
+                    <time>{formatChatTime(message.created_at)}{wasEdited(message) ? ` ${t('edited')}` : ''}</time>
                   </div>
                   {editing ? (
                     <form className="chat-edit-form" onSubmit={(event) => saveInboxEdit(message, event)}>
@@ -1662,10 +1664,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                       />
                       <div className="chat-edit-actions">
                         <button type="submit" disabled={savingEdit || !editText.trim()}>
-                          {savingEdit ? <LoadingMovie label="Saving" inline /> : 'Save'}
+                          {savingEdit ? <LoadingMovie label={t('Saving')} inline /> : t('Save')}
                         </button>
                         <button type="button" className="secondary" onClick={cancelEdit} disabled={savingEdit}>
-                          Cancel
+                          {t('Cancel')}
                         </button>
                       </div>
                     </form>
@@ -1680,7 +1682,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                           caption: body && body !== 'sent a photo' ? body : '',
                           downloadName: photoDownloadName('inbox', message.id, message.media_url),
                         })}
-                        aria-label="Preview photo"
+                        aria-label={t('Preview photo')}
                       >
                         <img className="chat-photo" src={message.media_url} alt={`${senderName} sent`} loading="lazy" />
                       </button>
@@ -1689,7 +1691,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                   ) : voiceMessage ? (
                     <div className="chat-voice-message">
                       <audio controls src={message.media_url}></audio>
-                      <span>{body || 'Voice message'}</span>
+                      <span>{body || t('Voice message')}</span>
                     </div>
                   ) : (
                     <p>{body}</p>
@@ -1698,12 +1700,12 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                     <div className="chat-actions">
                       {canModify ? (
                         <button type="button" className="neutral" onClick={() => startInboxEdit(message)} disabled={deleting}>
-                          Edit
+                          {t('Edit')}
                         </button>
                       ) : null}
                       {canDelete ? (
                         <button type="button" className="danger" onClick={() => requestDeleteInboxMessage(message)} disabled={deleting}>
-                          {deleting ? 'Deleting' : 'Delete'}
+                          {deleting ? t('Deleting') : t('Delete')}
                         </button>
                       ) : null}
                     </div>
@@ -1721,30 +1723,30 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           <div className="chat-photo-draft">
             <img src={photoDraft.dataUrl} alt="" />
             <span>
-              <strong>Photo</strong>
-              <small>{photoDraft.name || 'Ready to send'}</small>
+              <strong>{t('Photo')}</strong>
+              <small>{photoDraft.name || t('Ready to send')}</small>
             </span>
-            <button type="button" onClick={clearPhotoDraft} disabled={sendingInbox} aria-label="Remove photo">x</button>
+            <button type="button" onClick={clearPhotoDraft} disabled={sendingInbox} aria-label={t('Remove photo')}>x</button>
           </div>
         ) : null}
         {audioDraft ? (
           <div className="chat-audio-draft">
             <audio controls src={audioDraft.dataUrl}></audio>
-            <span>{formatDuration(audioDraft.durationMs)} voice note</span>
-            <button type="button" onClick={cancelAudioDraft} disabled={sendingInbox} aria-label="Remove audio">x</button>
+            <span>{formatDuration(audioDraft.durationMs)} {t('voice note')}</span>
+            <button type="button" onClick={cancelAudioDraft} disabled={sendingInbox} aria-label={t('Remove audio')}>x</button>
           </div>
         ) : null}
         {recording ? (
           <div className="chat-recording-line">
             <span>{formatDuration(recordingMs)}</span>
-            <b>Recording voice message</b>
+            <b>{t('Recording voice message')}</b>
           </div>
         ) : null}
         <textarea
           value={inboxText}
           onChange={(event) => setInboxText(event.target.value)}
           onKeyDown={handleInboxComposerKeyDown}
-          placeholder={inboxTarget ? ((photoDraft || audioDraft) ? 'Add a caption' : `Message ${inboxTarget.name}`) : 'Choose a private chat'}
+          placeholder={inboxTarget ? ((photoDraft || audioDraft) ? t('Add a caption') : t('Message {name}', { name: inboxTarget.name })) : t('Choose a private chat')}
           maxLength={1200}
           rows={2}
           disabled={!inboxTarget || sendingInbox || recording}
@@ -1760,35 +1762,35 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               onChange={stagePhotoDraft}
               disabled={!inboxTarget || sendingInbox}
             />
-            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!inboxTarget || sendingInbox} aria-label="Photo" title="Photo">
+            <button type="button" className="secondary-button chat-photo-button" onClick={openPhotoPicker} disabled={!inboxTarget || sendingInbox} aria-label={t('Photo')} title={t('Photo')}>
               <img src={liveRoomAssets.composerPhoto} alt="" loading="lazy" />
-              <span>Photo</span>
+              <span>{t('Photo')}</span>
             </button>
             <button
               type="button"
               className={recording ? 'secondary-button chat-audio-button recording' : 'secondary-button chat-audio-button'}
               onClick={recording ? stopAudioRecording : startAudioRecording}
               disabled={!inboxTarget || sendingInbox}
-              aria-label={recording ? 'Stop recording' : 'Audio'}
-              title={recording ? 'Stop recording' : 'Audio'}
+              aria-label={recording ? t('Stop recording') : t('Audio')}
+              title={recording ? t('Stop recording') : t('Audio')}
             >
               <img src={liveRoomAssets.composerMic} alt="" loading="lazy" />
-              <span>{recording ? 'Stop' : 'Audio'}</span>
+              <span>{recording ? t('Stop') : t('Audio')}</span>
             </button>
             <button className="primary-button" type="submit" disabled={!canSendInbox}>
-              {sendingInbox ? 'Sending' : 'Send'}
+              {sendingInbox ? t('Sending') : t('Send')}
             </button>
           </div>
         </div>
       </form>
       </div>
-      {status && <small className="warning-text">{status}</small>}
+      {status && <small className="warning-text">{t(status)}</small>}
 
       {deleteTarget ? (
         <div className="chat-delete-backdrop" onMouseDown={closeDeleteModal}>
           <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-delete-title" onMouseDown={(event) => event.stopPropagation()}>
-            <h3 id="chat-delete-title">Delete message</h3>
-            <p>Are you sure you want to delete this message?</p>
+            <h3 id="chat-delete-title">{t('Delete message')}</h3>
+            <p>{t('Are you sure you want to delete this message?')}</p>
             <label className={canDeleteMessageForEveryone(deleteTarget) ? 'chat-delete-option' : 'chat-delete-option disabled'}>
               <input
                 type="checkbox"
@@ -1798,17 +1800,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
               />
               <span>
                 {canDeleteMessageForEveryone(deleteTarget)
-                  ? (deleteTarget.__scope === 'inbox' ? 'Delete for everyone in this chat' : 'Delete for everyone in this room')
-                  : 'Delete only for me'}
+                  ? (deleteTarget.__scope === 'inbox' ? t('Delete for everyone in this chat') : t('Delete for everyone in this room'))
+                  : t('Delete only for me')}
               </span>
             </label>
             {canDeleteMessageForEveryone(deleteTarget) ? (
-              <small className="chat-delete-hint">{deleteForEveryone ? 'Everyone will lose this message.' : 'Only your chat will hide this message.'}</small>
+              <small className="chat-delete-hint">{deleteForEveryone ? t('Everyone will lose this message.') : t('Only your chat will hide this message.')}</small>
             ) : null}
             <footer>
-              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}>CANCEL</button>
+              <button type="button" className="secondary-button" onClick={closeDeleteModal} disabled={Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}>{t('CANCEL')}</button>
               <button type="button" className="danger-button" onClick={confirmDeleteMessage} disabled={Boolean(deletingMessageIds[messageActionKey(deleteTarget)])}>
-                {deletingMessageIds[messageActionKey(deleteTarget)] ? 'DELETING...' : 'DELETE'}
+                {deletingMessageIds[messageActionKey(deleteTarget)] ? t('DELETING...') : t('DELETE')}
               </button>
             </footer>
           </section>
@@ -1818,13 +1820,13 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       {blockTarget ? (
         <div className="chat-delete-backdrop" onMouseDown={closeBlockModal}>
           <section className="chat-delete-modal" role="dialog" aria-modal="true" aria-labelledby="chat-block-title" onMouseDown={(event) => event.stopPropagation()}>
-            <h3 id="chat-block-title">Block user</h3>
-            <p>Block {chatSenderName(blockTarget, user)} in this room?</p>
-            <small className="chat-delete-hint">Their current messages will disappear from your chat and new messages from them will be hidden.</small>
+            <h3 id="chat-block-title">{t('Block user')}</h3>
+            <p>{t('Block {name} in this room?', { name: chatSenderName(blockTarget, user) })}</p>
+            <small className="chat-delete-hint">{t('Their current messages will disappear from your chat and new messages from them will be hidden.')}</small>
             <footer>
-              <button type="button" className="secondary-button" onClick={closeBlockModal} disabled={Boolean(blockingUserIds[blockTarget.sender_id])}>CANCEL</button>
+              <button type="button" className="secondary-button" onClick={closeBlockModal} disabled={Boolean(blockingUserIds[blockTarget.sender_id])}>{t('CANCEL')}</button>
               <button type="button" className="danger-button" onClick={confirmBlockUser} disabled={Boolean(blockingUserIds[blockTarget.sender_id])}>
-                {blockingUserIds[blockTarget.sender_id] ? 'BLOCKING...' : 'BLOCK'}
+                {blockingUserIds[blockTarget.sender_id] ? t('BLOCKING...') : t('BLOCK')}
               </button>
             </footer>
           </section>
@@ -1833,15 +1835,15 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     </aside>
     {imagePreview ? (
       <div className="chat-image-preview-backdrop" onMouseDown={closeImagePreview}>
-        <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label="Photo preview" onMouseDown={(event) => event.stopPropagation()}>
+        <section className="chat-image-preview-modal" role="dialog" aria-modal="true" aria-label={t('Photo preview')} onMouseDown={(event) => event.stopPropagation()}>
           <header>
-            <strong>Photo</strong>
-            <button type="button" onClick={closeImagePreview} aria-label="Close photo preview">x</button>
+            <strong>{t('Photo')}</strong>
+            <button type="button" onClick={closeImagePreview} aria-label={t('Close photo preview')}>x</button>
           </header>
           <img src={imagePreview.src} alt={imagePreview.alt} />
           {imagePreview.caption ? <p>{imagePreview.caption}</p> : null}
           <footer>
-            <a className="chat-image-download-action" href={imagePreview.src} download={imagePreview.downloadName || 'chat-photo.jpg'}>Download</a>
+            <a className="chat-image-download-action" href={imagePreview.src} download={imagePreview.downloadName || 'chat-photo.jpg'}>{t('Download')}</a>
           </footer>
         </section>
       </div>

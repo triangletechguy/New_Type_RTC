@@ -192,21 +192,21 @@ rtc.on('error', (error) => {
 
 const flowSteps = [
   ['1', 'Create company app', 'Generate app key, API key, allowed origins, billing scope, and app status.'],
-  ['2', 'Sync free shadow user', 'Map a client app user to tenant-scoped RTC records with no platform signup or invited-user charge.'],
-  ['3', 'Create or select room', 'Use tenant room APIs for audio, video, live, private, or password rooms.'],
+  ['2', 'Sync invited user', 'Map a client app user into the company user ledger with company-paid minutes.'],
+  ['3', 'Create RTC resource', 'Create or reuse an app-side room resource for audio, video, live, private, or password token scope.'],
   ['4', 'Issue RTC token', 'Return a short-lived token scoped to one tenant, app, user, room, and role.'],
   ['5', 'Join signaling and media', 'The browser or mobile SDK uses the RTC token, never the client API key.'],
-  ['6', 'Bill the client company', 'Start/end sessions and aggregate participant minutes to the client company invoice.'],
+  ['6', 'Apply package minutes', 'Start/end sessions and aggregate each invited user minute to the client company package.'],
 ]
 
 const apiMethods = [
   ['GET /api/client/me', 'Verifies API key, app status, tenant status, and package context.'],
-  ['POST /api/client/users/sync', 'Creates or updates a free tenant-scoped shadow user before RTC access.'],
-  ['POST /api/client/rooms', 'Creates an app-scoped room for the synced external user.'],
+  ['POST /api/client/users/sync', 'Creates or updates an invited tenant-scoped user before RTC access.'],
+  ['POST /api/client/rooms', 'Creates an app-scoped RTC resource; billing still follows the synced user ledger.'],
   ['PATCH /api/client/rooms/:id', 'Updates room name, privacy, seats, and feature flags.'],
   ['POST /api/client/rtc/token', 'Issues a short-lived room token for one synced user and one room.'],
   ['POST /api/client/rtc/session/start', 'Starts usage tracking when a user joins RTC.'],
-  ['POST /api/client/rtc/session/end', 'Closes usage tracking and calculates client-company billable minutes.'],
+  ['POST /api/client/rtc/session/end', 'Closes usage tracking and adds billable user minutes to the company package.'],
   ['authenticate(token)', 'Stores the bearer token used for room and RTC requests.'],
   ['joinRoom(roomId, options)', 'Creates or joins an RTC session and returns signaling metadata.'],
   ['setAudioEnabled(enabled)', 'Toggles local audio and syncs participant media state.'],
@@ -246,10 +246,10 @@ const rtcProfileRows = [
 const buildMilestones = [
   ['1', 'Company-first admin', 'Tenants, apps, packages, status, contacts, and billing setup.'],
   ['2', 'Client API auth', 'API keys resolve company/app and reject suspended or revoked access.'],
-  ['3', 'Shadow users', 'External user sync keeps client users inside the client company app.'],
+  ['3', 'Invited users', 'External user sync keeps client users in the company ledger for package billing.'],
   ['4', 'RTC token API', 'Short-lived JWTs carry tenant, app, room, role, and permission claims.'],
-  ['5', 'Room API', 'Client backends create/list/update/disable/delete tenant rooms.'],
-  ['6', 'Company usage and billing', 'Participant minutes, room minutes, peak concurrency, and client-company invoice state.'],
+  ['5', 'RTC resource API', 'Client backends create/list/update/disable/delete token-scoped RTC resources.'],
+  ['6', 'Company usage and billing', 'Invited-user minutes, room telemetry, peak concurrency, and client-company invoice state.'],
   ['7', 'Developer docs', 'Quickstart, route map, SDK examples, errors, webhooks, and test console.'],
   ['8', 'SFU upgrade', 'Add mediasoup, Janus, or LiveKit-style media when room scale demands it.'],
 ]
@@ -257,12 +257,12 @@ const buildMilestones = [
 const tokenClaims = [
   ['tenant_id', 'Prevents cross-company room access.'],
   ['app_id', 'Connects usage and permissions to one client app.'],
-  ['external_user_id', 'Maps the RTC session to the client company user without charging that user.'],
+  ['external_user_id', 'Maps the RTC session to the invited company user whose minutes count toward the package.'],
   ['room_id', 'Limits the token to one room/channel.'],
   ['room_type / rtc_profile', 'Maps to communication/live profile, web mode, media type, and publisher role.'],
   ['role', 'Controls audience, publisher, moderator, and admin behavior.'],
   ['permissions', 'Controls join, publish_audio, publish_video, screen_share, chat, mute, kick.'],
-  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
+  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer while synced users spend company package minutes.'],
   ['exp / iat', 'Keeps tokens short-lived. Fifteen minutes is the default target.'],
 ]
 
@@ -275,20 +275,20 @@ const routeGroups = [
       ['PATCH /api/admin/companies/:id', 'Edit tenant identity, contacts, package, limits, and status.'],
       ['POST /api/admin/client-apps', 'Generate app key, API key, SDK token, and allowed origins.'],
       ['POST /api/admin/apps/:id/api-keys', 'Rotate credentials and show the raw key once.'],
-      ['GET /api/admin/companies/:id/detail', 'Open company dashboard: apps, rooms, users, usage, billing.'],
+      ['GET /api/admin/companies/:id/detail', 'Open company dashboard: apps, users, package minutes, usage, billing.'],
     ],
   },
   {
     title: 'Client Company APIs',
     rows: [
       ['GET /api/client/me', 'Verify API key and tenant/app/client billing state.'],
-      ['POST /api/client/users/sync', 'Create or update a free tenant-scoped shadow user.'],
+      ['POST /api/client/users/sync', 'Create or update an invited tenant-scoped user.'],
       ['GET /api/client/users/:external_user_id', 'Read one synced external user.'],
-      ['POST /api/client/rooms', 'Create a tenant/app-scoped RTC room.'],
-      ['GET /api/client/rooms', 'List rooms owned by this client app.'],
-      ['PATCH /api/client/rooms/:id', 'Update room fields and feature flags.'],
-      ['POST /api/client/rooms/:id/disable', 'Disable a room without losing history.'],
-      ['DELETE /api/client/rooms/:id', 'End/archive a room and preserve usage records.'],
+      ['POST /api/client/rooms', 'Create a tenant/app-scoped RTC resource.'],
+      ['GET /api/client/rooms', 'List RTC resources for this client app.'],
+      ['PATCH /api/client/rooms/:id', 'Update resource fields and feature flags.'],
+      ['POST /api/client/rooms/:id/disable', 'Disable an RTC resource without losing history.'],
+      ['DELETE /api/client/rooms/:id', 'End/archive an RTC resource and preserve usage records.'],
       ['POST /api/client/rtc/token', 'Issue a room-scoped RTC token.'],
       ['POST /api/client/rtc/session/start', 'Start usage tracking for a user entering RTC.'],
       ['POST /api/client/rtc/session/end', 'End usage tracking and calculate client-company billable minutes.'],
@@ -408,7 +408,7 @@ function SdkRoadmap() {
 
       <div className="sdk-done-condition">
         <span>MVP done condition</span>
-        <strong>A client company can receive an API key, sync a user, create a room, request an RTC token, join WebRTC from a sample frontend, and see usage in the admin dashboard.</strong>
+        <strong>A client company can receive an API key, sync an invited user, create an RTC resource, request an RTC token, join WebRTC from a sample frontend, and see user minutes in the admin dashboard.</strong>
       </div>
     </section>
   )
@@ -737,7 +737,7 @@ export default function SdkView() {
         <div>
           <span className="eyebrow">Developer Docs</span>
           <h1>Self-Hosted RTC Integration</h1>
-          <p>Company app credentials, shadow users, room APIs, short-lived RTC tokens, usage tracking, and SFU-ready media architecture.</p>
+          <p>Company app credentials, invited users, RTC resource APIs, short-lived RTC tokens, package-minute usage tracking, and SFU-ready media architecture.</p>
         </div>
         <div className="sdk-version-card">
           <span>Roadmap</span>

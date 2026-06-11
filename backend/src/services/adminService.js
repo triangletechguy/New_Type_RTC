@@ -160,6 +160,52 @@ async function ensureTenantCompanyColumns() {
 
       await query(
         `
+        CREATE TABLE IF NOT EXISTS client_external_users (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          tenant_id BIGINT UNSIGNED NOT NULL,
+          app_id BIGINT UNSIGNED NOT NULL,
+          user_id BIGINT UNSIGNED NOT NULL,
+          external_user_id VARCHAR(190) NOT NULL,
+          display_name VARCHAR(150) NOT NULL,
+          avatar_url VARCHAR(255) NULL,
+          email VARCHAR(180) NULL,
+          phone VARCHAR(60) NULL,
+          billing_scope ENUM('client_company') DEFAULT 'client_company',
+          user_pays TINYINT(1) DEFAULT 0,
+          metadata_json JSON NULL,
+          status ENUM('active', 'inactive', 'banned') DEFAULT 'active',
+          last_synced_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_client_external_user (app_id, external_user_id),
+          INDEX idx_client_external_tenant_id (tenant_id),
+          INDEX idx_client_external_user_id (user_id),
+          CONSTRAINT fk_client_external_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+          CONSTRAINT fk_client_external_app FOREIGN KEY (app_id) REFERENCES client_apps(id) ON DELETE CASCADE,
+          CONSTRAINT fk_client_external_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        `
+      )
+
+      const externalUserRows = await query(
+        `
+        SELECT COLUMN_NAME AS column_name
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'client_external_users'
+        `
+      )
+      const externalUserColumns = new Set(externalUserRows.map((row) => row.column_name))
+      if (!externalUserColumns.has('billing_scope')) {
+        await query("ALTER TABLE client_external_users ADD COLUMN billing_scope ENUM('client_company') DEFAULT 'client_company' AFTER phone")
+      }
+      if (!externalUserColumns.has('user_pays')) {
+        await query('ALTER TABLE client_external_users ADD COLUMN user_pays TINYINT(1) DEFAULT 0 AFTER billing_scope')
+      }
+      await query("UPDATE client_external_users SET billing_scope = 'client_company', user_pays = 0 WHERE billing_scope IS NULL OR user_pays IS NULL OR user_pays <> 0")
+
+      await query(
+        `
         CREATE TABLE IF NOT EXISTS company_admin_invites (
           id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
           tenant_id BIGINT UNSIGNED NOT NULL,
@@ -980,6 +1026,10 @@ async function getClientRows(tenantId = null) {
       COALESCE(apps.active_app_count, 0) AS active_app_count,
       COALESCE(room_counts.room_count, 0) AS room_count,
       COALESCE(room_counts.active_room_count, 0) AS active_room_count,
+      COALESCE(user_counts.user_count, 0) AS user_count,
+      COALESCE(user_counts.active_user_count, 0) AS active_user_count,
+      COALESCE(external_user_counts.synced_user_count, 0) AS synced_user_count,
+      COALESCE(external_user_counts.active_synced_user_count, 0) AS active_synced_user_count,
       COALESCE(usage_month.minutes, 0) AS minutes_month,
       COALESCE(usage_month.logs, 0) AS usage_logs_month
     FROM tenants t
@@ -1019,6 +1069,22 @@ async function getClientRows(tenantId = null) {
       FROM rooms
       GROUP BY tenant_id
     ) room_counts ON room_counts.tenant_id = t.id
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        COUNT(*) AS user_count,
+        COALESCE(SUM(status = 'active'), 0) AS active_user_count
+      FROM users
+      GROUP BY tenant_id
+    ) user_counts ON user_counts.tenant_id = t.id
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        COUNT(*) AS synced_user_count,
+        COALESCE(SUM(status = 'active'), 0) AS active_synced_user_count
+      FROM client_external_users
+      GROUP BY tenant_id
+    ) external_user_counts ON external_user_counts.tenant_id = t.id
     LEFT JOIN (
       SELECT
         tenant_id,
@@ -1093,6 +1159,11 @@ async function getClientRows(tenantId = null) {
       active_app_count: Number(client.active_app_count || 0),
       room_count: Number(client.room_count || 0),
       active_room_count: Number(client.active_room_count || 0),
+      user_count: Number(client.user_count || 0),
+      active_user_count: Number(client.active_user_count || 0),
+      invited_user_count: Number(client.synced_user_count || 0),
+      synced_user_count: Number(client.synced_user_count || 0),
+      active_synced_user_count: Number(client.active_synced_user_count || 0),
       minutes_month: minutes,
       usage_logs_month: Number(client.usage_logs_month || 0),
       usage_percent: allowance ? Math.min(100, Number(((minutes / allowance) * 100).toFixed(1))) : 0,
@@ -1883,6 +1954,212 @@ async function getTenantUsers(tenantId) {
   }))
 }
 
+function normalizeCompanyUsagePeriod(row) {
+  return {
+    logs: toNumber(row, 'logs'),
+    seconds: toNumber(row, 'seconds'),
+    minutes: toNumber(row, 'minutes', 2),
+    users: toNumber(row, 'users'),
+    rooms: toNumber(row, 'rooms'),
+    sessions: toNumber(row, 'sessions'),
+    avg_duration_seconds: toNumber(row, 'avg_duration_seconds'),
+  }
+}
+
+async function getTenantUsageScope(tenantId) {
+  if (!tenantId) return null
+  await ensureTenantCompanyColumns()
+
+  const [[users], [externalUsers], [liveActivity], [usageToday], [usageMonth], plan] = await Promise.all([
+    query(
+      `
+      SELECT
+        COUNT(*) AS total,
+        COALESCE(SUM(status = 'active'), 0) AS active,
+        COALESCE(SUM(status = 'inactive'), 0) AS inactive,
+        COALESCE(SUM(status = 'banned'), 0) AS banned,
+        COALESCE(SUM(status = 'pending_verification'), 0) AS pending,
+        COALESCE(SUM(created_at >= CURDATE()), 0) AS new_today,
+        COALESCE(SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)), 0) AS new_7_days
+      FROM users
+      WHERE tenant_id = :tenantId
+      `,
+      { tenantId }
+    ),
+    query(
+      `
+      SELECT
+        COUNT(*) AS synced,
+        COALESCE(SUM(status = 'active'), 0) AS active_synced,
+        COALESCE(SUM(status = 'inactive'), 0) AS inactive_synced,
+        COALESCE(SUM(status = 'banned'), 0) AS banned_synced,
+        COUNT(DISTINCT app_id) AS apps,
+        MAX(last_synced_at) AS last_synced_at
+      FROM client_external_users
+      WHERE tenant_id = :tenantId
+      `,
+      { tenantId }
+    ),
+    query(
+      `
+      SELECT
+        COUNT(*) AS live_participants,
+        COUNT(DISTINCT p.user_id) AS live_users,
+        COUNT(DISTINCT p.room_id) AS live_rooms,
+        COUNT(DISTINCT p.session_id) AS live_sessions
+      FROM rtc_session_participants p
+      INNER JOIN rooms r ON r.id = p.room_id
+      WHERE r.tenant_id = :tenantId
+      AND p.left_at IS NULL
+      `,
+      { tenantId }
+    ),
+    query(
+      `
+      SELECT
+        COUNT(*) AS logs,
+        COALESCE(SUM(duration_seconds), 0) AS seconds,
+        COALESCE(SUM(billable_minutes), 0) AS minutes,
+        COUNT(DISTINCT user_id) AS users,
+        COUNT(DISTINCT room_id) AS rooms,
+        COUNT(DISTINCT session_id) AS sessions,
+        COALESCE(AVG(duration_seconds), 0) AS avg_duration_seconds
+      FROM usage_logs
+      WHERE tenant_id = :tenantId
+      AND DATE(created_at) = CURDATE()
+      `,
+      { tenantId }
+    ),
+    query(
+      `
+      SELECT
+        COUNT(*) AS logs,
+        COALESCE(SUM(duration_seconds), 0) AS seconds,
+        COALESCE(SUM(billable_minutes), 0) AS minutes,
+        COUNT(DISTINCT user_id) AS users,
+        COUNT(DISTINCT room_id) AS rooms,
+        COUNT(DISTINCT session_id) AS sessions,
+        COALESCE(AVG(duration_seconds), 0) AS avg_duration_seconds
+      FROM usage_logs
+      WHERE tenant_id = :tenantId
+      AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+      `,
+      { tenantId }
+    ),
+    getTenantPlan(tenantId),
+  ])
+
+  const today = normalizeCompanyUsagePeriod(usageToday)
+  const month = normalizeCompanyUsagePeriod(usageMonth)
+  const allowance = Number(plan?.monthly_minute_allowance || 0)
+  const minuteRate = Number(plan?.minute_rate || 0)
+  const basePrice = Number(plan?.monthly_base_price || 0)
+  const overageMinutes = Math.max(0, month.minutes - allowance)
+  const overageCost = Number((overageMinutes * minuteRate).toFixed(2))
+
+  return {
+    tenant_id: Number(tenantId),
+    users: {
+      total: toNumber(users, 'total'),
+      active: toNumber(users, 'active'),
+      inactive: toNumber(users, 'inactive'),
+      banned: toNumber(users, 'banned'),
+      pending: toNumber(users, 'pending'),
+      new_today: toNumber(users, 'new_today'),
+      new_7_days: toNumber(users, 'new_7_days'),
+      synced: toNumber(externalUsers, 'synced'),
+      invited: toNumber(externalUsers, 'synced'),
+      active_synced: toNumber(externalUsers, 'active_synced'),
+      inactive_synced: toNumber(externalUsers, 'inactive_synced'),
+      banned_synced: toNumber(externalUsers, 'banned_synced'),
+      synced_apps: toNumber(externalUsers, 'apps'),
+      live: toNumber(liveActivity, 'live_users'),
+      live_participants: toNumber(liveActivity, 'live_participants'),
+      live_sessions: toNumber(liveActivity, 'live_sessions'),
+      live_rooms: toNumber(liveActivity, 'live_rooms'),
+      last_synced_at: externalUsers?.last_synced_at || null,
+    },
+    usage: {
+      today,
+      month,
+    },
+    package: {
+      id: plan?.id || null,
+      code: plan?.code || null,
+      name: plan?.name || null,
+      monthly_allowance: allowance,
+      monthly_minute_allowance: allowance,
+      minute_rate: minuteRate,
+      monthly_base_price: basePrice,
+      used_minutes: month.minutes,
+      remaining_minutes: allowance ? Math.max(0, Number((allowance - month.minutes).toFixed(2))) : 0,
+      usage_percent: allowance ? Math.min(100, Number(((month.minutes / allowance) * 100).toFixed(1))) : 0,
+      overage_minutes: Number(overageMinutes.toFixed(2)),
+      estimated_overage_cost: overageCost,
+      estimated_invoice: Number((basePrice + overageCost).toFixed(2)),
+    },
+    billing: {
+      payer: 'client_company',
+      user_pays: false,
+      billing_mode: 'company_user_minutes',
+      note: 'Company admins are billed for minutes used by their invited and synced users according to the active package.',
+    },
+  }
+}
+
+function applyCompanyScopeToDashboard(dashboard, companyScope) {
+  if (!dashboard || !companyScope) return dashboard
+
+  const companyUsers = companyScope.users || {}
+  const companyUsage = companyScope.usage || {}
+
+  return {
+    ...dashboard,
+    company_scope: companyScope,
+    billing_mode: 'company_user_minutes',
+    total_users: companyUsers.total ?? dashboard.total_users,
+    minutes_used_today: companyUsage.today?.minutes ?? dashboard.minutes_used_today,
+    minutes_used_this_month: companyUsage.month?.minutes ?? dashboard.minutes_used_this_month,
+    usage_today: {
+      ...(dashboard.usage_today || {}),
+      ...(companyUsage.today || {}),
+    },
+    usage_month: {
+      ...(dashboard.usage_month || {}),
+      ...(companyUsage.month || {}),
+    },
+    metrics: {
+      ...(dashboard.metrics || {}),
+      users: {
+        ...(dashboard.metrics?.users || {}),
+        total: companyUsers.total ?? dashboard.metrics?.users?.total ?? 0,
+        active: companyUsers.active ?? dashboard.metrics?.users?.active ?? 0,
+        inactive: companyUsers.inactive ?? 0,
+        banned: companyUsers.banned ?? dashboard.metrics?.users?.banned ?? 0,
+        pending: companyUsers.pending ?? 0,
+        invited: companyUsers.invited ?? 0,
+        synced: companyUsers.synced ?? 0,
+        active_synced: companyUsers.active_synced ?? 0,
+        live: companyUsers.live ?? dashboard.metrics?.participants?.active_users ?? 0,
+        live_participants: companyUsers.live_participants ?? dashboard.metrics?.participants?.active ?? 0,
+        new_today: companyUsers.new_today ?? dashboard.metrics?.users?.new_today ?? 0,
+        new_7_days: companyUsers.new_7_days ?? dashboard.metrics?.users?.new_7_days ?? 0,
+      },
+      usage: {
+        ...(dashboard.metrics?.usage || {}),
+        today: {
+          ...(dashboard.metrics?.usage?.today || {}),
+          ...(companyUsage.today || {}),
+        },
+        month: {
+          ...(dashboard.metrics?.usage?.month || {}),
+          ...(companyUsage.month || {}),
+        },
+      },
+    },
+  }
+}
+
 function buildActiveQualitySummary(rows) {
   const samples = rows || []
   const issueQualities = new Set(['poor', 'degraded', 'failed', 'connecting'])
@@ -1906,7 +2183,7 @@ function buildActiveQualitySummary(rows) {
   }
 }
 
-async function getDashboard(roomIds) {
+async function getDashboard(roomIds, options = {}) {
   const roomFilter = makeInFilter('r.id', roomIds, 'room')
   const sessionRoomFilter = makeInFilter('s.room_id', roomIds, 'sessionRoom')
   const participantRoomFilter = makeInFilter('p.room_id', roomIds, 'participantRoom')
@@ -2401,7 +2678,7 @@ async function getDashboard(roomIds) {
     + Number(sessionTotalMismatches.count || 0)
   const verificationStatus = verificationIssues === 0 ? 'verified' : 'needs_attention'
 
-  return {
+  const dashboard = {
     active_rooms: Number(activeRooms.count || 0),
     active_sessions: Number(activeSessions.count || 0),
     total_users: Number(totalUsers.count || 0),
@@ -2458,6 +2735,12 @@ async function getDashboard(roomIds) {
       created_at: log.created_at,
     })),
   }
+
+  if (options.tenantId) {
+    return applyCompanyScopeToDashboard(dashboard, await getTenantUsageScope(options.tenantId))
+  }
+
+  return dashboard
 }
 
 async function getAdminStats(roomIds) {
@@ -2663,10 +2946,12 @@ async function getParticipantRecords(roomIds) {
 function buildBillingSummary({ dashboard, clients, plan }) {
   const monthMinutes = Number(dashboard?.usage_month?.minutes || dashboard?.minutes_used_this_month || 0)
   const todayMinutes = Number(dashboard?.usage_today?.minutes || dashboard?.minutes_used_today || 0)
+  const companyScope = dashboard?.company_scope || null
+  const billingMode = companyScope ? 'company_user_minutes' : 'participant_minutes'
 
   if (!plan) {
     return {
-      billing_mode: 'participant_minutes',
+      billing_mode: billingMode,
       minutes_today: todayMinutes,
       minutes_month: monthMinutes,
       monthly_allowance: 0,
@@ -2683,7 +2968,7 @@ function buildBillingSummary({ dashboard, clients, plan }) {
   const basePrice = Number(plan.monthly_base_price || 0)
 
   return {
-    billing_mode: 'participant_minutes',
+    billing_mode: billingMode,
     minutes_today: todayMinutes,
     minutes_month: monthMinutes,
     monthly_allowance: allowance,
@@ -2693,7 +2978,9 @@ function buildBillingSummary({ dashboard, clients, plan }) {
     overage_minutes: Number(overageMinutes.toFixed(2)),
     estimated_overage_cost: overageCost,
     estimated_invoice: Number((basePrice + overageCost).toFixed(2)),
-    note: 'No payment gateway is required; this is the company-wise billing amount for review/export.',
+    note: companyScope
+      ? 'Company package usage is calculated from minutes spent by invited and synced users.'
+      : 'No payment gateway is required; this is the company-wise billing amount for review/export.',
   }
 }
 
@@ -2736,7 +3023,7 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
       provider_name: 'TalkEachOther',
       product: 'Enterprise RTC SDK and API service',
       purpose: 'Client companies integrate TalkEachOther audio, video, chat, moderation, filters, and usage billing into their own apps.',
-      selling_unit: 'Company app package with SDK credentials, feature controls, and participant-minute billing.',
+      selling_unit: 'Company app package with SDK credentials, invited-user access, feature controls, and company-paid minutes.',
       rtc_provider: dashboard?.rtc_status || 'online',
       connection_indicator: dashboard?.rtc_status === 'online' ? 'online' : 'attention',
     },
@@ -2750,6 +3037,7 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
     apps,
     plan_requests: planRequests,
     current_plan: currentPlan,
+    user_scope: dashboard?.company_scope || null,
     feature_controls: featureControls,
     limits: currentPlan ? {
       max_room_admins: currentPlan.max_room_admins,
@@ -2771,21 +3059,23 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
       generated_apps: apps.length,
       active_apps: apps.filter((app) => app.status === 'active').length,
       token_strategy: 'App key + API key + SDK token per client app',
-      auth_flow: 'Client app requests a room token, then initializes the WebRTC SDK with that token.',
+      auth_flow: 'Client app syncs an invited user, requests a room token, then initializes the WebRTC SDK with that token.',
     },
   }
 }
 
 async function buildScopePayload({ adminRow = null, roomIds, enterpriseScope = 'client_admin', tenantId = null }) {
-  const [dashboard, rooms, dailyUsage, records] = await Promise.all([
-    getDashboard(roomIds),
+  const scopeTenantId = tenantId || adminRow?.tenant_id || null
+  const [dashboard, rooms, dailyUsage, records, users] = await Promise.all([
+    getDashboard(roomIds, { tenantId: scopeTenantId }),
     getRoomRows(roomIds),
     getDailyUsage(roomIds),
     getParticipantRecords(roomIds),
+    scopeTenantId ? getTenantUsers(scopeTenantId) : Promise.resolve([]),
   ])
   const enterprise = await buildEnterprisePayload({
     scope: enterpriseScope,
-    tenantId: tenantId || adminRow?.tenant_id || null,
+    tenantId: scopeTenantId,
     dashboard,
   })
 
@@ -2794,6 +3084,7 @@ async function buildScopePayload({ adminRow = null, roomIds, enterpriseScope = '
     dashboard,
     enterprise,
     rooms,
+    users,
     daily_usage: dailyUsage,
     participant_records: records,
   }

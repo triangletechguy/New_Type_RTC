@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType, navigationAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -34,6 +34,7 @@ import {
 import { ChatPanel } from './ChatPanel'
 import { VideoTile } from './VideoTile'
 import { LoadingMovie } from '../common/LoadingMovie'
+import { translateApp } from '../rooms/roomsStaticData'
 
 const LOCAL_MEDIA_FAST_TIMEOUT_MS = 7000
 const RTC_PRESENCE_INTERVAL_MS = 20000
@@ -51,6 +52,9 @@ const RTC_GROUP_CAMERA_TARGET_KBPS = 240
 const RTC_LARGE_CAMERA_TARGET_KBPS = 180
 const RTC_FULL_ROOM_CAMERA_TARGET_KBPS = 120
 const RTC_LARGE_SCREEN_TARGET_KBPS = 450
+const STAGE_RESIZE_GAP_PX = 14
+const STAGE_RESIZE_DEFAULT_TILE_WIDTH = 220
+const STAGE_RESIZE_MIN_TILE_HEIGHT = 150
 const roomAccessCodeInputProps = {
   type: 'text',
   autoComplete: 'off',
@@ -67,6 +71,60 @@ const ROOM_ROLE_RANK = {
   moderator: 1,
   admin: 2,
   owner: 3,
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(Number(value) || 0, min), max)
+}
+
+function stageTileCountClass(count) {
+  const tileCount = Number(count || 0)
+  if (tileCount <= 0) return 'tile-count-empty'
+  if (tileCount === 1) return 'tile-count-one'
+  if (tileCount === 2) return 'tile-count-two'
+  if (tileCount === 3) return 'tile-count-three'
+  if (tileCount === 4) return 'tile-count-four'
+  return 'tile-count-many'
+}
+
+function stageColumnCount(count, width) {
+  const tileCount = Number(count || 0)
+  if (tileCount <= 1) return 1
+  if (tileCount <= 4) return 2
+  const roughColumns = Math.floor((Number(width) + STAGE_RESIZE_GAP_PX) / (STAGE_RESIZE_DEFAULT_TILE_WIDTH + STAGE_RESIZE_GAP_PX))
+  return clampNumber(roughColumns, 2, 4)
+}
+
+function stageRowCount(count, width) {
+  const tileCount = Number(count || 0)
+  if (tileCount <= 0) return 1
+  if (tileCount === 3) return 2
+  return Math.max(1, Math.ceil(tileCount / stageColumnCount(tileCount, width)))
+}
+
+function stageTileHeightForFrame(size, count) {
+  if (!size) return null
+  const rows = stageRowCount(count, size.width)
+  const availableHeight = Number(size.height || 0) - ((rows - 1) * STAGE_RESIZE_GAP_PX)
+  return Math.max(STAGE_RESIZE_MIN_TILE_HEIGHT, Math.floor(availableHeight / rows))
+}
+
+function LiveRailIcon() {
+  return (
+    <svg className="buzzcast-svg-icon" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+      <path d="M5 7.5a2.5 2.5 0 0 1 2.5-2.5h8.7a2.5 2.5 0 0 1 2.5 2.5v1.82l3.2-2.02A1.35 1.35 0 0 1 24 8.44v11.12a1.35 1.35 0 0 1-2.1 1.14l-3.2-2.02v1.82a2.5 2.5 0 0 1-2.5 2.5H7.5A2.5 2.5 0 0 1 5 20.5v-13Zm2 0v13c0 .28.22.5.5.5h8.7a.5.5 0 0 0 .5-.5v-13a.5.5 0 0 0-.5-.5H7.5a.5.5 0 0 0-.5.5Zm11.7 4.18v4.64l3.3 2.08V9.6l-3.3 2.08Z" />
+      <path d="M11.2 10.15a1 1 0 0 1 1.03.05l3.4 2.35a1 1 0 0 1 0 1.64l-3.4 2.36a1 1 0 0 1-1.57-.82V11a1 1 0 0 1 .54-.86Zm1.46 2.76v1.91l1.38-.95-1.38-.96Z" />
+    </svg>
+  )
+}
+
+function MeRailIcon() {
+  return (
+    <svg className="buzzcast-svg-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="M10 2.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2Zm0 1.7a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8Z" />
+      <path d="M4.2 17.6a5.8 5.8 0 1 1 11.6 0 .85.85 0 0 1-1.7 0 4.1 4.1 0 0 0-8.2 0 .85.85 0 0 1-1.7 0Z" />
+    </svg>
+  )
 }
 
 function formatRtcBitrate(value) {
@@ -337,7 +395,7 @@ function buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerSt
   }
 }
 
-export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, onBack, onProfile }) {
+export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, initialRtcMode = 'video', autoConnect = false, user, language = 'English', onBack, onProfile }) {
   const [status, setStatus] = useState(autoConnect ? 'Connecting RTC...' : 'Ready to connect')
   const [joining, setJoining] = useState(false)
   const [joined, setJoinedState] = useState(false)
@@ -367,6 +425,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [rtcConfigState, setRtcConfigState] = useState(null)
   const [joinEffect, setJoinEffect] = useState(null)
   const [activeToolPanel, setActiveToolPanel] = useState(null)
+  const [stageFrameSize, setStageFrameSize] = useState(null)
   const [chatFocusRequest, setChatFocusRequest] = useState(0)
   const [externalChatMessage, setExternalChatMessage] = useState(null)
   const [chatMessages, setChatMessages] = useState([])
@@ -389,10 +448,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleSavingAction, setRoleSavingAction] = useState('')
   const [roleFeedback, setRoleFeedback] = useState({ type: '', text: '' })
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
   const autoConnectAttemptedRef = useRef(false)
   const socketRef = useRef(null)
   const rtcRef = useRef(null)
   const streamRef = useRef(null)
+  const stagePanelRef = useRef(null)
+  const stageStreamsRef = useRef(null)
+  const stageResizeRef = useRef(null)
   const screenShareTrackRef = useRef(null)
   const cameraSourceTrackRef = useRef(null)
   const cameraFilterPipelineRef = useRef(null)
@@ -1996,6 +2059,93 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setActiveToolPanel((current) => (current === panel ? null : panel))
   }
 
+  function stageResizeBounds() {
+    const panelRect = stagePanelRef.current?.getBoundingClientRect?.()
+    const frameRect = stageStreamsRef.current?.getBoundingClientRect?.()
+    const fallbackWidth = frameRect?.width || 640
+    const fallbackHeight = frameRect?.height || 360
+    const maxWidth = Math.max(320, (panelRect?.width || fallbackWidth + 72) - 72)
+    const maxHeight = Math.max(220, (panelRect?.height || fallbackHeight + 190) - 190)
+    const minWidth = Math.min(maxWidth, visibleResizeMinWidth())
+    const minHeight = Math.min(maxHeight, visibleResizeMinHeight())
+
+    return { maxWidth, maxHeight, minWidth, minHeight }
+  }
+
+  function visibleResizeMinWidth() {
+    const tileCount = Number(stageResizeRef.current?.tileCount || 0)
+    if (tileCount <= 1) return 320
+    if (tileCount === 2) return 460
+    return 520
+  }
+
+  function visibleResizeMinHeight() {
+    const tileCount = Number(stageResizeRef.current?.tileCount || 0)
+    return tileCount <= 1 ? 220 : 180
+  }
+
+  function stopStageResize() {
+    const resize = stageResizeRef.current
+    if (!resize) return
+
+    window.removeEventListener('pointermove', resize.handleMove)
+    window.removeEventListener('pointerup', resize.handleEnd)
+    window.removeEventListener('pointercancel', resize.handleEnd)
+    document.body.classList.remove('buzzcast-stage-resizing')
+    stageResizeRef.current = null
+  }
+
+  function startStageResize(event, axis) {
+    if (event.button !== undefined && event.button !== 0) return
+    const frame = stageStreamsRef.current
+    if (!frame) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const rect = frame.getBoundingClientRect()
+    const tileCount = Number(frame.dataset.tileCount || 1)
+    stageResizeRef.current = {
+      axis,
+      centerX: rect.left + (rect.width / 2),
+      centerY: rect.top + (rect.height / 2),
+      width: rect.width,
+      height: rect.height,
+      tileCount,
+      handleMove: null,
+      handleEnd: null,
+    }
+    const bounds = stageResizeBounds()
+
+    function handleMove(moveEvent) {
+      const active = stageResizeRef.current
+      if (!active) return
+
+      const nextWidth = axis.includes('x')
+        ? Math.abs(moveEvent.clientX - active.centerX) * 2
+        : active.width
+      const nextHeight = axis.includes('y')
+        ? Math.abs(moveEvent.clientY - active.centerY) * 2
+        : active.height
+
+      setStageFrameSize({
+        width: Math.round(clampNumber(nextWidth, bounds.minWidth, bounds.maxWidth)),
+        height: Math.round(clampNumber(nextHeight, bounds.minHeight, bounds.maxHeight)),
+      })
+    }
+
+    function handleEnd() {
+      stopStageResize()
+    }
+
+    stageResizeRef.current.handleMove = handleMove
+    stageResizeRef.current.handleEnd = handleEnd
+    document.body.classList.add('buzzcast-stage-resizing')
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleEnd)
+    window.addEventListener('pointercancel', handleEnd)
+  }
+
   function currentCameraTrack(excludeTrack = null) {
     if (isLiveTrack(filteredCameraTrackRef.current) && filteredCameraTrackRef.current !== excludeTrack) {
       return filteredCameraTrackRef.current
@@ -3355,6 +3505,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [joined, remotePeerCount, micOn, cameraOn, rtcMode, screenSharing])
 
   useEffect(() => () => {
+    stopStageResize()
     window.clearTimeout(joinEffectTimerRef.current)
     if (activeRoomIdRef.current) {
       const roomToLeave = activeRoomIdRef.current
@@ -3398,11 +3549,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const micButtonDisabled = joining || mediaUpdating.mic
   const cameraButtonDisabled = joining || mediaUpdating.camera || rtcMode === 'audio' || screenSharing
   const micButtonTitle = micCanRetry
-    ? 'Start microphone'
-    : mediaUpdating.mic ? 'Saving microphone' : micOn ? 'Mute microphone' : 'Unmute microphone'
+    ? t('Start microphone')
+    : mediaUpdating.mic ? t('Saving microphone') : micOn ? t('Mute microphone') : t('Unmute microphone')
   const cameraButtonTitle = cameraCanRetry
-    ? 'Start camera'
-    : screenSharing ? 'Stop screen share before changing camera' : mediaUpdating.camera ? 'Saving camera' : cameraOn ? 'Turn camera off' : 'Turn camera on'
+    ? t('Start camera')
+    : screenSharing ? t('Stop screen share before changing camera') : mediaUpdating.camera ? t('Saving camera') : cameraOn ? t('Turn camera off') : t('Turn camera on')
   const guardFindings = chatMessages
     .filter((message) => message.message_type === 'text')
     .map((message) => {
@@ -3415,7 +3566,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const backAvatar = actionAvatarAssets.back
-  const liveRoomsAvatar = navigationAssets.liveRooms.avatar
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
   const activeCameraFilter = getVideoFilter(cameraFilter)
   const activeBackgroundEffect = getBackgroundEffect(backgroundEffect)
@@ -3439,49 +3589,67 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const currentUserId = Number(user?.id || 0)
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
+  const activeToolTitle = {
+    audio: t('Audio effects'),
+    filters: t('Beauty & Background'),
+    guard: t('AI guard'),
+    manage: t('Room Ops'),
+    screen: t('Screen share'),
+  }[activeToolPanel] || t('Room tools')
+  const visibleTileCount = (localStream || remoteTiles.length ? 1 : 0) + remoteTiles.length
+  const stageTileHeight = stageTileHeightForFrame(stageFrameSize, visibleTileCount)
+  const stageFrameStyle = stageFrameSize ? {
+    '--live-stage-width': `${stageFrameSize.width}px`,
+    '--live-stage-height': `${stageFrameSize.height}px`,
+    '--live-stage-tile-min-height': `${stageTileHeight}px`,
+    '--live-stage-feature-min-height': `${(stageTileHeight * 2) + STAGE_RESIZE_GAP_PX}px`,
+  } : undefined
+  const stageStreamsClassName = `buzzcast-live-stage-streams layout-grid ${stageTileCountClass(visibleTileCount)}${stageFrameSize ? ' is-resized' : ''}`
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
     <div className="buzzcast-shell buzzcast-live-shell">
       <header className="buzzcast-topbar buzzcast-live-topbar">
-        <button type="button" className="buzzcast-logo buzzcast-live-logo" onClick={handleBack} aria-label="Back to rooms">
+        <button type="button" className="buzzcast-logo buzzcast-live-logo" onClick={handleBack} aria-label={t('Back to rooms')}>
           <div className="buzzcast-logo-mark image-mark">
             <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
           </div>
           <div>
             <strong>TalkEachOther</strong>
-            <span>Video and music rooms</span>
+            <span>{t('Video and music rooms')}</span>
           </div>
         </button>
         <div className="buzzcast-actions">
-          <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label="Open profile" title="Open profile">
+          <button type="button" className="buzzcast-avatar-button" onClick={onProfile} aria-label={t('Open profile')} title={t('Open profile')}>
             <span className="image-avatar"><img src={profileAvatar} alt="" /></span>
           </button>
         </div>
       </header>
 
       <aside className="buzzcast-left-rail buzzcast-live-rail">
-        <button type="button" className="active" onClick={handleBack}>
-          <span className="buzzcast-rail-icon rail-live rail-image-icon" aria-hidden="true">
-            <img src={liveRoomsAvatar} alt="" loading="lazy" />
+        <button type="button" className="active buzzcast-rail-tab buzzcast-rail-home" data-mobile-label={t('Live')} onClick={handleBack}>
+          <span className="buzzcast-rail-icon rail-live rail-symbol-icon" aria-hidden="true">
+            <LiveRailIcon />
           </span>
-          <b>Live</b>
+          <b>{t('Live')}</b>
         </button>
-        <button type="button" onClick={onProfile}>
-          <span className="buzzcast-rail-icon rail-me" aria-hidden="true"></span>
-          <b>Me</b>
+        <button type="button" className="buzzcast-rail-tab buzzcast-rail-profile" data-mobile-label={t('Me')} onClick={onProfile}>
+          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
+            <MeRailIcon />
+          </span>
+          <b>{t('Me')}</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
-        <button type="button" onClick={handleBack}>
+        <button type="button" className="buzzcast-rail-tab buzzcast-rail-back" data-mobile-label={t('Back')} onClick={handleBack}>
           <span className="buzzcast-rail-icon rail-back-avatar image-avatar" aria-hidden="true">
             <img src={backAvatar} alt="" loading="lazy" />
           </span>
-          <b>Back</b>
+          <b>{t('Back')}</b>
         </button>
       </aside>
 
       <main className="buzzcast-live-main">
-        <section className="buzzcast-live-stage-panel">
+        <section ref={stagePanelRef} className="buzzcast-live-stage-panel">
           <div className="buzzcast-stage buzzcast-rtc-stage">
             <img className="buzzcast-stage-image" src={roomCover} alt="" />
           {joinEffect && (
@@ -3490,18 +3658,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
-            <div className="buzzcast-room-summary" aria-label="Room summary">
+            <div className="buzzcast-room-summary" aria-label={t('Room summary')}>
               <strong title={roomTitle}>{roomTitle}</strong>
-              <span>Room ID: {room?.id || roomId}</span>
+              <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
             </div>
 
-            <div className="buzzcast-live-stage-streams">
+            <div ref={stageStreamsRef} className={stageStreamsClassName} style={stageFrameStyle} data-tile-count={visibleTileCount}>
               {localStream || remoteTiles.length ? (
                 <>
                   <VideoTile
                     stream={localStream}
                     muted
-                    label={user?.name || 'You'}
+                    label={user?.name || t('You')}
                     userId={user?.id}
                     gender={user?.gender}
                     avatarUrl={user?.avatar_url}
@@ -3513,10 +3681,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   />
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
-                    const screenShareOwner = mediaState.userName || 'remote user'
+                    const screenShareOwner = mediaState.userName || t('remote user')
                     const peer = {
                       id: Number(mediaState.userId || 0),
-                      name: mediaState.userName || 'Remote User',
+                      name: mediaState.userName || t('Remote User'),
                       avatar_url: mediaState.avatarUrl || '',
                       gender: mediaState.gender || '',
                     }
@@ -3538,29 +3706,53 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         followStatus={followStatusForPeer(peer.id)}
                         onFollowAction={peer.id ? () => handlePeerFollowAction(peer) : undefined}
                         onExpand={canExpandScreenShare ? () => setExpandedScreenShareId(socketId) : undefined}
-                        expandLabel={`Open ${screenShareOwner} screen share full screen`}
+                        expandLabel={t('Open {name} screen share full screen', { name: screenShareOwner })}
                       />
                     )
                   })}
+                  <button
+                    type="button"
+                    className="live-stage-resize-edge resize-right"
+                    aria-label={t('Resize camera stage width')}
+                    title={t('Drag to resize camera stage width')}
+                    onPointerDown={(event) => startStageResize(event, 'x')}
+                    onDoubleClick={() => setStageFrameSize(null)}
+                  ></button>
+                  <button
+                    type="button"
+                    className="live-stage-resize-edge resize-bottom"
+                    aria-label={t('Resize camera stage height')}
+                    title={t('Drag to resize camera stage height')}
+                    onPointerDown={(event) => startStageResize(event, 'y')}
+                    onDoubleClick={() => setStageFrameSize(null)}
+                  ></button>
+                  <button
+                    type="button"
+                    className="live-stage-resize-edge resize-corner"
+                    aria-label={t('Resize camera stage')}
+                    title={t('Drag to resize camera stage')}
+                    onPointerDown={(event) => startStageResize(event, 'xy')}
+                    onDoubleClick={() => setStageFrameSize(null)}
+                  ></button>
                 </>
               ) : (
                 <div className="buzzcast-waiting-card">
                   <img src={roomAvatar} alt="" />
                   <strong>{roomTitle}</strong>
-                  <span>Room ID: {room?.id || roomId}</span>
+                  <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
                 </div>
               )}
             </div>
 
             {showPasswordRecovery && (
               <div className="buzzcast-password-popover">
-                <strong>Room password required</strong>
+                <strong>{t('Room password required')}</strong>
                 <input
                   {...roomAccessCodeInputProps}
                   name="live-room-access-code"
                   value={roomPasswordInput}
                   onChange={(event) => setRoomPasswordInput(event.target.value)}
-                  placeholder="Room password"
+                  placeholder={t('Room password')}
                 />
               </div>
             )}
@@ -3568,46 +3760,46 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             {activeToolPanel ? (
               <div className="live-tool-panel buzzcast-floating-tool">
                 <header>
-                  <strong>{activeToolPanel === 'screen' ? 'Screen share' : activeToolPanel === 'filters' ? 'Beauty & Background' : activeToolPanel === 'audio' ? 'Audio effects' : activeToolPanel === 'manage' ? 'Room Ops' : 'AI guard'}</strong>
-                  <button type="button" onClick={() => setActiveToolPanel(null)} aria-label="Close tool panel">x</button>
+                  <strong>{activeToolTitle}</strong>
+                  <button type="button" onClick={() => setActiveToolPanel(null)} aria-label={t('Close tool panel')}>x</button>
                 </header>
                 {activeToolPanel === 'screen' ? (
                   <div className="tool-status-panel">
-                    <p>{screenSharing ? 'Your screen is being sent to the room.' : 'Share a window or display while keeping the current room camera controls unchanged.'}</p>
+                    <p>{screenSharing ? t('Your screen is being sent to the room.') : t('Share a window or display while keeping the current room camera controls unchanged.')}</p>
                     <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen}>
-                      {mediaUpdating.screen ? 'Working...' : screenSharing ? 'Stop sharing' : 'Start screen share'}
+                      {mediaUpdating.screen ? t('Working...') : screenSharing ? t('Stop sharing') : t('Start screen share')}
                     </button>
-                    <small>{room?.screen_share_enabled === false ? 'Screen share is turned off for this room.' : 'Presenter tools are available for this room.'}</small>
+                    <small>{room?.screen_share_enabled === false ? t('Screen share is turned off for this room.') : t('Presenter tools are available for this room.')}</small>
                   </div>
                 ) : activeToolPanel === 'audio' ? (
                   <div className="tool-status-panel camera-filter-panel">
-                    <p>{noiseCancellation ? 'Noise cancellation is enabled for microphone capture.' : 'Noise cancellation is off for microphone capture.'}</p>
+                    <p>{noiseCancellation ? t('Noise cancellation is enabled for microphone capture.') : t('Noise cancellation is off for microphone capture.')}</p>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Noise cancellation</strong>
-                        <small>{noiseCancellation ? 'On' : 'Off'}</small>
+                        <strong>{t('Noise cancellation')}</strong>
+                        <small>{noiseCancellation ? t('On') : t('Off')}</small>
                       </header>
                       <button
                         type="button"
                         className={noiseCancellation ? 'beauty-mirror-button active' : 'beauty-mirror-button'}
                         onClick={toggleNoiseCancellation}
                         aria-pressed={noiseCancellation}
-                        title={noiseCancellation ? 'Turn noise cancellation off' : 'Turn noise cancellation on'}
+                        title={noiseCancellation ? t('Turn noise cancellation off') : t('Turn noise cancellation on')}
                       >
                         <span className="control-glyph mic" aria-hidden="true"></span>
                         <span>
                           <strong>NC</strong>
-                          <small>{noiseCancellation ? 'Browser noise suppression on' : 'Browser noise suppression off'}</small>
+                          <small>{noiseCancellation ? t('Browser noise suppression on') : t('Browser noise suppression off')}</small>
                         </span>
-                        <b>{noiseCancellation ? 'On' : 'Off'}</b>
+                        <b>{noiseCancellation ? t('On') : t('Off')}</b>
                       </button>
                     </section>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Voice changer</strong>
+                        <strong>{t('Voice changer')}</strong>
                         <small>{voiceEffect}</small>
                       </header>
-                      <div className="camera-filter-grid" aria-label="Voice changer presets">
+                      <div className="camera-filter-grid" aria-label={t('Voice changer presets')}>
                         {['natural', 'clear', 'deep', 'bright'].map((effect) => (
                           <button
                             key={effect}
@@ -3617,51 +3809,51 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                             aria-pressed={voiceEffect === effect}
                           >
                             <span className="filter-swatch bright" aria-hidden="true"></span>
-                            <strong>{effect}</strong>
+                            <strong>{t(effect)}</strong>
                           </button>
                         ))}
                       </div>
                     </section>
                     <div className="camera-filter-footer">
-                      <small>Voice presets are sent through the SDK audio options for compatible processors.</small>
+                      <small>{t('Voice presets are sent through the SDK audio options for compatible processors.')}</small>
                     </div>
                   </div>
                 ) : activeToolPanel === 'filters' ? (
                   <div className="tool-status-panel camera-filter-panel">
-                    <p>{activeCameraFilter.label}: {activeCameraFilter.detail}{beautyActiveCount ? ` - ${beautyActiveCount} beauty setting${beautyActiveCount === 1 ? '' : 's'} active` : ''}{backgroundEffectActive ? ` - ${activeBackgroundEffect.label} background` : ''}</p>
-                    <div className="camera-effect-summary" aria-label="Camera effect summary">
+                    <p>{activeCameraFilter.label}: {activeCameraFilter.detail}{beautyActiveCount ? ` - ${beautyActiveCount} ${t(beautyActiveCount === 1 ? 'beauty setting active' : 'beauty settings active')}` : ''}{backgroundEffectActive ? ` - ${activeBackgroundEffect.label} ${t('background')}` : ''}</p>
+                    <div className="camera-effect-summary" aria-label={t('Camera effect summary')}>
                       <span>
-                        <strong>Face beauty</strong>
-                        <small>{beautyActiveCount ? `${beautyActiveCount} active` : 'Ready'}</small>
+                        <strong>{t('Face beauty')}</strong>
+                        <small>{beautyActiveCount ? `${beautyActiveCount} ${t('active')}` : t('Ready')}</small>
                       </span>
                       <span>
-                        <strong>Background filter</strong>
-                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% blur` : 'Blur off'}</small>
+                        <strong>{t('Background filter')}</strong>
+                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% ${t('blur')}` : t('Blur off')}</small>
                       </span>
                     </div>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Background blur</strong>
-                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% strength` : 'Off'}</small>
+                        <strong>{t('Background blur')}</strong>
+                        <small>{backgroundEffect === 'blur' ? `${backgroundBlurPercent}% ${t('strength')}` : t('Off')}</small>
                       </header>
                       <button
                         type="button"
                         className={backgroundEffectActive ? 'background-blur-toggle active' : 'background-blur-toggle'}
                         onClick={toggleBackgroundBlur}
                         disabled={filterButtonDisabled}
-                        aria-label={backgroundEffectActive ? 'Turn background blur off' : 'Turn background blur on'}
+                        aria-label={backgroundEffectActive ? t('Turn background blur off') : t('Turn background blur on')}
                         aria-pressed={backgroundEffectActive}
-                        title={backgroundEffectActive ? `Background blur ${backgroundBlurPercent}%` : 'Background blur off'}
+                        title={backgroundEffectActive ? t('Background blur {percent}%', { percent: backgroundBlurPercent }) : t('Background blur off')}
                       >
                         <span className="control-glyph background"></span>
                         <span>
                           <strong>BG</strong>
-                          <small>{backgroundEffectActive ? 'Background blur on' : 'Background blur off'}</small>
+                          <small>{backgroundEffectActive ? t('Background blur on') : t('Background blur off')}</small>
                         </span>
                       </button>
                       <label className="beauty-slider-row background-blur-slider">
                         <span>
-                          <strong>Blur amount</strong>
+                          <strong>{t('Blur amount')}</strong>
                           <b>{backgroundBlurPercent}%</b>
                         </span>
                         <input
@@ -3677,24 +3869,24 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     </section>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Face beauty</strong>
-                        <small>{mirrorEnabled ? 'Mirror on' : 'Smooth, light, warmth'}</small>
+                        <strong>{t('Face beauty')}</strong>
+                        <small>{mirrorEnabled ? t('Mirror on') : t('Smooth, light, warmth')}</small>
                       </header>
-                      <div className="camera-beauty-controls" aria-label="Face beauty controls">
+                      <div className="camera-beauty-controls" aria-label={t('Face beauty controls')}>
                         <button
                           type="button"
                           className={mirrorEnabled ? 'beauty-mirror-button active' : 'beauty-mirror-button'}
                           onClick={toggleBeautyMirror}
                           disabled={filterButtonDisabled}
                           aria-pressed={mirrorEnabled}
-                          title={mirrorEnabled ? 'Turn mirror camera off' : 'Turn mirror camera on'}
+                          title={mirrorEnabled ? t('Turn mirror camera off') : t('Turn mirror camera on')}
                         >
                           <span className="control-glyph mirror" aria-hidden="true"></span>
                           <span>
-                            <strong>Mirror</strong>
-                            <small>{mirrorEnabled ? 'Mirrored camera view' : 'Normal camera view'}</small>
+                            <strong>{t('Mirror')}</strong>
+                            <small>{mirrorEnabled ? t('Mirrored camera view') : t('Normal camera view')}</small>
                           </span>
-                          <b>{mirrorEnabled ? 'On' : 'Off'}</b>
+                          <b>{mirrorEnabled ? t('On') : t('Off')}</b>
                         </button>
                         {BEAUTY_CONTROLS.map((control) => (
                           <label key={control.id} className="beauty-slider-row">
@@ -3717,10 +3909,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     </section>
                     <section className="camera-effect-section">
                       <header>
-                        <strong>Filter presets</strong>
-                        <small>Color and style</small>
+                        <strong>{t('Filter presets')}</strong>
+                        <small>{t('Color and style')}</small>
                       </header>
-                      <div className="camera-filter-grid" aria-label="Camera filter presets">
+                      <div className="camera-filter-grid" aria-label={t('Camera filter presets')}>
                         {VIDEO_FILTERS.map((filter) => (
                           <button
                             key={filter.id}
@@ -3737,24 +3929,24 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       </div>
                     </section>
                     <div className="camera-filter-footer">
-                      <small>{mediaUpdating.filter ? 'Applying filter...' : screenSharing ? 'Camera effects apply after screen share stops.' : `Outgoing camera effects - ${cameraFilterPerformance}`}</small>
+                      <small>{mediaUpdating.filter ? t('Applying filter...') : screenSharing ? t('Camera effects apply after screen share stops.') : t('Outgoing camera effects - {performance}', { performance: cameraFilterPerformance })}</small>
                     </div>
                   </div>
                 ) : activeToolPanel === 'manage' ? (
                   <div className="tool-status-panel room-ops-panel">
-                    {controlsLoading ? <LoadingMovie label="Loading controls" compact /> : null}
+                    {controlsLoading ? <LoadingMovie label={t('Loading controls')} compact /> : null}
                     {!roomControls ? (
                       <div className="empty-chat">
-                        <strong>Room controls</strong>
-                        <span>Available to the room owner, admins, and moderators.</span>
-                        <button type="button" className="secondary-button" onClick={() => loadRoomControls()} disabled={controlsLoading}>Refresh</button>
+                        <strong>{t('Room controls')}</strong>
+                        <span>{t('Available to the room owner, admins, and moderators.')}</span>
+                        <button type="button" className="secondary-button" onClick={() => loadRoomControls()} disabled={controlsLoading}>{t('Refresh')}</button>
                       </div>
                     ) : (
                       <>
                         <div className="guard-summary">
                           <span>{roomControls.role}</span>
                           <strong>{roomOpsParticipants.length}</strong>
-                          <small>active participant{roomOpsParticipants.length === 1 ? '' : 's'}</small>
+                          <small>{t(roomOpsParticipants.length === 1 ? 'active participant' : 'active participants')}</small>
                         </div>
                         <div className="room-ops-list">
                           {roomOpsParticipants.map((participant) => {
@@ -3764,12 +3956,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                             const targetRole = participant.role_in_room || 'end_user'
                             const canModerateParticipant = participant.can_moderate ?? (!isSelf && canModerateRoomRole(roomControls.role, targetRole))
                             const moderationDisabledReason = isSelf
-                              ? 'You cannot moderate your own session.'
+                              ? t('You cannot moderate your own session.')
                               : canModerateParticipant
                                 ? ''
                                 : `Your ${roomControls.role} role cannot moderate ${targetRole}.`
                             const moderationDisabled = busy || Boolean(moderationDisabledReason)
-                            const moderationTitle = busy ? 'Moderation in progress' : moderationDisabledReason || undefined
+                            const moderationTitle = busy ? t('Moderation in progress') : moderationDisabledReason || undefined
                             return (
                               <article key={`${participant.session_id}-${targetUserId}`} className="room-ops-row">
                                 <span>
@@ -3777,16 +3969,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                                   <small>{targetRole}{isSelf ? ' (you)' : ''} · {participant.mic_enabled ? 'mic on' : 'mic off'} · {participant.camera_enabled ? 'cam on' : 'cam off'}</small>
                                 </span>
                                 <div className="chat-actions">
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={moderationDisabled} title={moderationTitle}>Mute</button>
-                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={moderationDisabled} title={moderationTitle}>Camera</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={moderationDisabled} title={moderationTitle}>Kick</button>
-                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={moderationDisabled} title={moderationTitle}>Ban</button>
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'mute_mic')} disabled={moderationDisabled} title={moderationTitle}>{t('Mute')}</button>
+                                  <button type="button" className="neutral" onClick={() => applyParticipantModeration(participant, 'disable_camera')} disabled={moderationDisabled} title={moderationTitle}>{t('Camera')}</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'kick')} disabled={moderationDisabled} title={moderationTitle}>{t('Kick')}</button>
+                                  <button type="button" className="danger" onClick={() => applyParticipantModeration(participant, 'ban')} disabled={moderationDisabled} title={moderationTitle}>{t('Ban')}</button>
                                 </div>
                               </article>
                             )
                           })}
-                          {!roomOpsParticipants.length ? <small>No active participants yet.</small> : null}
-                          {roomOpsOnlySelf ? <small>No other active participants.</small> : null}
+                          {!roomOpsParticipants.length ? <small>{t('No active participants yet.')}</small> : null}
+                          {roomOpsOnlySelf ? <small>{t('No other active participants.')}</small> : null}
                         </div>
                         {roomControls.can_assign_roles ? (
                           <form className="chat-edit-form room-role-form" onSubmit={(event) => {
@@ -3801,28 +3993,28 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                                 setRoleFeedback({ type: '', text: '' })
                               }}
                               disabled={roleSaving || roleTargetUnavailable}
-                              aria-label="Room member"
+                              aria-label={t('Room member')}
                             >
-                              <option value="">{roleTargetUnavailable ? 'No users available' : 'Select user'}</option>
+                              <option value="">{roleTargetUnavailable ? t('No users available') : t('Select user')}</option>
                               {roleTargetOptions.map((target) => (
                                 <option key={target.userId} value={target.userId}>
                                   {roomRoleOptionLabel(target)}
                                 </option>
                               ))}
                             </select>
-                            <select value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value }))} disabled={roleSaving} aria-label="Room role">
-                              <option value="moderator">Moderator</option>
-                              <option value="admin">Admin</option>
+                            <select value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value }))} disabled={roleSaving} aria-label={t('Room role')}>
+                              <option value="moderator">{t('Moderator')}</option>
+                              <option value="admin">{t('Admin')}</option>
                             </select>
                             <button type="submit" disabled={roleSaving || !roleForm.userId}>
-                              {roleSavingAction === 'assign' ? 'Assigning...' : 'Assign'}
+                              {roleSavingAction === 'assign' ? t('Assigning...') : t('Assign')}
                             </button>
                             <button type="button" className="secondary" onClick={() => saveRoomRole(true)} disabled={roleSaving || !roleForm.userId || !selectedRoleTarget?.currentRole}>
-                              {roleSavingAction === 'remove' ? 'Removing...' : 'Remove'}
+                              {roleSavingAction === 'remove' ? t('Removing...') : t('Remove')}
                             </button>
                             {selectedRoleTarget ? (
                               <small className="room-role-selected">
-                                {selectedRoleTarget.name}{selectedRoleTarget.currentRole ? ` - ${selectedRoleTarget.currentRole}` : selectedRoleTarget.active ? ' - active' : ''}
+                                {selectedRoleTarget.name}{selectedRoleTarget.currentRole ? ` - ${selectedRoleTarget.currentRole}` : selectedRoleTarget.active ? ` - ${t('active')}` : ''}
                               </small>
                             ) : null}
                             {roleFeedback.text ? (
@@ -3837,11 +4029,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
-                    <p>Be polite and respectful. AI guard watches the current room text for risky phrases.</p>
+                    <p>{t('Be polite and respectful. AI guard watches the current room text for risky phrases.')}</p>
                     <div className="guard-summary">
-                      <span>{room?.ai_security_enabled ? 'Active' : 'Off'}</span>
+                      <span>{room?.ai_security_enabled ? t('Active') : t('Off')}</span>
                       <strong>{guardFindings.length}</strong>
-                      <small>flagged message{guardFindings.length === 1 ? '' : 's'}</small>
+                      <small>{t(guardFindings.length === 1 ? 'flagged message' : 'flagged messages')}</small>
                     </div>
                     {guardFindings.length ? (
                       <div className="guard-findings">
@@ -3849,7 +4041,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                           <span key={message.id}>{matchedKeyword}: {message.message_body}</span>
                         ))}
                       </div>
-                    ) : <small>No flagged chat messages in the visible room log.</small>}
+                    ) : <small>{t('No flagged chat messages in the visible room log.')}</small>}
                   </div>
                 )}
               </div>
@@ -3858,11 +4050,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <div className="buzzcast-room-controls">
               {!joined ? (
                 <button className="primary-button buzzcast-connect-button" onClick={joinRoom} disabled={joining}>
-                  {joining ? 'Connecting...' : connectAttempted ? 'Rejoin' : 'Connect RTC'}
+                  {joining ? t('Connecting...') : connectAttempted ? t('Rejoin') : t('Connect RTC')}
                 </button>
               ) : (
                 <button className="secondary-button buzzcast-connect-button" onClick={() => leaveRoom()}>
-                  Leave
+                  {t('Leave')}
                 </button>
               )}
               <button
@@ -3888,38 +4080,38 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <button
                 className={activeToolPanel === 'audio' || audioEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
                 onClick={() => toggleToolPanel('audio')}
-                aria-label={activeToolPanel === 'audio' ? 'Close audio effects' : 'Open audio effects'}
+                aria-label={activeToolPanel === 'audio' ? t('Close audio effects') : t('Open audio effects')}
                 aria-pressed={activeToolPanel === 'audio'}
-                title="Audio effects"
+                title={t('Audio effects')}
               >
                 <span className="control-glyph mic"></span>
-                <span>Audio</span>
+                <span>{t('Audio')}</span>
               </button>
               <button
                 className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
                 onClick={() => toggleToolPanel('filters')}
                 disabled={filterButtonDisabled}
-                aria-label={activeToolPanel === 'filters' ? 'Close beauty and background controls' : 'Open beauty and background controls'}
+                aria-label={activeToolPanel === 'filters' ? t('Close beauty and background controls') : t('Open beauty and background controls')}
                 aria-pressed={activeToolPanel === 'filters'}
-                title="Beauty and background"
+                title={t('Beauty and background')}
               >
                 <span className="control-glyph beauty"></span>
-                <span>Beauty</span>
+                <span>{t('Beauty')}</span>
               </button>
               <button
                 className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
                 onClick={toggleScreenShare}
                 disabled={joining || mediaUpdating.screen}
-                aria-label={screenSharing ? 'Stop screen share' : 'Screen share'}
+                aria-label={screenSharing ? t('Stop screen share') : t('Screen share')}
                 aria-pressed={screenSharing}
-                title={screenSharing ? 'Stop screen share' : 'Screen share'}
+                title={screenSharing ? t('Stop screen share') : t('Screen share')}
               >
                 <span className="control-glyph screen"></span>
               </button>
-              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label="AI guard" title="AI guard">
+              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label={t('AI guard')} title={t('AI guard')}>
                 <span className="control-glyph guard"></span>
               </button>
-              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label="Room operations" title="Room operations">
+              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Room operations')} title={t('Room operations')}>
                 <span className="control-glyph guard"></span>
               </button>
             </div>
@@ -3939,6 +4131,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             externalMessage={externalChatMessage}
             inboxPeerRequest={inboxPeerRequest}
             followRefreshKey={followRefreshKey}
+            language={language}
             onMessagesChange={setChatMessages}
           />
         </aside>
@@ -3946,38 +4139,38 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       {activeFollowRequest ? (
         <div className="follow-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="follow-request-title">
           <section className="follow-request-modal">
-            <button type="button" className="follow-request-close" onClick={() => setActiveFollowRequestId(null)} aria-label="Close follow request">x</button>
+            <button type="button" className="follow-request-close" onClick={() => setActiveFollowRequestId(null)} aria-label={t('Close follow request')}>x</button>
             <div className="follow-request-avatar image-avatar">
               <img src={avatarForUser(activeFollowRequest.requester, activeFollowRequest.requester_id)} alt="" loading="lazy" />
             </div>
-            <span>Follow request</span>
-            <h3 id="follow-request-title">{activeFollowRequest.requester?.name || 'A user'} wants to follow you</h3>
-            <p>Accept this request to unlock private chat between both of you.</p>
+            <span>{t('Follow request')}</span>
+            <h3 id="follow-request-title">{t('{name} wants to follow you', { name: activeFollowRequest.requester?.name || t('A user') })}</h3>
+            <p>{t('Accept this request to unlock private chat between both of you.')}</p>
             <div className="follow-request-actions">
               <button type="button" className="secondary-button" onClick={() => respondToFollowRequest(activeFollowRequest, 'reject')}>
-                Decline
+                {t('Decline')}
               </button>
               <button type="button" className="primary-button" onClick={() => respondToFollowRequest(activeFollowRequest, 'accept')}>
-                Accept
+                {t('Accept')}
               </button>
             </div>
           </section>
         </div>
       ) : null}
       {expandedScreenShareTile ? (
-        <div className="screen-share-viewer" role="dialog" aria-modal="true" aria-label="Remote screen share">
+        <div className="screen-share-viewer" role="dialog" aria-modal="true" aria-label={t('Remote screen share')}>
           <div className="screen-share-viewer-backdrop" onClick={() => setExpandedScreenShareId('')}></div>
           <section className="screen-share-viewer-panel">
             <header>
               <div>
-                <strong>{expandedScreenShareTile.mediaState.userName || 'Screen share'}</strong>
-                <span>Room ID: {room?.id || roomId}</span>
+                <strong>{expandedScreenShareTile.mediaState.userName || t('Screen share')}</strong>
+                <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
               </div>
-              <button type="button" onClick={() => setExpandedScreenShareId('')} aria-label="Close screen share">x</button>
+              <button type="button" onClick={() => setExpandedScreenShareId('')} aria-label={t('Close screen share')}>x</button>
             </header>
             <VideoTile
               stream={expandedScreenShareTile.stream}
-              label={`${expandedScreenShareTile.mediaState.userName || 'Remote user'} screen`}
+              label={`${expandedScreenShareTile.mediaState.userName || t('Remote User')} ${t('screen')}`}
               userId={expandedScreenShareTile.mediaState.userId}
               gender={expandedScreenShareTile.mediaState.gender}
               avatarUrl={expandedScreenShareTile.mediaState.avatarUrl}

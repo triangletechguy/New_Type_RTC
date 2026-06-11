@@ -20,7 +20,6 @@ const {
   getScopedRoomIds,
   getServicePlans,
   getTenantRoomIds,
-  getTenantUsers,
   getUniqueTenantUid,
   buildScopePayload,
   inviteClientCompanyAdmin,
@@ -190,19 +189,15 @@ router.get('/companies/:companyId/detail', async (req, res, next) => {
     if (!company) return res.status(404).json({ message: 'Company was not found.' })
 
     const roomIds = await getTenantRoomIds(companyId)
-    const [payload, users] = await Promise.all([
-      buildScopePayload({
-        roomIds,
-        enterpriseScope: 'client_admin',
-        tenantId: companyId,
-      }),
-      getTenantUsers(companyId),
-    ])
+    const payload = await buildScopePayload({
+      roomIds,
+      enterpriseScope: 'client_admin',
+      tenantId: companyId,
+    })
 
     return res.json({
       scope: 'company_detail',
       company,
-      users,
       ...payload,
     })
   } catch (error) {
@@ -478,11 +473,16 @@ router.delete('/rooms/:roomId', async (req, res, next) => {
 
 router.get('/dashboard', async (req, res, next) => {
   try {
-    const roomIds = hasAnyRole(req.user, ['super_admin'])
+    const isSuperAdmin = hasAnyRole(req.user, ['super_admin'])
+    const roomIds = isSuperAdmin
       ? null
       : await getTenantRoomIds(req.user.tenant_id)
 
-    return res.json({ dashboard: await getDashboard(roomIds) })
+    return res.json({
+      dashboard: await getDashboard(roomIds, {
+        tenantId: isSuperAdmin ? null : req.user.tenant_id,
+      }),
+    })
   } catch (error) {
     return next(error)
   }
