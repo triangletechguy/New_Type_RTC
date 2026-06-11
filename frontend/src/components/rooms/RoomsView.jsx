@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, navigationAssets, roomAssets } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -387,6 +387,18 @@ function AppIconSprite() {
         <path d="M7.25 2.75h9.5a2 2 0 0 1 2 2v14.5a2 2 0 0 1-2 2h-9.5a2 2 0 0 1-2-2V4.75a2 2 0 0 1 2-2Zm1 1.8a1.2 1.2 0 0 0-1.2 1.2v12.5a1.2 1.2 0 0 0 1.2 1.2h7.5a1.2 1.2 0 0 0 1.2-1.2V5.75a1.2 1.2 0 0 0-1.2-1.2h-7.5Z" />
         <path d="M9.6 5.8h4.8a.8.8 0 0 1 0 1.6H9.6a.8.8 0 0 1 0-1.6Zm1.6 10.7h1.6a.8.8 0 0 1 0 1.6h-1.6a.8.8 0 0 1 0-1.6Zm.8-7.6a.8.8 0 0 1 .8.8v2.85l.78-.78a.8.8 0 0 1 1.13 1.13l-2.15 2.15a.8.8 0 0 1-1.12 0L9.29 12.9a.8.8 0 1 1 1.13-1.13l.78.78V9.7a.8.8 0 0 1 .8-.8Z" />
       </symbol>
+      <symbol id="icon-adminDashboardIcon" viewBox="0 0 24 24">
+        <path d="M4.25 5.25a2 2 0 0 1 2-2h11.5a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H6.25a2 2 0 0 1-2-2v-9.5Zm2 .55a.55.55 0 0 0-.55.55v7.3c0 .3.25.55.55.55h11.5c.3 0 .55-.25.55-.55v-7.3a.55.55 0 0 0-.55-.55H6.25Z" />
+        <path d="M7.65 8.1h3.7a.75.75 0 0 1 0 1.5h-3.7a.75.75 0 0 1 0-1.5Zm0 3.2h2.05a.75.75 0 0 1 0 1.5H7.65a.75.75 0 0 1 0-1.5Zm7.02-3.05h1.1a.75.75 0 0 1 .75.75v1.1a.75.75 0 0 1-.75.75h-1.1a.75.75 0 0 1-.75-.75V9a.75.75 0 0 1 .75-.75Zm-5.2 10.1h5.06a.8.8 0 0 1 0 1.6H9.47a.8.8 0 0 1 0-1.6Zm1.73-2.25h1.6v2.7h-1.6v-2.7Z" />
+      </symbol>
+      <symbol id="icon-rankingIcon" viewBox="0 0 24 24">
+        <path d="M12 2.85 13.55 6l3.48.5-2.52 2.45.6 3.46L12 10.78 8.89 12.4l.6-3.46L6.97 6.5 10.45 6 12 2.85Z" />
+        <path d="M9.05 12.55h5.9a1.4 1.4 0 0 1 1.4 1.4v5.2h-8.7v-5.2a1.4 1.4 0 0 1 1.4-1.4Zm-5.1 3.25a1.4 1.4 0 0 1 1.4-1.4H7.6v4.75H3.95V15.8Zm12.45-1.4h2.25a1.4 1.4 0 0 1 1.4 1.4v3.35H16.4V14.4Zm-13.2 5.55h17.6a.8.8 0 0 1 0 1.6H3.2a.8.8 0 0 1 0-1.6Z" />
+      </symbol>
+      <symbol id="icon-messageTopbarIcon" viewBox="0 0 24 24">
+        <path d="M5.25 4.4h13.5a2.25 2.25 0 0 1 2.25 2.25v7.75a2.25 2.25 0 0 1-2.25 2.25h-5.62l-4.05 3.04a.9.9 0 0 1-1.44-.72v-2.32H5.25A2.25 2.25 0 0 1 3 14.4V6.65A2.25 2.25 0 0 1 5.25 4.4Zm0 1.75a.5.5 0 0 0-.5.5v7.75c0 .28.22.5.5.5h3.29c.5 0 .9.4.9.9v1.37l2.88-2.16a.9.9 0 0 1 .54-.18h5.89a.5.5 0 0 0 .5-.5V6.65a.5.5 0 0 0-.5-.5H5.25Z" />
+        <path d="M8.1 10.5a1.05 1.05 0 1 1 2.1 0 1.05 1.05 0 0 1-2.1 0Zm2.85 0a1.05 1.05 0 1 1 2.1 0 1.05 1.05 0 0 1-2.1 0Zm2.85 0a1.05 1.05 0 1 1 2.1 0 1.05 1.05 0 0 1-2.1 0Z" />
+      </symbol>
       <symbol id="icon-settingsIcon" viewBox="0 0 24 24">
         <path d="M12 8.1a3.9 3.9 0 1 1 0 7.8 3.9 3.9 0 0 1 0-7.8Zm0 1.75a2.15 2.15 0 1 0 0 4.3 2.15 2.15 0 0 0 0-4.3Z" />
         <path d="M13.3 2.75a1.15 1.15 0 0 1 1.08.78l.45 1.33c.38.16.75.37 1.09.61l1.37-.29a1.15 1.15 0 0 1 1.2.54l1.3 2.25a1.15 1.15 0 0 1-.13 1.31l-.92 1.04a7.46 7.46 0 0 1 0 1.36l.92 1.04c.33.37.38.9.13 1.31l-1.3 2.25a1.15 1.15 0 0 1-1.2.54l-1.37-.29c-.34.24-.71.45-1.09.61l-.45 1.33a1.15 1.15 0 0 1-1.08.78h-2.6a1.15 1.15 0 0 1-1.08-.78l-.45-1.33a7.02 7.02 0 0 1-1.09-.61l-1.37.29a1.15 1.15 0 0 1-1.2-.54l-1.3-2.25a1.15 1.15 0 0 1 .13-1.31l.92-1.04a7.46 7.46 0 0 1 0-1.36l-.92-1.04a1.15 1.15 0 0 1-.13-1.31l1.3-2.25a1.15 1.15 0 0 1 1.2-.54l1.37.29c.34-.24.71-.45 1.09-.61l.45-1.33a1.15 1.15 0 0 1 1.08-.78h2.6Zm-.36 1.8h-1.88l-.5 1.5a.9.9 0 0 1-.57.56c-.52.18-1 .46-1.43.82a.9.9 0 0 1-.76.19l-1.55-.33-.94 1.62 1.04 1.17a.9.9 0 0 1 .2.77 5.71 5.71 0 0 0 0 1.72.9.9 0 0 1-.2.77L5.3 14.5l.94 1.62 1.55-.33a.9.9 0 0 1 .76.19c.43.36.91.64 1.43.82.27.09.48.3.57.56l.5 1.5h1.88l.5-1.5a.9.9 0 0 1 .57-.56c.52-.18 1-.46 1.43-.82a.9.9 0 0 1 .76-.19l1.55.33.94-1.62-1.04-1.17a.9.9 0 0 1-.2-.77 5.71 5.71 0 0 0 0-1.72.9.9 0 0 1 .2-.77l1.04-1.17-.94-1.62-1.55.33a.9.9 0 0 1-.76-.19A5.32 5.32 0 0 0 14 6.61a.9.9 0 0 1-.57-.56l-.5-1.5Z" />
@@ -599,9 +611,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const profileInitials = initialsFromName(displayName)
   const profileAvatar = avatarForUser(user, displayId)
   const backAvatar = actionAvatarAssets.back
-  const messageAvatar = actionAvatarAssets.message
   const rankingAvatar = actionAvatarAssets.ranking
-  const adminDashboardIcon = navigationAssets.adminDashboard.icon
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const selectedRoomNeedsPassword = selectedRoom?.privacy_type === 'password' && roomId === String(selectedRoom.id)
   const selectedRoomSupportsVideo = !selectedRoom || roomAllowsCamera(selectedRoom.room_type)
@@ -3120,18 +3130,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </IconButton>
           {showAdminDashboard ? (
             <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
-              <span className="buzzcast-action-avatar admin-dashboard" aria-hidden="true">
-                <img src={adminDashboardIcon} alt="" loading="lazy" />
-              </span>
+              <SvgIcon id="icon-adminDashboardIcon" />
             </IconButton>
           ) : null}
           <IconButton label="Rankings" onClick={openRankings}>
-            <span className="buzzcast-action-avatar ranking" aria-hidden="true"><img src={rankingAvatar} alt="" loading="lazy" /></span>
+            <SvgIcon id="icon-rankingIcon" />
           </IconButton>
           <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
-            <span className="buzzcast-message-icon" aria-hidden="true">
-              <img src={messageAvatar} alt="" loading="lazy" />
-            </span>
+            <SvgIcon id="icon-messageTopbarIcon" />
           </IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
             <span className="image-avatar">
