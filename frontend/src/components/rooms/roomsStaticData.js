@@ -866,6 +866,14 @@ export const appCopy = {
   View: 'View',
   'Content Preferences': 'Content Preferences',
   'Send a chat': 'Send a chat',
+  '{count} joined': '{count} joined',
+  '{count} members': '{count} members',
+  '{count} member': '{count} member',
+  '{count} users': '{count} users',
+  '{count} user': '{count} user',
+  '{count} live users': '{count} live users',
+  '{count} live user': '{count} live user',
+  '{count} rooms': '{count} rooms',
 }
 
 export const appTranslations = {
@@ -1228,6 +1236,14 @@ export const appTranslations = {
     View: 'Ver',
     'Content Preferences': 'Preferencias de contenido',
     'Send a chat': 'Enviar chat',
+    '{count} joined': '{count} se unio',
+    '{count} members': '{count} miembros',
+    '{count} member': '{count} miembro',
+    '{count} users': '{count} usuarios',
+    '{count} user': '{count} usuario',
+    '{count} live users': '{count} usuarios en vivo',
+    '{count} live user': '{count} usuario en vivo',
+    '{count} rooms': '{count} salas',
   },
   French: {
     Loading: 'Chargement',
@@ -1383,6 +1399,14 @@ export const appTranslations = {
     'Choose a valid birthday.': 'Choisissez une date de naissance valide.',
     'You must be at least 13 years old.': 'Vous devez avoir au moins 13 ans.',
     'Choose a realistic birthday.': 'Choisissez une date de naissance realiste.',
+    '{count} joined': '{count} a rejoint',
+    '{count} members': '{count} membres',
+    '{count} member': '{count} membre',
+    '{count} users': '{count} utilisateurs',
+    '{count} user': '{count} utilisateur',
+    '{count} live users': '{count} utilisateurs en direct',
+    '{count} live user': '{count} utilisateur en direct',
+    '{count} rooms': '{count} salons',
   },
   Korean: {
     Loading: '로딩 중',
@@ -1520,6 +1544,14 @@ export const appTranslations = {
     'Choose a valid birthday.': '유효한 생일을 선택하세요.',
     'You must be at least 13 years old.': '만 13세 이상이어야 합니다.',
     'Choose a realistic birthday.': '현실적인 생일을 선택하세요.',
+    '{count} joined': '{count}명 참여',
+    '{count} members': '{count}명 멤버',
+    '{count} member': '{count}명 멤버',
+    '{count} users': '{count}명 사용자',
+    '{count} user': '{count}명 사용자',
+    '{count} live users': '{count}명 라이브 사용자',
+    '{count} live user': '{count}명 라이브 사용자',
+    '{count} rooms': '{count}개 방',
   },
   Japanese: {
     Loading: '読み込み中',
@@ -1644,6 +1676,14 @@ export const appTranslations = {
     'Choose a valid birthday.': '有効な誕生日を選択してください。',
     'You must be at least 13 years old.': '13歳以上である必要があります。',
     'Choose a realistic birthday.': '現実的な誕生日を選択してください。',
+    '{count} joined': '{count}人が参加',
+    '{count} members': '{count}人のメンバー',
+    '{count} member': '{count}人のメンバー',
+    '{count} users': '{count}人のユーザー',
+    '{count} user': '{count}人のユーザー',
+    '{count} live users': '{count}人のライブユーザー',
+    '{count} live user': '{count}人のライブユーザー',
+    '{count} rooms': '{count}ルーム',
   },
   Chinese: {
     Loading: '正在加载',
@@ -1781,6 +1821,14 @@ export const appTranslations = {
     'Choose a valid birthday.': '请选择有效生日。',
     'You must be at least 13 years old.': '你必须年满 13 岁。',
     'Choose a realistic birthday.': '请选择真实合理的生日。',
+    '{count} joined': '{count} 已加入',
+    '{count} members': '{count} 名成员',
+    '{count} member': '{count} 名成员',
+    '{count} users': '{count} 名用户',
+    '{count} user': '{count} 名用户',
+    '{count} live users': '{count} 名直播用户',
+    '{count} live user': '{count} 名直播用户',
+    '{count} rooms': '{count} 个房间',
   },
 }
 
@@ -1831,6 +1879,8 @@ export function writeStoredSettingsLanguage(language) {
 }
 
 const staticTranslationAttributes = ['aria-label', 'title', 'placeholder', 'data-mobile-label']
+const staticTextState = new WeakMap()
+const staticAttributeState = new WeakMap()
 const staticTranslationTextSkipSelector = [
   'script',
   'style',
@@ -1854,15 +1904,128 @@ const staticTranslationAttributeSkipSelector = [
   '.buzzcast-room-summary strong',
 ].join(',')
 
+const dynamicStaticTranslationPatterns = [
+  {
+    pattern: /^Loading (.+)$/i,
+    key: 'Loading {label}',
+    replacements: (match, language) => ({ label: translateApp(language, match[1]) }),
+  },
+  {
+    pattern: /^Room ID:\s*(.+)$/i,
+    key: 'Room ID: {id}',
+    replacements: (match) => ({ id: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+joined$/i,
+    key: '{count} joined',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+members$/i,
+    key: '{count} members',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+member$/i,
+    key: '{count} member',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^([\d.]+[KMB]?)\s+users$/i,
+    key: '{count} users',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^([\d.]+[KMB]?)\s+user$/i,
+    key: '{count} user',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+live users$/i,
+    key: '{count} live users',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+live user$/i,
+    key: '{count} live user',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^(\d+)\s+rooms$/i,
+    key: '{count} rooms',
+    replacements: (match) => ({ count: match[1] }),
+  },
+  {
+    pattern: /^Message (.+)$/i,
+    key: 'Message {name}',
+    replacements: (match) => ({ name: match[1] }),
+  },
+  {
+    pattern: /^Send (.+) gift$/i,
+    key: 'Send {gift} gift',
+    replacements: (match, language) => ({ gift: translateApp(language, match[1]) }),
+  },
+]
+
+function translateDynamicStaticValue(language, value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+
+  for (const item of dynamicStaticTranslationPatterns) {
+    const match = text.match(item.pattern)
+    if (!match) continue
+    return translateApp(language, item.key, item.replacements(match, language))
+  }
+
+  return ''
+}
+
 function translateStaticValue(language, value) {
   const text = String(value || '')
   const trimmed = text.trim()
   if (!trimmed) return text
-  const translated = translateApp(language, trimmed)
+  const translated = translateDynamicStaticValue(language, trimmed) || translateApp(language, trimmed)
   if (!translated || translated === trimmed) return text
   const leading = text.match(/^\s*/)?.[0] || ''
   const trailing = text.match(/\s*$/)?.[0] || ''
   return `${leading}${translated}${trailing}`
+}
+
+function translatedStaticNodeValue(language, node) {
+  const current = node.nodeValue
+  const previous = staticTextState.get(node)
+
+  if (!previous) {
+    const translated = translateStaticValue(language, current)
+    staticTextState.set(node, { original: current, translated })
+    return translated
+  }
+
+  const original = current !== previous.translated && current !== previous.original
+    ? current
+    : previous.original
+  const translated = translateStaticValue(language, original)
+  staticTextState.set(node, { original, translated })
+  return translated
+}
+
+function translatedStaticAttributeValue(language, element, attribute) {
+  const current = element.getAttribute(attribute)
+  const allAttributes = staticAttributeState.get(element) || {}
+  const previous = allAttributes[attribute]
+
+  if (!previous) {
+    const translated = translateStaticValue(language, current)
+    staticAttributeState.set(element, { ...allAttributes, [attribute]: { original: current, translated } })
+    return translated
+  }
+
+  const original = current !== previous.translated && current !== previous.original
+    ? current
+    : previous.original
+  const translated = translateStaticValue(language, original)
+  staticAttributeState.set(element, { ...allAttributes, [attribute]: { original, translated } })
+  return translated
 }
 
 function shouldSkipStaticTextTranslation(node) {
@@ -1876,7 +2039,7 @@ function shouldSkipStaticAttributeTranslation(node) {
 
 export function applyStaticTranslations(language, root = typeof document !== 'undefined' ? document.body : null) {
   const normalizedLanguage = normalizeSettingsLanguage(language)
-  if (!root || normalizedLanguage === 'English') return
+  if (!root) return
 
   const tree = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -1888,7 +2051,7 @@ export function applyStaticTranslations(language, root = typeof document !== 'un
   const textNodes = []
   while (tree.nextNode()) textNodes.push(tree.currentNode)
   textNodes.forEach((node) => {
-    const translated = translateStaticValue(normalizedLanguage, node.nodeValue)
+    const translated = translatedStaticNodeValue(normalizedLanguage, node)
     if (translated !== node.nodeValue) node.nodeValue = translated
   })
 
@@ -1897,7 +2060,7 @@ export function applyStaticTranslations(language, root = typeof document !== 'un
     staticTranslationAttributes.forEach((attribute) => {
       if (!element.hasAttribute(attribute)) return
       const current = element.getAttribute(attribute)
-      const translated = translateStaticValue(normalizedLanguage, current)
+      const translated = translatedStaticAttributeValue(normalizedLanguage, element, attribute)
       if (translated !== current) element.setAttribute(attribute, translated)
     })
   })

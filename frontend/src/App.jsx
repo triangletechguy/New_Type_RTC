@@ -140,7 +140,7 @@ export default function App() {
   }, [language])
 
   useEffect(() => {
-    if (language === 'English' || typeof document === 'undefined' || typeof MutationObserver === 'undefined') return undefined
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return undefined
 
     let frameId = 0
     const runTranslations = () => {
