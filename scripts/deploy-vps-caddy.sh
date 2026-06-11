@@ -436,7 +436,7 @@ restart_backend() {
   log "Restarting backend"
 
   if ! command -v pm2 >/dev/null 2>&1; then
-    sudo npm install -g pm2
+    npm install -g pm2
   fi
 
   pm2 delete "$PM2_APP" >/dev/null 2>&1 || true
