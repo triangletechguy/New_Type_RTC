@@ -1356,6 +1356,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     openMessagesDrawer()
   }
 
+  function openHelpSection() {
+    setShowDownloadQr(false)
+    pushSectionHistory('help')
+    setActiveSection('help')
+    setPreviewCard(null)
+    setShowMessages(false)
+    scrollMobileShellToTop()
+  }
+
   function openRankings() {
     if (!requireAuth('Log in to view live rankings.', 'login')) return
     setShowMessages(false)
@@ -1367,11 +1376,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openMobileMessageSection() {
+    if (showMessages) {
+      setShowMessages(false)
+      return
+    }
+
     setShowDownloadQr(false)
-    pushSectionHistory('help')
-    setActiveSection('help')
+    setActiveSection('live')
     setPreviewCard(null)
-    setShowMessages(false)
+    openMessagesDrawer()
     scrollMobileShellToTop()
   }
 
@@ -1572,6 +1585,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setActiveSection('live')
     setPreviewCard(null)
     setActiveFeed(nextFeed)
+    if (nextFeed === 'following') setMobileRoomGroup('follow')
+    else if (nextFeed === 'latest') setMobileRoomGroup('recently')
+    else if (nextFeed === 'global') setMobileRoomGroup('group')
     setFilter(tab?.filter || 'all')
     setSort(tab?.sort || 'newest')
     setRoomMeta((previous) => ({ ...previous, page: 1 }))
@@ -2046,8 +2062,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
-    const featuredMobileCard = ownRoomCard
-    const featuredMobileTitle = featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard.title
+    const featuredMobileCard = activeFeed === 'following' ? visibleCards[0] : ownRoomCard
+    const featuredMobileTitle = featuredMobileCard?.isOwnRoom && featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard?.title
+    const featuredMobileRibbon = activeFeed === 'following' ? 'Follow' : 'Mine'
     const mobileRoomListCards = recentRoomCards.length ? recentRoomCards : visibleCards
 
     return (
@@ -2087,21 +2104,33 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </div>
             </div>
           ) : null}
-          <button type="button" className="mp4-feature-room" onClick={() => openMobileRoomOrCreate(featuredMobileCard)}>
-            <span className="mp4-feature-avatar">
-              <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
-            </span>
-            <span className="mp4-feature-copy">
-              <strong>{featuredMobileTitle}</strong>
-              <small>
-                <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-                <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-                <i>{compactNumber(featuredMobileCard.viewers || 0)}</i>
-                <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-              </small>
-            </span>
-            <span className="mp4-feature-ribbon"><span>Mine</span></span>
-          </button>
+          {featuredMobileCard ? (
+            <button type="button" className="mp4-feature-room" onClick={() => openMobileRoomOrCreate(featuredMobileCard)}>
+              <span className="mp4-feature-avatar">
+                <img src={featuredMobileCard.avatarUrl || cardCover(featuredMobileCard)} alt="" loading="eager" decoding="async" fetchPriority="high" />
+              </span>
+              <span className="mp4-feature-copy">
+                <strong>{featuredMobileTitle}</strong>
+                <small>
+                  <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                  <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                  <i>{compactNumber(featuredMobileCard.viewers || 0)}</i>
+                  <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                </small>
+              </span>
+              <span className="mp4-feature-ribbon"><span>{featuredMobileRibbon}</span></span>
+            </button>
+          ) : (
+            <div className="mp4-feature-room mp4-feature-empty">
+              <span className="mp4-feature-avatar">
+                <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
+              </span>
+              <span className="mp4-feature-copy">
+                <strong>No followed rooms yet</strong>
+                <small>Follow room hosts to see them here.</small>
+              </span>
+            </div>
+          )}
           <nav className="mp4-room-tabs" aria-label="Mobile room groups">
             <button type="button" className={mobileRoomGroup === 'recently' ? 'active' : ''} onClick={() => switchMobileRoomGroup('recently')}>Recently</button>
             <button type="button" className={mobileRoomGroup === 'follow' ? 'active' : ''} onClick={() => switchMobileRoomGroup('follow')}>Follow</button>
@@ -3218,29 +3247,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </button>
         <button
           type="button"
-          className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
-          data-mobile-label="Me"
-          onClick={openProfileSection}
-          aria-label="Me"
+          className={activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
+          data-mobile-label="Help"
+          onClick={openHelpSection}
+          aria-label="Feedback and Help"
         >
-          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-icon_share" />
+          <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-feedbackAndHelpIcon" />
           </span>
-          <b>Me</b>
+          <b>Feedback and Help</b>
         </button>
-        <button
-          type="button"
-          className={showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
-          data-mobile-label="App"
-          onClick={toggleDownloadQrPanel}
-          aria-label="Scan to download app"
-        >
-          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-getTheAppIcon" />
-          </span>
-          <b>Download app</b>
-        </button>
-        <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
           className={activeSection === 'settings' ? 'active buzzcast-rail-tab buzzcast-rail-moments' : 'buzzcast-rail-tab buzzcast-rail-moments'}
@@ -3253,17 +3269,30 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </span>
           <b>Settings</b>
         </button>
+        <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
-          className={showMessages || activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
-          data-mobile-label="Help"
+          className={showMessages ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
+          data-mobile-label="Message"
           onClick={openMobileMessageSection}
-          aria-label="Feedback and Help"
+          aria-label={showMessages ? 'Close messages' : 'Messages'}
         >
-          <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-feedbackAndHelpIcon" />
+          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-messageTopbarIcon" />
           </span>
-          <b>Feedback and Help</b>
+          <b>Messages</b>
+        </button>
+        <button
+          type="button"
+          className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
+          data-mobile-label="Me"
+          onClick={openProfileSection}
+          aria-label="Me"
+        >
+          <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-icon_share" />
+          </span>
+          <b>Me</b>
         </button>
       </aside>
 

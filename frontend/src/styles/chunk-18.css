@@ -2965,3 +2965,330 @@
     color: #aaa6bb !important;
   }
 }
+
+/* Final mobile polish: bottom navigation order and clean home/search controls. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail {
+    position: fixed !important;
+    z-index: 140 !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: calc(66px + var(--mobile-safe-bottom)) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 0 !important;
+    padding: 5px 10px calc(6px + var(--mobile-safe-bottom)) !important;
+    border: 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, .18) !important;
+    background: linear-gradient(180deg, #43b68f 0%, #17836e 100%) !important;
+    box-shadow: 0 -14px 26px rgba(15, 23, 42, .16) !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail button,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button {
+    min-width: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 54px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 30px 16px !important;
+    justify-items: center !important;
+    align-content: center !important;
+    gap: 2px !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, .92) !important;
+    font-size: 11px !important;
+    text-shadow: 0 1px 1px rgba(0, 65, 52, .22) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail button.active,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button.active,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button.active,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
+    color: #ffd95a !important;
+    background: rgba(255, 255, 255, .1) !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail button::after,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail button::after {
+    content: attr(data-mobile-label) !important;
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    color: currentColor !important;
+    font-size: 10px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-left-rail b,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-left-rail b,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-left-rail b,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    display: none !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-home {
+    order: 1 !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-message-tab {
+    order: 2 !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-moments {
+    order: 3 !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-install {
+    order: 4 !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-profile {
+    order: 5 !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon {
+    width: 29px !important;
+    height: 29px !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: currentColor !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon::before,
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-rail-icon.rail-symbol-icon .buzzcast-svg-icon {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    fill: currentColor !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-main,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-main,
+  .buzzcast-shell.section-me:not(.buzzcast-live-shell) .buzzcast-main {
+    height: auto !important;
+    min-height: 100svh !important;
+    padding: 0 0 calc(78px + var(--mobile-safe-bottom)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    background: #f4f5f7 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-shell,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: calc(100svh - 78px - var(--mobile-safe-bottom)) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    padding: calc(12px + var(--mobile-safe-top)) 12px 16px !important;
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu {
+    width: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 6px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+    scrollbar-width: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-content,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-content {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 16px !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    color: #111827 !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button {
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 42px !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+    padding: 0 12px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: #f4f5f7 !important;
+    color: #475467 !important;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button.active,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button.active {
+    background: linear-gradient(180deg, #4aba94 0%, #18836e 100%) !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav i {
+    width: 20px !important;
+    height: 20px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 1px solid currentColor !important;
+    border-radius: 50% !important;
+    color: currentColor !important;
+    font-size: 10px !important;
+    font-style: normal !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav b {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav span {
+    color: inherit !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading h2,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-content h1,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-content h2 {
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading p {
+    color: #667085 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-radio-row,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-switch-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    min-height: 70px !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 10px 0 !important;
+    color: #111827 !important;
+    box-shadow: inset 0 -1px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong {
+    color: #111827 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    color: #667085 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list em,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list b {
+    color: #18836e !important;
+  }
+
+  .mp4-mobile-home-hero {
+    grid-template-columns: 42px minmax(0, 1fr) 42px !important;
+    align-items: end !important;
+    gap: 8px !important;
+    padding: calc(28px + var(--mobile-safe-top)) 12px 44px !important;
+  }
+
+  .mp4-home-goat {
+    z-index: 1 !important;
+    left: 2px !important;
+    top: calc(12px + var(--mobile-safe-top)) !important;
+    width: 62px !important;
+    height: 60px !important;
+    opacity: .9 !important;
+  }
+
+  .mp4-home-menu,
+  .mp4-home-search {
+    z-index: 8 !important;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
+    display: grid !important;
+    place-items: center !important;
+    align-self: end !important;
+    justify-self: center !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, .34) !important;
+    border-radius: 50% !important;
+    background: rgba(15, 120, 101, .24) !important;
+    box-shadow: 0 6px 14px rgba(0, 73, 63, .16) !important;
+    transform: none !important;
+  }
+
+  .mp4-home-menu img,
+  .mp4-home-search img {
+    width: 24px !important;
+    height: 24px !important;
+    display: block !important;
+    object-fit: contain !important;
+    opacity: 1 !important;
+    filter: none !important;
+  }
+
+  .mp4-home-search img {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .mp4-feature-empty {
+    cursor: default !important;
+  }
+}
