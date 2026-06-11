@@ -594,7 +594,7 @@
 .buzzcast-floating-tool {
   right: 18px;
   bottom: 186px;
-  width: min(360px, calc(100% - 36px));
+  width: min(340px, calc(100% - 36px));
 }
 
 .buzzcast-live-side {

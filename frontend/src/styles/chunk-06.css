@@ -477,19 +477,43 @@
 
 .media-control-button.effect-text-button {
   width: auto;
-  min-width: 82px;
-  height: 42px;
-  padding: 0 12px;
+  min-width: 76px;
+  height: 40px;
+  padding: 0 11px;
   border-color: rgba(56, 189, 248, .26);
   background: rgba(14, 165, 233, .1);
   color: #dbeafe;
-  font-size: 12px;
-  font-weight: 1000;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .media-control-button.effect-text-button .control-glyph {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
+}
+
+.media-control-button.audio-effects-button {
+  border-color: rgba(168, 85, 247, .25);
+  background: rgba(88, 28, 135, .13);
+  color: #ede9fe;
+}
+
+.media-control-button.audio-effects-button.has-effect:not(.active)::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #a78bfa;
+  box-shadow: 0 0 0 2px rgba(15, 13, 26, .72);
+}
+
+.media-control-button.audio-effects-button.active {
+  border-color: rgba(168, 85, 247, .58);
+  background: linear-gradient(135deg, rgba(109, 40, 217, .34), rgba(14, 165, 233, .16));
+  color: #f5f3ff;
 }
 
 .media-control-button.active {
@@ -799,60 +823,88 @@
 }
 
 .live-tool-panel header {
-  min-height: 44px;
+  min-height: 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, .16);
 }
 
 .live-tool-panel header strong {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .live-tool-panel header button {
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
   padding: 0;
+  border-radius: 8px;
   border-color: rgba(148, 163, 184, .22);
   background: rgba(148, 163, 184, .1);
+  font-size: 13px;
 }
 
 .tool-status-panel {
   display: grid;
-  gap: 11px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .tool-status-panel p {
   margin: 0;
   color: #cbd5e1;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .tool-status-panel small {
   color: var(--muted);
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 750;
 }
 
 .room-ops-panel {
-  max-height: min(72vh, 620px);
-  overflow: auto;
+  max-height: min(66vh, 460px);
+  overflow: hidden auto;
   scrollbar-gutter: stable;
+}
+
+.room-ops-panel .guard-summary {
+  min-height: 52px;
+  gap: 8px;
+  padding: 8px;
+}
+
+.room-ops-panel .guard-summary span {
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 900;
+}
+
+.room-ops-panel .guard-summary strong {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.room-ops-panel .guard-summary small {
+  font-size: 11px;
 }
 
 .room-ops-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .room-ops-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid rgba(148, 163, 184, .18);
   border-radius: 8px;
   background: rgba(8, 16, 34, .48);
@@ -871,21 +923,53 @@
   white-space: nowrap;
 }
 
+.room-ops-row strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.room-ops-row small {
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
 .room-ops-row .chat-actions {
   justify-content: flex-start;
   flex-wrap: wrap;
   margin-top: 0;
   opacity: 1;
   transform: none;
+  gap: 5px;
+}
+
+.room-ops-row .chat-actions button {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 10.5px;
+  font-weight: 850;
 }
 
 .room-role-form {
-  grid-template-columns: minmax(160px, 1.4fr) minmax(100px, .75fr) auto auto;
+  grid-template-columns: minmax(0, 1.35fr) minmax(92px, .75fr) auto auto;
   align-items: center;
+  gap: 7px;
 }
 
 .room-role-form select {
   min-width: 0;
+  min-height: 34px;
+  padding: 6px 28px 6px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.room-role-form button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .room-role-user-select {

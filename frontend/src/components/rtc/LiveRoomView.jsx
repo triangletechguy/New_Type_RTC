@@ -55,6 +55,7 @@ const RTC_LARGE_SCREEN_TARGET_KBPS = 450
 const STAGE_RESIZE_GAP_PX = 14
 const STAGE_RESIZE_DEFAULT_TILE_WIDTH = 220
 const STAGE_RESIZE_MIN_TILE_HEIGHT = 150
+const VOICE_EFFECT_IDS = ['natural', 'clear', 'deep', 'bright']
 const roomAccessCodeInputProps = {
   type: 'text',
   autoComplete: 'off',
@@ -457,6 +458,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const stageStreamsRef = useRef(null)
   const stageResizeRef = useRef(null)
   const screenShareTrackRef = useRef(null)
+  const audioSourceTrackRef = useRef(null)
+  const audioEffectPipelineRef = useRef(null)
+  const processedAudioTrackRef = useRef(null)
   const cameraSourceTrackRef = useRef(null)
   const cameraFilterPipelineRef = useRef(null)
   const filteredCameraTrackRef = useRef(null)
@@ -611,9 +615,135 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         echoCancellation: true,
         noiseSuppression: noiseCancellationRef.current,
         autoGainControl: true,
-        voiceEffect: voiceEffectRef.current,
       },
     }
+  }
+
+  function normalizeVoiceEffectId(value) {
+    return VOICE_EFFECT_IDS.includes(value) ? value : 'natural'
+  }
+
+  function isVoiceEffectActive(value = voiceEffectRef.current) {
+    return normalizeVoiceEffectId(value) !== 'natural'
+  }
+
+  function stopAudioEffectPipeline({ stopSource = false } = {}) {
+    const pipeline = audioEffectPipelineRef.current
+    audioEffectPipelineRef.current = null
+
+    if (pipeline) {
+      pipeline.stop({ stopSource })
+    }
+
+    processedAudioTrackRef.current = null
+
+    if (stopSource && audioSourceTrackRef.current?.readyState !== 'ended') {
+      try { audioSourceTrackRef.current.stop() } catch {}
+    }
+
+    if (stopSource) audioSourceTrackRef.current = null
+  }
+
+  function rememberAudioSourceFromStream(stream = streamRef.current) {
+    if (isLiveTrack(audioSourceTrackRef.current)) return audioSourceTrackRef.current
+
+    const sourceTrack = stream?.getAudioTracks?.().find((track) => (
+      isLiveTrack(track)
+      && track !== processedAudioTrackRef.current
+    )) || null
+
+    audioSourceTrackRef.current = sourceTrack
+    return sourceTrack
+  }
+
+  async function createVoiceEffectOutputTrack(sourceTrack, effectId) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextConstructor) throw new Error('This browser does not support live audio effects.')
+
+    const audioContext = new AudioContextConstructor()
+    const sourceStream = new MediaStream([sourceTrack])
+    const sourceNode = audioContext.createMediaStreamSource(sourceStream)
+    const destination = audioContext.createMediaStreamDestination()
+    const nodes = []
+
+    function addBiquad(type, frequency, gain = 0, q = 0.9) {
+      const node = audioContext.createBiquadFilter()
+      node.type = type
+      node.frequency.value = frequency
+      node.gain.value = gain
+      node.Q.value = q
+      nodes.push(node)
+      return node
+    }
+
+    if (effectId === 'clear') {
+      addBiquad('highpass', 120, 0, 0.7)
+      addBiquad('peaking', 2600, 4.5, 0.85)
+    } else if (effectId === 'deep') {
+      addBiquad('lowshelf', 170, 5.5, 0.8)
+      addBiquad('peaking', 750, -2.5, 0.9)
+      addBiquad('lowpass', 4200, 0, 0.7)
+    } else if (effectId === 'bright') {
+      addBiquad('highpass', 170, 0, 0.7)
+      addBiquad('highshelf', 3600, 6, 0.8)
+    }
+
+    const gainNode = audioContext.createGain()
+    gainNode.gain.value = effectId === 'deep' ? 1.02 : effectId === 'bright' ? 1.04 : 1
+    nodes.push(gainNode)
+
+    let previousNode = sourceNode
+    nodes.forEach((node) => {
+      previousNode.connect(node)
+      previousNode = node
+    })
+    previousNode.connect(destination)
+
+    if (audioContext.state === 'suspended') await audioContext.resume()
+
+    const [outputTrack] = destination.stream.getAudioTracks()
+    if (!outputTrack) {
+      await audioContext.close().catch(() => {})
+      throw new Error('Audio effects could not create an output track.')
+    }
+
+    outputTrack.enabled = sourceTrack.enabled
+    outputTrack.contentHint = 'speech'
+
+    return {
+      sourceTrack,
+      outputTrack,
+      effectId,
+      stop({ stopSource = false } = {}) {
+        try { sourceNode.disconnect() } catch {}
+        nodes.forEach((node) => {
+          try { node.disconnect() } catch {}
+        })
+        try { destination.disconnect() } catch {}
+        if (outputTrack.readyState !== 'ended') {
+          try { outputTrack.stop() } catch {}
+        }
+        if (stopSource && sourceTrack.readyState !== 'ended') {
+          try { sourceTrack.stop() } catch {}
+        }
+        audioContext.close().catch(() => {})
+      },
+    }
+  }
+
+  async function processedAudioOutputTrack(sourceTrack, effectId = voiceEffectRef.current) {
+    const normalizedEffect = normalizeVoiceEffectId(effectId)
+
+    if (!isVoiceEffectActive(normalizedEffect)) {
+      stopAudioEffectPipeline({ stopSource: false })
+      return sourceTrack
+    }
+
+    stopAudioEffectPipeline({ stopSource: false })
+    const pipeline = await createVoiceEffectOutputTrack(sourceTrack, normalizedEffect)
+    audioEffectPipelineRef.current = pipeline
+    processedAudioTrackRef.current = pipeline.outputTrack
+    return pipeline.outputTrack
   }
 
   function monitorLocalCameraTracks(stream = streamRef.current) {
@@ -711,6 +841,44 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setLocalStream(nextStream)
     monitorLocalVideoTrack(cameraTrack)
     return nextStream
+  }
+
+  function replaceAudioTrackInLocalStream(audioTrack) {
+    const previousStream = streamRef.current
+    const previousTracks = previousStream?.getTracks?.() || []
+    const keptTracks = previousTracks.filter((track) => track.kind !== 'audio')
+    const nextTracks = audioTrack ? [...keptTracks, audioTrack] : keptTracks
+    const nextStream = new MediaStream(nextTracks)
+
+    if (typeof previousStream?.__cleanup === 'function') {
+      nextStream.__cleanup = previousStream.__cleanup
+    }
+
+    streamRef.current = nextStream
+    setLocalStream(nextStream)
+    return nextStream
+  }
+
+  async function syncAudioEffectTrack({ effectId = voiceEffectRef.current, replaceOutgoing = true } = {}) {
+    const normalizedEffect = normalizeVoiceEffectId(effectId)
+    const sourceTrack = rememberAudioSourceFromStream()
+
+    if (!isLiveTrack(sourceTrack)) return null
+
+    const currentOutgoingTrack = streamRef.current?.getAudioTracks?.()[0] || null
+    const outputTrack = await processedAudioOutputTrack(sourceTrack, normalizedEffect)
+    outputTrack.enabled = micOnRef.current
+    sourceTrack.enabled = micOnRef.current
+
+    const nextStream = currentOutgoingTrack === outputTrack
+      ? streamRef.current
+      : replaceAudioTrackInLocalStream(outputTrack)
+
+    if (replaceOutgoing && currentOutgoingTrack !== outputTrack) {
+      await rtcRef.current?.replaceLocalTrack('audio', outputTrack, nextStream)
+    }
+
+    return outputTrack
   }
 
   function handleCameraFilterPerformanceChange(event) {
@@ -853,6 +1021,38 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const nextStream = new MediaStream([
       ...stream.getAudioTracks(),
       outputTrack,
+    ])
+
+    if (typeof stream?.__cleanup === 'function') {
+      nextStream.__cleanup = stream.__cleanup
+    }
+
+    return nextStream
+  }
+
+  async function prepareStreamWithAudioEffect(stream) {
+    const sourceTrack = stream?.getAudioTracks?.().find((track) => isLiveTrack(track)) || null
+    audioSourceTrackRef.current = sourceTrack
+
+    if (!sourceTrack || !isVoiceEffectActive(voiceEffectRef.current)) {
+      return stream
+    }
+
+    let outputTrack = null
+    try {
+      outputTrack = await processedAudioOutputTrack(sourceTrack, voiceEffectRef.current)
+    } catch (error) {
+      voiceEffectRef.current = 'natural'
+      setVoiceEffect('natural')
+      stopAudioEffectPipeline({ stopSource: false })
+      setStatus(`Audio effects unavailable; joining with normal microphone: ${error.message}`)
+      return stream
+    }
+
+    outputTrack.enabled = sourceTrack.enabled
+    const nextStream = new MediaStream([
+      outputTrack,
+      ...stream.getVideoTracks(),
     ])
 
     if (typeof stream?.__cleanup === 'function') {
@@ -1220,6 +1420,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       rtcRef.current = null
     }
     clearAllNegotiationRetries()
+    stopAudioEffectPipeline({ stopSource: true })
     stopCameraFilterPipeline({ stopSource: true })
     stopMediaStream(streamRef.current)
     if (screenShareTrackRef.current) {
@@ -1378,6 +1579,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function applyLocalMediaState(nextMicOn, nextCameraOn) {
     rtcRef.current?.setAudioEnabled(nextMicOn)
     streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = nextMicOn })
+    if (audioSourceTrackRef.current) audioSourceTrackRef.current.enabled = nextMicOn
+    if (processedAudioTrackRef.current) processedAudioTrackRef.current.enabled = nextMicOn
     streamRef.current?.getVideoTracks().forEach((track) => {
       track.enabled = track === screenShareTrackRef.current ? true : nextCameraOn
     })
@@ -1407,6 +1610,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     const previousStream = streamRef.current
     const previousTracks = previousStream?.getTracks?.() || []
     let outgoingTrack = track
+
+    if (mediaKind === 'audio') {
+      stopAudioEffectPipeline({ stopSource: true })
+      audioSourceTrackRef.current = track
+      if (isVoiceEffectActive(voiceEffectRef.current)) {
+        try {
+          outgoingTrack = await processedAudioOutputTrack(track, voiceEffectRef.current)
+        } catch (error) {
+          voiceEffectRef.current = 'natural'
+          setVoiceEffect('natural')
+          setStatus(`Audio effects unavailable; using normal microphone: ${error.message}`)
+          outgoingTrack = track
+        }
+      }
+    }
 
     if (mediaKind === 'video') {
       stopCameraFilterPipeline({ stopSource: true })
@@ -2704,7 +2922,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           try { track.stop() } catch {}
         })
       }
-      const localMediaStream = await prepareStreamWithCameraFilter(media.stream, joinedRtcMode)
+      const cameraReadyStream = await prepareStreamWithCameraFilter(media.stream, joinedRtcMode)
+      const localMediaStream = await prepareStreamWithAudioEffect(cameraReadyStream)
       streamRef.current = localMediaStream
       setLocalStream(localMediaStream)
       monitorLocalCameraTracks(localMediaStream)
@@ -2720,6 +2939,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setMicOn(actualMicOn)
       setCameraOn(actualCameraOn)
       localMediaStream.getAudioTracks().forEach((track) => { track.enabled = actualMicOn })
+      if (audioSourceTrackRef.current) audioSourceTrackRef.current.enabled = actualMicOn
+      if (processedAudioTrackRef.current) processedAudioTrackRef.current.enabled = actualMicOn
       localMediaStream.getVideoTracks().forEach((track) => { track.enabled = actualCameraOn })
       if (cameraSourceTrackRef.current) cameraSourceTrackRef.current.enabled = actualCameraOn
 
@@ -3190,6 +3411,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         applyLocalMediaState(next, cameraOn)
       }
 
+      if (currentlyJoined && next && isVoiceEffectActive(voiceEffectRef.current)) {
+        await syncAudioEffectTrack({ effectId: voiceEffectRef.current })
+        applyLocalMediaState(next, cameraOn)
+      }
+
       if (!currentlyJoined) return
 
       const synced = await publishMediaState(next, cameraOn)
@@ -3215,7 +3441,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     noiseCancellationRef.current = next
     setNoiseCancellation(next)
 
-    const audioTrack = streamRef.current?.getAudioTracks?.().find((track) => track.readyState === 'live') || null
+    const audioTrack = isLiveTrack(audioSourceTrackRef.current)
+      ? audioSourceTrackRef.current
+      : streamRef.current?.getAudioTracks?.().find((track) => track.readyState === 'live') || null
     if (!audioTrack || typeof audioTrack.applyConstraints !== 'function') {
       setStatus(next ? 'Noise cancellation will apply to the next microphone track.' : 'Noise cancellation disabled for the next microphone track.')
       return
@@ -3233,13 +3461,31 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  function changeVoiceEffect(nextEffect) {
-    const normalizedEffect = ['natural', 'clear', 'deep', 'bright'].includes(nextEffect) ? nextEffect : 'natural'
+  async function changeVoiceEffect(nextEffect) {
+    const normalizedEffect = normalizeVoiceEffectId(nextEffect)
     voiceEffectRef.current = normalizedEffect
     setVoiceEffect(normalizedEffect)
-    setStatus(normalizedEffect === 'natural'
-      ? 'Voice changer disabled.'
-      : `${normalizedEffect[0].toUpperCase()}${normalizedEffect.slice(1)} voice preset selected.`)
+
+    if (!micOnRef.current || !joinedRef.current) {
+      setStatus(normalizedEffect === 'natural'
+        ? 'Voice changer disabled.'
+        : `${normalizedEffect[0].toUpperCase()}${normalizedEffect.slice(1)} voice preset will apply when microphone is live.`)
+      return
+    }
+
+    try {
+      await syncAudioEffectTrack({ effectId: normalizedEffect })
+      applyLocalMediaState(micOnRef.current, cameraOnRef.current)
+      setStatus(normalizedEffect === 'natural'
+        ? 'Voice changer disabled.'
+        : `${normalizedEffect[0].toUpperCase()}${normalizedEffect.slice(1)} voice preset applied to your microphone.`)
+    } catch (error) {
+      voiceEffectRef.current = 'natural'
+      setVoiceEffect('natural')
+      await syncAudioEffectTrack({ effectId: 'natural' }).catch(() => {})
+      applyLocalMediaState(micOnRef.current, cameraOnRef.current)
+      setStatus(`Voice preset could not be applied: ${error.message}`)
+    }
   }
 
   async function toggleCamera() {
@@ -3800,7 +4046,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         <small>{voiceEffect}</small>
                       </header>
                       <div className="camera-filter-grid" aria-label={t('Voice changer presets')}>
-                        {['natural', 'clear', 'deep', 'bright'].map((effect) => (
+                        {VOICE_EFFECT_IDS.map((effect) => (
                           <button
                             key={effect}
                             type="button"
@@ -4078,13 +4324,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph camera"></span>
               </button>
               <button
-                className={activeToolPanel === 'audio' || audioEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                className={`media-control-button effect-text-button utility audio-effects-button${activeToolPanel === 'audio' ? ' active' : ''}${audioEffectsActive ? ' has-effect' : ''}`}
                 onClick={() => toggleToolPanel('audio')}
                 aria-label={activeToolPanel === 'audio' ? t('Close audio effects') : t('Open audio effects')}
                 aria-pressed={activeToolPanel === 'audio'}
                 title={t('Audio effects')}
               >
-                <span className="control-glyph mic"></span>
+                <span className="control-glyph effects"></span>
                 <span>{t('Audio')}</span>
               </button>
               <button
