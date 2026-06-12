@@ -812,6 +812,29 @@
   box-shadow: 0 7px 0 -2px currentColor;
 }
 
+.control-glyph.ops::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+}
+
+.control-glyph.ops::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 6px 0 0 currentColor, 0 6px 0 currentColor, 6px 6px 0 currentColor;
+}
+
 .live-tool-panel {
   margin: 18px 0 0;
   overflow: hidden;
@@ -1339,8 +1362,9 @@
 }
 
 .ai-guard-panel p {
-  color: #67efff;
-  font-family: Georgia, "Times New Roman", serif;
+  color: #d8f6ff;
+  font-family: inherit;
+  font-weight: 800;
 }
 
 .guard-summary {
@@ -1365,6 +1389,35 @@
 
 .guard-summary strong {
   font-size: 24px;
+}
+
+.guard-function-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guard-function-grid span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(125, 211, 252, .16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .58);
+}
+
+.guard-function-grid strong {
+  overflow: hidden;
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guard-function-grid small {
+  line-height: 1.25;
 }
 
 .guard-findings {

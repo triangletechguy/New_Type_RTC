@@ -3301,75 +3301,75 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'live' || activeSection === 'room' ? 'active buzzcast-rail-tab buzzcast-rail-home' : 'buzzcast-rail-tab buzzcast-rail-home'}
-          data-mobile-label="Live"
+          data-mobile-label={t('Live')}
           onClick={openLiveSection}
-          aria-label="Home"
+          aria-label={t('Home')}
         >
           <span className="buzzcast-rail-icon rail-live rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-homeLiveIcon" />
           </span>
-          <b>Live</b>
+          <b>{t('Live')}</b>
         </button>
         <button
           type="button"
           className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
-          data-mobile-label="Me"
+          data-mobile-label={t('Me')}
           onClick={openProfileSection}
-          aria-label="Me"
+          aria-label={t('Me')}
         >
           <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-icon_share" />
           </span>
-          <b>Me</b>
+          <b>{t('Me')}</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
           className={showInstall || showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-app-download' : 'buzzcast-rail-tab buzzcast-rail-app-download'}
-          data-mobile-label="App"
+          data-mobile-label={t('App')}
           onClick={openInstallAppModal}
-          aria-label="Get the app"
+          aria-label={t('Get the app')}
         >
           <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-getTheAppIcon" />
           </span>
-          <b>Get the app</b>
+          <b>{t('Get the app')}</b>
         </button>
         <button
           type="button"
           className={activeSection === 'settings' ? 'active buzzcast-rail-tab buzzcast-rail-moments' : 'buzzcast-rail-tab buzzcast-rail-moments'}
-          data-mobile-label="Settings"
+          data-mobile-label={t('Settings')}
           onClick={openMobileMomentsSection}
-          aria-label="Settings"
+          aria-label={t('Settings')}
         >
           <span className="buzzcast-rail-icon rail-settings rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-settingsIcon" />
           </span>
-          <b>Settings</b>
+          <b>{t('Settings')}</b>
         </button>
         <button
           type="button"
           className={activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
-          data-mobile-label="Help"
+          data-mobile-label={t('Help')}
           onClick={openHelpSection}
-          aria-label="Feedback and Help"
+          aria-label={t('Feedback and Help')}
         >
           <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-feedbackAndHelpIcon" />
           </span>
-          <b>Feedback and Help</b>
+          <b>{t('Feedback and Help')}</b>
         </button>
         <button
           type="button"
           className={showMessages ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
-          data-mobile-label="Message"
+          data-mobile-label={t('Message')}
           onClick={openMobileMessageSection}
-          aria-label={showMessages ? 'Close messages' : 'Messages'}
+          aria-label={showMessages ? t('Close messages') : t('Messages')}
         >
           <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-messageTopbarIcon" />
           </span>
-          <b>Messages</b>
+          <b>{t('Messages')}</b>
         </button>
       </aside>
 

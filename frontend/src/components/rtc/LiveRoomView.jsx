@@ -31,6 +31,7 @@ import {
   peerMediaFromSignal,
   peerMediaMapFromUsers,
 } from '../../utils/roomConfig'
+import { analyzeRoomTextForGuard, isAiGuardEnabled } from '../../utils/aiGuard'
 import { ChatPanel } from './ChatPanel'
 import { VideoTile } from './VideoTile'
 import { LoadingMovie } from '../common/LoadingMovie'
@@ -64,7 +65,6 @@ const roomAccessCodeInputProps = {
   spellCheck: false,
   className: 'room-access-code-input',
 }
-const aiGuardKeywords = ['spam', 'scam', 'abuse', 'nude', 'violent', 'private transaction']
 const ROOM_ROLE_RANK = {
   end_user: 0,
   audience: 0,
@@ -3803,12 +3803,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const guardFindings = chatMessages
     .filter((message) => message.message_type === 'text')
     .map((message) => {
-      const body = String(message.message_body || '')
-      const matchedKeyword = aiGuardKeywords.find((keyword) => body.toLowerCase().includes(keyword))
-      return matchedKeyword ? { message, matchedKeyword } : null
+      const analysis = analyzeRoomTextForGuard(message.message_body)
+      return analysis ? { message, matchedKeyword: analysis.matchedKeyword } : null
     })
     .filter(Boolean)
     .slice(-5)
+  const aiGuardActive = isAiGuardEnabled(room)
   const roomTitle = room?.name || `Room #${roomId}`
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const backAvatar = actionAvatarAssets.back
@@ -4275,11 +4275,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
-                    <p>{t('Be polite and respectful. AI guard watches the current room text for risky phrases.')}</p>
+                    <p>{aiGuardActive ? t('AI guard is active. It checks room text before sending and blocks risky phrases.') : t('AI guard is off for this room. Turn it on in room settings to block risky room text.')}</p>
                     <div className="guard-summary">
-                      <span>{room?.ai_security_enabled ? t('Active') : t('Off')}</span>
+                      <span>{aiGuardActive ? t('Active') : t('Off')}</span>
                       <strong>{guardFindings.length}</strong>
                       <small>{t(guardFindings.length === 1 ? 'flagged message' : 'flagged messages')}</small>
+                    </div>
+                    <div className="guard-function-grid" aria-label={t('AI guard function')}>
+                      <span>
+                        <strong>{t('Checks text')}</strong>
+                        <small>{t('Scans room chat before send')}</small>
+                      </span>
+                      <span>
+                        <strong>{t('Blocks risky phrases')}</strong>
+                        <small>{t('Stops unsafe messages from posting')}</small>
+                      </span>
                     </div>
                     {guardFindings.length ? (
                       <div className="guard-findings">
@@ -4358,7 +4368,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <span className="control-glyph guard"></span>
               </button>
               <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Room operations')} title={t('Room operations')}>
-                <span className="control-glyph guard"></span>
+                <span className="control-glyph ops"></span>
               </button>
             </div>
 

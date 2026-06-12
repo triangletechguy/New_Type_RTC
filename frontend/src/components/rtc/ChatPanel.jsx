@@ -3,6 +3,7 @@ import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { analyzeRoomTextForGuard, isAiGuardEnabled } from '../../utils/aiGuard'
 import { translateApp } from '../rooms/roomsStaticData'
 
 const maxAudioBytes = 5 * 1024 * 1024
@@ -324,6 +325,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     && !recording
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
+  const aiGuardActive = isAiGuardEnabled(room)
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${t(typingNames.length > 1 ? 'are typing...' : 'is typing...')}`
     : realtimeConnected ? t('No one is typing') : t('Typing status starts after RTC connects')
@@ -613,6 +615,17 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     cancelAudioDraft()
   }
 
+  function guardBlocksRoomText(value, { focusComposer = false } = {}) {
+    if (!aiGuardActive || !value) return false
+
+    const analysis = analyzeRoomTextForGuard(value)
+    if (!analysis) return false
+
+    setStatus(t('AI guard blocked this room message. Remove "{term}" or rephrase it.', { term: analysis.matchedKeyword }))
+    if (focusComposer) refocusComposerRef.current = true
+    return true
+  }
+
   async function sendMessage(event) {
     event.preventDefault()
     const value = text.trim()
@@ -622,6 +635,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       setSending(true)
       setStatus('')
       const messageType = audioDraft ? 'voice' : photoDraft ? 'image' : 'text'
+      if (messageType === 'text' && guardBlocksRoomText(value, { focusComposer: true })) return
+
       const data = await apiRequest(`/rooms/${roomId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
@@ -727,6 +742,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       cancelEdit()
       return
     }
+
+    if (guardBlocksRoomText(value)) return
 
     const previousMessage = message
     setSavingEditId(String(message.id))
