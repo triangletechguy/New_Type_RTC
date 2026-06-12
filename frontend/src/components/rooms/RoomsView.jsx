@@ -436,7 +436,7 @@ function SvgIcon({ id, className = '' }) {
   )
 }
 
-function BuzzLogo() {
+function BuzzLogo({ t = (key) => key }) {
   return (
     <div className="buzzcast-logo">
       <div className="buzzcast-logo-mark image-mark">
@@ -444,7 +444,7 @@ function BuzzLogo() {
       </div>
       <div>
         <strong>TalkEachOther</strong>
-        <span>Video and music rooms</span>
+        <span>{t('Video and music rooms')}</span>
       </div>
     </div>
   )
@@ -3268,9 +3268,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     <div className={`buzzcast-shell section-${activeSection}`}>
       <AppIconSprite />
       <header className="buzzcast-topbar">
-        <BuzzLogo />
+        <BuzzLogo t={t} />
         <div className="buzzcast-search-wrap">
-          <label className="sr-only" htmlFor="buzzcast-search">Search</label>
+          <label className="sr-only" htmlFor="buzzcast-search">{t('Search')}</label>
           <input
             id="buzzcast-search"
             value={search}
@@ -3278,9 +3278,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             onKeyDown={handleSearchKeyDown}
             onFocus={() => setShowSearchPanel(true)}
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
-            placeholder="Search"
+            placeholder={t('Search')}
           />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label="Search rooms">
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label={t('Search rooms')}>
             <span className="buzzcast-search-icon" aria-hidden="true"></span>
           </button>
           {showSearchPanel ? (
@@ -3298,21 +3298,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 </button>
               ))}
               {!loadingRooms && roomSearchResults.length === 0 ? (
-                <em>{search.trim() ? 'Try another room name, host, or room type.' : 'Type a room name, host, or category.'}</em>
+                <em>{search.trim() ? t('Try another room name, host, or room type.') : t('Type a room name, host, or category.')}</em>
               ) : null}
             </div>
           ) : null}
         </div>
         <div className="buzzcast-actions">
           {showAdminDashboard ? (
-            <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
+            <IconButton label={t('Admin dashboard')} onClick={() => onView?.('admin')}>
               <SvgIcon id="icon-adminDashboardIcon" />
             </IconButton>
           ) : null}
-          <IconButton label="Rankings" onClick={openRankings}>
+          <IconButton label={t('Rankings')} onClick={openRankings}>
             <SvgIcon id="icon-rankingIcon" />
           </IconButton>
-          <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
+          <IconButton label={showMessages ? t('Close messages') : t('Messages')} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
             <SvgIcon id="icon-messageTopbarIcon" />
           </IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
