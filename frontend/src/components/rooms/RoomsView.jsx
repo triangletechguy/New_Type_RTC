@@ -999,6 +999,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openProfileSection() {
     if (!requireAuth('Log in or sign up to open your profile.', 'login')) return
     setShowDownloadQr(false)
+    setShowMessages(false)
     pushSectionHistory('me')
     setActiveSection('me')
     scrollMobileShellToTop()
@@ -1007,6 +1008,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openSettingsSection(nextSettings = activeSettings) {
     if (!requireAuth('Log in to manage your account settings.', 'login')) return
     setShowDownloadQr(false)
+    setShowMessages(false)
     pushSectionHistory('settings')
     setActiveSettings(nextSettings)
     setActiveSection('settings')
@@ -3428,7 +3430,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       </main>
 
       {showMessages ? (
-        <section className="buzzcast-messages-drawer">
+        <section className={activeThreadData ? 'buzzcast-messages-drawer has-active-thread' : 'buzzcast-messages-drawer no-active-thread'}>
           <aside>
             <input
               value={messageSearch}
