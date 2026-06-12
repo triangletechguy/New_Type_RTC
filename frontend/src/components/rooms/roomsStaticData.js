@@ -3983,6 +3983,7 @@ function translateDynamicStaticValue(language, value) {
   for (const item of dynamicStaticTranslationPatterns) {
     const match = text.match(item.pattern)
     if (!match) continue
+    if (text === item.key) continue
     return translateApp(language, item.key, item.replacements(match, language))
   }
 
