@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { avatarForUser, roomAssets } from '../../assets/rtc/catalog'
+import { translateApp } from '../rooms/roomsStaticData'
 
 function visualIndexFromLabel(label) {
   return String(label || 'User')
@@ -43,11 +44,13 @@ export function VideoTile({
   onFollowAction,
   onExpand,
   expandLabel = 'Open screen share full screen',
+  language = 'English',
 }) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false)
   const [streamVersion, setStreamVersion] = useState(0)
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
   const hasLiveVideo = hasLiveMediaTrack(stream, 'video')
   const hasAudio = hasMediaTrack(stream, 'audio')
   const isScreenSharing = badge === 'screen'
@@ -59,18 +62,19 @@ export function VideoTile({
     ? hasLiveVideo ? 'on' : videoConnecting ? 'pending' : 'off'
     : 'off'
   const videoStateLabel = isScreenSharing
-    ? hasLiveVideo ? 'Screen' : videoConnecting ? 'Screen connecting' : 'No screen'
+    ? hasLiveVideo ? t('Screen') : videoConnecting ? t('Screen connecting') : t('No screen')
     : cameraExpected
-      ? hasLiveVideo ? 'Cam on' : videoConnecting ? 'Cam connecting' : 'No video'
-      : 'Cam off'
+      ? hasLiveVideo ? t('Cam on') : videoConnecting ? t('Cam connecting') : t('No video')
+      : t('Cam off')
   const canExpand = typeof onExpand === 'function'
   const canUseFollowAction = Boolean(userId && typeof onFollowAction === 'function')
-  const followLabel = {
+  const followLabelKey = {
     following: 'Message',
     requested: 'Requested',
     incoming: 'Respond',
     loading: '...',
   }[followStatus] || 'Follow'
+  const followLabel = t(followLabelKey)
   const followDisabled = followStatus === 'requested' || followStatus === 'loading'
   const visualIndex = visualIndexFromLabel(label)
   const avatar = avatarForUser({ id: userId, name: label, gender, avatar_url: avatarUrl }, userId || visualIndex)
@@ -213,7 +217,7 @@ export function VideoTile({
       tabIndex={canExpand ? 0 : undefined}
       aria-label={canExpand ? expandLabel : undefined}
     >
-      {badge && <div className="video-badge">{badge}</div>}
+      {badge && <div className="video-badge">{t(badge)}</div>}
       {canExpand ? <span className="screen-expand-icon" aria-hidden="true"></span> : null}
       {canUseFollowAction ? (
         <button
@@ -221,8 +225,8 @@ export function VideoTile({
           className={`video-follow-button ${followStatus || 'none'}`}
           onClick={handleFollowClick}
           disabled={followDisabled}
-          aria-label={`${followLabel} ${label}`}
-          title={`${followLabel} ${label}`}
+          aria-label={t('{action} {name}', { action: followLabel, name: label })}
+          title={t('{action} {name}', { action: followLabel, name: label })}
         >
           {followLabel}
         </button>
@@ -235,7 +239,7 @@ export function VideoTile({
           event.stopPropagation()
           playRemoteAudio()
         }}>
-          Play audio
+          {t('Play audio')}
         </button>
       ) : null}
       {showVideo ? (
@@ -248,7 +252,7 @@ export function VideoTile({
               <div className="avatar-ring"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
               {showMediaState && (
                 <div className="media-state-strip">
-                  <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
+                  <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? t('Mic on') : t('Muted')}</span>
                   <span className={`state-pill ${videoStateClass}`}><span></span>{videoStateLabel}</span>
                 </div>
               )}
@@ -262,7 +266,7 @@ export function VideoTile({
             <div className="avatar-ring idle"><div className="avatar-core"><img src={avatar} alt="" /></div></div>
             {showMediaState && (
               <div className="media-state-strip">
-                <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? 'Mic on' : 'Muted'}</span>
+                <span className={micOn ? 'state-pill on' : 'state-pill off'}><span></span>{micOn ? t('Mic on') : t('Muted')}</span>
                 <span className={`state-pill ${videoStateClass}`}><span></span>{videoStateLabel}</span>
               </div>
             )}

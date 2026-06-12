@@ -532,14 +532,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         : ['restarting', 'verifying'].includes(watchdogState.status)
           ? 'reconnecting'
           : rawPeerState
-      const peerStateLabel = watchdogState.status === 'failed' ? 'No video received' : peerState
+      const peerStateLabel = watchdogState.status === 'failed' ? t('No video received') : t(peerState)
+      const peerName = mediaState.userName || t('Remote {id}', { id: socketId.slice(0, 6) })
 
       return {
         socketId,
         stream: remoteStreams[socketId],
         mediaState,
         peerState,
-        label: `${mediaState.userName || `Remote ${socketId.slice(0, 6)}`} - ${peerStateLabel}`,
+        label: t('{name} - {state}', { name: peerName, state: peerStateLabel }),
         badge: mediaState.screenShared ? 'screen' : '',
       }
     })
@@ -4132,6 +4133,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     cameraOn={cameraOn}
                     rtcMode={rtcMode}
                     showMediaState
+                    language={language}
                   />
                   {remoteTiles.map(({ socketId, stream, mediaState, peerState, label, badge }) => {
                     const canExpandScreenShare = Boolean(stream && mediaState?.screenShared)
@@ -4161,6 +4163,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                         onFollowAction={peer.id ? () => handlePeerFollowAction(peer) : undefined}
                         onExpand={canExpandScreenShare ? () => setExpandedScreenShareId(socketId) : undefined}
                         expandLabel={t('Open {name} screen share full screen', { name: screenShareOwner })}
+                        language={language}
                       />
                     )
                   })}
@@ -4636,6 +4639,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               micOn={expandedScreenShareTile.mediaState.micOn !== false}
               cameraOn
               rtcMode="video"
+              language={language}
             />
           </section>
         </div>
