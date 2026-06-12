@@ -5297,3 +5297,85 @@
     color: #344054 !important;
   }
 }
+
+/* Room preview summary should match the compact in-room header card. */
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary {
+  top: 32px !important;
+  left: 50% !important;
+  width: min(360px, calc(100% - 40px)) !important;
+  min-height: 136px !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: 72px auto minmax(0, 1fr) !important;
+  justify-items: center !important;
+  align-content: start !important;
+  gap: 2px !important;
+  padding: 12px 14px 14px !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important;
+  border-radius: 8px !important;
+  background: rgba(8, 2, 32, .92) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .24) !important;
+  transform: translateX(-50%) !important;
+}
+
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary .buzzcast-preview-room-initial {
+  width: 70px !important;
+  height: 70px !important;
+  min-width: 70px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 2px solid rgba(236, 240, 255, .92) !important;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 28% 20%, rgba(255, 255, 255, .38), transparent 27%),
+    linear-gradient(145deg, #5e6472 0%, #242a36 78%) !important;
+  color: #fff !important;
+  box-shadow:
+    0 0 0 4px rgba(143, 151, 170, .44),
+    inset 0 -8px 16px rgba(0, 0, 0, .2),
+    0 10px 22px rgba(0, 0, 0, .34) !important;
+}
+
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary .buzzcast-preview-room-initial b {
+  display: block !important;
+  color: #fff !important;
+  font-size: 34px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .34) !important;
+}
+
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary strong {
+  grid-column: 1 !important;
+  width: 100% !important;
+  margin-top: 2px !important;
+  overflow: hidden !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  font-weight: 1000 !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary > span:not(.buzzcast-room-summary-avatar) {
+  position: absolute !important;
+  left: 14px !important;
+  bottom: 12px !important;
+  width: auto !important;
+  max-width: calc(100% - 28px) !important;
+  justify-self: start !important;
+  overflow: hidden !important;
+  color: rgba(255, 255, 255, .9) !important;
+  font-size: 13px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary small {
+  display: none !important;
+}
