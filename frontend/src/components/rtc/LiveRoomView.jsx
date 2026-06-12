@@ -4004,7 +4004,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             )}
 
             {activeToolPanel ? (
-              <div className="live-tool-panel buzzcast-floating-tool">
+              <div className={activeToolPanel === 'manage' ? 'live-tool-panel buzzcast-floating-tool room-ops-tool' : 'live-tool-panel buzzcast-floating-tool'}>
                 <header>
                   <strong>{activeToolTitle}</strong>
                   <button type="button" onClick={() => setActiveToolPanel(null)} aria-label={t('Close tool panel')}>x</button>

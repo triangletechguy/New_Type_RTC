@@ -887,6 +887,10 @@
   min-width: 0;
 }
 
+.company-detail-summary {
+  padding: 12px;
+}
+
 .company-directory-header {
   align-items: flex-end;
 }
@@ -976,12 +980,12 @@
 
 .company-detail-hero {
   justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .company-detail-title {
-  gap: 12px;
+  gap: 9px;
 }
 
 .company-logo-mark {
@@ -999,16 +1003,16 @@
 }
 
 .company-logo-mark.large {
-  width: 54px;
-  height: 54px;
-  font-size: 16px;
+  width: 42px;
+  height: 42px;
+  font-size: 14px;
 }
 
 .company-directory-main > span:not(.company-logo-mark),
 .company-detail-title > div {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .company-directory-main strong,
@@ -1078,7 +1082,9 @@
 }
 
 .company-detail-title h2 {
-  margin: 2px 0 0;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.1;
 }
 
 .company-detail-title p {
@@ -1087,11 +1093,78 @@
 
 .company-detail-strip {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .company-action-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.company-metrics-grid.compact {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.company-metrics-grid.compact .metric-card {
+  min-height: 96px;
+  gap: 6px;
+  padding: 12px;
+}
+
+.company-metrics-grid.compact .metric-topline {
+  gap: 8px;
+}
+
+.company-metrics-grid.compact .metric-topline small {
+  padding: 4px 8px;
+  font-size: 10.5px;
+}
+
+.company-metrics-grid.compact .metric strong {
+  font-size: 26px;
+}
+
+.company-metrics-grid.compact .metric-card p {
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.company-detail-summary .company-detail-strip span {
+  min-height: 40px;
+  gap: 1px;
+  padding: 7px 9px;
+}
+
+.company-detail-summary .company-detail-strip b {
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.company-detail-summary .rtc-action-card {
+  min-height: 86px;
+  gap: 4px;
+  padding: 11px 12px;
+}
+
+.company-detail-summary .rtc-action-card span {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.company-detail-summary .rtc-action-card strong {
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.company-detail-summary .rtc-action-card small {
+  line-height: 1.25;
+}
+
+.company-detail-summary .rtc-action-card b {
+  font-size: 11px;
 }
 
 .company-users-table {

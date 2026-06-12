@@ -845,6 +845,10 @@
     #111827;
 }
 
+.live-tool-panel.room-ops-tool {
+  width: min(500px, calc(100% - 36px));
+}
+
 .live-tool-panel header {
   min-height: 40px;
   display: flex;
@@ -892,24 +896,26 @@
 
 .room-ops-panel {
   max-height: min(66vh, 460px);
+  gap: 12px;
+  padding: 12px;
   overflow: hidden auto;
   scrollbar-gutter: stable;
 }
 
 .room-ops-panel .guard-summary {
-  min-height: 52px;
-  gap: 8px;
-  padding: 8px;
+  min-height: 62px;
+  gap: 10px;
+  padding: 10px 12px;
 }
 
 .room-ops-panel .guard-summary span {
-  padding: 4px 8px;
-  font-size: 10.5px;
+  padding: 5px 10px;
+  font-size: 11px;
   font-weight: 900;
 }
 
 .room-ops-panel .guard-summary strong {
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -974,24 +980,26 @@
 }
 
 .room-role-form {
-  grid-template-columns: minmax(0, 1.35fr) minmax(92px, .75fr) auto auto;
+  grid-template-columns: minmax(158px, 1.45fr) minmax(122px, .85fr) minmax(84px, auto) minmax(94px, auto);
   align-items: center;
-  gap: 7px;
+  gap: 10px;
 }
 
 .room-role-form select {
   min-width: 0;
-  min-height: 34px;
-  padding: 6px 28px 6px 9px;
+  min-height: 38px;
+  padding: 8px 30px 8px 11px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .room-role-form button {
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 38px;
+  min-width: 84px;
+  padding: 8px 12px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -1014,6 +1022,20 @@
 
 .room-role-feedback.error {
   color: #fecaca;
+}
+
+@media (max-width: 560px) {
+  .live-tool-panel.room-ops-tool {
+    width: auto;
+  }
+
+  .room-role-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .room-role-user-select {
+    grid-column: 1 / -1;
+  }
 }
 
 .camera-filter-panel p {

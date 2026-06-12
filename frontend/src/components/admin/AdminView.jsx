@@ -753,7 +753,6 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
   const apiBase = clientApiBaseUrl()
   const publicApiBase = apiBase.endsWith('/client') ? apiBase.slice(0, -7) : apiBase
   const apiKey = credentials?.api_key || 'CLIENT_API_KEY'
-  const appKey = credentials?.app_key || app?.app_key || 'CLIENT_APP_KEY'
   const apiKeyLabel = credentials?.api_key ? 'Full key available from the new credentials above.' : 'Use the full API key saved when this app was generated.'
   const verifyCurl = `curl ${apiBase}/me \\
   -H "Authorization: Bearer ${apiKey}"`
@@ -819,18 +818,39 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
     "external_user_id": "user_42",
     "room_id": 123
   }'`
-  const webSample = `const rtc = new TalkEachOtherRTC({
-  appKey: '${appKey}',
-  apiBaseUrl: '${publicApiBase}',
-  signalingUrl: window.location.origin,
-})
+  const webSample = `import { io } from 'socket.io-client'
 
-await rtc.authenticate(rtcTokenFromYourBackend)
-await rtc.joinRoom(123, {
-  mode: 'video',
+const apiBaseUrl = '${publicApiBase}'
+const signalingUrl = new URL(apiBaseUrl, window.location.origin).origin
+
+// This endpoint lives in your app backend and keeps CLIENT_API_KEY private.
+const tokenResponse = await fetch('/my-app/rtc-token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomId: 123,
+    externalUserId: 'user_42',
+    mode: 'video',
+  }),
+})
+const tokenData = await tokenResponse.json()
+if (!tokenResponse.ok) throw new Error(tokenData.message || 'RTC token failed')
+
+const rtcConfig = await fetch(apiBaseUrl + '/rtc/config').then((response) => response.json())
+const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+const socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
+
+socket.emit('join-room', {
+  roomId: tokenData.room.signaling_room,
+  databaseRoomId: tokenData.room.id,
+  userId: tokenData.user.user_id,
+  userName: tokenData.user.name,
+  rtcMode: tokenData.room.rtc_profile.media_type,
   micEnabled: true,
   cameraEnabled: true,
-})`
+})
+
+console.log('create RTCPeerConnection with', rtcConfig.iceServers, localStream)`
 
   return (
     <section className="enterprise-panel client-api-docs-panel glass-card">
@@ -876,7 +896,7 @@ await rtc.joinRoom(123, {
         <div><b>2</b><strong>Sync invited user</strong><span>Map the client app user into this company's user ledger.</span></div>
         <div><b>3</b><strong>Create RTC resource</strong><span>Create or reuse an app-side room resource for token scope.</span></div>
         <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
-        <div><b>5</b><strong>Join RTC</strong><span>Use the room token in the web/mobile SDK.</span></div>
+        <div><b>5</b><strong>Join RTC</strong><span>Use the room token with Socket.IO signaling and native WebRTC.</span></div>
       </div>
 
       <div className="api-snippet-grid">
@@ -888,7 +908,7 @@ await rtc.joinRoom(123, {
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and adds the user's billable minutes to the company package." code={endSessionCurl} />
         <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Closes room availability for the client API; in-app owner delete removes the room record." code={closeRoomCurl} />
-        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="The browser uses your backend token response, not the API key." code={webSample} />
+        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="Install `socket.io-client`; the browser uses your backend token response, not the API key." code={webSample} />
       </div>
 
       <div className="api-contract-grid">

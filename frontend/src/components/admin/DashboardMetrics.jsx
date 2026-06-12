@@ -200,9 +200,10 @@ function buildMetrics(dashboard, usageStatusLabel) {
 
 export function DashboardMetrics({ dashboard, usageStatusLabel }) {
   const metrics = buildMetrics(dashboard, usageStatusLabel)
+  const compactCompanyMetrics = Boolean(dashboard?.company_scope)
 
   return (
-    <section className="metrics-grid">
+    <section className={compactCompanyMetrics ? 'metrics-grid company-metrics-grid compact' : 'metrics-grid'}>
       {metrics.map((metric) => (
         <div className={`metric metric-card glass-card ${metric.tone || 'neutral'}`} key={metric.label}>
           <div className="metric-topline">

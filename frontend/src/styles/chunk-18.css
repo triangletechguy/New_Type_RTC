@@ -3310,11 +3310,11 @@
 
 /* Feedback and Help reorganization. */
 .buzzcast-help-shell {
-  width: min(1120px, calc(100% - 32px));
-  max-width: 1120px;
+  width: min(1080px, calc(100% - 36px));
+  max-width: 1080px;
   display: grid;
-  gap: 14px;
-  margin: 18px auto 0;
+  gap: 12px;
+  margin: 14px auto 0;
 }
 
 .buzzcast-help-hero {
@@ -3322,14 +3322,16 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px;
   align-items: center;
-  padding: 22px;
+  min-height: 132px;
+  padding: 18px 22px;
   border: 1px solid rgba(15, 23, 42, .08);
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(80, 196, 166, .16), rgba(255, 217, 90, .16)),
+    radial-gradient(circle at 0 0, rgba(80, 196, 166, .2), transparent 34%),
+    linear-gradient(135deg, #f8fffb, #fffdf2),
     #fff;
   color: #111827;
-  box-shadow: 0 14px 34px rgba(15, 23, 42, .08);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .07);
 }
 
 .buzzcast-help-eyebrow,
@@ -3354,12 +3356,12 @@
 }
 
 .buzzcast-help-hero h1 {
-  font-size: 28px;
+  font-size: 26px;
 }
 
 .buzzcast-help-hero p {
   max-width: 620px;
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   color: #475467;
   font-size: 14px;
   line-height: 1.45;
@@ -3373,13 +3375,14 @@
 
 .buzzcast-help-actions {
   grid-template-columns: repeat(2, minmax(120px, 1fr));
+  align-items: center;
 }
 
 .buzzcast-help-actions button,
 .buzzcast-help-tabs button,
 .buzzcast-help-section-head button,
 .buzzcast-help-answer footer button {
-  min-height: 42px;
+  min-height: 40px;
   border: 1px solid rgba(15, 23, 42, .1);
   border-radius: 8px;
   background: #fff;
@@ -3413,25 +3416,46 @@
 
 .buzzcast-help-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .buzzcast-help-tabs button {
   display: grid;
   justify-items: start;
-  padding: 10px 14px;
+  align-content: center;
+  min-height: 64px;
+  padding: 11px 14px;
   text-align: left;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
 }
 
 .buzzcast-help-tabs button.active {
   border-color: rgba(24, 131, 110, .34);
   background: #e8f7f2;
   color: #0f766e;
+  box-shadow: inset 0 2px 0 rgba(24, 131, 110, .38), 0 8px 20px rgba(15, 23, 42, .05);
+}
+
+.buzzcast-help-tabs button:hover:not(:disabled),
+.buzzcast-help-tabs button:focus-visible {
+  border-color: rgba(24, 131, 110, .3);
+  background: #f1fbf7;
+  color: #0f766e;
+  box-shadow: inset 0 0 0 1px rgba(24, 131, 110, .12), 0 8px 20px rgba(15, 23, 42, .05);
+  filter: none;
+}
+
+.buzzcast-help-tabs button:hover:not(:disabled) small,
+.buzzcast-help-tabs button:focus-visible small {
+  color: #147a66;
 }
 
 .buzzcast-help-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .buzzcast-help-menu,
@@ -3445,17 +3469,17 @@
 .buzzcast-help-menu {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 5px;
   padding: 8px;
 }
 
 .buzzcast-help-menu button {
   width: 100%;
-  min-height: 44px;
+  min-height: 38px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -3472,9 +3496,25 @@
   color: #0f766e;
 }
 
+.buzzcast-help-menu button:hover:not(:disabled),
+.buzzcast-help-menu button:focus-visible {
+  background: #f1fbf7;
+  color: #0f766e;
+  box-shadow: inset 0 0 0 1px rgba(24, 131, 110, .12);
+  filter: none;
+}
+
+.buzzcast-help-menu button.active:hover:not(:disabled),
+.buzzcast-help-menu button.soft:hover:not(:disabled),
+.buzzcast-help-menu button.active:focus-visible,
+.buzzcast-help-menu button.soft:focus-visible {
+  background: #dff5ed;
+  color: #0b6b5f;
+}
+
 .buzzcast-help-content {
-  min-height: 420px;
-  padding: 18px;
+  min-height: 300px;
+  padding: 18px 20px;
   color: #111827;
 }
 
@@ -3496,6 +3536,7 @@
 .buzzcast-help-answer {
   display: grid;
   gap: 12px;
+  max-width: 720px;
 }
 
 .buzzcast-help-answer p,
@@ -3517,6 +3558,30 @@
 
 .buzzcast-help-answer footer button {
   padding: 0 14px;
+}
+
+.buzzcast-help-actions button:hover:not(:disabled),
+.buzzcast-help-actions button:focus-visible,
+.buzzcast-help-answer footer button:hover:not(:disabled),
+.buzzcast-help-answer footer button:focus-visible {
+  border-color: rgba(24, 131, 110, .3);
+  background: #f1fbf7;
+  color: #0f766e;
+  filter: none;
+}
+
+.buzzcast-help-actions button.primary:hover:not(:disabled),
+.buzzcast-help-actions button.primary:focus-visible,
+.buzzcast-help-section-head button:hover:not(:disabled),
+.buzzcast-help-section-head button:focus-visible,
+.buzzcast-help-answer footer button.primary:hover:not(:disabled),
+.buzzcast-help-answer footer button.primary:focus-visible,
+.buzzcast-feedback-empty button:hover:not(:disabled),
+.buzzcast-feedback-empty button:focus-visible {
+  border-color: #126f5d;
+  background: #126f5d;
+  color: #fff;
+  filter: none;
 }
 
 .buzzcast-faq-list,
@@ -3547,6 +3612,13 @@
   color: #111827;
   text-align: left;
   font-weight: 900;
+}
+
+.buzzcast-faq-item button:hover:not(:disabled),
+.buzzcast-faq-item button:focus-visible {
+  background: rgba(24, 131, 110, .08);
+  color: #0f172a;
+  filter: none;
 }
 
 .buzzcast-faq-item.open {
@@ -3788,6 +3860,36 @@
     flex: 0 0 auto !important;
     font-size: 12px !important;
     white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button:hover:not(:disabled),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button:focus-visible {
+    background: #eefaf6 !important;
+    color: #0f766e !important;
+    box-shadow: inset 0 0 0 1px rgba(24, 131, 110, .16) !important;
+    filter: none !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button.active:hover:not(:disabled),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-menu button.active:focus-visible {
+    background: linear-gradient(180deg, #37a986 0%, #126f5d 100%) !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button:hover:not(:disabled),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button:focus-visible,
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-tabs button:hover:not(:disabled),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-tabs button:focus-visible {
+    border-color: rgba(24, 131, 110, .28) !important;
+    background: #eefaf6 !important;
+    color: #0f766e !important;
+    filter: none !important;
+  }
+
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button.primary:hover:not(:disabled),
+  .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-actions button.primary:focus-visible {
+    background: #126f5d !important;
+    color: #fff !important;
   }
 
   .buzzcast-shell.section-help:not(.buzzcast-live-shell) .buzzcast-help-content {
