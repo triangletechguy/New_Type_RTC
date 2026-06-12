@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForIndex, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -543,7 +543,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }, [expandedScreenShareId, remoteTiles])
   const remotePeerCount = Math.max(signalingPeerCount, remoteTiles.length)
   const roomVisualIndex = Number(room?.id || roomId || 0)
-  const roomAvatar = avatarForIndex(roomVisualIndex)
   const roomCover = coverForRoomType(room?.room_type, room?.privacy_type, roomVisualIndex)
 
   function isLiveTrack(track) {
@@ -3852,6 +3851,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     screen: t('Screen share'),
   }[activeToolPanel] || t('Room tools')
   const visibleTileCount = (localStream || remoteTiles.length ? 1 : 0) + remoteTiles.length
+  const hasVisibleStageTiles = visibleTileCount > 0
   const stageTileHeight = stageTileHeightForFrame(stageFrameSize, visibleTileCount)
   const stageFrameStyle = stageFrameSize ? {
     '--live-stage-width': `${stageFrameSize.width}px`,
@@ -3859,7 +3859,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     '--live-stage-tile-min-height': `${stageTileHeight}px`,
     '--live-stage-feature-min-height': `${(stageTileHeight * 2) + STAGE_RESIZE_GAP_PX}px`,
   } : undefined
-  const stageStreamsClassName = `buzzcast-live-stage-streams layout-grid ${stageTileCountClass(visibleTileCount)}${stageFrameSize ? ' is-resized' : ''}`
+  const stageStreamsClassName = `buzzcast-live-stage-streams layout-grid ${stageTileCountClass(visibleTileCount)}${stageFrameSize ? ' is-resized' : ''}${hasVisibleStageTiles ? '' : ' is-empty'}`
+  const roomSummaryClassName = hasVisibleStageTiles ? 'buzzcast-room-summary' : 'buzzcast-room-summary is-stage-empty'
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -3913,7 +3914,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
-            <div className="buzzcast-room-summary" aria-label={t('Room summary')}>
+            <div className={roomSummaryClassName} aria-label={t('Room summary')}>
               <span className="buzzcast-room-summary-avatar image-avatar">
                 <img src={roomOwnerAvatar} alt="" loading="lazy" />
               </span>
@@ -3922,7 +3923,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             </div>
 
             <div ref={stageStreamsRef} className={stageStreamsClassName} style={stageFrameStyle} data-tile-count={visibleTileCount}>
-              {localStream || remoteTiles.length ? (
+              {hasVisibleStageTiles ? (
                 <>
                   <VideoTile
                     stream={localStream}
@@ -3993,13 +3994,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     onDoubleClick={() => setStageFrameSize(null)}
                   ></button>
                 </>
-              ) : (
-                <div className="buzzcast-waiting-card">
-                  <img src={roomAvatar} alt="" />
-                  <strong>{roomTitle}</strong>
-                  <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
-                </div>
-              )}
+              ) : null}
             </div>
 
             {showPasswordRecovery && (

@@ -5462,3 +5462,66 @@
     white-space: nowrap !important;
   }
 }
+
+.buzzcast-live-shell .buzzcast-live-stage-streams.is-empty {
+  display: none !important;
+}
+
+.buzzcast-live-shell .buzzcast-room-summary.is-stage-empty {
+  top: 50% !important;
+  left: 50% !important;
+  width: min(360px, calc(100% - 40px)) !important;
+  min-height: 136px !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: 72px auto minmax(0, 1fr) !important;
+  justify-items: center !important;
+  align-content: start !important;
+  gap: 2px !important;
+  padding: 12px 14px 14px !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important;
+  border-radius: 8px !important;
+  background: rgba(8, 2, 32, .92) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .24) !important;
+  transform: translate(-50%, -50%) !important;
+  backdrop-filter: none !important;
+}
+
+.buzzcast-live-shell .buzzcast-room-summary.is-stage-empty .buzzcast-room-summary-avatar {
+  width: 70px !important;
+  height: 70px !important;
+  min-width: 70px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 2px solid rgba(236, 240, 255, .92) !important;
+  border-radius: 50% !important;
+  box-shadow:
+    0 0 0 4px rgba(143, 151, 170, .44),
+    inset 0 -8px 16px rgba(0, 0, 0, .2),
+    0 10px 22px rgba(0, 0, 0, .34) !important;
+}
+
+.buzzcast-live-shell .buzzcast-room-summary.is-stage-empty strong {
+  grid-column: 1 !important;
+  width: 100% !important;
+  margin-top: 2px !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  font-weight: 1000 !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+}
+
+.buzzcast-live-shell .buzzcast-room-summary.is-stage-empty > span:not(.buzzcast-room-summary-avatar) {
+  position: absolute !important;
+  left: 14px !important;
+  bottom: 12px !important;
+  width: auto !important;
+  max-width: calc(100% - 28px) !important;
+  justify-self: start !important;
+  color: rgba(255, 255, 255, .9) !important;
+  font-size: 13px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+}
