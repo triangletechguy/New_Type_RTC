@@ -2736,6 +2736,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
     const isVideoRoom = roomAllowsCamera(card.room?.room_type || card.roomType)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
+    const summaryRoomId = card.room?.id || card.id
     const roomIdLabel = card.room?.id || 50741761
     const memberCount = Math.max(1, Math.min(999, Math.round(Number(card.viewers || 0) / 18)))
     const mobileComments = liveChatMessages
@@ -2793,18 +2794,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" onClick={() => setShowMobileRoomTools(true)}>Tools</button>
           </div>
 
-          <section className="buzzcast-mobile-stage-card" aria-label="Live room stage">
-            <span className="buzzcast-mobile-stage-avatar image-avatar">
-              <img src={roomAvatar} alt="" loading="lazy" />
+          <section className="buzzcast-mobile-stage-card buzzcast-mobile-preview-summary" aria-label="Room summary">
+            <span className="buzzcast-mobile-stage-avatar buzzcast-mobile-preview-initial" aria-hidden="true">
+              <b>T</b>
             </span>
             <div>
-              <small>{roomMeta.label} · {compactNumber(card.viewers || 0)} watching</small>
               <strong>{card.title}</strong>
-              <em>{card.host} · Live topic</em>
+              <span className="buzzcast-mobile-stage-room-id">Room ID: {summaryRoomId}</span>
             </div>
-            <button type="button" onClick={() => handleMobileJoinCard(card)}>
-              Join
-            </button>
           </section>
 
           <div className="buzzcast-mobile-seat-grid">
@@ -3105,7 +3102,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <b>T</b>
                 </span>
                 <strong title={card.title}>{card.title}</strong>
-                <span>Room ID: {card.room?.id || card.id}</span>
+                <span>Room ID: {summaryRoomId}</span>
                 <small>{compactNumber(card.viewers || 0)} user{Number(card.viewers || 0) === 1 ? '' : 's'}</small>
               </div>
             </>
