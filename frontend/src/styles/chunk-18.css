@@ -5525,3 +5525,572 @@
   line-height: 1 !important;
   text-align: left !important;
 }
+
+/* Final mobile settings cleanup. Keep this last so older mobile shells cannot leak through. */
+@media (max-width: 860px) {
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) {
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    background: #eef1f5 !important;
+    color: #101828 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-topbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail {
+    position: fixed !important;
+    z-index: 160 !important;
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: calc(66px + var(--mobile-safe-bottom, env(safe-area-inset-bottom))) !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    align-items: end !important;
+    gap: 0 !important;
+    padding: 5px 8px calc(6px + var(--mobile-safe-bottom, env(safe-area-inset-bottom))) !important;
+    border: 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, .24) !important;
+    background: linear-gradient(180deg, #4bb995 0%, #16816c 100%) !important;
+    box-shadow: 0 -14px 26px rgba(15, 23, 42, .16) !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-spacer,
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-app-download {
+    display: none !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-profile {
+    display: grid !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail button {
+    min-width: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 54px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 29px 16px !important;
+    justify-items: center !important;
+    align-content: center !important;
+    gap: 2px !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, .93) !important;
+    font-size: 11px !important;
+    text-shadow: 0 1px 1px rgba(0, 65, 52, .22) !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail button.active {
+    color: #ffe073 !important;
+    background: rgba(255, 255, 255, .12) !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail button::after {
+    content: attr(data-mobile-label) !important;
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    color: currentColor !important;
+    font-size: 10px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail b {
+    display: none !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-rail-home {
+    order: 1 !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-rail-message-tab {
+    order: 2 !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-rail-moments {
+    order: 3 !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-rail-install {
+    order: 4 !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-rail-profile {
+    order: 5 !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-icon.rail-symbol-icon {
+    width: 28px !important;
+    height: 28px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: currentColor !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-icon.rail-symbol-icon::before,
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-icon.rail-symbol-icon::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .buzzcast-shell:is(.section-live, .section-help, .section-settings, .section-me):not(.buzzcast-live-shell) .buzzcast-left-rail .buzzcast-rail-icon.rail-symbol-icon .buzzcast-svg-icon {
+    width: 25px !important;
+    height: 25px !important;
+    display: block !important;
+    color: currentColor !important;
+    fill: currentColor !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-main {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100svh !important;
+    padding: 0 0 calc(78px + var(--mobile-safe-bottom, env(safe-area-inset-bottom))) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    background: #eef1f5 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-content: start !important;
+    gap: 10px !important;
+    margin: 0 !important;
+    padding: calc(12px + var(--mobile-safe-top, env(safe-area-inset-top))) 12px 16px !important;
+    overflow: visible !important;
+    background: #eef1f5 !important;
+    color: #101828 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav {
+    width: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 6px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .08) !important;
+    scrollbar-width: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button {
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 40px !important;
+    flex: 0 0 auto !important;
+    display: inline-grid !important;
+    grid-template-columns: 18px auto !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+    padding: 0 12px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: #f3f5f8 !important;
+    color: #475467 !important;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav button.active {
+    background: linear-gradient(180deg, #4aba94 0%, #18836e 100%) !important;
+    color: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav i {
+    width: 18px !important;
+    height: 18px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 1px solid currentColor !important;
+    border-radius: 50% !important;
+    color: currentColor !important;
+    font-size: 9px !important;
+    font-style: normal !important;
+    line-height: 1 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav b {
+    display: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-nav span {
+    min-width: 0 !important;
+    overflow: visible !important;
+    color: inherit !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-content {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    display: grid !important;
+    align-content: start !important;
+    overflow: visible !important;
+    padding: 16px !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    color: #101828 !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading {
+    min-height: 0 !important;
+    display: grid !important;
+    gap: 5px !important;
+    margin: 0 0 10px !important;
+    padding: 0 0 12px !important;
+    border-bottom: 1px solid rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading h2 {
+    margin: 0 !important;
+    color: #101828 !important;
+    font-size: 19px !important;
+    font-weight: 1000 !important;
+    line-height: 1.15 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-heading p {
+    max-width: none !important;
+    margin: 0 !important;
+    color: #667085 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+    text-align: left !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-panel {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid rgba(15, 23, 42, .08) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list {
+    width: 100% !important;
+    display: grid !important;
+    gap: 0 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-radio-row,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-switch-row {
+    width: 100% !important;
+    min-height: 72px !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin: 0 !important;
+    padding: 12px 12px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #101828 !important;
+    text-align: left !important;
+    box-shadow: inset 0 -1px rgba(15, 23, 42, .08) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > :last-child {
+    box-shadow: none !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button:active,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label:active {
+    background: #f8fafc !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list > button span,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list label span {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: 4px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    overflow-wrap: normal !important;
+    text-overflow: ellipsis !important;
+    line-height: 1.25 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list strong {
+    color: #101828 !important;
+    font-size: 15px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list small {
+    display: -webkit-box !important;
+    margin: 0 !important;
+    color: #475467 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list em,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list b {
+    min-width: 74px !important;
+    max-width: 112px !important;
+    min-height: 30px !important;
+    display: inline-grid !important;
+    place-items: center !important;
+    justify-self: end !important;
+    margin: 0 !important;
+    padding: 0 10px !important;
+    border-radius: 999px !important;
+    background: #ecfdf3 !important;
+    color: #047857 !important;
+    font-size: 12px !important;
+    font-style: normal !important;
+    font-weight: 1000 !important;
+    line-height: 1 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    overflow-wrap: normal !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-select-row select,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-settings-list select,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-select {
+    width: min(44vw, 164px) !important;
+    min-height: 38px !important;
+    margin: 0 !important;
+    border: 1px solid rgba(15, 23, 42, .12) !important;
+    border-radius: 10px !important;
+    background: #f8fafc !important;
+    color: #101828 !important;
+    font-size: 13px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-panel,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail {
+    width: 100% !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #101828 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-region-current,
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-policy-detail p {
+    color: #667085 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-modal-backdrop.dark {
+    align-items: end !important;
+    place-items: end center !important;
+    padding: 14px 12px calc(82px + var(--mobile-safe-bottom, env(safe-area-inset-bottom))) !important;
+    background: rgba(15, 23, 42, .38) !important;
+    backdrop-filter: blur(8px) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal {
+    width: min(100%, 420px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: min(520px, calc(100svh - 110px - var(--mobile-safe-bottom, env(safe-area-inset-bottom)))) !important;
+    display: grid !important;
+    gap: 14px !important;
+    overflow-y: auto !important;
+    padding: 18px !important;
+    border: 0 !important;
+    border-radius: 18px !important;
+    background: #fff !important;
+    color: #101828 !important;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, .28) !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 38px !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal h2 {
+    margin: 0 !important;
+    overflow: hidden !important;
+    color: #101828 !important;
+    font-size: 18px !important;
+    font-weight: 1000 !important;
+    line-height: 1.2 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal header button {
+    width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: #f2f4f7 !important;
+    color: #344054 !important;
+    font-size: 18px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal label {
+    display: grid !important;
+    gap: 7px !important;
+    margin: 0 !important;
+    color: #344054 !important;
+    font-size: 13px !important;
+    font-weight: 900 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-modal input {
+    width: 100% !important;
+    min-height: 46px !important;
+    padding: 0 12px !important;
+    border: 1px solid rgba(15, 23, 42, .12) !important;
+    border-radius: 12px !important;
+    background: #f8fafc !important;
+    color: #101828 !important;
+    font-size: 16px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-error {
+    margin: 0 !important;
+    padding: 9px 10px !important;
+    border-radius: 12px !important;
+    background: #fff1f3 !important;
+    color: #b42318 !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-actions button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: #eef2f6 !important;
+    color: #344054 !important;
+    font-size: 14px !important;
+    font-weight: 1000 !important;
+  }
+
+  .buzzcast-shell.section-settings:not(.buzzcast-live-shell) .buzzcast-security-actions .buzzcast-submit {
+    background: linear-gradient(180deg, #4aba94 0%, #18836e 100%) !important;
+    color: #fff !important;
+  }
+}
+
+/* Keep the profile avatar anchored to the topbar's right edge on narrow screens. */
+@media (max-width: 1180px) {
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto !important;
+    justify-items: stretch !important;
+    gap: 10px !important;
+    overflow: hidden !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-logo {
+    grid-column: 1 !important;
+    justify-self: start !important;
+    width: auto !important;
+    max-width: min(210px, calc(100vw - 92px)) !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-search-wrap {
+    grid-column: 2 !important;
+    justify-self: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-actions {
+    grid-column: 3 !important;
+    justify-self: end !important;
+    width: auto !important;
+    min-width: max-content !important;
+    display: flex !important;
+    grid-template-columns: none !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    margin-left: auto !important;
+    overflow: visible !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-actions > .buzzcast-avatar-button {
+    display: grid !important;
+    flex: 0 0 auto !important;
+    margin-left: 0 !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-search-wrap {
+    display: none !important;
+  }
+
+  .buzzcast-shell:not(.buzzcast-live-shell) .buzzcast-topbar > .buzzcast-actions {
+    grid-column: 2 !important;
+  }
+}

@@ -62,6 +62,15 @@ function normalizeResidence(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120)
 }
 
+function normalizePhone(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 50)
+}
+
+function validatePhone(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits.length >= 7 && digits.length <= 20
+}
+
 function normalizeAvatarUrl(value) {
   if (value === undefined) return { hasValue: false, value: null }
 
@@ -318,12 +327,11 @@ async function migrateLegacySuperadminEmail() {
       UPDATE users
       SET name = 'TalkEachOther Super Admin',
           gender = 'male',
-          password_hash = :passwordHash,
           status = 'active',
           updated_at = NOW()
       WHERE id = :currentId
       `,
-      { passwordHash: superadminPasswordHash, currentId: currentUser.id }
+      { currentId: currentUser.id }
     )
   }
 
@@ -332,7 +340,6 @@ async function migrateLegacySuperadminEmail() {
     UPDATE users
     SET name = 'TalkEachOther Super Admin',
         gender = 'male',
-        password_hash = :passwordHash,
         status = 'active',
         updated_at = NOW()
     WHERE tenant_id = :tenantId
@@ -341,7 +348,6 @@ async function migrateLegacySuperadminEmail() {
     {
       tenantId: SUPERADMIN_TENANT_ID,
       currentEmail: SUPERADMIN_EMAIL,
-      passwordHash: superadminPasswordHash,
     }
   )
 }
@@ -670,6 +676,112 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       user: formatUser(users[0] || req.user, roles),
     })
   } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/me/security', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureAuthSchema()
+
+    const body = req.body || {}
+    const hasEmail = Object.prototype.hasOwnProperty.call(body, 'email')
+    const hasPhone = Object.prototype.hasOwnProperty.call(body, 'phone')
+    const hasPassword = Object.prototype.hasOwnProperty.call(body, 'password')
+
+    if (!hasEmail && !hasPhone && !hasPassword) {
+      return res.status(422).json({ message: 'Choose an account security field to update.' })
+    }
+
+    const updates = []
+    const values = {
+      id: req.user.id,
+      tenantId: req.user.tenant_id,
+    }
+
+    if (hasEmail) {
+      const email = normalizeEmail(body.email)
+
+      if (!validateEmail(email)) {
+        return res.status(422).json({ message: 'Enter a valid email address.' })
+      }
+
+      const existing = await query(
+        `
+        SELECT id
+        FROM users
+        WHERE email = :email
+        AND id <> :id
+        LIMIT 1
+        `,
+        { email, id: req.user.id }
+      )
+
+      if (existing.length) {
+        return res.status(409).json({ message: 'Email already exists.' })
+      }
+
+      updates.push('email = :email')
+      values.email = email
+    }
+
+    if (hasPhone) {
+      const phone = normalizePhone(body.phone)
+
+      if (!validatePhone(phone)) {
+        return res.status(422).json({ message: 'Enter a valid phone number.' })
+      }
+
+      updates.push('phone = :phone')
+      values.phone = phone
+    }
+
+    if (hasPassword) {
+      const password = String(body.password || '')
+
+      if (!validateStrongPassword(password)) {
+        return res.status(422).json({
+          message: 'Password must be at least 10 characters and include uppercase, lowercase, number, and symbol.',
+        })
+      }
+
+      updates.push('password_hash = :passwordHash')
+      values.passwordHash = await bcrypt.hash(password, 10)
+    }
+
+    await query(
+      `
+      UPDATE users
+      SET ${updates.join(', ')},
+          updated_at = NOW()
+      WHERE id = :id
+      AND tenant_id <=> :tenantId
+      `,
+      values
+    )
+
+    const users = await query(
+      `
+      SELECT *
+      FROM users
+      WHERE id = :id
+      LIMIT 1
+      `,
+      { id: req.user.id }
+    )
+    const currentUser = users[0] || req.user
+    const roles = await getUserRoles(req.user.id)
+
+    return res.json({
+      message: 'Account security updated successfully.',
+      token_type: 'Bearer',
+      access_token: signAccessToken(currentUser),
+      user: formatUser(currentUser, roles),
+    })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Email already exists.' })
+    }
     next(error)
   }
 })

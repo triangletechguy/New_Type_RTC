@@ -5,7 +5,17 @@ class RtcMediaService {
   Future<void> requestPermissions({required bool video}) async {
     final permissions = <Permission>[Permission.microphone];
     if (video) permissions.add(Permission.camera);
-    await permissions.request();
+    final statuses = await permissions.request();
+    final micStatus = statuses[Permission.microphone];
+    if (micStatus == null || !micStatus.isGranted) {
+      throw StateError('Microphone permission is required to join a room.');
+    }
+    if (video) {
+      final cameraStatus = statuses[Permission.camera];
+      if (cameraStatus == null || !cameraStatus.isGranted) {
+        throw StateError('Camera permission is required to join with video.');
+      }
+    }
   }
 
   Future<MediaStream> openLocalMedia({required bool video}) {
@@ -19,5 +29,13 @@ class RtcMediaService {
             }
           : false,
     });
+  }
+
+  Future<void> stopMediaStream(MediaStream? stream) async {
+    if (stream == null) return;
+    for (final track in stream.getTracks()) {
+      await track.stop();
+    }
+    await stream.dispose();
   }
 }

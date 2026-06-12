@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../models/app_user.dart';
 import '../models/room.dart';
 import '../services/api_client.dart';
+import '../services/rtc_connection_service.dart';
 import '../services/rtc_media_service.dart';
 import '../services/signaling_service.dart';
 import '../theme/buzzcast_theme.dart';
@@ -28,13 +30,26 @@ class LiveRoomScreen extends StatefulWidget {
 class _LiveRoomScreenState extends State<LiveRoomScreen> {
   final _media = RtcMediaService();
   final _signaling = SignalingService();
+  final _rtc = RtcConnectionService();
   final _message = TextEditingController();
   final _events = <String>[];
+  final _chatLines = <String>[];
+  final _seenChatMessageIds = <int>{};
   List<Map<String, dynamic>> _peers = const [];
+  Map<String, MediaStream> _remoteStreams = const {};
+  Map<String, String> _peerStates = const {};
+  MediaStream? _localStream;
   StreamSubscription<String>? _eventSub;
+  StreamSubscription<String>? _rtcEventSub;
   StreamSubscription<List<Map<String, dynamic>>>? _peerSub;
+  StreamSubscription<Map<String, MediaStream>>? _remoteStreamSub;
+  StreamSubscription<Map<String, String>>? _peerStateSub;
+  StreamSubscription<Map<String, dynamic>>? _chatSub;
   bool _joining = false;
   bool _joined = false;
+  bool _micOn = true;
+  bool _cameraOn = false;
+  bool _videoMode = false;
   String _status = 'Ready to connect';
 
   @override
@@ -50,13 +65,47 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _peerSub = _signaling.peers.listen((peers) {
       if (mounted) setState(() => _peers = peers);
     });
+    _chatSub = _signaling.chatMessages.listen((payload) {
+      final eventName = payload['event']?.toString() ?? '';
+      if (eventName == 'deleted' || eventName == 'unsent') {
+        _addSystemLine('A chat message was removed.');
+        return;
+      }
+      final message = payload['message'];
+      if (message is Map) {
+        _addChatMessage(Map<String, dynamic>.from(message));
+      }
+    });
+    _rtcEventSub = _rtc.events.listen((event) {
+      if (!mounted) return;
+      setState(() {
+        _events.insert(0, event);
+        if (_events.length > 8) _events.removeLast();
+        _status = event;
+      });
+    });
+    _remoteStreamSub = _rtc.remoteStreams.listen((streams) {
+      if (mounted) setState(() => _remoteStreams = streams);
+    });
+    _peerStateSub = _rtc.peerStates.listen((states) {
+      if (mounted) setState(() => _peerStates = states);
+    });
   }
 
   @override
   void dispose() {
     _message.dispose();
     _eventSub?.cancel();
+    _rtcEventSub?.cancel();
     _peerSub?.cancel();
+    _remoteStreamSub?.cancel();
+    _peerStateSub?.cancel();
+    _chatSub?.cancel();
+    if (_joined) {
+      unawaited(widget.api.leaveRoom(widget.room.id).catchError((_) {}));
+    }
+    unawaited(_media.stopMediaStream(_localStream).catchError((_) {}));
+    unawaited(_rtc.dispose().catchError((_) {}));
     _signaling.dispose();
     super.dispose();
   }
@@ -64,43 +113,194 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   Future<void> _join({bool? videoOverride}) async {
     if (_joining || _joined) return;
     final video = videoOverride ?? widget.room.supportsVideo;
+    var backendJoined = false;
+    MediaStream? openedStream;
 
     setState(() {
       _joining = true;
-      _status = 'Preparing media permissions...';
+      _status = 'Joining backend room...';
     });
 
     try {
-      await _media.requestPermissions(video: video);
-
-      setState(() => _status = 'Joining backend room...');
       final joinData = await widget.api.joinRoom(widget.room.id, video: video);
-      final rtc = Map<String, dynamic>.from(joinData['rtc'] as Map);
+      backendJoined = true;
+      final rtc = joinData['rtc'] is Map
+          ? Map<String, dynamic>.from(joinData['rtc'] as Map)
+          : <String, dynamic>{};
       final signalingRoom = rtc['signaling_room']?.toString() ?? '';
       if (signalingRoom.isEmpty) {
         throw StateError('Backend did not return rtc.signaling_room.');
       }
+      final joinedRtcMode = rtc['rtc_mode']?.toString() == 'audio'
+          ? 'audio'
+          : 'video';
+      final useVideo = joinedRtcMode == 'video';
+
+      setState(() {
+        _status = useVideo
+            ? 'Preparing camera and microphone...'
+            : 'Preparing microphone...';
+        _videoMode = useVideo;
+      });
+
+      await _media.requestPermissions(video: useVideo);
+      openedStream = await _media.openLocalMedia(video: useVideo);
+
+      if (!useVideo) {
+        for (final track in openedStream.getVideoTracks()) {
+          await track.stop();
+          await openedStream.removeTrack(track);
+        }
+      }
+
+      final micEnabled =
+          rtc['mic_enabled'] != false &&
+          openedStream.getAudioTracks().isNotEmpty;
+      final cameraEnabled =
+          useVideo &&
+          rtc['camera_enabled'] == true &&
+          openedStream.getVideoTracks().isNotEmpty;
+
+      for (final track in openedStream.getAudioTracks()) {
+        track.enabled = micEnabled;
+      }
+      for (final track in openedStream.getVideoTracks()) {
+        track.enabled = cameraEnabled;
+      }
+
+      if (micEnabled != (rtc['mic_enabled'] != false) ||
+          cameraEnabled != (useVideo && rtc['camera_enabled'] == true)) {
+        await widget.api.updateRoomMediaState(
+          widget.room.id,
+          micEnabled: micEnabled,
+          cameraEnabled: cameraEnabled,
+        );
+      }
+
+      setState(() {
+        _localStream = openedStream;
+        _micOn = micEnabled;
+        _cameraOn = cameraEnabled;
+        _status = 'Loading RTC network config...';
+      });
+
+      final rtcConfig = await widget.api.rtcConfig();
 
       setState(() => _status = 'Connecting signaling...');
       await _signaling.connect();
-      await _signaling.joinRoom(
+      await _rtc.start(
+        signaling: _signaling,
+        localStream: openedStream,
+        rtcMode: joinedRtcMode,
+        iceServers: _iceServersFromConfig(rtcConfig),
+        iceTransportPolicy:
+            rtcConfig['iceTransportPolicy']?.toString() ?? 'all',
+        localSocketId: _signaling.socketId,
+      );
+
+      final signalingJoin = await _signaling.joinRoom(
         signalingRoom: signalingRoom,
         databaseRoomId: widget.room.id,
         user: widget.user,
-        video: video,
-        micEnabled: rtc['mic_enabled'] != false,
-        cameraEnabled: video && rtc['camera_enabled'] == true,
+        video: useVideo,
+        micEnabled: micEnabled,
+        cameraEnabled: cameraEnabled,
       );
+      _rtc.setLocalSocketId(
+        signalingJoin['socketId']?.toString() ?? _signaling.socketId,
+      );
+
+      final existingUsers = signalingJoin['users'] is List
+          ? (signalingJoin['users'] as List)
+                .whereType<Map>()
+                .map((peer) => Map<String, dynamic>.from(peer))
+                .toList()
+          : <Map<String, dynamic>>[];
+      await _rtc.negotiateExistingPeers(existingUsers);
+      unawaited(_loadRecentMessages());
 
       setState(() {
         _joined = true;
-        _status = 'Connected to $signalingRoom';
+        _status = existingUsers.isEmpty
+            ? 'Connected to $signalingRoom'
+            : 'Connected to ${existingUsers.length} peer${existingUsers.length == 1 ? '' : 's'}';
       });
     } catch (error) {
-      setState(() => _status = apiErrorMessage(error));
+      if (backendJoined) {
+        unawaited(widget.api.leaveRoom(widget.room.id).catchError((_) {}));
+      }
+      _signaling.leaveRoom();
+      unawaited(_rtc.closeAll().catchError((_) {}));
+      if (openedStream != null) {
+        unawaited(_media.stopMediaStream(openedStream).catchError((_) {}));
+      }
+      setState(() {
+        _localStream = null;
+        _remoteStreams = const {};
+        _peerStates = const {};
+        _status = apiErrorMessage(error);
+      });
     } finally {
       if (mounted) setState(() => _joining = false);
     }
+  }
+
+  List<Map<String, dynamic>> _iceServersFromConfig(
+    Map<String, dynamic> config,
+  ) {
+    final iceServers = config['iceServers'];
+    if (iceServers is! List) return const [];
+    return iceServers
+        .whereType<Map>()
+        .map((server) => Map<String, dynamic>.from(server))
+        .toList();
+  }
+
+  Future<void> _loadRecentMessages() async {
+    try {
+      final messages = await widget.api.roomMessages(widget.room.id, limit: 30);
+      if (!mounted) return;
+      setState(() {
+        _chatLines.clear();
+        _seenChatMessageIds.clear();
+        for (final message in messages) {
+          _rememberChatMessage(message);
+        }
+      });
+    } catch (error) {
+      _addSystemLine('Chat history unavailable: ${apiErrorMessage(error)}');
+    }
+  }
+
+  void _addChatMessage(Map<String, dynamic> message) {
+    if (!mounted) return;
+    setState(() => _rememberChatMessage(message));
+  }
+
+  void _rememberChatMessage(Map<String, dynamic> message) {
+    final messageId = _asInt(message['id']);
+    if (messageId > 0 && !_seenChatMessageIds.add(messageId)) return;
+    _chatLines.insert(0, _formatChatMessage(message));
+    if (_chatLines.length > 20) _chatLines.removeLast();
+  }
+
+  void _addSystemLine(String message) {
+    if (!mounted) return;
+    setState(() {
+      _events.insert(0, 'System: $message');
+      if (_events.length > 8) _events.removeLast();
+    });
+  }
+
+  String _formatChatMessage(Map<String, dynamic> message) {
+    final sender =
+        (message['sender_name'] ??
+                message['user_name'] ??
+                message['name'] ??
+                'Guest')
+            .toString();
+    final body = (message['message_body'] ?? message['body'] ?? '').toString();
+    return '$sender: $body';
   }
 
   void _showToast(String message) {
@@ -114,13 +314,110 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   }
 
   void _sendLocalMessage() {
+    unawaited(_sendLocalMessageAsync());
+  }
+
+  Future<void> _sendLocalMessageAsync() async {
     final message = _message.text.trim();
     if (message.isEmpty) return;
-    setState(() {
-      _events.insert(0, 'You: $message');
-      if (_events.length > 8) _events.removeLast();
-      _message.clear();
-    });
+
+    if (!_joined) {
+      _showToast('Join the room before sending chat.');
+      return;
+    }
+
+    _message.clear();
+    setState(() => _status = 'Sending message...');
+
+    try {
+      final chatMessage = await widget.api.sendRoomMessage(
+        widget.room.id,
+        message,
+      );
+      _addChatMessage(chatMessage);
+      if (mounted) setState(() => _status = 'Message sent');
+    } catch (error) {
+      if (!mounted) return;
+      _message.text = message;
+      setState(() => _status = apiErrorMessage(error));
+    }
+  }
+
+  Future<void> _toggleMic() async {
+    if (!_joined) {
+      _showToast('Join the room first.');
+      return;
+    }
+
+    final nextMicOn = !_micOn;
+    setState(() => _micOn = nextMicOn);
+    await _rtc.setAudioEnabled(nextMicOn);
+    await _syncMediaState();
+  }
+
+  Future<void> _toggleCamera() async {
+    if (!_joined || !_videoMode) {
+      _showToast(_videoMode ? 'Join the room first.' : 'Video is off here.');
+      return;
+    }
+
+    var nextCameraOn = !_cameraOn;
+    final stream = _localStream;
+    if (nextCameraOn && (stream == null || stream.getVideoTracks().isEmpty)) {
+      MediaStream? cameraStream;
+      try {
+        setState(() => _status = 'Starting camera...');
+        await _media.requestPermissions(video: true);
+        cameraStream = await _media.openLocalMedia(video: true);
+        for (final audioTrack in cameraStream.getAudioTracks()) {
+          await audioTrack.stop();
+          await cameraStream.removeTrack(audioTrack);
+        }
+        final videoTracks = cameraStream.getVideoTracks();
+        if (videoTracks.isEmpty) {
+          throw StateError('Camera did not return a video track.');
+        }
+        final videoTrack = videoTracks.first;
+        videoTrack.enabled = true;
+        if (_localStream != null) {
+          await _rtc.addLocalTrack(videoTrack);
+        }
+        setState(() => _localStream = _localStream ?? cameraStream);
+      } catch (error) {
+        if (cameraStream != null) {
+          unawaited(_media.stopMediaStream(cameraStream).catchError((_) {}));
+        }
+        nextCameraOn = false;
+        if (mounted) setState(() => _status = apiErrorMessage(error));
+      }
+    }
+
+    setState(() => _cameraOn = nextCameraOn);
+    await _rtc.setVideoEnabled(nextCameraOn);
+    await _syncMediaState();
+  }
+
+  Future<void> _syncMediaState() async {
+    try {
+      await widget.api.updateRoomMediaState(
+        widget.room.id,
+        micEnabled: _micOn,
+        cameraEnabled: _videoMode && _cameraOn,
+      );
+      await _signaling.emitMediaState(
+        micEnabled: _micOn,
+        cameraEnabled: _videoMode && _cameraOn,
+        rtcMode: _videoMode ? 'video' : 'audio',
+      );
+      if (mounted) setState(() => _status = 'Media state updated');
+    } catch (error) {
+      if (mounted) setState(() => _status = apiErrorMessage(error));
+    }
+  }
+
+  int _asInt(Object? value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   @override
@@ -190,6 +487,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                 const SizedBox(height: 10),
                 _StageSummary(room: room),
                 const SizedBox(height: 12),
+                if (_joined || _joining || _localStream != null) ...[
+                  _LiveMediaStrip(
+                    localStream: _localStream,
+                    remoteStreams: _remoteStreams,
+                    peerStates: _peerStates,
+                    joined: _joined,
+                    videoMode: _videoMode,
+                    micOn: _micOn,
+                    cameraOn: _cameraOn,
+                    onToggleMic: () => unawaited(_toggleMic()),
+                    onToggleCamera: () => unawaited(_toggleCamera()),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _SeatGrid(
                   count: seatCount,
                   joined: _joined,
@@ -203,6 +514,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                 _MicLine(
                   joining: _joining,
                   joined: _joined,
+                  micOn: _micOn,
                   onTap: () => _join(videoOverride: false),
                 ),
                 const SizedBox(height: 12),
@@ -210,10 +522,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                   status: _status,
                   joined: _joined,
                   joining: _joining,
-                  peerCount: _peers.length,
+                  peerCount: _remoteStreams.length > _peers.length
+                      ? _remoteStreams.length
+                      : _peers.length,
                 ),
                 const SizedBox(height: 12),
-                _LiveComments(room: room, user: widget.user, events: _events),
+                _LiveComments(
+                  room: room,
+                  user: widget.user,
+                  events: [..._chatLines, ..._events],
+                ),
                 const SizedBox(height: 12),
                 _Composer(
                   controller: _message,
@@ -503,6 +821,305 @@ class _StageSummary extends StatelessWidget {
   }
 }
 
+class _LiveMediaStrip extends StatelessWidget {
+  const _LiveMediaStrip({
+    required this.localStream,
+    required this.remoteStreams,
+    required this.peerStates,
+    required this.joined,
+    required this.videoMode,
+    required this.micOn,
+    required this.cameraOn,
+    required this.onToggleMic,
+    required this.onToggleCamera,
+  });
+
+  final MediaStream? localStream;
+  final Map<String, MediaStream> remoteStreams;
+  final Map<String, String> peerStates;
+  final bool joined;
+  final bool videoMode;
+  final bool micOn;
+  final bool cameraOn;
+  final VoidCallback onToggleMic;
+  final VoidCallback onToggleCamera;
+
+  @override
+  Widget build(BuildContext context) {
+    final remoteEntries = remoteStreams.entries.toList();
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .22),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: .10)),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 150,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: 1 + (remoteEntries.isEmpty ? 1 : remoteEntries.length),
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return _RtcVideoTile(
+                    stream: localStream,
+                    label: 'You',
+                    state: joined ? (micOn ? 'live' : 'muted') : 'joining',
+                    mirror: true,
+                    showVideo: videoMode && cameraOn,
+                    fallbackIcon: micOn
+                        ? Icons.person_rounded
+                        : Icons.mic_off_rounded,
+                  );
+                }
+
+                if (remoteEntries.isEmpty) {
+                  return const _RtcVideoTile(
+                    stream: null,
+                    label: 'Peer',
+                    state: 'waiting',
+                    mirror: false,
+                    showVideo: false,
+                    fallbackIcon: Icons.person_search_rounded,
+                  );
+                }
+
+                final entry = remoteEntries[index - 1];
+                final socketId = entry.key;
+                return _RtcVideoTile(
+                  stream: entry.value,
+                  label: 'Peer ${_shortSocket(socketId)}',
+                  state: peerStates[socketId] ?? 'connected',
+                  mirror: false,
+                  showVideo: true,
+                  fallbackIcon: Icons.person_rounded,
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _MediaControlButton(
+                  icon: micOn ? Icons.mic_rounded : Icons.mic_off_rounded,
+                  label: micOn ? 'Mic on' : 'Muted',
+                  active: micOn,
+                  onTap: onToggleMic,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MediaControlButton(
+                  icon: cameraOn
+                      ? Icons.videocam_rounded
+                      : Icons.videocam_off_rounded,
+                  label: videoMode
+                      ? cameraOn
+                            ? 'Camera on'
+                            : 'Camera off'
+                      : 'Audio room',
+                  active: videoMode && cameraOn,
+                  onTap: onToggleCamera,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaControlButton extends StatelessWidget {
+  const _MediaControlButton({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active
+              ? BuzzColors.green.withValues(alpha: .88)
+              : Colors.white.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: .10)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 19),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RtcVideoTile extends StatefulWidget {
+  const _RtcVideoTile({
+    required this.stream,
+    required this.label,
+    required this.state,
+    required this.mirror,
+    required this.showVideo,
+    required this.fallbackIcon,
+  });
+
+  final MediaStream? stream;
+  final String label;
+  final String state;
+  final bool mirror;
+  final bool showVideo;
+  final IconData fallbackIcon;
+
+  @override
+  State<_RtcVideoTile> createState() => _RtcVideoTileState();
+}
+
+class _RtcVideoTileState extends State<_RtcVideoTile> {
+  final _renderer = RTCVideoRenderer();
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_initialize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RtcVideoTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stream != widget.stream && _ready) {
+      _renderer.srcObject = widget.stream;
+    }
+  }
+
+  @override
+  void dispose() {
+    _renderer.srcObject = null;
+    unawaited(_renderer.dispose());
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await _renderer.initialize();
+    if (!mounted) return;
+    _renderer.srcObject = widget.stream;
+    setState(() => _ready = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasVideo =
+        widget.showVideo &&
+        _ready &&
+        (widget.stream?.getVideoTracks().isNotEmpty ?? false);
+
+    return SizedBox(
+      width: 132,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .08),
+                border: Border.all(color: Colors.white.withValues(alpha: .08)),
+              ),
+              child: hasVideo
+                  ? RTCVideoView(
+                      _renderer,
+                      mirror: widget.mirror,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    )
+                  : Center(
+                      child: Icon(
+                        widget.fallbackIcon,
+                        color: const Color(0xFFDDE6F8),
+                        size: 38,
+                      ),
+                    ),
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: .48),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.state,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFA8B3C7),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SeatGrid extends StatelessWidget {
   const _SeatGrid({
     required this.count,
@@ -584,11 +1201,13 @@ class _MicLine extends StatelessWidget {
   const _MicLine({
     required this.joining,
     required this.joined,
+    required this.micOn,
     required this.onTap,
   });
 
   final bool joining;
   final bool joined;
+  final bool micOn;
   final VoidCallback onTap;
 
   @override
@@ -606,12 +1225,17 @@ class _MicLine extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.mic_rounded, color: BuzzColors.yellow),
+            Icon(
+              micOn ? Icons.mic_rounded : Icons.mic_off_rounded,
+              color: BuzzColors.yellow,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 joined
-                    ? 'You are on mic. Chat together~'
+                    ? micOn
+                          ? 'You are on mic. Chat together~'
+                          : 'Your mic is muted.'
                     : 'Come on mic and chat together~',
                 style: const TextStyle(
                   color: Colors.white,
@@ -819,6 +1443,10 @@ class _RoomAvatar extends StatelessWidget {
     }
     return _FallbackRoomAvatar(room: room, size: size);
   }
+}
+
+String _shortSocket(String socketId) {
+  return socketId.length <= 6 ? socketId : socketId.substring(0, 6);
 }
 
 class _FallbackRoomAvatar extends StatelessWidget {

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
-import { apiRequest } from '../../services/api'
+import { apiRequest, updateAccountSecurity } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { getPasswordError, normalizeEmail } from '../../utils/authValidation'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
   buildRoomsPath,
@@ -565,12 +566,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   })
   const [securityAction, setSecurityAction] = useState(null)
   const [securityForm, setSecurityForm] = useState({
-    phone: '',
+    phone: user?.phone || '',
     email: user?.email || '',
     password: '',
     passwordConfirm: '',
   })
   const [securityError, setSecurityError] = useState('')
+  const [securitySaving, setSecuritySaving] = useState(false)
   const [helpMode, setHelpMode] = useState('popular')
   const [activeHelp, setActiveHelp] = useState(popularHelp[0]?.id || '')
   const [activeFaq, setActiveFaq] = useState(faqTopics[0])
@@ -1417,7 +1419,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSecurityError('')
     setSecurityForm((previous) => ({
       ...previous,
-      email: previous.email || user?.email || '',
+      phone: user?.phone || previous.phone || '',
+      email: user?.email || previous.email || '',
       password: '',
       passwordConfirm: '',
     }))
@@ -1428,44 +1431,70 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSecurityError('')
   }
 
-  function submitSecurityAction(event) {
+  async function submitSecurityAction(event) {
     event.preventDefault()
+    if (securitySaving) return
 
     if (securityAction === 'phoneBound') {
-      const digits = securityForm.phone.replace(/\D/g, '')
+      const phone = securityForm.phone.trim()
+      const digits = phone.replace(/\D/g, '')
       if (digits.length < 7) {
         setSecurityError(t('Enter a valid phone number.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('phoneBound', true, t('Cell phone bound.'))
+      await saveSecurityChange({ phone }, 'phoneBound', t('Cell phone bound.'))
       return
     }
 
     if (securityAction === 'emailBound') {
-      if (!validEmail(securityForm.email)) {
+      const email = normalizeEmail(securityForm.email)
+      if (!validEmail(email)) {
         setSecurityError(t('Enter a valid email address.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('emailBound', true, t('Email bound.'))
+      await saveSecurityChange({ email }, 'emailBound', t('Email bound.'))
       return
     }
 
     if (securityAction === 'loginPasswordSet') {
-      if (securityForm.password.length < 10) {
-        setSecurityError(t('Use at least 10 characters for the password.'))
+      const passwordError = getPasswordError(securityForm.password, { strong: true })
+      if (passwordError) {
+        setSecurityError(t(passwordError))
         return
       }
       if (securityForm.password !== securityForm.passwordConfirm) {
         setSecurityError(t('Passwords do not match.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('loginPasswordSet', true, t('Login password set.'))
+      await saveSecurityChange({ password: securityForm.password }, 'loginPasswordSet', t('Login password set.'))
       return
     }
 
+  }
+
+  async function saveSecurityChange(payload, field, message) {
+    setSecuritySaving(true)
+    setSecurityError('')
+
+    try {
+      const data = await updateAccountSecurity(payload)
+      if (data.user) {
+        onUserUpdated?.(data.user)
+      }
+      setSecurityAction(null)
+      setSecurityForm((previous) => ({
+        ...previous,
+        phone: data.user?.phone || previous.phone || '',
+        email: data.user?.email || previous.email || '',
+        password: '',
+        passwordConfirm: '',
+      }))
+      updateSettings(field, true, message)
+    } catch (error) {
+      setSecurityError(t(error.message || 'Account security update failed.'))
+    } finally {
+      setSecuritySaving(false)
+    }
   }
 
   function updateFeedback(field, value) {
@@ -2534,11 +2563,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     return (
-      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setSecurityAction(null)}>
+      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => {
+        if (!securitySaving) setSecurityAction(null)
+      }}>
         <form className="buzzcast-security-modal" onSubmit={submitSecurityAction} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <h2>{t(titleByAction[securityAction])}</h2>
-            <button type="button" onClick={() => setSecurityAction(null)}>x</button>
+            <button type="button" onClick={() => setSecurityAction(null)} disabled={securitySaving}>x</button>
           </header>
 
           {securityAction === 'phoneBound' ? (
@@ -2549,6 +2580,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 onChange={(event) => updateSecurityForm('phone', event.target.value)}
                 inputMode="tel"
                 placeholder="+1 555 010 2020"
+                disabled={securitySaving}
               />
             </label>
           ) : null}
@@ -2561,6 +2593,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 value={securityForm.email}
                 onChange={(event) => updateSecurityForm('email', event.target.value)}
                 placeholder="name@example.com"
+                disabled={securitySaving}
               />
             </label>
           ) : null}
@@ -2574,6 +2607,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   value={securityForm.password}
                   onChange={(event) => updateSecurityForm('password', event.target.value)}
                   placeholder="10+ characters"
+                  disabled={securitySaving}
                 />
               </label>
               <label>
@@ -2582,6 +2616,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   type="password"
                   value={securityForm.passwordConfirm}
                   onChange={(event) => updateSecurityForm('passwordConfirm', event.target.value)}
+                  disabled={securitySaving}
                 />
               </label>
             </>
@@ -2589,8 +2624,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
           {securityError ? <p className="buzzcast-security-error">{securityError}</p> : null}
           <div className="buzzcast-security-actions">
-            <button type="button" onClick={() => setSecurityAction(null)}>{t('Cancel')}</button>
-            <button type="submit" className="buzzcast-submit">{t('Save')}</button>
+            <button type="button" onClick={() => setSecurityAction(null)} disabled={securitySaving}>{t('Cancel')}</button>
+            <button type="submit" className="buzzcast-submit" disabled={securitySaving}>
+              {securitySaving ? <LoadingMovie label={t('Saving')} inline /> : t('Save')}
+            </button>
           </div>
         </form>
       </div>
@@ -3125,6 +3162,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   useEffect(() => {
     setSettingsDraft((previous) => ({
       ...previous,
+      phoneBound: previous.phoneBound || Boolean(user?.phone),
       emailBound: previous.emailBound || Boolean(user?.email),
       region: user?.current_residence || previous.region || 'United States',
     }))
@@ -3134,9 +3172,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }))
     setSecurityForm((previous) => ({
       ...previous,
-      email: previous.email || user?.email || '',
+      phone: user?.phone || previous.phone || '',
+      email: user?.email || previous.email || '',
     }))
-  }, [user?.email, user?.current_residence])
+  }, [user?.email, user?.phone, user?.current_residence])
 
   useEffect(() => {
     const normalizedLanguage = normalizeSettingsLanguage(language)

@@ -158,6 +158,22 @@ export async function updateProfile(profile) {
   return data
 }
 
+export async function updateAccountSecurity(payload) {
+  const data = await apiRequest('/auth/me/security', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  if (data.access_token && data.user) {
+    saveSession(data.access_token, data.user)
+  } else if (data.user) {
+    saveUser(data.user)
+  }
+
+  data.user = normalizeUserForClient(data.user)
+  return data
+}
+
 export async function getRtcConfig() {
   return apiRequest('/rtc/config')
 }

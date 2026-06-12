@@ -1,17 +1,21 @@
 # rtc_enterprise_mobile
 
-A new Flutter project.
+Flutter mobile client for the RTC Enterprise backend.
 
-## Getting Started
+## Local backend URLs
 
-This project is a starting point for a Flutter application.
+The Android emulator cannot reach your computer's backend through `127.0.0.1`.
+The default mobile config therefore uses:
 
-A few resources to get you started if this is your first Flutter project:
+- API: `http://10.0.2.2:8000/api`
+- Signaling: `http://10.0.2.2:8000`
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+For a physical phone or deployed backend, pass the real reachable host:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter run \
+  --dart-define=API_BASE_URL=http://YOUR_HOST:8000/api \
+  --dart-define=SIGNALING_URL=http://YOUR_HOST:8000
+```
+
+Use HTTPS/WSS URLs for production.

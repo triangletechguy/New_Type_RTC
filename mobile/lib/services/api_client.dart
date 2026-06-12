@@ -149,6 +149,53 @@ class ApiClient {
     return response.data ?? {};
   }
 
+  Future<Map<String, dynamic>> updateRoomMediaState(
+    int roomId, {
+    required bool micEnabled,
+    required bool cameraEnabled,
+    bool screenShared = false,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/media-state',
+      data: {
+        'mic_enabled': micEnabled,
+        'camera_enabled': cameraEnabled,
+        'screen_shared': screenShared,
+      },
+    );
+    return response.data ?? {};
+  }
+
+  Future<void> leaveRoom(int roomId) async {
+    await dio.post<Map<String, dynamic>>('/rooms/$roomId/leave');
+  }
+
+  Future<List<Map<String, dynamic>>> roomMessages(
+    int roomId, {
+    int limit = 50,
+  }) async {
+    final response = await dio.get<Map<String, dynamic>>(
+      '/rooms/$roomId/messages',
+      queryParameters: {'limit': limit},
+    );
+    final messages = (response.data ?? {})['messages'];
+    if (messages is! List) return const [];
+    return messages
+        .whereType<Map>()
+        .map((message) => Map<String, dynamic>.from(message))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> sendRoomMessage(int roomId, String body) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/messages',
+      data: {'message_type': 'text', 'message_body': body},
+    );
+    final message = (response.data ?? {})['chat_message'];
+    if (message is Map) return Map<String, dynamic>.from(message);
+    throw StateError('Backend did not return chat_message.');
+  }
+
   Future<void> clearSession() async {
     _session = null;
     dio.options.headers.remove('Authorization');

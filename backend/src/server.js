@@ -16,6 +16,7 @@ const { registerSignaling } = require('./sockets/signaling')
 const { emailDeliveryStatus } = require('./utils/email')
 
 const PORT = Number(process.env.PORT || 8000)
+const HOST = process.env.HOST || '127.0.0.1'
 
 function positiveIntegerEnv(key, fallback) {
   const value = Number(process.env[key])
@@ -35,10 +36,25 @@ function isLocalDevOrigin(origin) {
 
   try {
     const url = new URL(origin)
-    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    return url.protocol === 'http:' && (
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+      || isPrivateIpv4(url.hostname)
+    )
   } catch {
     return false
   }
+}
+
+function isPrivateIpv4(hostname) {
+  const parts = String(hostname || '').split('.').map((part) => Number(part))
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
+
+  const [first, second] = parts
+  return (
+    first === 10
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168)
+  )
 }
 
 function corsOrigin(origin, callback) {
@@ -271,8 +287,9 @@ const io = new Server(server, {
 app.set('io', io)
 registerSignaling(io)
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Node RTC backend running on http://127.0.0.1:${PORT}`)
-  console.log(`Socket.IO signaling running on http://127.0.0.1:${PORT}`)
+server.listen(PORT, HOST, () => {
+  const displayHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST
+  console.log(`Node RTC backend running on http://${displayHost}:${PORT}`)
+  console.log(`Socket.IO signaling running on http://${displayHost}:${PORT}`)
   console.log(`Allowed origins: ${allowedOrigins.join(', ')}`)
 })
