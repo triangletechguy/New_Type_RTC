@@ -921,6 +921,41 @@
     white-space: nowrap !important;
   }
 
+  .buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary {
+    top: 50% !important;
+    left: 50% !important;
+    width: min(430px, calc(100% - 32px)) !important;
+    min-height: 148px !important;
+    grid-template-columns: 1fr !important;
+    justify-items: center !important;
+    align-content: center !important;
+    gap: 8px !important;
+    padding: 14px 16px 16px !important;
+    border-radius: 10px !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  .buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary .buzzcast-room-summary-avatar {
+    width: 70px !important;
+    height: 70px !important;
+    min-width: 70px !important;
+  }
+
+  .buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary strong {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  .buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary > span:not(.buzzcast-room-summary-avatar) {
+    width: 100% !important;
+    justify-self: start !important;
+    text-align: left !important;
+  }
+
+  .buzzcast-room-preview .buzzcast-stage > .buzzcast-preview-room-summary small {
+    display: none !important;
+  }
+
   .rtc-health-strip {
     top: 82px !important;
     left: 10px !important;

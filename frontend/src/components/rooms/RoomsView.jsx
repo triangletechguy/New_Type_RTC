@@ -3098,7 +3098,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </div>
           ) : (
             <>
-              <div className="buzzcast-room-summary" aria-label="Room summary">
+              <div className="buzzcast-room-summary buzzcast-preview-room-summary" aria-label="Room summary">
                 <span className="buzzcast-room-summary-avatar image-avatar">
                   <img src={roomAvatar} alt="" loading="lazy" />
                 </span>
