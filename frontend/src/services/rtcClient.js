@@ -517,6 +517,16 @@ export class NativeRtcClient {
       )) || null
   }
 
+  hasLiveInboundTrack(remoteSocketId, kind) {
+    const mediaKind = kind === 'audio' ? 'audio' : 'video'
+    return this.remoteMediaStreams[remoteSocketId]?.getTracks?.()
+      .some((track) => (
+        track.kind === mediaKind
+        && track.readyState !== 'ended'
+        && track.muted !== true
+      )) || false
+  }
+
   setTransceiverDirection(transceiver, direction) {
     if (!transceiver || transceiver.stopped || transceiver.direction === direction) return
 
@@ -565,6 +575,20 @@ export class NativeRtcClient {
         this.localStream,
       )
     }
+  }
+
+  async repairMissingInboundAudio(remoteSocketId, options = {}) {
+    const peerConnection = this.createPeerConnection(remoteSocketId)
+    await this.replaceTrackOnPeerConnection(
+      peerConnection,
+      'audio',
+      this.liveLocalTrack('audio'),
+      this.localStream,
+    )
+
+    return options.iceRestart
+      ? this.restartIce(remoteSocketId, 'remote-audio-missing')
+      : this.createOffer(remoteSocketId)
   }
 
   async replaceTrackOnPeerConnection(peerConnection, kind, track, stream = this.localStream) {

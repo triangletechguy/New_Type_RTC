@@ -42,6 +42,9 @@ const RTC_PRESENCE_INTERVAL_MS = 20000
 const RTC_QUALITY_REPORT_INTERVAL_MS = 30000
 const RTC_VIDEO_WATCHDOG_DELAY_MS = 7000
 const RTC_VIDEO_WATCHDOG_FINAL_DELAY_MS = 7000
+const RTC_AUDIO_WATCHDOG_DELAY_MS = 4500
+const RTC_AUDIO_WATCHDOG_FINAL_DELAY_MS = 5000
+const RTC_AUDIO_WATCHDOG_MAX_ATTEMPTS = 2
 const RTC_NEGOTIATION_RETRY_DELAY_MS = 2000
 const RTC_NEGOTIATION_RETRY_MAX_ATTEMPTS = 3
 const RTC_LOCAL_SENDER_WATCHDOG_DELAY_MS = 8000
@@ -155,6 +158,13 @@ function formatRtcLoss(value) {
 
 function hasInboundVideoTrack(stream) {
   return stream?.getVideoTracks?.().some((track) => track.readyState !== 'ended') || false
+}
+
+function hasInboundAudioTrack(stream) {
+  return stream?.getAudioTracks?.().some((track) => (
+    track.readyState !== 'ended'
+    && track.muted !== true
+  )) || false
 }
 
 function remoteVideoExpectedFromState(mediaState = {}) {
@@ -492,6 +502,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomControlsRef = useRef(roomControls)
   const videoWatchdogTimersRef = useRef({})
   const videoWatchdogAttemptsRef = useRef({})
+  const audioWatchdogTimersRef = useRef({})
+  const audioWatchdogAttemptsRef = useRef({})
   const negotiationRetryTimersRef = useRef({})
   const negotiationRetryAttemptsRef = useRef({})
   const localSenderWatchdogAttemptsRef = useRef({ audio: 0, video: 0 })
@@ -1118,6 +1130,22 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
+  function clearAudioWatchdogTimer(socketId) {
+    const timer = audioWatchdogTimersRef.current[socketId]
+    if (timer) window.clearTimeout(timer)
+    delete audioWatchdogTimersRef.current[socketId]
+  }
+
+  function resetPeerAudioWatchdog(socketId) {
+    clearAudioWatchdogTimer(socketId)
+    delete audioWatchdogAttemptsRef.current[socketId]
+  }
+
+  function clearAllAudioWatchdogs() {
+    Object.keys(audioWatchdogTimersRef.current).forEach((socketId) => clearAudioWatchdogTimer(socketId))
+    audioWatchdogAttemptsRef.current = {}
+  }
+
   function clearNegotiationRetryTimer(socketId) {
     const timer = negotiationRetryTimersRef.current[socketId]
     if (timer) window.clearTimeout(timer)
@@ -1214,6 +1242,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return peerMediaStatesRef.current?.[socketId]?.userName || `peer ${String(socketId).slice(0, 6)}`
   }
 
+  function peerLabelForAudioWatchdog(socketId) {
+    return peerMediaStatesRef.current?.[socketId]?.userName || `peer ${String(socketId).slice(0, 6)}`
+  }
+
   function peerNeedsInboundVideo(socketId) {
     if (!socketId || String(socketId) === String(localSocketIdRef.current || '')) return false
 
@@ -1223,11 +1255,26 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return remoteVideoExpectedFromState(peerMediaStatesRef.current?.[socketId] || {})
   }
 
+  function peerNeedsInboundAudio(socketId) {
+    if (!socketId || String(socketId) === String(localSocketIdRef.current || '')) return false
+
+    const peerState = String(peerStatesRef.current?.[socketId] || '').toLowerCase()
+    if (['closed', 'disconnected', 'failed'].includes(peerState)) return false
+
+    const mediaState = peerMediaStatesRef.current?.[socketId] || {}
+    return mediaState.micOn !== false
+  }
+
   function peerHasInboundVideo(socketId) {
     return hasInboundVideoTrack(remoteStreamsRef.current?.[socketId])
   }
 
-  function peerReadyForVideoFailure(socketId) {
+  function peerHasInboundAudio(socketId) {
+    if (rtcRef.current?.hasLiveInboundTrack?.(socketId, 'audio')) return true
+    return hasInboundAudioTrack(remoteStreamsRef.current?.[socketId])
+  }
+
+  function peerReadyForMediaRepair(socketId) {
     const peerConnection = rtcRef.current?.peerConnections?.[socketId]
     const connectionState = peerConnection?.connectionState === 'new' && peerConnection?.iceConnectionState !== 'new'
       ? peerConnection.iceConnectionState
@@ -1237,11 +1284,34 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       || ['connected', 'completed'].includes(String(peerConnection?.iceConnectionState || '').toLowerCase())
   }
 
+  function peerReadyForVideoFailure(socketId) {
+    return peerReadyForMediaRepair(socketId)
+  }
+
   function setPeerStateValue(socketId, state) {
     if (!socketId) return
 
     setPeerStates((previous) => {
       const next = { ...previous, [socketId]: state }
+      peerStatesRef.current = next
+      return next
+    })
+  }
+
+  function clearReconnectingPeerState(socketId) {
+    if (!socketId) return
+
+    setPeerStates((previous) => {
+      const currentState = String(previous[socketId] || '').toLowerCase()
+      if (currentState !== 'reconnecting') {
+        peerStatesRef.current = previous
+        return previous
+      }
+
+      const next = {
+        ...previous,
+        [socketId]: remoteStreamsRef.current?.[socketId] ? 'connected' : 'waiting',
+      }
       peerStatesRef.current = next
       return next
     })
@@ -1264,6 +1334,99 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       peerStatesRef.current = next
       return next
     })
+  }
+
+  function scheduleAudioWatchdog(socketId, delayMs = RTC_AUDIO_WATCHDOG_DELAY_MS) {
+    clearAudioWatchdogTimer(socketId)
+    audioWatchdogTimersRef.current[socketId] = window.setTimeout(() => {
+      runAudioWatchdog(socketId)
+    }, delayMs)
+  }
+
+  async function runAudioWatchdog(socketId) {
+    clearAudioWatchdogTimer(socketId)
+
+    if (!joinedRef.current || !peerNeedsInboundAudio(socketId)) {
+      resetPeerAudioWatchdog(socketId)
+      return
+    }
+
+    if (peerHasInboundAudio(socketId)) {
+      resetPeerAudioWatchdog(socketId)
+      clearReconnectingPeerState(socketId)
+      return
+    }
+
+    if (!peerReadyForMediaRepair(socketId)) {
+      scheduleNegotiationRetry(socketId, rtcRef.current, 'Peer')
+      scheduleAudioWatchdog(socketId, RTC_AUDIO_WATCHDOG_DELAY_MS)
+      return
+    }
+
+    const attempt = Number(audioWatchdogAttemptsRef.current[socketId] || 0)
+    const peerLabel = peerLabelForAudioWatchdog(socketId)
+
+    if (attempt >= RTC_AUDIO_WATCHDOG_MAX_ATTEMPTS) {
+      clearReconnectingPeerState(socketId)
+      setStatus(`No audio received from ${peerLabel}. Ask them to toggle mic if it does not recover.`)
+      return
+    }
+
+    audioWatchdogAttemptsRef.current[socketId] = attempt + 1
+    setPeerStateValue(socketId, 'reconnecting')
+    setStatus(`No audio from ${peerLabel}; refreshing RTC audio...`)
+
+    try {
+      const rtcClient = rtcRef.current
+      await refreshSignalingPeers(rtcClient, 'missing audio').catch(() => {})
+
+      if (!joinedRef.current || !peerNeedsInboundAudio(socketId)) {
+        resetPeerAudioWatchdog(socketId)
+        return
+      }
+
+      if (peerHasInboundAudio(socketId)) {
+        resetPeerAudioWatchdog(socketId)
+        clearReconnectingPeerState(socketId)
+        return
+      }
+
+      const repairSent = typeof rtcClient?.repairMissingInboundAudio === 'function'
+        ? await rtcClient.repairMissingInboundAudio(socketId, { iceRestart: attempt > 0 })
+        : attempt > 0 && typeof rtcClient?.restartIce === 'function'
+          ? await rtcClient.restartIce(socketId, 'remote-audio-missing')
+          : await rtcClient?.createOffer?.(socketId)
+
+      if (repairSent === false) {
+        scheduleNegotiationRetry(socketId, rtcClient, 'Peer')
+      }
+    } catch (error) {
+      if (isStalePeerSignalError(error)) {
+        forgetRemotePeer(socketId, rtcRef.current)
+        refreshSignalingPeers(rtcRef.current, 'stale peer').catch(() => {})
+        return
+      }
+
+      setStatus(`Audio recovery failed: ${error.message}`)
+    }
+
+    scheduleAudioWatchdog(socketId, RTC_AUDIO_WATCHDOG_FINAL_DELAY_MS)
+  }
+
+  function reconcileAudioWatchdog(socketId) {
+    if (!joinedRef.current || !peerNeedsInboundAudio(socketId)) {
+      resetPeerAudioWatchdog(socketId)
+      return
+    }
+
+    if (peerHasInboundAudio(socketId)) {
+      resetPeerAudioWatchdog(socketId)
+      clearReconnectingPeerState(socketId)
+      return
+    }
+
+    if (audioWatchdogTimersRef.current[socketId]) return
+    scheduleAudioWatchdog(socketId, RTC_AUDIO_WATCHDOG_DELAY_MS)
   }
 
   function scheduleVideoWatchdog(socketId, delayMs) {
@@ -1407,6 +1570,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function resetRtcState({ clearState = true } = {}) {
     joinedRef.current = false
     clearAllVideoWatchdogs({ clearState })
+    clearAllAudioWatchdogs()
     cleanupAllLocalTrackMonitors()
     if (socketRef.current) {
       const socket = socketRef.current
@@ -1747,6 +1911,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (!remoteSocketId || !rtcClient) return
 
     rtcClient.createPeerConnection(remoteSocketId)
+    reconcileAudioWatchdog(remoteSocketId)
+    reconcileVideoWatchdog(remoteSocketId)
 
     if (negotiatedPeersRef.current.has(remoteSocketId)) return
 
@@ -1787,6 +1953,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     rtcClient?.closeAll?.()
     negotiatedPeersRef.current.clear()
     clearAllVideoWatchdogs()
+    clearAllAudioWatchdogs()
     clearAllNegotiationRetries()
     remoteStreamsRef.current = {}
     peerStatesRef.current = {}
@@ -1807,6 +1974,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (!socketId) return
 
     resetPeerVideoWatchdog(socketId)
+    resetPeerAudioWatchdog(socketId)
     resetPeerNegotiationRetry(socketId)
     rtcClient?.closePeer?.(socketId)
     negotiatedPeersRef.current.delete(socketId)
@@ -2778,6 +2946,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return next
     })
 
+    if (hasInboundAudioTrack(remoteStream)) {
+      resetPeerAudioWatchdog(remoteSocketId)
+      clearReconnectingPeerState(remoteSocketId)
+    } else {
+      reconcileAudioWatchdog(remoteSocketId)
+    }
+
     const hasVideoTrack = hasInboundVideoTrack(remoteStream)
     if (hasVideoTrack) {
       resetPeerVideoWatchdog(remoteSocketId)
@@ -3164,6 +3339,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         } else {
           scheduleNegotiationRetry(payload.socketId, rtcClient, 'Peer')
           reconcileVideoWatchdog(payload.socketId)
+        }
+
+        if (nextMediaState.micOn === false) {
+          resetPeerAudioWatchdog(payload.socketId)
+        } else {
+          scheduleNegotiationRetry(payload.socketId, rtcClient, 'Peer')
+          reconcileAudioWatchdog(payload.socketId)
         }
       })
       socket.on('room-session-replaced', () => {
@@ -3601,6 +3783,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   useEffect(() => {
     peerVideoWatchdogStatesRef.current = peerVideoWatchdogStates
   }, [peerVideoWatchdogStates])
+
+  useEffect(() => {
+    if (!joined) return undefined
+
+    const socketIds = new Set([
+      ...Object.keys(peerMediaStates),
+      ...Object.keys(peerStates),
+      ...Object.keys(remoteStreams),
+    ])
+
+    socketIds.forEach((socketId) => reconcileAudioWatchdog(socketId))
+    return undefined
+  }, [joined, peerMediaStates, peerStates, remoteStreams])
 
   useEffect(() => {
     cameraFilterRef.current = normalizeVideoFilterId(cameraFilter)
