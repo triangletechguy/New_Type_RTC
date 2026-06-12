@@ -3810,6 +3810,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     .slice(-5)
   const aiGuardActive = isAiGuardEnabled(room)
   const roomTitle = room?.name || `Room #${roomId}`
+  const roomOwnerId = room?.owner_id || user?.id || 0
+  const roomOwnerName = room?.owner_name || user?.name || roomTitle
+  const roomOwnerAvatar = avatarForUser({
+    id: roomOwnerId,
+    user_id: roomOwnerId,
+    name: roomOwnerName,
+    full_name: roomOwnerName,
+    avatar_url: (Number(roomOwnerId) === Number(user?.id) ? user?.avatar_url : '') || room?.owner_avatar_url || '',
+  }, roomOwnerId || room?.id || roomId)
   const profileAvatar = avatarForUser(user, user?.id || 0)
   const backAvatar = actionAvatarAssets.back
   const rtcHealth = summarizeRtcHealth({ joined, remotePeerCount, peerStates, peerStats, rtcMode, cameraOn, screenSharing })
@@ -3905,6 +3914,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             </div>
           )}
             <div className="buzzcast-room-summary" aria-label={t('Room summary')}>
+              <span className="buzzcast-room-summary-avatar image-avatar">
+                <img src={roomOwnerAvatar} alt="" loading="lazy" />
+              </span>
               <strong title={roomTitle}>{roomTitle}</strong>
               <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
             </div>

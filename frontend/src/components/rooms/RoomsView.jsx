@@ -262,6 +262,18 @@ function cardCover(card, fallback = 0) {
   return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
 }
 
+function roomOwnerAvatar(room, fallbackIndex = 0) {
+  const ownerId = room?.owner_id || room?.ownerId || 0
+  const ownerName = room?.owner_name || room?.ownerName || room?.name || 'Room host'
+  return avatarForUser({
+    id: ownerId,
+    user_id: ownerId,
+    name: ownerName,
+    full_name: ownerName,
+    avatar_url: room?.owner_avatar_url || room?.ownerAvatarUrl || '',
+  }, ownerId || room?.id || fallbackIndex)
+}
+
 function activeParticipantPreviews(card) {
   const previews = card?.room?.active_participant_previews || card?.activeParticipantPreviews || card?.active_participant_previews || []
   return Array.isArray(previews) ? previews.filter(Boolean) : []
@@ -316,6 +328,7 @@ function roomToFeedCard(room, index) {
     roomType: room.room_type,
     privacy: room.privacy_type,
     avatarIndex: Number(room.id) || index,
+    avatarUrl: roomOwnerAvatar(room, index),
   }
 }
 
@@ -621,8 +634,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
   const roomCards = useMemo(() => {
     const cardRooms = createdRoom?.id ? upsertRoomById(rooms, createdRoom) : rooms
-    return cardRooms.map(roomToFeedCard)
-  }, [createdRoom, rooms])
+    return cardRooms.map((room, index) => {
+      const card = roomToFeedCard(room, index)
+      if (Number(room.owner_id || 0) !== Number(user?.id || 0)) return card
+
+      return {
+        ...card,
+        host: room.owner_name || displayName,
+        avatarUrl: profileAvatar,
+      }
+    })
+  }, [createdRoom, displayName, profileAvatar, rooms, user?.id])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
@@ -688,6 +710,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       name: card.title,
       detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
       avatarIndex: cardAvatarIndex(card),
+      avatarUrl: card.avatarUrl,
       room: card.room,
       card,
     }))
@@ -2128,7 +2151,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div>
                 {roomSearchResults.length ? roomSearchResults.map((item, index) => (
                   <button key={`${item.type}-${item.id}`} type="button" onClick={() => openSearchResult(item)}>
-                    <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? index)} alt="" loading="lazy" /></i>
+                    <i className="image-avatar"><img src={item.avatarUrl || avatarForIndex(item.avatarIndex ?? index)} alt="" loading="lazy" /></i>
                     <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                   </button>
                 )) : <em>Type a room name, host, or category.</em>}
@@ -3009,7 +3032,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             >
               <span>Profile</span>
               <span className="buzzcast-mobile-room-value with-avatar">
-                <i className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></i>
+                <i className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></i>
                 <b>›</b>
               </span>
             </button>
@@ -3057,7 +3080,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </button>
           </div>
           <div className="buzzcast-mobile-room-live">
-            <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+            <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
             <strong>LIVE</strong>
           </div>
           <div className="buzzcast-mobile-room-follow">
@@ -3076,6 +3099,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : (
             <>
               <div className="buzzcast-room-summary" aria-label="Room summary">
+                <span className="buzzcast-room-summary-avatar image-avatar">
+                  <img src={roomAvatar} alt="" loading="lazy" />
+                </span>
                 <strong title={card.title}>{card.title}</strong>
                 <span>Room ID: {card.room?.id || card.id}</span>
                 <small>{compactNumber(card.viewers || 0)} user{Number(card.viewers || 0) === 1 ? '' : 's'}</small>
@@ -3267,7 +3293,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openSearchResult(item)}
                 >
-                  <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
+                  <i className="image-avatar"><img src={item.avatarUrl || avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                 </button>
               ))}
