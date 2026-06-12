@@ -71,6 +71,28 @@ class ApiClient {
     return _session!;
   }
 
+  Future<AppSession> register({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/auth/register',
+      data: {'name': name, 'email': email, 'password': password},
+    );
+    final data = response.data ?? {};
+    final token = data['access_token']?.toString() ?? '';
+    if (token.isEmpty) {
+      throw StateError('Backend did not return an access token.');
+    }
+
+    final user = AppUser.fromJson(
+      Map<String, dynamic>.from(data['user'] as Map),
+    );
+    await _saveSession(token, user);
+    return _session!;
+  }
+
   Future<AppUser> refreshCurrentUser() async {
     final response = await dio.get<Map<String, dynamic>>('/auth/me');
     final user = AppUser.fromJson(

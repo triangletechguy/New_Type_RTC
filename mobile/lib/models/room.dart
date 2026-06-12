@@ -7,6 +7,10 @@ class Room {
     this.privacyType = 'public',
     this.profileImage = '',
     this.maxMicCount = 1,
+    this.ownerName = 'Room host',
+    this.ownerAvatarUrl = '',
+    this.activeParticipants = 0,
+    this.country = 'Global',
   });
 
   final int id;
@@ -16,6 +20,10 @@ class Room {
   final String privacyType;
   final String profileImage;
   final int maxMicCount;
+  final String ownerName;
+  final String ownerAvatarUrl;
+  final int activeParticipants;
+  final String country;
 
   bool get supportsVideo {
     return roomType.contains('video') ||
@@ -24,6 +32,8 @@ class Room {
   }
 
   factory Room.fromJson(Map<String, dynamic> json) {
+    final owner = json['owner'];
+    final ownerMap = owner is Map ? owner : const {};
     return Room(
       id: _asInt(json['id']),
       name: (json['name'] ?? 'Untitled room').toString(),
@@ -32,6 +42,17 @@ class Room {
       privacyType: (json['privacy_type'] ?? 'public').toString(),
       profileImage: (json['profile_image'] ?? '').toString(),
       maxMicCount: _asInt(json['max_mic_count'], fallback: 1),
+      ownerName: (json['owner_name'] ?? ownerMap['name'] ?? 'Room host')
+          .toString(),
+      ownerAvatarUrl: (json['owner_avatar_url'] ?? ownerMap['avatar_url'] ?? '')
+          .toString(),
+      activeParticipants: _asInt(json['active_participants']),
+      country:
+          (json['owner_region'] ??
+                  json['owner_current_residence'] ??
+                  json['country'] ??
+                  'Global')
+              .toString(),
     );
   }
 }

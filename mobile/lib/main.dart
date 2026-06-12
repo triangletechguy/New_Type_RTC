@@ -5,6 +5,7 @@ import 'models/app_user.dart';
 import 'screens/login_screen.dart';
 import 'screens/room_list_screen.dart';
 import 'services/api_client.dart';
+import 'theme/buzzcast_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,11 +53,35 @@ class _RtcEnterpriseAppState extends State<RtcEnterpriseApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        scaffoldBackgroundColor: BuzzColors.feedBackground,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF007A78),
+          seedColor: BuzzColors.green,
           brightness: Brightness.light,
         ),
-        cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: BuzzColors.feedBackground,
+          foregroundColor: BuzzColors.feedText,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: BuzzColors.green,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            minimumSize: const Size.fromHeight(48),
+          ),
+        ),
       ),
       home: _booting
           ? const _BootScreen()
