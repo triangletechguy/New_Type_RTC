@@ -1,49 +1,16 @@
 import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
-import 'models/app_user.dart';
-import 'screens/login_screen.dart';
-import 'screens/room_list_screen.dart';
-import 'services/api_client.dart';
+import 'screens/web_app_screen.dart';
+import 'ui/rtc_mobile_ui.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const RtcEnterpriseApp());
 }
 
-class RtcEnterpriseApp extends StatefulWidget {
+class RtcEnterpriseApp extends StatelessWidget {
   const RtcEnterpriseApp({super.key});
-
-  @override
-  State<RtcEnterpriseApp> createState() => _RtcEnterpriseAppState();
-}
-
-class _RtcEnterpriseAppState extends State<RtcEnterpriseApp> {
-  final _api = ApiClient();
-  AppUser? _user;
-  bool _booting = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _restoreSession();
-  }
-
-  Future<void> _restoreSession() async {
-    final session = await _api.restoreSession();
-    setState(() {
-      _user = session?.user;
-      _booting = false;
-    });
-  }
-
-  Future<void> _onLoggedIn() async {
-    setState(() => _user = _api.session?.user);
-  }
-
-  Future<void> _onLoggedOut() async {
-    setState(() => _user = null);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,26 +19,56 @@ class _RtcEnterpriseAppState extends State<RtcEnterpriseApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF007A78),
-          brightness: Brightness.light,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: RtcPalette.ink,
+        colorScheme: const ColorScheme.dark(
+          primary: RtcPalette.sky,
+          secondary: RtcPalette.hot,
+          tertiary: RtcPalette.mint,
+          surface: RtcPalette.panel,
+          onSurface: RtcPalette.soft,
         ),
-        cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+        textTheme: ThemeData.dark().textTheme.apply(
+          bodyColor: RtcPalette.soft,
+          displayColor: Colors.white,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color.fromRGBO(255, 255, 255, 0.07),
+          labelStyle: const TextStyle(color: RtcPalette.muted),
+          prefixIconColor: RtcPalette.muted,
+          enabledBorder: OutlineInputBorder(
+            borderSide: const BorderSide(
+              color: Color.fromRGBO(255, 255, 255, 0.14),
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: RtcPalette.sky, width: 1.3),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Color(0xFFFB7185)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Color(0xFFFB7185), width: 1.3),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        cardTheme: const CardThemeData(
+          color: RtcPalette.panel,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+        ),
       ),
-      home: _booting
-          ? const _BootScreen()
-          : _user == null
-          ? LoginScreen(api: _api, onLoggedIn: _onLoggedIn)
-          : RoomListScreen(api: _api, user: _user!, onLoggedOut: _onLoggedOut),
+      home: const WebAppScreen(),
     );
-  }
-}
-
-class _BootScreen extends StatelessWidget {
-  const _BootScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

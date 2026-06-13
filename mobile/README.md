@@ -1,17 +1,22 @@
-# rtc_enterprise_mobile
+# TalkEachOther Mobile
 
-A new Flutter project.
+Flutter mobile client for the TalkEachOther RTC platform.
 
-## Getting Started
+The default mobile entry point opens the deployed/web RTC experience in an
+embedded WebView, requests camera and microphone permission for WebRTC, and
+keeps the native room/login screens in the project for direct API testing.
 
-This project is a starting point for a Flutter application.
+## Run Locally
 
-A few resources to get you started if this is your first Flutter project:
+From the `mobile` directory:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter run \
+  --dart-define=WEB_APP_URL=http://10.0.2.2:5173 \
+  --dart-define=API_BASE_URL=http://10.0.2.2:8000/api \
+  --dart-define=SIGNALING_URL=http://10.0.2.2:8000
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Android emulators use `10.0.2.2` to reach services running on the host machine.
+Use production HTTPS URLs for release builds.

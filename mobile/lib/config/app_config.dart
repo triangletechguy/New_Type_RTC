@@ -1,16 +1,22 @@
 class AppConfig {
   static const appName = String.fromEnvironment(
     'APP_NAME',
-    defaultValue: 'RTC Enterprise',
+    defaultValue: 'TalkEachOther',
   );
 
-  static const apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000/api',
-  );
+  static const _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
+  static const _signalingUrlOverride = String.fromEnvironment('SIGNALING_URL');
+  static const _webAppUrlOverride = String.fromEnvironment('WEB_APP_URL');
 
-  static const signalingUrl = String.fromEnvironment(
-    'SIGNALING_URL',
-    defaultValue: 'http://127.0.0.1:8000',
-  );
+  static String get apiBaseUrl => _apiBaseUrlOverride.isNotEmpty
+      ? _apiBaseUrlOverride
+      : 'http://10.0.2.2:8000/api';
+
+  static String get signalingUrl => _signalingUrlOverride.isNotEmpty
+      ? _signalingUrlOverride
+      : 'http://10.0.2.2:8000';
+
+  static String get webAppUrl => _webAppUrlOverride.isNotEmpty
+      ? _webAppUrlOverride
+      : 'http://10.0.2.2:5173';
 }

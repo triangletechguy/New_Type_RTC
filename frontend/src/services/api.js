@@ -2,7 +2,7 @@ function defaultApiBaseUrl() {
   if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api'
 
   const { hostname, port, protocol, origin } = window.location
-  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
+  const localDevHost = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.3.2'].includes(hostname)
 
   if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
     return `${protocol}//${hostname}:8000/api`

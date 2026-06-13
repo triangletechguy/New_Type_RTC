@@ -6,6 +6,24 @@ TalkEachOther video and music room platform using native WebRTC:
 - Node.js + Express backend
 - Socket.IO signaling
 - MySQL database
+- Flutter mobile shell for Android/iOS WebView delivery
+
+## Mobile client
+
+The Flutter app in `mobile/` is branded as TalkEachOther and opens the web RTC
+frontend in an embedded WebView by default. It requests camera and microphone
+permissions for browser WebRTC inside the app. Native login, room list, and room
+screens remain in the project for direct backend/API testing.
+
+For Android emulator development, the mobile defaults use `10.0.2.2` to reach
+the host frontend and backend. Override targets with:
+
+```bash
+flutter run \
+  --dart-define=WEB_APP_URL=http://10.0.2.2:5173 \
+  --dart-define=API_BASE_URL=http://10.0.2.2:8000/api \
+  --dart-define=SIGNALING_URL=http://10.0.2.2:8000
+```
 
 ## Client-paid usage model
 

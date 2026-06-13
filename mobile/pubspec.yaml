@@ -1,5 +1,5 @@
 name: rtc_enterprise_mobile
-description: "Flutter mobile client for the rtc-enterprise backend."
+description: "TalkEachOther mobile shell and native RTC client for the rtc-enterprise backend."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -40,6 +40,8 @@ dependencies:
   socket_io_client: ^3.1.5
   flutter_webrtc: ^1.4.1
   permission_handler: ^12.0.3
+  webview_flutter: ^4.14.0
+  webview_flutter_android: ^4.13.0
 
 dev_dependencies:
   flutter_test:
