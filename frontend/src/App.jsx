@@ -5,6 +5,14 @@ import { LoadingMovie } from './components/common/LoadingMovie'
 import { avatarForUser, initialAvatarForName } from './assets/rtc/catalog'
 import { defaultRtcModeForRoom } from './utils/roomConfig'
 import { canUseAdminDashboard } from './utils/roles'
+import {
+  applyStaticTranslations,
+  normalizeSettingsLanguage,
+  readStoredSettingsLanguage,
+  settingsLanguageCodes,
+  translateApp,
+  writeStoredSettingsLanguage,
+} from './components/rooms/roomsStaticData'
 
 const AuthModal = lazy(() => import('./components/auth/AuthModal').then((module) => ({ default: module.AuthModal })))
 const AdminView = lazy(() => import('./components/admin/AdminView'))
@@ -13,13 +21,14 @@ const ProfileModal = lazy(() => import('./components/profile/ProfilePanel').then
 const RoomsView = lazy(() => import('./components/rooms/RoomsView').then((module) => ({ default: module.RoomsView })))
 const SdkView = lazy(() => import('./components/sdk/SdkView'))
 
-function ViewFallback({ label }) {
-  return <LoadingMovie label={`Loading ${label}`} className="view-loading" />
+function ViewFallback({ label, language = 'English' }) {
+  const translatedLabel = translateApp(language, label)
+  return <LoadingMovie label={translateApp(language, 'Loading {label}', { label: translatedLabel })} className="view-loading" />
 }
 
-function AppProfileButton({ user, onClick }) {
-  const label = user ? 'Open profile' : 'Login or signup'
-  const avatar = user ? avatarForUser(user, user?.id || 0) : initialAvatarForName('User')
+function AppProfileButton({ user, onClick, language = 'English' }) {
+  const label = translateApp(language, user ? 'Open profile' : 'Login or signup')
+  const avatar = user ? avatarForUser(user, user?.id || 0) : initialAvatarForName(translateApp(language, 'User'))
 
   return (
     <button type="button" className="app-profile-button" onClick={onClick} aria-label={label} title={label}>
@@ -77,11 +86,13 @@ export default function App() {
   const [user, setUser] = useState(getUser())
   const [view, setView] = useState('rooms')
   const [activeRoom, setActiveRoom] = useState(null)
+  const [language, setLanguage] = useState(() => readStoredSettingsLanguage())
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [authReason, setAuthReason] = useState('')
   const [pendingSignupEmail, setPendingSignupEmail] = useState('')
   const [profileOpen, setProfileOpen] = useState(false)
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
   function setBrowserRoute(route, action = 'push') {
     if (typeof window === 'undefined') return
@@ -103,6 +114,12 @@ export default function App() {
     setProfileOpen(false)
   }
 
+  function changeLanguage(nextLanguage) {
+    const normalizedLanguage = normalizeSettingsLanguage(nextLanguage)
+    setLanguage(normalizedLanguage)
+    writeStoredSettingsLanguage(normalizedLanguage)
+  }
+
   useEffect(() => {
     const initialRoute = routeFromLocation(user)
     setBrowserRoute(initialRoute, 'replace')
@@ -115,6 +132,36 @@ export default function App() {
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = settingsLanguageCodes[language] || 'en'
+    }
+  }, [language])
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return undefined
+
+    let frameId = 0
+    const runTranslations = () => {
+      if (frameId) window.cancelAnimationFrame(frameId)
+      frameId = window.requestAnimationFrame(() => applyStaticTranslations(language))
+    }
+
+    runTranslations()
+    const observer = new MutationObserver(runTranslations)
+    observer.observe(document.body, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    })
+
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId)
+      observer.disconnect()
+    }
+  }, [language])
 
   useEffect(() => {
     function handleAuthExpired() {
@@ -219,7 +266,7 @@ export default function App() {
   if (activeRoom?.id && user) {
     return (
       <>
-        <Suspense fallback={<ViewFallback label="Live room" />}>
+        <Suspense fallback={<ViewFallback label="Live room" language={language} />}>
           <LiveRoomView
             roomId={activeRoom.id}
             roomPassword={activeRoom.password}
@@ -227,13 +274,14 @@ export default function App() {
             initialRtcMode={activeRoom.rtcMode}
             autoConnect={activeRoom.autoConnect === true}
             user={user}
+            language={language}
             onBack={leaveActiveRoomViaHistory}
             onProfile={openProfile}
           />
         </Suspense>
         {profileOpen ? (
-          <Suspense fallback={<LoadingMovie label="Loading profile" compact />}>
-            <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+          <Suspense fallback={<LoadingMovie label={t('Loading {label}', { label: t('profile') })} compact />}>
+            <ProfileModal open={profileOpen} user={user} language={language} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
           </Suspense>
         ) : null}
       </>
@@ -246,10 +294,12 @@ export default function App() {
   if (safeView === 'rooms') {
     return (
       <>
-        <Suspense fallback={<ViewFallback label="Rooms" />}>
+        <Suspense fallback={<ViewFallback label="Rooms" language={language} />}>
           <RoomsView
             onEnterRoom={openRoom}
             user={user}
+            language={language}
+            onLanguageChange={changeLanguage}
             onLogout={logout}
             onUserUpdated={handleProfileSaved}
             onView={changeView}
@@ -257,12 +307,13 @@ export default function App() {
           />
         </Suspense>
         {authModalOpen ? (
-          <Suspense fallback={<LoadingMovie label="Loading account" compact />}>
+          <Suspense fallback={<LoadingMovie label={t('Loading {label}', { label: t('account') })} compact />}>
             <AuthModal
               open={authModalOpen}
               initialMode={authMode}
               initialEmail={pendingSignupEmail}
               reason={authReason}
+              language={language}
               onClose={() => setAuthModalOpen(false)}
               onAuthenticated={handleLogin}
             />
@@ -275,37 +326,38 @@ export default function App() {
   return (
     <>
       <main className="app-shell">
-        <Sidebar user={user} currentView={safeView} onView={changeView} onLogout={logout} />
+        <Sidebar user={user} currentView={safeView} language={language} onView={changeView} onLogout={logout} />
         <section className="content-shell">
           {safeView === 'admin' && canAccessAdminDashboard && (
-            <Suspense fallback={<ViewFallback label="Admin dashboard" />}>
-              <AdminView onView={changeView} onOpenRoom={openRoom} user={user} onProfile={openProfile} />
+            <Suspense fallback={<ViewFallback label="Admin dashboard" language={language} />}>
+              <AdminView onView={changeView} onOpenRoom={openRoom} user={user} language={language} onProfile={openProfile} />
             </Suspense>
           )}
           {safeView === 'sdk' && (
-            <Suspense fallback={<ViewFallback label="SDK samples" />}>
-              <SdkView />
+            <Suspense fallback={<ViewFallback label="SDK samples" language={language} />}>
+              <SdkView language={language} />
             </Suspense>
           )}
         </section>
       </main>
       {safeView === 'admin' && canAccessAdminDashboard ? null : (
         <div className="global-profile-anchor">
-          <AppProfileButton user={user} onClick={openProfile} />
+          <AppProfileButton user={user} language={language} onClick={openProfile} />
         </div>
       )}
       {profileOpen ? (
-        <Suspense fallback={<LoadingMovie label="Loading profile" compact />}>
-          <ProfileModal open={profileOpen} user={user} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
+        <Suspense fallback={<LoadingMovie label={t('Loading {label}', { label: t('profile') })} compact />}>
+          <ProfileModal open={profileOpen} user={user} language={language} onSaved={handleProfileSaved} onLogout={logout} onClose={() => setProfileOpen(false)} />
         </Suspense>
       ) : null}
       {authModalOpen ? (
-        <Suspense fallback={<LoadingMovie label="Loading account" compact />}>
+        <Suspense fallback={<LoadingMovie label={t('Loading {label}', { label: t('account') })} compact />}>
           <AuthModal
             open={authModalOpen}
             initialMode={authMode}
             initialEmail={pendingSignupEmail}
             reason={authReason}
+            language={language}
             onClose={() => setAuthModalOpen(false)}
             onAuthenticated={handleLogin}
           />

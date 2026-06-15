@@ -78,14 +78,16 @@ function buildClientReadiness({ enterprise, dashboard, mode }) {
   const pendingRequests = (enterprise?.plan_requests || []).filter((request) => request.status === 'pending')
   const billing = enterprise?.billing || {}
   const totals = enterprise?.platform_totals || {}
-  const roomMetrics = dashboard?.metrics?.rooms || {}
   const sessionMetrics = dashboard?.metrics?.sessions || {}
   const usageMonth = dashboard?.metrics?.usage?.month || dashboard?.usage_month || {}
+  const companyScope = dashboard?.company_scope || enterprise?.user_scope || {}
+  const companyUsers = companyScope.users || {}
   const verification = dashboard?.usage_verification || {}
-  const activeRooms = Number(roomMetrics.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0)
-  const totalRooms = Number(roomMetrics.total ?? client?.room_count ?? 0)
   const activeSessions = Number(sessionMetrics.active ?? dashboard?.active_sessions ?? 0)
   const monthMinutes = Number(usageMonth.minutes ?? dashboard?.minutes_used_this_month ?? billing.minutes_month ?? totals.minutes_month ?? 0)
+  const invitedUsers = Number(companyUsers.invited ?? companyUsers.synced ?? client?.invited_user_count ?? client?.synced_user_count ?? 0)
+  const totalCompanyUsers = Number(companyUsers.total ?? client?.user_count ?? 0)
+  const liveCompanyUsers = Number(companyUsers.live ?? 0)
   const serviceAttention = enterprise?.service_model?.connection_indicator === 'attention'
 
   if (isPlatform) {
@@ -158,19 +160,19 @@ function buildClientReadiness({ enterprise, dashboard, mode }) {
       tab: 'sdk',
     },
     {
-      key: 'rooms',
-      label: 'Rooms',
-      value: `${formatNumber(activeRooms)} live`,
-      detail: totalRooms ? `${formatNumber(totalRooms)} rooms are configured.` : 'Create or activate a room for RTC use.',
-      state: activeRooms || totalRooms ? 'good' : 'todo',
-      action: 'Manage rooms',
-      tab: 'rooms',
+      key: 'users',
+      label: 'Invited users',
+      value: formatNumber(invitedUsers || totalCompanyUsers),
+      detail: `${formatNumber(liveCompanyUsers)} live now · ${formatMinutes(monthMinutes)} used this month.`,
+      state: invitedUsers || totalCompanyUsers ? 'good' : apps.length ? 'attention' : 'todo',
+      action: 'View users',
+      tab: 'users',
     },
     {
       key: 'usage',
       label: 'Usage tracking',
       value: formatMinutes(monthMinutes),
-      detail: monthMinutes > 0 ? 'Billing records are being captured.' : 'Usage appears after users join RTC sessions.',
+      detail: monthMinutes > 0 ? 'Billing records are being captured.' : 'Usage appears after invited users join RTC sessions.',
       state: monthMinutes > 0 || verification.status === 'verified' ? 'good' : 'todo',
       action: 'Review billing',
       tab: 'usage',
@@ -248,13 +250,18 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
   const totals = enterprise?.platform_totals || {}
   const apps = enterprise?.apps || []
   const pendingRequests = (enterprise?.plan_requests || []).filter((request) => request.status === 'pending')
-  const activeRooms = dashboard?.metrics?.rooms?.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0
-  const totalRooms = dashboard?.metrics?.rooms?.total ?? client?.room_count ?? 0
+  const companyScope = dashboard?.company_scope || enterprise?.user_scope || {}
+  const companyUsers = companyScope.users || {}
+  const companyPackage = companyScope.package || {}
+  const invitedUsers = companyUsers.invited ?? companyUsers.synced ?? client?.invited_user_count ?? client?.synced_user_count ?? 0
+  const liveCompanyUsers = companyUsers.live ?? 0
+  const monthMinutes = companyScope.usage?.month?.minutes ?? billing.minutes_month
+  const packageAllowance = companyPackage.monthly_allowance ?? companyPackage.monthly_minute_allowance ?? billing.monthly_allowance
   const invoice = isPlatform ? totals.estimated_invoice : billing.estimated_invoice
   const title = isPlatform ? 'Sell and operate RTC service' : 'RTC service console'
   const subtitle = isPlatform
     ? 'Create client companies, approve package purchases, issue SDK access, and monitor usage from one focused place.'
-    : 'Purchase a package, generate app credentials, open RTC rooms, and watch monthly usage.'
+    : 'Purchase a package, generate app credentials, sync invited users, and track their company-paid minutes.'
   const actionCards = isPlatform ? [
     {
       title: 'Create client company',
@@ -306,18 +313,18 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
       onClick: () => onTabChange('sdk'),
     },
     {
-      title: 'Rooms',
-      detail: `${formatNumber(activeRooms)} active rooms from ${formatNumber(totalRooms)} total.`,
-      meta: `${formatNumber(activeRooms)} live`,
-      state: activeRooms || totalRooms ? 'good' : 'todo',
-      action: 'Open rooms',
-      onClick: () => onTabChange('rooms'),
+      title: 'Invited users',
+      detail: `${formatNumber(liveCompanyUsers)} live now. Synced users are billed to this company package.`,
+      meta: `${formatNumber(invitedUsers || companyUsers.total)} users`,
+      state: invitedUsers || companyUsers.total ? 'good' : apps.length ? 'attention' : 'todo',
+      action: 'View users',
+      onClick: () => onTabChange('users'),
     },
     {
       title: 'Usage and billing',
-      detail: 'Review monthly minutes, overage, records, and invoice estimate.',
+      detail: `Review package minutes, overage, records, and invoice estimate. ${formatMinutes(monthMinutes)} of ${formatMinutes(packageAllowance)} used.`,
       meta: formatCurrency(invoice),
-      state: Number(invoice || 0) > 0 ? 'good' : 'todo',
+      state: Number(monthMinutes || 0) > 0 || Number(invoice || 0) > 0 ? 'good' : 'todo',
       action: 'Open usage',
       onClick: () => onTabChange('usage'),
     },
@@ -343,8 +350,8 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
           <strong>{isPlatform ? formatNumber(pendingRequests.length) : formatNumber(apps.length)}</strong>
         </div>
         <div>
-          <span>{isPlatform ? 'Month usage' : 'Active rooms'}</span>
-          <strong>{isPlatform ? formatMinutes(totals.minutes_month) : formatNumber(activeRooms)}</strong>
+          <span>{isPlatform ? 'Month usage' : 'Invited users'}</span>
+          <strong>{isPlatform ? formatMinutes(totals.minutes_month) : formatNumber(invitedUsers || companyUsers.total)}</strong>
         </div>
         <div>
           <span>{isPlatform ? 'Revenue estimate' : 'Invoice estimate'}</span>
@@ -555,7 +562,7 @@ function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, 
                 <strong>{plan.name}</strong>
                 <small>{plan.description}</small>
                 <b>{formatCurrency(plan.monthly_base_price)}</b>
-                <span>{formatMinutes(plan.monthly_minute_allowance)} · {formatNumber(plan.max_rooms)} rooms · {formatNumber(plan.max_apps)} apps</span>
+                <span>{formatMinutes(plan.monthly_minute_allowance)} · {formatNumber(plan.max_apps)} apps · {formatNumber(plan.max_participants_per_room)} participants/room</span>
               </button>
             )
           })}
@@ -746,7 +753,6 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
   const apiBase = clientApiBaseUrl()
   const publicApiBase = apiBase.endsWith('/client') ? apiBase.slice(0, -7) : apiBase
   const apiKey = credentials?.api_key || 'CLIENT_API_KEY'
-  const appKey = credentials?.app_key || app?.app_key || 'CLIENT_APP_KEY'
   const apiKeyLabel = credentials?.api_key ? 'Full key available from the new credentials above.' : 'Use the full API key saved when this app was generated.'
   const verifyCurl = `curl ${apiBase}/me \\
   -H "Authorization: Bearer ${apiKey}"`
@@ -812,18 +818,39 @@ function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp
     "external_user_id": "user_42",
     "room_id": 123
   }'`
-  const webSample = `const rtc = new TalkEachOtherRTC({
-  appKey: '${appKey}',
-  apiBaseUrl: '${publicApiBase}',
-  signalingUrl: window.location.origin,
-})
+  const webSample = `import { io } from 'socket.io-client'
 
-await rtc.authenticate(rtcTokenFromYourBackend)
-await rtc.joinRoom(123, {
-  mode: 'video',
+const apiBaseUrl = '${publicApiBase}'
+const signalingUrl = new URL(apiBaseUrl, window.location.origin).origin
+
+// This endpoint lives in your app backend and keeps CLIENT_API_KEY private.
+const tokenResponse = await fetch('/my-app/rtc-token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomId: 123,
+    externalUserId: 'user_42',
+    mode: 'video',
+  }),
+})
+const tokenData = await tokenResponse.json()
+if (!tokenResponse.ok) throw new Error(tokenData.message || 'RTC token failed')
+
+const rtcConfig = await fetch(apiBaseUrl + '/rtc/config').then((response) => response.json())
+const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+const socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
+
+socket.emit('join-room', {
+  roomId: tokenData.room.signaling_room,
+  databaseRoomId: tokenData.room.id,
+  userId: tokenData.user.user_id,
+  userName: tokenData.user.name,
+  rtcMode: tokenData.room.rtc_profile.media_type,
   micEnabled: true,
   cameraEnabled: true,
-})`
+})
+
+console.log('create RTCPeerConnection with', rtcConfig.iceServers, localStream)`
 
   return (
     <section className="enterprise-panel client-api-docs-panel glass-card">
@@ -860,40 +887,42 @@ await rtc.joinRoom(123, {
         <div>
           <span>Billing rule</span>
           <strong>Client company pays</strong>
-          <small>Invited external users are synced as free RTC participants.</small>
+          <small>Invited and synced users spend the company's package minutes.</small>
         </div>
       </div>
 
       <div className="client-api-flow-grid">
         <div><b>1</b><strong>Verify key</strong><span>Call `/me` from the company backend.</span></div>
-        <div><b>2</b><strong>Sync app user</strong><span>Map the client app user to a free RTC shadow user.</span></div>
-        <div><b>3</b><strong>Manage room</strong><span>Create, list, update, or close rooms from the client backend.</span></div>
+        <div><b>2</b><strong>Sync invited user</strong><span>Map the client app user into this company's user ledger.</span></div>
+        <div><b>3</b><strong>Create RTC resource</strong><span>Create or reuse an app-side room resource for token scope.</span></div>
         <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
-        <div><b>5</b><strong>Join RTC</strong><span>Use the room token in the web/mobile SDK.</span></div>
+        <div><b>5</b><strong>Join RTC</strong><span>Use the room token with Socket.IO signaling and native WebRTC.</span></div>
       </div>
 
       <div className="api-snippet-grid">
         <ApiSnippetCard eyebrow="GET" title="/api/client/me" detail="Checks tenant, app, billing scope, and API key status." code={verifyCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Run this whenever your app user logs in or profile changes; the user remains free." code={syncCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates a room for the synced external user; usage is billed to the client company." code={createRoomCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Adds or updates an invited company user; minutes from this user are billed to the company package." code={syncCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates an app-side RTC resource for token scope. Company billing still follows the synced user ledger." code={createRoomCurl} />
         <ApiSnippetCard eyebrow="PATCH" title="/api/client/rooms/:id" detail="Updates room name, privacy, password, seats, theme, and enabled features." code={updateRoomCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/token" detail="Use the returned `room.id`; returns `rtc_token`, controls, grants, and expiry." code={tokenCurl} />
         <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and returns client-company billable minutes." code={endSessionCurl} />
+        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and adds the user's billable minutes to the company package." code={endSessionCurl} />
         <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Closes room availability for the client API; in-app owner delete removes the room record." code={closeRoomCurl} />
-        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="The browser uses your backend token response, not the API key." code={webSample} />
+        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="Install `socket.io-client`; the browser uses your backend token response, not the API key." code={webSample} />
       </div>
 
       <div className="api-contract-grid">
         <div><span>API key storage</span><strong>Raw key shown once</strong><small>The backend stores a SHA-256 hash and a masked display value.</small></div>
         <div><span>Allowed origins</span><strong>Checked on browser-origin calls</strong><small>Server-to-server calls can omit the Origin header.</small></div>
         <div><span>Token ledger</span><strong>Hashed RTC token records</strong><small>Issued room tokens are recorded without storing the raw bearer token.</small></div>
-        <div><span>Usage ledger</span><strong>Daily aggregates</strong><small>Session start/end updates token count, participant minutes, room minutes, and peak concurrency.</small></div>
-        <div><span>Billing owner</span><strong>Client company</strong><small>External users can be invited from the client platform without paying this platform.</small></div>
+        <div><span>User ledger</span><strong>Synced invited users</strong><small>Company admins see the users their app synced and the minutes those users spent.</small></div>
+        <div><span>Usage ledger</span><strong>Company aggregates</strong><small>Session start/end updates user minutes, room minutes, and peak concurrency for billing checks.</small></div>
+        <div><span>Billing owner</span><strong>Client company</strong><small>External users can be invited from the client platform; the company package pays for their minutes.</small></div>
         <div><span>Webhook queue</span><strong>Pending delivery events</strong><small>Room, participant, and usage events are queued for the delivery worker.</small></div>
         <div><span>Token TTL</span><strong>15 minutes default</strong><small>Configurable with CLIENT_RTC_TOKEN_TTL_SECONDS.</small></div>
         <div><span>User statuses</span><strong>active, inactive, banned</strong><small>Inactive or banned external users cannot receive room tokens.</small></div>
-        <div><span>Room creation</span><strong>Open to synced users</strong><small>Package data is used for company billing/admin review, not to charge invited users.</small></div>
+        <div><span>Package limit</span><strong>Company minutes</strong><small>Included minutes and overage are evaluated against synced users' billable usage.</small></div>
+        <div><span>Room creation</span><strong>API resource only</strong><small>Rooms scope RTC tokens and sessions; they are not the company admin's billing object.</small></div>
         <div><span>Room lifecycle</span><strong>Update or end by API</strong><small>Ending a room closes active sessions but preserves billing history.</small></div>
         <div><span>Roles</span><strong>audience, publisher, moderator, admin, owner</strong><small>Publisher includes media publish and chat permissions.</small></div>
         <div><span>Room access</span><strong>Room-scoped token</strong><small>Password/private checks are satisfied only for that exact room.</small></div>
@@ -994,7 +1023,7 @@ function CompanyProfilePanel({ enterprise }) {
 
       <div className="company-limit-strip">
         <span><b>{formatNumber(client.default_limits?.app_count)}</b> apps</span>
-        <span><b>{formatNumber(client.default_limits?.room_count)}</b> rooms</span>
+        <span><b>{formatMinutes(client.plan?.monthly_minute_allowance)}</b> included minutes</span>
         <span><b>{formatNumber(client.default_limits?.participant_limit)}</b> participants per room</span>
         <span><b>{client.billing_type}</b> billing</span>
       </div>
@@ -1007,6 +1036,9 @@ function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
   const sessionMetrics = dashboard?.metrics?.sessions || {}
   const verification = dashboard?.usage_verification || {}
   const serviceOnline = enterprise?.service_model?.connection_indicator !== 'attention'
+  const companyScope = dashboard?.company_scope || enterprise?.user_scope || {}
+  const companyUsers = companyScope.users || {}
+  const hasCompanyScope = Boolean(dashboard?.company_scope || enterprise?.user_scope)
   const availableRooms = (rooms || []).filter((room) => room.status === 'active').length
   const disabledRooms = (rooms || []).filter((room) => room.status === 'inactive').length
   const removedRooms = (rooms || []).filter((room) => room.status === 'ended').length
@@ -1023,7 +1055,12 @@ function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
       detail: `${formatNumber(sessionMetrics.started_today)} started today`,
       state: Number(sessionMetrics.active || dashboard?.active_sessions || 0) > 0 ? 'good' : 'neutral',
     },
-    {
+    hasCompanyScope ? {
+      label: 'Company users',
+      value: formatNumber(companyUsers.invited || companyUsers.synced || companyUsers.total),
+      detail: `${formatNumber(companyUsers.live || 0)} live now · ${formatNumber(companyUsers.active || 0)} active accounts`,
+      state: 'good',
+    } : {
       label: 'Available rooms',
       value: formatNumber(availableRooms || roomMetrics.active),
       detail: `${formatNumber(disabledRooms || roomMetrics.inactive)} disabled · ${formatNumber(removedRooms || roomMetrics.ended)} removed`,
@@ -1058,7 +1095,7 @@ function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
       </div>
 
       <div className="simple-health-actions">
-        <button type="button" className="secondary-button" onClick={() => onTabChange('rooms')}>Manage rooms</button>
+        <button type="button" className="secondary-button" onClick={() => onTabChange(hasCompanyScope ? 'users' : 'rooms')}>{hasCompanyScope ? 'View users' : 'Manage RTC API'}</button>
         <button type="button" className="secondary-button" onClick={() => onTabChange('usage')}>Review usage</button>
         <button type="button" className="secondary-button" onClick={() => onTabChange('sdk')}>Check SDK access</button>
       </div>
@@ -1090,17 +1127,23 @@ function AdminSectionTabs({ sections, activeSection, onChange }) {
 function ScopeSummary({ payload, scope }) {
   const dashboard = payload?.dashboard
   const admin = payload?.admin
-  const label = scope === 'super_admin' && !admin ? 'Platform scope' : admin?.tenant_name || 'Admin scope'
+  const companyScope = dashboard?.company_scope
+  const companyUsers = companyScope?.users || {}
+  const label = scope === 'super_admin' && !admin ? 'Platform scope' : admin?.tenant_name || 'Company scope'
 
   return (
     <section className="admin-scope-summary glass-card">
       <div>
         <span className="eyebrow">{label}</span>
-        <h2>{admin ? admin.name : 'All admins and rooms'}</h2>
-        <p>{admin ? admin.email : 'Superadmin overview across every admin-owned room.'}</p>
+        <h2>{admin ? admin.name : companyScope ? 'Company users and package minutes' : 'All admins and rooms'}</h2>
+        <p>{admin ? admin.email : companyScope ? 'Company-admin overview across invited users, live sessions, and package usage.' : 'Superadmin overview across every admin-owned room.'}</p>
       </div>
       <div className="admin-scope-pills">
-        <span><b>{formatNumber(dashboard?.metrics?.rooms?.total)}</b> rooms</span>
+        {companyScope ? (
+          <span><b>{formatNumber(companyUsers.invited || companyUsers.synced || companyUsers.total)}</b> invited users</span>
+        ) : (
+          <span><b>{formatNumber(dashboard?.metrics?.rooms?.total)}</b> rooms</span>
+        )}
         <span><b>{formatNumber(dashboard?.active_sessions)}</b> live sessions</span>
         <span><b>{formatMinutes(dashboard?.minutes_used_this_month)}</b> this month</span>
       </div>
@@ -1113,6 +1156,8 @@ function EnterpriseServicePanel({ enterprise, mode }) {
   const billing = enterprise.billing || {}
   const totals = enterprise.platform_totals || {}
   const plan = enterprise.current_plan
+  const userScope = enterprise.user_scope || {}
+  const companyUsers = userScope.users || {}
   const isPlatform = mode === 'super_admin'
 
   return (
@@ -1132,8 +1177,8 @@ function EnterpriseServicePanel({ enterprise, mode }) {
           <strong>{isPlatform ? formatNumber(totals.active_clients) : plan?.name || 'No plan'}</strong>
         </div>
         <div>
-          <span>{isPlatform ? 'Active SDK apps' : 'SDK apps'}</span>
-          <strong>{formatNumber(isPlatform ? totals.active_apps : enterprise.apps?.length)}</strong>
+          <span>{isPlatform ? 'Active SDK apps' : 'Invited users'}</span>
+          <strong>{formatNumber(isPlatform ? totals.active_apps : companyUsers.invited || companyUsers.synced || companyUsers.total || 0)}</strong>
         </div>
         <div>
           <span>Month usage</span>
@@ -1210,10 +1255,10 @@ function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, m
               </div>
               <div className="service-plan-limits">
                 <span>{plan.status}</span>
-                <span>{formatNumber(plan.max_room_admins)} room admins</span>
-                <span>{formatNumber(plan.max_rooms)} rooms</span>
+                {mode === 'super_admin' ? <span>{formatNumber(plan.max_room_admins)} room admins</span> : null}
+                {mode === 'super_admin' ? <span>{formatNumber(plan.max_rooms)} API rooms</span> : null}
                 <span>{formatNumber(plan.max_apps)} apps</span>
-                <span>{formatNumber(plan.max_participants_per_room)} participants</span>
+                <span>{formatNumber(plan.max_participants_per_room)} participants/room</span>
                 <span>{formatNumber(plan.feature_count)} tools</span>
               </div>
             </button>
@@ -1340,7 +1385,7 @@ function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
             <input type="number" min="0" step="1" value={form.max_room_admins} onChange={(event) => change('max_room_admins', event.target.value)} />
           </label>
           <label>
-            <span>Rooms</span>
+            <span>API room cap</span>
             <input type="number" min="0" step="1" value={form.max_rooms} onChange={(event) => change('max_rooms', event.target.value)} />
           </label>
           <label>
@@ -1679,7 +1724,7 @@ function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, 
               />
             </label>
             <label>
-              <span>Default rooms</span>
+              <span>Default API room cap</span>
               <input
                 type="number"
                 min="0"
@@ -1801,7 +1846,7 @@ function ClientsBillingPanel({ clients, billing, mode }) {
               <th>Company</th>
               <th>Plan</th>
               <th>Apps</th>
-              <th>Rooms</th>
+              <th>Users</th>
               <th>Month Usage</th>
               <th>Invoice</th>
             </tr>
@@ -1815,10 +1860,10 @@ function ClientsBillingPanel({ clients, billing, mode }) {
                 </td>
                 <td>
                   <strong>{client.plan?.name || 'No plan'}</strong>
-                  <span>{formatNumber(client.plan?.max_room_admins)} room admins max</span>
+                  <span>{formatMinutes(client.plan?.monthly_minute_allowance)} included</span>
                 </td>
                 <td>{formatNumber(client.active_app_count)} / {formatNumber(client.app_count)}</td>
-                <td>{formatNumber(client.active_room_count)} live · {formatNumber(client.room_count)} total</td>
+                <td>{formatNumber(client.synced_user_count || client.invited_user_count)} invited · {formatNumber(client.user_count)} total</td>
                 <td>{formatMinutes(client.minutes_month)} · {formatPercent(client.usage_percent)}</td>
                 <td>{formatCurrency(client.estimated_invoice)}</td>
               </tr>
@@ -1854,7 +1899,7 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
     return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch))
   })
   const activeClients = (clients || []).filter((client) => client.status === 'active').length
-  const liveRooms = (clients || []).reduce((total, client) => total + Number(client.active_room_count || 0), 0)
+  const invitedUsers = (clients || []).reduce((total, client) => total + Number(client.synced_user_count || client.invited_user_count || 0), 0)
   const invoiceTotal = (clients || []).reduce((total, client) => total + Number(client.estimated_invoice || 0), 0)
 
   return (
@@ -1876,7 +1921,7 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
       <div className="company-directory-kpis">
         <div><span>Total companies</span><strong>{formatNumber(clients?.length || 0)}</strong></div>
         <div><span>Active clients</span><strong>{formatNumber(activeClients)}</strong></div>
-        <div><span>Live rooms</span><strong>{formatNumber(liveRooms)}</strong></div>
+        <div><span>Invited users</span><strong>{formatNumber(invitedUsers)}</strong></div>
         <div><span>Manual invoice estimate</span><strong>{formatCurrency(invoiceTotal)}</strong></div>
       </div>
 
@@ -1903,8 +1948,8 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
                 <b className={`admin-state ${client.status}`}>{client.status}</b>
               </div>
               <div className="company-directory-stats">
-                <span><b>{formatNumber(client.active_room_count)}</b> live rooms</span>
-                <span><b>{formatNumber(client.room_count)}</b> total rooms</span>
+                <span><b>{formatNumber(client.synced_user_count || client.invited_user_count)}</b> invited users</span>
+                <span><b>{formatNumber(client.user_count)}</b> total users</span>
                 <span><b>{formatNumber(client.active_app_count)}</b> SDK apps</span>
                 <span><b>{formatMinutes(client.minutes_month)}</b> this month</span>
               </div>
@@ -1924,23 +1969,26 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
 
 function CompanyDetailSummary({ company, dashboard, users, onTabChange }) {
   if (!company) return null
-  const roomMetrics = dashboard?.metrics?.rooms || {}
   const sessionMetrics = dashboard?.metrics?.sessions || {}
   const usageMonth = dashboard?.usage_month || {}
+  const companyScope = dashboard?.company_scope || {}
+  const companyUsers = companyScope.users || {}
+  const packageScope = companyScope.package || {}
+  const invitedUsers = companyUsers.invited ?? companyUsers.synced ?? company.synced_user_count ?? company.invited_user_count ?? users?.length ?? 0
   const actionCards = [
     {
-      title: 'Company rooms',
-      value: `${formatNumber(roomMetrics.active || company.active_room_count)} live`,
-      detail: `${formatNumber(roomMetrics.total || company.room_count)} total rooms`,
-      action: 'Manage rooms',
-      tab: 'rooms',
-    },
-    {
-      title: 'Company users',
-      value: formatNumber(users?.length || 0),
-      detail: 'Tenant accounts and synced app users',
+      title: 'Invited users',
+      value: formatNumber(invitedUsers),
+      detail: `${formatNumber(companyUsers.live || 0)} live now · ${formatNumber(companyUsers.total || users?.length || 0)} tenant accounts`,
       action: 'View users',
       tab: 'users',
+    },
+    {
+      title: 'Package minutes',
+      value: formatMinutes(usageMonth.minutes || company.minutes_month),
+      detail: `${formatPercent(packageScope.usage_percent ?? company.usage_percent)} of ${formatMinutes(packageScope.monthly_allowance ?? company.plan?.monthly_minute_allowance)} used`,
+      action: 'Review usage',
+      tab: 'usage',
     },
     {
       title: 'SDK apps',
@@ -1950,11 +1998,11 @@ function CompanyDetailSummary({ company, dashboard, users, onTabChange }) {
       tab: 'sdk',
     },
     {
-      title: 'Manual billing',
-      value: formatCurrency(company.estimated_invoice),
-      detail: `${formatMinutes(usageMonth.minutes || company.minutes_month)} used this month`,
-      action: 'Review usage',
-      tab: 'usage',
+      title: 'Live sessions',
+      value: formatNumber(sessionMetrics.active || 0),
+      detail: `${formatNumber(companyUsers.live_participants || 0)} participants connected`,
+      action: 'Open status',
+      tab: 'health',
     },
   ]
 
@@ -2011,7 +2059,7 @@ function CompanyUsersPanel({ users }) {
       <div className="admin-panel-header company-directory-header">
         <div>
           <span className="eyebrow">Company Users</span>
-          <h2>Tenant Accounts And App Users</h2>
+          <h2>Invited And Synced Company Users</h2>
         </div>
         <div className="company-directory-tools">
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search user, email, role" />
@@ -2026,10 +2074,10 @@ function CompanyUsersPanel({ users }) {
       </div>
 
       <div className="company-directory-kpis compact">
-        <div><span>Total users</span><strong>{formatNumber(users?.length || 0)}</strong></div>
+        <div><span>Company users</span><strong>{formatNumber(users?.length || 0)}</strong></div>
         <div><span>Live now</span><strong>{formatNumber(activeUsers)}</strong></div>
         <div><span>Visible rows</span><strong>{formatNumber(visibleUsers.length)}</strong></div>
-        <div><span>Usage records</span><strong>{formatNumber((users || []).reduce((total, user) => total + Number(user.participant_records || 0), 0))}</strong></div>
+        <div><span>Billed minutes</span><strong>{formatMinutes((users || []).reduce((total, user) => total + Number(user.total_minutes || 0), 0))}</strong></div>
       </div>
 
       <div className="admin-table-scroll">
@@ -2039,8 +2087,8 @@ function CompanyUsersPanel({ users }) {
               <th>User</th>
               <th>Roles</th>
               <th>Status</th>
-              <th>Live</th>
-              <th>Total Usage</th>
+              <th>Live Now</th>
+              <th>Billed Usage</th>
               <th>Last Joined</th>
             </tr>
           </thead>
@@ -2055,7 +2103,7 @@ function CompanyUsersPanel({ users }) {
                 </td>
                 <td>{user.roles?.length ? user.roles.join(', ') : 'end_user'}</td>
                 <td><span className={`admin-state ${user.status}`}>{user.status}</span></td>
-                <td>{formatNumber(user.active_rooms)} active rooms</td>
+                <td>{formatNumber(user.active_rooms)} active sessions</td>
                 <td>{formatMinutes(user.total_minutes)}</td>
                 <td>{user.last_joined_at ? formatUsageDate(user.last_joined_at) : 'No RTC activity'}</td>
               </tr>
@@ -2279,7 +2327,7 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
               <input type="number" min="0" value={form.default_app_limit} onChange={(event) => change('default_app_limit', event.target.value)} />
             </label>
             <label>
-              <span>Rooms</span>
+              <span>API room cap</span>
               <input type="number" min="0" value={form.default_room_limit} onChange={(event) => change('default_room_limit', event.target.value)} />
             </label>
             <label>
@@ -2356,7 +2404,7 @@ function AdminList({ admins, selectedAdminId, onSelect, onPlatform }) {
           <span className="eyebrow">Super Admin</span>
           <h2>Company Admins</h2>
         </div>
-        <button type="button" className={!selectedAdminId ? 'active' : ''} onClick={onPlatform}>All rooms</button>
+        <button type="button" className={!selectedAdminId ? 'active' : ''} onClick={onPlatform}>All companies</button>
       </div>
 
       <div className="admin-account-grid">
@@ -2466,7 +2514,7 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
     event.preventDefault()
     setCreating(true)
     setErrors({})
-    setMessage('Creating room...')
+    setMessage('Creating RTC resource...')
 
     try {
       const payload = {
@@ -2532,8 +2580,8 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
     <section className="admin-data-card room-management-panel glass-card">
       <div className="admin-panel-header">
         <div>
-          <span className="eyebrow">Rooms</span>
-          <h2>Create, Access, And Control Availability</h2>
+          <span className="eyebrow">RTC API</span>
+          <h2>Create Token-Scoped RTC Resources</h2>
         </div>
         <span>{formatNumber(visibleRooms.length)} shown</span>
       </div>
@@ -2550,7 +2598,7 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
           </label>
         ) : null}
         <label>
-          <span>Room name</span>
+          <span>Resource name</span>
           <input
             aria-invalid={Boolean(errors.name)}
             value={form.name}
@@ -2620,7 +2668,7 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
           <span>Gifts</span>
         </label>
         <button className="primary-button" type="submit" disabled={creating || (isSuperAdmin && !form.tenant_id)}>
-          {creating ? 'Creating...' : 'Create room'}
+          {creating ? 'Creating...' : 'Create RTC resource'}
         </button>
       </form>
 
@@ -2650,7 +2698,7 @@ function RoomManagementPanel({ rooms, clients, isSuperAdmin, onOpenRoom, onRefre
           </thead>
           <tbody>
             {visibleRooms.length === 0 ? (
-              <tr><td colSpan="6">No rooms in this scope.</td></tr>
+              <tr><td colSpan="6">No RTC resources in this scope.</td></tr>
             ) : visibleRooms.map((room) => (
               <tr key={room.id}>
                 <td>
@@ -2709,7 +2757,7 @@ function DailyUsageTable({ usage }) {
             <tr>
               <th>Date</th>
               <th>Minutes</th>
-              <th>Rooms</th>
+              <th>RTC Resources</th>
               <th>Users</th>
               <th>Logs</th>
             </tr>
@@ -2856,9 +2904,9 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     const client = getPrimaryClient(enterprise)
     const plan = enterprise?.current_plan || client?.plan
     const apps = enterprise?.apps || []
-    const roomMetrics = dashboard?.metrics?.rooms || {}
-    const activeRooms = Number(roomMetrics.active ?? dashboard?.active_rooms ?? client?.active_room_count ?? 0)
-    const totalRooms = Number(roomMetrics.total ?? client?.room_count ?? 0)
+    const companyScope = dashboard?.company_scope || enterprise?.user_scope || {}
+    const companyUsers = companyScope.users || {}
+    const monthMinutes = companyScope.usage?.month?.minutes ?? enterprise?.billing?.minutes_month ?? dashboard?.minutes_used_this_month
     const invoice = enterprise?.billing?.estimated_invoice ?? enterprise?.platform_totals?.estimated_invoice
 
     if (enterpriseMode === 'super_admin') {
@@ -2872,8 +2920,8 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
 
     return [
       ['Package', plan?.name || 'No package'],
-      ['SDK apps', formatNumber(apps.length)],
-      ['Rooms', `${formatNumber(activeRooms)} / ${formatNumber(totalRooms)}`],
+      ['Users', formatNumber(companyUsers.invited || companyUsers.synced || companyUsers.total || 0)],
+      ['Usage', formatMinutes(monthMinutes)],
       ['Invoice', formatCurrency(invoice)],
     ]
   }, [dashboard, enterprise, enterpriseMode])
@@ -3104,9 +3152,9 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
           <p>
             {isSuperAdmin
               ? selectedCompanyDetail
-                ? 'Inspect this company users, rooms, SDK apps, package, and billing usage.'
+                ? 'Inspect this company users, SDK apps, package minutes, and billing usage.'
                 : 'Start with client companies, then open one company to manage its RTC service.'
-              : 'Purchase RTC, connect your app, manage rooms, and track billing.'}
+              : 'Purchase RTC, connect your app, sync invited users, and track company-paid minutes.'}
           </p>
           <div className="admin-header-summary" aria-label="Dashboard summary">
             {headerFacts.map(([label, value]) => (

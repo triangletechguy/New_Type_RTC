@@ -32,7 +32,7 @@ export function clientApiBaseUrl() {
   if (typeof window === 'undefined') return 'https://your-domain.com/api/client'
 
   const { hostname, port, protocol, origin } = window.location
-  const localDevHost = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.3.2'].includes(hostname)
+  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
 
   if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
     return `${protocol}//${hostname}:8000/api/client`
@@ -141,7 +141,7 @@ export const CLIENT_API_TOKEN_CLAIMS = [
   ['room_type / rtc_profile', 'Maps the room to communication/live profile, web mode, and media type.'],
   ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
   ['permissions', 'Controls join, media publish, screen share, chat, mute, and kick.'],
-  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
+  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer while invited users spend package minutes.'],
   ['exp / iat', 'Keeps tokens short-lived; 15 minutes is the default target.'],
 ]
 
@@ -185,8 +185,8 @@ export function buildDashboardTabs(mode) {
   if (mode === 'company_detail') {
     return [
       { key: 'company_overview', label: 'Overview' },
-      { key: 'rooms', label: 'Rooms' },
       { key: 'users', label: 'Users' },
+      { key: 'rooms', label: 'RTC API' },
       { key: 'sdk', label: 'Integration' },
       { key: 'usage', label: 'Billing' },
       { key: 'packages', label: 'Package' },
@@ -198,8 +198,9 @@ export function buildDashboardTabs(mode) {
   return [
     { key: 'command', label: 'Command' },
     { key: 'purchase', label: 'Package' },
+    { key: 'users', label: 'Users' },
     { key: 'sdk', label: 'Integration' },
-    { key: 'rooms', label: 'Rooms' },
+    { key: 'rooms', label: 'RTC API' },
     { key: 'usage', label: 'Billing' },
     { key: 'company', label: 'Company' },
     { key: 'health', label: 'Status' },

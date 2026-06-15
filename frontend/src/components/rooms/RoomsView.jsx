@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
-import { apiRequest } from '../../services/api'
+import { apiRequest, updateAccountSecurity } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
+import { getPasswordError, normalizeEmail } from '../../utils/authValidation'
 import { canUseAdminDashboard } from '../../utils/roles'
 import {
   buildRoomsPath,
@@ -34,18 +35,22 @@ import {
   feedTabs,
   feedbackCategories,
   feedbackTypes,
+  languageStatus,
   maxFeedbackAttachmentSize,
+  normalizeSettingsLanguage,
   policyDocuments,
   popularHelp,
   regions,
-  settingsCopy,
+  settingsLanguageCodes,
+  settingsLanguageOptions,
   settingsNav,
+  translateApp,
 } from './roomsStaticData'
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'for_you') || { filter: 'all', sort: 'newest' }
 const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
 const appDownloadName = 'BuzzCast'
-const appDownloadUrl = 'https://www.buzzcast.com'
+const appDownloadUrl = 'https://funint.online'
 const appDownloadQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=176x176&margin=1&data=${encodeURIComponent(appDownloadUrl)}`
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
@@ -241,14 +246,6 @@ function directMessageDownloadName(message) {
   return `direct-message-${message?.id || Date.now()}.${extension}`
 }
 
-function copyForLanguage(_language, key, replacements = {}) {
-  const template = settingsCopy[key] || key
-  return Object.entries(replacements).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-    template
-  )
-}
-
 function validEmail(value) {
   return /^[^\s@]+@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(String(value || '').trim())
 }
@@ -264,6 +261,18 @@ function cardCover(card, fallback = 0) {
   if (card?.room) return coverForRoomType(card.room.room_type, card.room.privacy_type, cardAvatarIndex(card, fallback))
   if (card?.roomType || card?.privacy) return coverForRoomType(card.roomType, card.privacy, cardAvatarIndex(card, fallback))
   return coverForDemoTone(card?.tone, cardAvatarIndex(card, fallback))
+}
+
+function roomOwnerAvatar(room, fallbackIndex = 0) {
+  const ownerId = room?.owner_id || room?.ownerId || 0
+  const ownerName = room?.owner_name || room?.ownerName || room?.name || 'Room host'
+  return avatarForUser({
+    id: ownerId,
+    user_id: ownerId,
+    name: ownerName,
+    full_name: ownerName,
+    avatar_url: room?.owner_avatar_url || room?.ownerAvatarUrl || '',
+  }, ownerId || room?.id || fallbackIndex)
 }
 
 function activeParticipantPreviews(card) {
@@ -320,6 +329,7 @@ function roomToFeedCard(room, index) {
     roomType: room.room_type,
     privacy: room.privacy_type,
     avatarIndex: Number(room.id) || index,
+    avatarUrl: roomOwnerAvatar(room, index),
   }
 }
 
@@ -427,7 +437,7 @@ function SvgIcon({ id, className = '' }) {
   )
 }
 
-function BuzzLogo() {
+function BuzzLogo({ t = (key) => key }) {
   return (
     <div className="buzzcast-logo">
       <div className="buzzcast-logo-mark image-mark">
@@ -435,7 +445,7 @@ function BuzzLogo() {
       </div>
       <div>
         <strong>TalkEachOther</strong>
-        <span>Video and music rooms</span>
+        <span>{t('Video and music rooms')}</span>
       </div>
     </div>
   )
@@ -499,7 +509,7 @@ function FeedCard({ card, featured, onOpen, onDelete, canDelete = false, deletin
   )
 }
 
-export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, onAuthRequired }) {
+export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, onAuthRequired, language = 'English', onLanguageChange }) {
   const [rooms, setRooms] = useState([])
   const [roomMeta, setRoomMeta] = useState({ page: 1, per_page: 24, total: 0, total_pages: 1 })
   const [status, setStatus] = useState('Ready')
@@ -550,17 +560,19 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       privateInvite: saved.privateInvite !== false,
       hideSensitive: saved.hideSensitive !== false,
       contentMode: saved.contentMode || 'warning',
+      language: normalizeSettingsLanguage(saved.language || language || 'English'),
       region: user?.current_residence || saved.region || 'United States',
     }
   })
   const [securityAction, setSecurityAction] = useState(null)
   const [securityForm, setSecurityForm] = useState({
-    phone: '',
+    phone: user?.phone || '',
     email: user?.email || '',
     password: '',
     passwordConfirm: '',
   })
   const [securityError, setSecurityError] = useState('')
+  const [securitySaving, setSecuritySaving] = useState(false)
   const [helpMode, setHelpMode] = useState('popular')
   const [activeHelp, setActiveHelp] = useState(popularHelp[0]?.id || '')
   const [activeFaq, setActiveFaq] = useState(faqTopics[0])
@@ -620,12 +632,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomLaunchPending = Boolean(pendingRoomDraft && !createdRoom)
   const roomLaunchTitle = createdRoom ? 'Created Room' : roomLaunchPending ? 'Preparing Room' : 'Quick Join'
   const roomLaunchButtonLabel = roomLaunchPending ? 'Preparing Room...' : openingRoom ? 'Opening...' : 'Open Room'
-  const t = (key, replacements = {}) => copyForLanguage('English', key, replacements)
+  const t = (key, replacements = {}) => translateApp(settingsDraft.language || 'English', key, replacements)
 
   const roomCards = useMemo(() => {
     const cardRooms = createdRoom?.id ? upsertRoomById(rooms, createdRoom) : rooms
-    return cardRooms.map(roomToFeedCard)
-  }, [createdRoom, rooms])
+    return cardRooms.map((room, index) => {
+      const card = roomToFeedCard(room, index)
+      if (Number(room.owner_id || 0) !== Number(user?.id || 0)) return card
+
+      return {
+        ...card,
+        host: room.owner_name || displayName,
+        avatarUrl: profileAvatar,
+      }
+    })
+  }, [createdRoom, displayName, profileAvatar, rooms, user?.id])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
@@ -691,6 +712,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       name: card.title,
       detail: `${getRoomMeta(card.roomType).label} - ${card.privacy || 'public'}`,
       avatarIndex: cardAvatarIndex(card),
+      avatarUrl: card.avatarUrl,
       room: card.room,
       card,
     }))
@@ -955,6 +977,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     window.history.pushState(state, '', path)
   }
 
+  function scrollMobileShellToTop() {
+    if (!isMobileViewport()) return
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    })
+  }
+
   function applySectionFromHistory(state = {}) {
     const section = state.buzzcastSection || 'live'
     if (section === 'room') {
@@ -972,16 +1001,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function openProfileSection() {
     if (!requireAuth('Log in or sign up to open your profile.', 'login')) return
     setShowDownloadQr(false)
+    setShowMessages(false)
     pushSectionHistory('me')
     setActiveSection('me')
+    scrollMobileShellToTop()
   }
 
   function openSettingsSection(nextSettings = activeSettings) {
     if (!requireAuth('Log in to manage your account settings.', 'login')) return
     setShowDownloadQr(false)
+    setShowMessages(false)
     pushSectionHistory('settings')
     setActiveSettings(nextSettings)
     setActiveSection('settings')
+    scrollMobileShellToTop()
   }
 
   function openHostPanel(reason = 'Log in or sign up to create a live room.') {
@@ -1344,6 +1377,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     openMessagesDrawer()
   }
 
+  function openHelpSection() {
+    setShowDownloadQr(false)
+    pushSectionHistory('help')
+    setActiveSection('help')
+    setPreviewCard(null)
+    setShowMessages(false)
+    scrollMobileShellToTop()
+  }
+
   function openRankings() {
     if (!requireAuth('Log in to view live rankings.', 'login')) return
     setShowMessages(false)
@@ -1355,11 +1397,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openMobileMessageSection() {
+    if (showMessages) {
+      setShowMessages(false)
+      return
+    }
+
     setShowDownloadQr(false)
-    pushSectionHistory('help')
-    setActiveSection('help')
+    setActiveSection('live')
     setPreviewCard(null)
-    setShowMessages(false)
+    openMessagesDrawer()
+    scrollMobileShellToTop()
   }
 
   function updateSettings(field, value, message) {
@@ -1372,7 +1419,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSecurityError('')
     setSecurityForm((previous) => ({
       ...previous,
-      email: previous.email || user?.email || '',
+      phone: user?.phone || previous.phone || '',
+      email: user?.email || previous.email || '',
       password: '',
       passwordConfirm: '',
     }))
@@ -1383,49 +1431,118 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setSecurityError('')
   }
 
-  function submitSecurityAction(event) {
+  async function submitSecurityAction(event) {
     event.preventDefault()
+    if (securitySaving) return
 
     if (securityAction === 'phoneBound') {
-      const digits = securityForm.phone.replace(/\D/g, '')
+      const phone = securityForm.phone.trim()
+      const digits = phone.replace(/\D/g, '')
       if (digits.length < 7) {
         setSecurityError(t('Enter a valid phone number.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('phoneBound', true, t('Cell phone bound.'))
+      await saveSecurityChange({ phone }, 'phoneBound', t('Cell phone bound.'))
       return
     }
 
     if (securityAction === 'emailBound') {
-      if (!validEmail(securityForm.email)) {
+      const email = normalizeEmail(securityForm.email)
+      if (!validEmail(email)) {
         setSecurityError(t('Enter a valid email address.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('emailBound', true, t('Email bound.'))
+      await saveSecurityChange({ email }, 'emailBound', t('Email bound.'))
       return
     }
 
     if (securityAction === 'loginPasswordSet') {
-      if (securityForm.password.length < 10) {
-        setSecurityError(t('Use at least 10 characters for the password.'))
+      const passwordError = getPasswordError(securityForm.password, { strong: true })
+      if (passwordError) {
+        setSecurityError(t(passwordError))
         return
       }
       if (securityForm.password !== securityForm.passwordConfirm) {
         setSecurityError(t('Passwords do not match.'))
         return
       }
-      setSecurityAction(null)
-      updateSettings('loginPasswordSet', true, t('Login password set.'))
+      await saveSecurityChange({ password: securityForm.password }, 'loginPasswordSet', t('Login password set.'))
       return
     }
 
   }
 
+  async function saveSecurityChange(payload, field, message) {
+    setSecuritySaving(true)
+    setSecurityError('')
+
+    try {
+      const data = await updateAccountSecurity(payload)
+      if (data.user) {
+        onUserUpdated?.(data.user)
+      }
+      setSecurityAction(null)
+      setSecurityForm((previous) => ({
+        ...previous,
+        phone: data.user?.phone || previous.phone || '',
+        email: data.user?.email || previous.email || '',
+        password: '',
+        passwordConfirm: '',
+      }))
+      updateSettings(field, true, message)
+    } catch (error) {
+      setSecurityError(t(error.message || 'Account security update failed.'))
+    } finally {
+      setSecuritySaving(false)
+    }
+  }
+
   function updateFeedback(field, value) {
     setFeedbackForm((previous) => ({ ...previous, [field]: value }))
     setFeedbackStatus('')
+  }
+
+  function resetFeedbackForm() {
+    setFeedbackForm({
+      category: feedbackCategories[0],
+      type: feedbackTypes[0],
+      description: '',
+      contact: user?.email || '',
+      attachment: null,
+    })
+  }
+
+  function openFeedbackModal(defaults = {}) {
+    setFeedbackStatus('')
+    setFeedbackForm((previous) => ({
+      ...previous,
+      category: defaults.category || previous.category || feedbackCategories[0],
+      type: defaults.type || previous.type || feedbackTypes[0],
+      contact: previous.contact || user?.email || '',
+    }))
+    setShowFeedback(true)
+  }
+
+  function closeFeedbackModal() {
+    if (submittingFeedback) return
+    setShowFeedback(false)
+    setFeedbackStatus('')
+  }
+
+  function selectHelpMode(nextMode) {
+    setHelpMode(nextMode)
+    if (nextMode === 'popular' && !activeHelp) setActiveHelp(popularHelp[0]?.id || '')
+    if (nextMode === 'faq' && !activeFaq) setActiveFaq(faqTopics[0] || '')
+  }
+
+  function selectPopularHelp(helpId) {
+    setHelpMode('popular')
+    setActiveHelp(helpId)
+  }
+
+  function toggleFaqTopic(topic) {
+    setHelpMode('faq')
+    setActiveFaq((current) => current === topic ? '' : topic)
   }
 
   function handleFeedbackAttachment(event) {
@@ -1559,6 +1676,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setActiveSection('live')
     setPreviewCard(null)
     setActiveFeed(nextFeed)
+    if (nextFeed === 'following') setMobileRoomGroup('follow')
+    else if (nextFeed === 'latest') setMobileRoomGroup('recently')
+    else if (nextFeed === 'global') setMobileRoomGroup('group')
     setFilter(tab?.filter || 'all')
     setSort(tab?.sort || 'newest')
     setRoomMeta((previous) => ({ ...previous, page: 1 }))
@@ -1994,13 +2114,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       window.setTimeout(() => {
         setShowFeedback(false)
         setFeedbackStatus('')
-        setFeedbackForm({
-          category: feedbackCategories[0],
-          type: feedbackTypes[0],
-          description: '',
-          contact: user?.email || '',
-          attachment: null,
-        })
+        resetFeedbackForm()
       }, 900)
     } catch (error) {
       setFeedbackStatus(error.message || 'Feedback could not be sent. Please try again.')
@@ -2033,8 +2147,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
-    const featuredMobileCard = ownRoomCard
-    const featuredMobileTitle = featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard.title
+    const featuredMobileCard = activeFeed === 'following' ? visibleCards[0] : ownRoomCard
+    const featuredMobileTitle = featuredMobileCard?.isOwnRoom && featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard?.title
+    const featuredMobileRibbon = activeFeed === 'following' ? 'Follow' : 'Mine'
     const mobileRoomListCards = recentRoomCards.length ? recentRoomCards : visibleCards
 
     return (
@@ -2067,28 +2182,40 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div>
                 {roomSearchResults.length ? roomSearchResults.map((item, index) => (
                   <button key={`${item.type}-${item.id}`} type="button" onClick={() => openSearchResult(item)}>
-                    <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? index)} alt="" loading="lazy" /></i>
+                    <i className="image-avatar"><img src={item.avatarUrl || avatarForIndex(item.avatarIndex ?? index)} alt="" loading="lazy" /></i>
                     <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                   </button>
                 )) : <em>Type a room name, host, or category.</em>}
               </div>
             </div>
           ) : null}
-          <button type="button" className="mp4-feature-room" onClick={() => openMobileRoomOrCreate(featuredMobileCard)}>
-            <span className="mp4-feature-avatar">
-              <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
-            </span>
-            <span className="mp4-feature-copy">
-              <strong>{featuredMobileTitle}</strong>
-              <small>
-                <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-                <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-                <i>{compactNumber(featuredMobileCard.viewers || 0)}</i>
-                <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
-              </small>
-            </span>
-            <span className="mp4-feature-ribbon"><span>Mine</span></span>
-          </button>
+          {featuredMobileCard ? (
+            <button type="button" className="mp4-feature-room" onClick={() => openMobileRoomOrCreate(featuredMobileCard)}>
+              <span className="mp4-feature-avatar">
+                <img src={featuredMobileCard.avatarUrl || cardCover(featuredMobileCard)} alt="" loading="eager" decoding="async" fetchPriority="high" />
+              </span>
+              <span className="mp4-feature-copy">
+                <strong>{featuredMobileTitle}</strong>
+                <small>
+                  <img className="mp4-feature-bars" src={assetImage2Assets.bars} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                  <img className="mp4-feature-group" src={assetImage2Assets.groupIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                  <i>{compactNumber(featuredMobileCard.viewers || 0)}</i>
+                  <img className="mp4-feature-lock" src={assetImage2Assets.lockIcon} alt="" loading="eager" decoding="async" fetchPriority="high" aria-hidden="true" />
+                </small>
+              </span>
+              <span className="mp4-feature-ribbon"><span>{featuredMobileRibbon}</span></span>
+            </button>
+          ) : (
+            <div className="mp4-feature-room mp4-feature-empty">
+              <span className="mp4-feature-avatar">
+                <img src={assetImage2Assets.creatorCard} alt="" loading="eager" decoding="async" fetchPriority="high" />
+              </span>
+              <span className="mp4-feature-copy">
+                <strong>No followed rooms yet</strong>
+                <small>Follow room hosts to see them here.</small>
+              </span>
+            </div>
+          )}
           <nav className="mp4-room-tabs" aria-label="Mobile room groups">
             <button type="button" className={mobileRoomGroup === 'recently' ? 'active' : ''} onClick={() => switchMobileRoomGroup('recently')}>Recently</button>
             <button type="button" className={mobileRoomGroup === 'follow' ? 'active' : ''} onClick={() => switchMobileRoomGroup('follow')}>Follow</button>
@@ -2188,7 +2315,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderProfile() {
-    return <ProfilePanel user={user} onSaved={onUserUpdated} onLogout={onLogout} />
+    return <ProfilePanel user={user} language={settingsDraft.language || language} onSaved={onUserUpdated} onLogout={onLogout} />
   }
 
   function renderSettingsContent() {
@@ -2278,6 +2405,26 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       )
     }
 
+    if (activeSettings === 'language') {
+      return (
+        <div className="buzzcast-settings-list">
+          <label className="buzzcast-select-row">
+            <span><strong>{t('Current language')}</strong><small>{t('Choose the language used by mobile account screens.')}</small></span>
+            <select
+              value={settingsDraft.language || 'English'}
+              onChange={(event) => {
+                const nextLanguage = normalizeSettingsLanguage(event.target.value)
+                updateSettings('language', nextLanguage, languageStatus(nextLanguage))
+                onLanguageChange?.(nextLanguage)
+              }}
+            >
+              {settingsLanguageOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+            </select>
+          </label>
+        </div>
+      )
+    }
+
     if (activeSettings === 'terms') {
       const selectedPolicy = policyDocuments.find((item) => item.id === selectedPolicyId)
 
@@ -2290,7 +2437,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             }}>
               &lt; Back
             </button>
-            <h3>{selectedPolicy.title}</h3>
+            <h3>{t(selectedPolicy.title)}</h3>
             <p>{selectedPolicy.summary}</p>
             {selectedPolicy.sections.map(([title, body]) => (
               <section key={title}>
@@ -2309,7 +2456,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               setSelectedPolicyId(item.id)
               setSettingsStatus(item.summary)
             }}>
-              <span><strong>{item.title}</strong><small>{item.summary}</small></span>
+              <span><strong>{t(item.title)}</strong><small>{item.summary}</small></span>
               <b>&gt;</b>
             </button>
           ))}
@@ -2416,11 +2563,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
 
     return (
-      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => setSecurityAction(null)}>
+      <div className="buzzcast-modal-backdrop dark" onMouseDown={() => {
+        if (!securitySaving) setSecurityAction(null)
+      }}>
         <form className="buzzcast-security-modal" onSubmit={submitSecurityAction} onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <h2>{t(titleByAction[securityAction])}</h2>
-            <button type="button" onClick={() => setSecurityAction(null)}>x</button>
+            <button type="button" onClick={() => setSecurityAction(null)} disabled={securitySaving}>x</button>
           </header>
 
           {securityAction === 'phoneBound' ? (
@@ -2431,6 +2580,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 onChange={(event) => updateSecurityForm('phone', event.target.value)}
                 inputMode="tel"
                 placeholder="+1 555 010 2020"
+                disabled={securitySaving}
               />
             </label>
           ) : null}
@@ -2443,6 +2593,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 value={securityForm.email}
                 onChange={(event) => updateSecurityForm('email', event.target.value)}
                 placeholder="name@example.com"
+                disabled={securitySaving}
               />
             </label>
           ) : null}
@@ -2456,6 +2607,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   value={securityForm.password}
                   onChange={(event) => updateSecurityForm('password', event.target.value)}
                   placeholder="10+ characters"
+                  disabled={securitySaving}
                 />
               </label>
               <label>
@@ -2464,6 +2616,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   type="password"
                   value={securityForm.passwordConfirm}
                   onChange={(event) => updateSecurityForm('passwordConfirm', event.target.value)}
+                  disabled={securitySaving}
                 />
               </label>
             </>
@@ -2471,8 +2624,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
           {securityError ? <p className="buzzcast-security-error">{securityError}</p> : null}
           <div className="buzzcast-security-actions">
-            <button type="button" onClick={() => setSecurityAction(null)}>{t('Cancel')}</button>
-            <button type="submit" className="buzzcast-submit">{t('Save')}</button>
+            <button type="button" onClick={() => setSecurityAction(null)} disabled={securitySaving}>{t('Cancel')}</button>
+            <button type="submit" className="buzzcast-submit" disabled={securitySaving}>
+              {securitySaving ? <LoadingMovie label={t('Saving')} inline /> : t('Save')}
+            </button>
           </div>
         </form>
       </div>
@@ -2480,36 +2635,76 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderHelp() {
+    const helpTabs = [
+      { value: 'popular', label: 'Help', detail: `${popularHelp.length} guides` },
+      { value: 'faq', label: 'FAQ', detail: `${faqTopics.length} answers` },
+      { value: 'records', label: 'Records', detail: `${feedbackRecords.length} saved` },
+    ]
+    const activeTab = helpTabs.find((item) => item.value === helpMode) || helpTabs[0]
+
     return (
       <section className="buzzcast-help-shell">
-        <header>
-          <h1>Feedback and Help</h1>
+        <header className="buzzcast-help-hero">
+          <div>
+            <span className="buzzcast-help-eyebrow">Support center</span>
+            <h1>Feedback and Help</h1>
+            <p>Find room, chat, account, and safety answers, then send a report if something still needs attention.</p>
+          </div>
           <div className="buzzcast-help-actions">
-            <button type="button" className={helpMode === 'records' ? 'active' : ''} onClick={() => setHelpMode('records')}>Feedback record</button>
-            <button type="button" className="primary" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+            <button type="button" className={helpMode === 'records' ? 'active' : ''} onClick={() => selectHelpMode('records')}>
+              <span>Records</span>
+              <small>{feedbackRecords.length}</small>
+            </button>
+            <button type="button" className="primary" onClick={() => openFeedbackModal()}>
+              Submit feedback
+            </button>
           </div>
         </header>
+
+        <nav className="buzzcast-help-tabs" aria-label="Help sections">
+          {helpTabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              className={helpMode === tab.value ? 'active' : ''}
+              onClick={() => selectHelpMode(tab.value)}
+            >
+              <span>{tab.label}</span>
+              <small>{tab.detail}</small>
+            </button>
+          ))}
+        </nav>
+
         <div className="buzzcast-help-layout">
-          <aside className="buzzcast-help-menu">
-            <button type="button" className={helpMode === 'popular' ? 'active' : ''} onClick={() => setHelpMode('popular')}>Popular Questions</button>
-            {popularHelp.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={helpMode === 'popular' && activeHelp === item.id ? 'active soft' : ''}
-                onClick={() => {
-                  setHelpMode('popular')
-                  setActiveHelp(item.id)
-                }}
-              >
+          <aside className="buzzcast-help-menu" aria-label={`${activeTab.label} navigation`}>
+            {helpMode === 'faq' ? faqTopics.slice(0, 8).map((item) => (
+              <button key={item} type="button" className={activeFaq === item ? 'active soft' : ''} onClick={() => toggleFaqTopic(item)}>
+                {item}
+              </button>
+            )) : helpMode === 'records' ? (
+              <>
+                <button type="button" className="active" onClick={() => selectHelpMode('records')}>Feedback record</button>
+                <button type="button" onClick={() => openFeedbackModal()}>Submit new feedback</button>
+                <button type="button" onClick={() => selectHelpMode('faq')}>Browse FAQ</button>
+                <button type="button" onClick={() => selectHelpMode('popular')}>Popular help</button>
+              </>
+            ) : popularHelp.map((item) => (
+              <button key={item.id} type="button" className={activeHelp === item.id ? 'active soft' : ''} onClick={() => selectPopularHelp(item.id)}>
                 {item.title}
               </button>
             ))}
-            <button type="button" className={helpMode === 'faq' ? 'active' : ''} onClick={() => setHelpMode('faq')}>Frequently Asked Question</button>
           </aside>
+
           <main className="buzzcast-help-content">
             {helpMode === 'records' ? (
-              <div className="buzzcast-feedback-record-list">
+              <section className="buzzcast-feedback-record-list" aria-label="Feedback records">
+                <header className="buzzcast-help-section-head">
+                  <div>
+                    <span>Feedback history</span>
+                    <h2>Your submitted records</h2>
+                  </div>
+                  <button type="button" onClick={() => openFeedbackModal()}>New feedback</button>
+                </header>
                 {feedbackRecords.length ? feedbackRecords.map((record) => (
                   <article key={record.id} className="buzzcast-feedback-record">
                     <div>
@@ -2526,26 +2721,38 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <div className="buzzcast-feedback-empty">
                     <strong>No feedback records yet</strong>
                     <p>Submitted feedback will appear here after it is sent to support.</p>
-                    <button type="button" onClick={() => setShowFeedback(true)}>Submit feedback</button>
+                    <button type="button" onClick={() => openFeedbackModal()}>Submit feedback</button>
                   </div>
                 )}
-              </div>
+              </section>
             ) : helpMode === 'faq' ? (
-              <div className="buzzcast-faq-list">
+              <section className="buzzcast-faq-list" aria-label="Frequently asked questions">
+                <header className="buzzcast-help-section-head">
+                  <div>
+                    <span>FAQ</span>
+                    <h2>Frequently asked questions</h2>
+                  </div>
+                  <button type="button" onClick={() => openFeedbackModal({ type: 'Access issue' })}>Still need help</button>
+                </header>
                 {faqTopics.map((item) => (
                   <article key={item} className={activeFaq === item ? 'buzzcast-faq-item open' : 'buzzcast-faq-item'}>
-                    <button type="button" onClick={() => setActiveFaq(activeFaq === item ? '' : item)}>
+                    <button type="button" onClick={() => toggleFaqTopic(item)} aria-expanded={activeFaq === item}>
                       {item}
                       <span>{activeFaq === item ? '^' : 'v'}</span>
                     </button>
                     {activeFaq === item ? <p>{faqAnswers[item]}</p> : null}
                   </article>
                 ))}
-              </div>
+              </section>
             ) : (
               <article className="buzzcast-help-answer">
+                <span>Popular guide</span>
                 <h2>{activeHelpItem.title}</h2>
                 <p>{activeHelpItem.body}</p>
+                <footer>
+                  <button type="button" onClick={() => selectHelpMode('faq')}>Browse FAQ</button>
+                  <button type="button" className="primary" onClick={() => openFeedbackModal({ type: 'Access issue' })}>Report a problem</button>
+                </footer>
               </article>
             )}
           </main>
@@ -2566,6 +2773,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
     const isVideoRoom = roomAllowsCamera(card.room?.room_type || card.roomType)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
+    const summaryRoomId = card.room?.id || card.id
     const roomIdLabel = card.room?.id || 50741761
     const memberCount = Math.max(1, Math.min(999, Math.round(Number(card.viewers || 0) / 18)))
     const mobileComments = liveChatMessages
@@ -2623,18 +2831,14 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" onClick={() => setShowMobileRoomTools(true)}>Tools</button>
           </div>
 
-          <section className="buzzcast-mobile-stage-card" aria-label="Live room stage">
-            <span className="buzzcast-mobile-stage-avatar image-avatar">
-              <img src={roomAvatar} alt="" loading="lazy" />
+          <section className="buzzcast-mobile-stage-card buzzcast-mobile-preview-summary" aria-label="Room summary">
+            <span className="buzzcast-mobile-stage-avatar buzzcast-mobile-preview-initial" aria-hidden="true">
+              <b>T</b>
             </span>
             <div>
-              <small>{roomMeta.label} · {compactNumber(card.viewers || 0)} watching</small>
               <strong>{card.title}</strong>
-              <em>{card.host} · Live topic</em>
+              <span className="buzzcast-mobile-stage-room-id">Room ID: {summaryRoomId}</span>
             </div>
-            <button type="button" onClick={() => handleMobileJoinCard(card)}>
-              Join
-            </button>
           </section>
 
           <div className="buzzcast-mobile-seat-grid">
@@ -2864,7 +3068,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             >
               <span>Profile</span>
               <span className="buzzcast-mobile-room-value with-avatar">
-                <i className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></i>
+                <i className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></i>
                 <b>›</b>
               </span>
             </button>
@@ -2912,7 +3116,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </button>
           </div>
           <div className="buzzcast-mobile-room-live">
-            <span className="image-avatar"><img src={previewAvatar} alt="" loading="lazy" /></span>
+            <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
             <strong>LIVE</strong>
           </div>
           <div className="buzzcast-mobile-room-follow">
@@ -2930,9 +3134,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </div>
           ) : (
             <>
-              <div className="buzzcast-room-summary" aria-label="Room summary">
+              <div className="buzzcast-room-summary buzzcast-preview-room-summary" aria-label="Room summary">
+                <span className="buzzcast-room-summary-avatar buzzcast-preview-room-initial" aria-hidden="true">
+                  <b>T</b>
+                </span>
                 <strong title={card.title}>{card.title}</strong>
-                <span>Room ID: {card.room?.id || card.id}</span>
+                <span>Room ID: {summaryRoomId}</span>
                 <small>{compactNumber(card.viewers || 0)} user{Number(card.viewers || 0) === 1 ? '' : 's'}</small>
               </div>
             </>
@@ -2955,6 +3162,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   useEffect(() => {
     setSettingsDraft((previous) => ({
       ...previous,
+      phoneBound: previous.phoneBound || Boolean(user?.phone),
       emailBound: previous.emailBound || Boolean(user?.email),
       region: user?.current_residence || previous.region || 'United States',
     }))
@@ -2964,9 +3172,17 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }))
     setSecurityForm((previous) => ({
       ...previous,
-      email: previous.email || user?.email || '',
+      phone: user?.phone || previous.phone || '',
+      email: user?.email || previous.email || '',
     }))
-  }, [user?.email, user?.current_residence])
+  }, [user?.email, user?.phone, user?.current_residence])
+
+  useEffect(() => {
+    const normalizedLanguage = normalizeSettingsLanguage(language)
+    setSettingsDraft((previous) => (
+      previous.language === normalizedLanguage ? previous : { ...previous, language: normalizedLanguage }
+    ))
+  }, [language])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -2979,11 +3195,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         privateInvite: settingsDraft.privateInvite,
         hideSensitive: settingsDraft.hideSensitive,
         contentMode: settingsDraft.contentMode,
+        language: settingsDraft.language,
         region: settingsDraft.region,
       }))
     }
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = 'en'
+      document.documentElement.lang = settingsLanguageCodes[settingsDraft.language] || 'en'
     }
   }, [settingsDraft])
 
@@ -3089,9 +3306,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     <div className={`buzzcast-shell section-${activeSection}`}>
       <AppIconSprite />
       <header className="buzzcast-topbar">
-        <BuzzLogo />
+        <BuzzLogo t={t} />
         <div className="buzzcast-search-wrap">
-          <label className="sr-only" htmlFor="buzzcast-search">Search</label>
+          <label className="sr-only" htmlFor="buzzcast-search">{t('Search')}</label>
           <input
             id="buzzcast-search"
             value={search}
@@ -3099,9 +3316,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             onKeyDown={handleSearchKeyDown}
             onFocus={() => setShowSearchPanel(true)}
             onBlur={() => window.setTimeout(() => setShowSearchPanel(false), 160)}
-            placeholder="Search"
+            placeholder={t('Search')}
           />
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label="Search rooms">
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={runSearch} aria-label={t('Search rooms')}>
             <span className="buzzcast-search-icon" aria-hidden="true"></span>
           </button>
           {showSearchPanel ? (
@@ -3114,29 +3331,26 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => openSearchResult(item)}
                 >
-                  <i className="image-avatar"><img src={avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
+                  <i className="image-avatar"><img src={item.avatarUrl || avatarForIndex(item.avatarIndex ?? item.id ?? index)} alt="" loading="lazy" /></i>
                   <span><strong>{item.name}</strong><small>{item.detail}</small></span>
                 </button>
               ))}
               {!loadingRooms && roomSearchResults.length === 0 ? (
-                <em>{search.trim() ? 'Try another room name, host, or room type.' : 'Type a room name, host, or category.'}</em>
+                <em>{search.trim() ? t('Try another room name, host, or room type.') : t('Type a room name, host, or category.')}</em>
               ) : null}
             </div>
           ) : null}
         </div>
         <div className="buzzcast-actions">
-          <IconButton label="Install app" className="get-app" onClick={openInstallAppModal}>
-            <SvgIcon id="icon-getTheAppIcon" />
-          </IconButton>
           {showAdminDashboard ? (
-            <IconButton label="Admin dashboard" onClick={() => onView?.('admin')}>
+            <IconButton label={t('Admin dashboard')} onClick={() => onView?.('admin')}>
               <SvgIcon id="icon-adminDashboardIcon" />
             </IconButton>
           ) : null}
-          <IconButton label="Rankings" onClick={openRankings}>
+          <IconButton label={t('Rankings')} onClick={openRankings}>
             <SvgIcon id="icon-rankingIcon" />
           </IconButton>
-          <IconButton label={showMessages ? 'Close messages' : 'Messages'} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
+          <IconButton label={showMessages ? t('Close messages') : t('Messages')} badge={unreadThreadCount ? String(unreadThreadCount) : ''} onClick={toggleMessagesDrawer}>
             <SvgIcon id="icon-messageTopbarIcon" />
           </IconButton>
           <button type="button" className="buzzcast-avatar-button" onClick={openProfileSection}>
@@ -3151,63 +3365,75 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         <button
           type="button"
           className={activeSection === 'live' || activeSection === 'room' ? 'active buzzcast-rail-tab buzzcast-rail-home' : 'buzzcast-rail-tab buzzcast-rail-home'}
-          data-mobile-label="Live"
+          data-mobile-label={t('Live')}
           onClick={openLiveSection}
-          aria-label="Home"
+          aria-label={t('Home')}
         >
           <span className="buzzcast-rail-icon rail-live rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-homeLiveIcon" />
           </span>
-          <b>Live</b>
+          <b>{t('Live')}</b>
         </button>
         <button
           type="button"
           className={activeSection === 'me' ? 'active buzzcast-rail-tab buzzcast-rail-profile' : 'buzzcast-rail-tab buzzcast-rail-profile'}
-          data-mobile-label="Me"
+          data-mobile-label={t('Me')}
           onClick={openProfileSection}
-          aria-label="Me"
+          aria-label={t('Me')}
         >
           <span className="buzzcast-rail-icon rail-me rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-icon_share" />
           </span>
-          <b>Me</b>
-        </button>
-        <button
-          type="button"
-          className={showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
-          data-mobile-label="App"
-          onClick={toggleDownloadQrPanel}
-          aria-label="Scan to download app"
-        >
-          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
-            <SvgIcon id="icon-getTheAppIcon" />
-          </span>
-          <b>Download app</b>
+          <b>{t('Me')}</b>
         </button>
         <div className="buzzcast-rail-spacer"></div>
         <button
           type="button"
+          className={showInstall || showDownloadQr ? 'active buzzcast-rail-tab buzzcast-rail-app-download' : 'buzzcast-rail-tab buzzcast-rail-app-download'}
+          data-mobile-label={t('App')}
+          onClick={openInstallAppModal}
+          aria-label={t('Get the app')}
+        >
+          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-getTheAppIcon" />
+          </span>
+          <b>{t('Get the app')}</b>
+        </button>
+        <button
+          type="button"
           className={activeSection === 'settings' ? 'active buzzcast-rail-tab buzzcast-rail-moments' : 'buzzcast-rail-tab buzzcast-rail-moments'}
-          data-mobile-label="Settings"
+          data-mobile-label={t('Settings')}
           onClick={openMobileMomentsSection}
-          aria-label="Settings"
+          aria-label={t('Settings')}
         >
           <span className="buzzcast-rail-icon rail-settings rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-settingsIcon" />
           </span>
-          <b>Settings</b>
+          <b>{t('Settings')}</b>
         </button>
         <button
           type="button"
-          className={showMessages || activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
-          data-mobile-label="Help"
-          onClick={openMobileMessageSection}
-          aria-label="Feedback and Help"
+          className={activeSection === 'help' ? 'active buzzcast-rail-tab buzzcast-rail-message-tab' : 'buzzcast-rail-tab buzzcast-rail-message-tab'}
+          data-mobile-label={t('Help')}
+          onClick={openHelpSection}
+          aria-label={t('Feedback and Help')}
         >
           <span className="buzzcast-rail-icon rail-help rail-symbol-icon" aria-hidden="true">
             <SvgIcon id="icon-feedbackAndHelpIcon" />
           </span>
-          <b>Feedback and Help</b>
+          <b>{t('Feedback and Help')}</b>
+        </button>
+        <button
+          type="button"
+          className={showMessages ? 'active buzzcast-rail-tab buzzcast-rail-install' : 'buzzcast-rail-tab buzzcast-rail-install'}
+          data-mobile-label={t('Message')}
+          onClick={openMobileMessageSection}
+          aria-label={showMessages ? t('Close messages') : t('Messages')}
+        >
+          <span className="buzzcast-rail-icon rail-app rail-symbol-icon" aria-hidden="true">
+            <SvgIcon id="icon-messageTopbarIcon" />
+          </span>
+          <b>{t('Messages')}</b>
         </button>
       </aside>
 
@@ -3220,13 +3446,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <img src={brandAssets.appIconSmall} alt="" decoding="async" />
             </span>
           </div>
-          <strong>Scan to download {appDownloadName} APP</strong>
+          <strong>Scan to download {appDownloadName}</strong>
           <small>{appDownloadUrl.replace(/^https?:\/\//, '')}</small>
           <div className="buzzcast-download-platforms" aria-label="Supported app platforms">
-            <span className="android">Android</span>
-            <span className="play">Play</span>
-            <span className="ios">iOS</span>
-            <span className="pwa">PWA</span>
+            <span className="android">Android app</span>
           </div>
         </section>
       ) : null}
@@ -3240,7 +3463,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       </main>
 
       {showMessages ? (
-        <section className="buzzcast-messages-drawer">
+        <section className={activeThreadData ? 'buzzcast-messages-drawer has-active-thread' : 'buzzcast-messages-drawer no-active-thread'}>
           <aside>
             <input
               value={messageSearch}
@@ -3725,26 +3948,43 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       {renderSecurityActionModal()}
 
       {showFeedback ? (
-        <div className="buzzcast-modal-backdrop dark">
-          <form className="buzzcast-feedback-modal" onSubmit={submitFeedback}>
-            <header><h2>Feedback</h2><button type="button" onClick={() => setShowFeedback(false)} disabled={submittingFeedback}>x</button></header>
+        <div className="buzzcast-modal-backdrop dark" onMouseDown={closeFeedbackModal}>
+          <form className="buzzcast-feedback-modal" onSubmit={submitFeedback} onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Support ticket</span>
+                <h2>Submit feedback</h2>
+                <p>Share what happened and add a screenshot or recording when it helps support review the issue.</p>
+              </div>
+              <button type="button" onClick={closeFeedbackModal} disabled={submittingFeedback} aria-label="Close feedback">x</button>
+            </header>
             <div className="buzzcast-feedback-row">
-              <select value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)} disabled={submittingFeedback}>
-                {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-              <select value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)} disabled={submittingFeedback}>
-                {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
+              <label htmlFor="feedback-category">
+                <span>Category</span>
+                <select id="feedback-category" value={feedbackForm.category} onChange={(event) => updateFeedback('category', event.target.value)} disabled={submittingFeedback}>
+                  {feedbackCategories.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label htmlFor="feedback-type">
+                <span>Type</span>
+                <select id="feedback-type" value={feedbackForm.type} onChange={(event) => updateFeedback('type', event.target.value)} disabled={submittingFeedback}>
+                  {feedbackTypes.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
             </div>
-            <label>Problem description</label>
-            <textarea
-              placeholder="Please provide as much detail as possible"
-              maxLength={1000}
-              value={feedbackForm.description}
-              onChange={(event) => updateFeedback('description', event.target.value)}
-              disabled={submittingFeedback}
-            ></textarea>
-            <label>Problem screenshot / screen recording <small>(optional)</small></label>
+            <label htmlFor="feedback-description" className="buzzcast-feedback-field">
+              <span>Problem description</span>
+              <textarea
+                id="feedback-description"
+                placeholder="What happened? Which room or action was affected?"
+                maxLength={1000}
+                value={feedbackForm.description}
+                onChange={(event) => updateFeedback('description', event.target.value)}
+                disabled={submittingFeedback}
+              ></textarea>
+              <small>{feedbackForm.description.length}/1000</small>
+            </label>
+            <span className="buzzcast-feedback-label">Problem screenshot / screen recording <small>(optional)</small></span>
             <div className={`buzzcast-upload-box ${feedbackForm.attachment ? 'has-file' : ''}`}>
               <input id="feedback-attachment" type="file" accept="image/*,video/*" onChange={handleFeedbackAttachment} disabled={submittingFeedback} />
               <label htmlFor="feedback-attachment">
@@ -3755,17 +3995,23 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 <button type="button" onClick={removeFeedbackAttachment} disabled={submittingFeedback}>Remove</button>
               ) : null}
             </div>
-            <label>Contact information <small>(optional)</small></label>
-            <input
-              placeholder="Enter your email account"
-              value={feedbackForm.contact}
-              onChange={(event) => updateFeedback('contact', event.target.value)}
-              disabled={submittingFeedback}
-            />
+            <label htmlFor="feedback-contact" className="buzzcast-feedback-field">
+              <span>Contact information <small>(optional)</small></span>
+              <input
+                id="feedback-contact"
+                placeholder="Email or phone"
+                value={feedbackForm.contact}
+                onChange={(event) => updateFeedback('contact', event.target.value)}
+                disabled={submittingFeedback}
+              />
+            </label>
             {feedbackStatus ? <p className="buzzcast-feedback-status">{feedbackStatus}</p> : null}
-            <button type="submit" className="buzzcast-submit" disabled={submittingFeedback}>
-              {submittingFeedback ? 'Sending...' : 'Submit'}
-            </button>
+            <footer>
+              <button type="button" className="secondary-button" onClick={closeFeedbackModal} disabled={submittingFeedback}>Cancel</button>
+              <button type="submit" className="buzzcast-submit" disabled={submittingFeedback}>
+                {submittingFeedback ? 'Sending...' : 'Submit'}
+              </button>
+            </footer>
           </form>
         </div>
       ) : null}

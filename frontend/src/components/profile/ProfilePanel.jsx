@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { avatarForUser } from '../../assets/rtc/catalog'
 import { updateProfile } from '../../services/api'
 import { LoadingMovie } from '../common/LoadingMovie'
+import { translateApp } from '../rooms/roomsStaticData'
 
 const supportedAvatarTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const maxAvatarSourceBytes = 6 * 1024 * 1024
@@ -14,8 +15,8 @@ const genderLabels = {
   prefer_not_to_say: 'Prefer not to say',
 }
 
-function displayName(user) {
-  return user?.name || user?.email?.split('@')[0] || 'Guest'
+function displayName(user, fallback = 'Guest') {
+  return user?.name || user?.email?.split('@')[0] || fallback
 }
 
 function dateOnly(value) {
@@ -98,17 +99,18 @@ async function createAvatarDataUrl(file) {
   return dataUrl
 }
 
-export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
+export function ProfilePanel({ user, onSaved, onLogout, onClose, language = 'English' }) {
   const avatarInputRef = useRef(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(() => normalizeProfileForm(user))
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
-  const name = displayName(user)
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
+  const name = displayName(user, t('Guest'))
   const fallbackAvatar = avatarForUser({ ...user, avatar_url: '', gender: form.gender || user?.gender }, user?.id || 0)
   const avatar = form.avatar_url === null ? fallbackAvatar : form.avatar_url || user?.avatar_url || fallbackAvatar
-  const residence = user?.current_residence || 'Not set'
-  const birthday = dateOnly(user?.birthday) || 'Not set'
+  const residence = user?.current_residence || t('Not set')
+  const birthday = dateOnly(user?.birthday) || t('Not set')
 
   useEffect(() => {
     setForm(normalizeProfileForm(user))
@@ -205,9 +207,9 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
       <div className="buzzcast-profile-hero">
         {editing ? (
           <div className="profile-photo-editor">
-            <button type="button" className="buzzcast-profile-avatar profile-photo-button image-avatar" onClick={openAvatarPicker} disabled={saving} aria-label="Change profile photo">
+            <button type="button" className="buzzcast-profile-avatar profile-photo-button image-avatar" onClick={openAvatarPicker} disabled={saving} aria-label={t('Change profile photo')}>
               <img src={avatar} alt="" loading="lazy" />
-              <span>Change</span>
+              <span>{t('Change')}</span>
             </button>
             <input
               ref={avatarInputRef}
@@ -217,7 +219,7 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
               onChange={changeAvatar}
               disabled={saving}
             />
-            {form.avatar_url ? <button type="button" className="profile-photo-remove" onClick={removeAvatar} disabled={saving}>Remove</button> : null}
+            {form.avatar_url ? <button type="button" className="profile-photo-remove" onClick={removeAvatar} disabled={saving}>{t('Remove')}</button> : null}
           </div>
         ) : (
           <div className="buzzcast-profile-avatar image-avatar">
@@ -229,46 +231,46 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
           <span>ID:{user?.id || 0}</span>
           <div className="buzzcast-profile-badges">
             <strong>{user?.age || '--'}</strong>
-            <strong>{genderLabels[user?.gender] || 'Profile'}</strong>
+            <strong>{user?.gender ? t(genderLabels[user.gender]) : t('Profile')}</strong>
           </div>
-          <p>Email <b>{user?.email || 'Not set'}</b></p>
+          <p>{t('Email')} <b>{user?.email || t('Not set')}</b></p>
           <small>{residence}</small>
         </div>
-        {onClose ? <button type="button" className="profile-close-button" onClick={onClose} aria-label="Close profile">x</button> : null}
+        {onClose ? <button type="button" className="profile-close-button" onClick={onClose} aria-label={t('Close profile')}>x</button> : null}
       </div>
 
       {editing ? (
         <form className="profile-edit-form" onSubmit={save}>
-          <label>Name</label>
+          <label>{t('Name')}</label>
           <input value={form.name} onChange={(event) => change('name', event.target.value)} autoComplete="name" />
           <div className="profile-edit-row">
             <label>
-              <span>Gender</span>
+              <span>{t('Gender')}</span>
               <select value={form.gender} onChange={(event) => change('gender', event.target.value)}>
-                <option value="">Select gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="non_binary">Non-binary</option>
-                <option value="prefer_not_to_say">Prefer not to say</option>
+                <option value="">{t('Select gender')}</option>
+                <option value="male">{t('Male')}</option>
+                <option value="female">{t('Female')}</option>
+                <option value="non_binary">{t('Non-binary')}</option>
+                <option value="prefer_not_to_say">{t('Prefer not to say')}</option>
               </select>
             </label>
             <label>
-              <span>Age</span>
+              <span>{t('Age')}</span>
               <input value={form.age} onChange={(event) => change('age', event.target.value)} inputMode="numeric" />
             </label>
           </div>
           <div className="profile-edit-row residence-fields">
             <label>
-              <span>Current Residence</span>
+              <span>{t('Current Residence')}</span>
               <input
                 value={form.current_residence}
                 onChange={(event) => change('current_residence', event.target.value)}
                 autoComplete="country-name"
-                placeholder="Country"
+                placeholder={t('Country')}
               />
             </label>
             <label>
-              <span>Birthday</span>
+              <span>{t('Birthday')}</span>
               <input
                 type="date"
                 value={form.birthday}
@@ -277,42 +279,42 @@ export function ProfilePanel({ user, onSaved, onLogout, onClose }) {
             </label>
           </div>
           <footer>
-            <button type="button" className="secondary-button" onClick={cancelEdit} disabled={saving}>Cancel</button>
-            <button type="submit" className="primary-button" disabled={saving}>{saving ? <LoadingMovie label="Saving" inline /> : 'Save profile'}</button>
+            <button type="button" className="secondary-button" onClick={cancelEdit} disabled={saving}>{t('Cancel')}</button>
+            <button type="submit" className="primary-button" disabled={saving}>{saving ? <LoadingMovie label={t('Saving')} inline /> : t('Save profile')}</button>
           </footer>
         </form>
       ) : (
         <>
           <div className="buzzcast-profile-grid">
-            <h2>Profile</h2>
+            <h2>{t('Profile')}</h2>
             <dl>
-              <dt>Name</dt><dd>{name}</dd>
-              <dt>Gender</dt><dd>{genderLabels[user?.gender] || 'Not set'}</dd>
-              <dt>Age</dt><dd>{user?.age || 'Not set'}</dd>
-              <dt>Birthday</dt><dd>{birthday}</dd>
-              <dt>Email</dt><dd>{user?.email || 'Not set'}</dd>
-              <dt>Current Residence</dt><dd>{residence}</dd>
+              <dt>{t('Name')}</dt><dd>{name}</dd>
+              <dt>{t('Gender')}</dt><dd>{user?.gender ? t(genderLabels[user.gender]) : t('Not set')}</dd>
+              <dt>{t('Age')}</dt><dd>{user?.age || t('Not set')}</dd>
+              <dt>{t('Birthday')}</dt><dd>{birthday}</dd>
+              <dt>{t('Email')}</dt><dd>{user?.email || t('Not set')}</dd>
+              <dt>{t('Current Residence')}</dt><dd>{residence}</dd>
             </dl>
           </div>
           <div className="buzzcast-profile-links">
-            <button type="button" onClick={() => setEditing(true)}>Edit profile</button>
-            {onLogout ? <button type="button" onClick={onLogout}>Sign out</button> : null}
+            <button type="button" onClick={() => setEditing(true)}>{t('Edit profile')}</button>
+            {onLogout ? <button type="button" onClick={onLogout}>{t('Sign out')}</button> : null}
           </div>
         </>
       )}
 
-      {status ? <div className="profile-status">{status}</div> : null}
+      {status ? <div className="profile-status">{t(status)}</div> : null}
     </section>
   )
 }
 
-export function ProfileModal({ open, user, onSaved, onLogout, onClose }) {
+export function ProfileModal({ open, user, onSaved, onLogout, onClose, language = 'English' }) {
   if (!open || !user) return null
 
   return (
     <div className="profile-modal-backdrop" onMouseDown={onClose}>
       <div className="profile-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <ProfilePanel user={user} onSaved={onSaved} onLogout={onLogout} onClose={onClose} />
+        <ProfilePanel user={user} language={language} onSaved={onSaved} onLogout={onLogout} onClose={onClose} />
       </div>
     </div>
   )

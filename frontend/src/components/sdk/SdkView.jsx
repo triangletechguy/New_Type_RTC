@@ -11,40 +11,118 @@ const sdkTabs = [
   {
     id: 'web',
     label: 'Web',
-    title: 'Web quickstart',
+    title: 'Browser quickstart',
     language: 'JavaScript',
-    code: `import { TalkEachOtherRTC } from '@talk-each-other/rtc-web'
+    code: `import { io } from 'socket.io-client'
 
-const rtc = new TalkEachOtherRTC({
-  appKey: 'client_app_key',
-  apiBaseUrl: 'https://api.example.com/api',
-  signalingUrl: 'https://signal.example.com',
-})
-
-const clientRtcToken = 'client_rtc_token'
-const roomId = 'room_1001'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+const signalingUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || new URL(apiBaseUrl, window.location.origin).origin
+const appBackendUrl = import.meta.env.VITE_APP_BACKEND_URL || ''
+const roomId = 123
+const externalUserId = 'user_42'
+const localVideo = document.querySelector('[data-local-video]')
 const remoteVideo = document.querySelector('[data-remote-video]')
 
-await rtc.authenticate(clientRtcToken)
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options)
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.message || data.code || 'Request failed')
+  return data
+}
 
-const session = await rtc.joinRoom(roomId, {
-  mode: 'video',
-  micEnabled: true,
-  cameraEnabled: true,
+// Your backend endpoint keeps CLIENT_API_KEY private and returns rtc_token, room, user.
+const tokenData = await fetchJson(appBackendUrl + '/my-app/rtc-token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ roomId, externalUserId, mode: 'video' }),
 })
 
-console.log('joined room', session.room?.id || roomId)
-
-rtc.on('peer-joined', (peer) => {
-  console.log('peer joined', peer.userId)
+const rtcConfig = await fetchJson(apiBaseUrl + '/rtc/config')
+const mediaType = tokenData.room.rtc_profile.media_type
+const localStream = await navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: mediaType === 'video',
 })
 
-rtc.on('remote-track', ({ peer, stream }) => {
-  if (remoteVideo) remoteVideo.srcObject = stream
-  console.log('remote track from', peer.userId)
+if (localVideo) localVideo.srcObject = localStream
+
+const socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
+const peers = new Map()
+
+function getPeerConnection(socketId) {
+  if (peers.has(socketId)) return peers.get(socketId)
+
+  const pc = new RTCPeerConnection({
+    iceServers: rtcConfig.iceServers || [],
+    iceTransportPolicy: rtcConfig.iceTransportPolicy || 'all',
+  })
+
+  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('webrtc-ice-candidate', {
+        targetSocketId: socketId,
+        candidate: event.candidate,
+      })
+    }
+  }
+  pc.ontrack = (event) => {
+    if (remoteVideo) remoteVideo.srcObject = event.streams[0]
+  }
+
+  peers.set(socketId, pc)
+  return pc
+}
+
+async function createOffer(socketId) {
+  const pc = getPeerConnection(socketId)
+  await pc.setLocalDescription(await pc.createOffer())
+  socket.emit('webrtc-offer', { targetSocketId: socketId, offer: pc.localDescription })
+}
+
+socket.on('connect', () => {
+  socket.emit('join-room', {
+    roomId: tokenData.room.signaling_room,
+    databaseRoomId: tokenData.room.id,
+    userId: tokenData.user.user_id,
+    userName: tokenData.user.name,
+    userAvatarUrl: tokenData.user.avatar_url,
+    rtcMode: mediaType,
+    micEnabled: true,
+    cameraEnabled: mediaType === 'video',
+  }, (response) => {
+    if (!response?.ok) throw new Error(response?.message || 'Signaling join failed')
+    response.users.forEach((peer) => createOffer(peer.socketId))
+  })
 })
 
-await rtc.leaveRoom()`,
+socket.on('user-joined', (peer) => createOffer(peer.socketId))
+
+socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
+  const pc = getPeerConnection(fromSocketId)
+  await pc.setRemoteDescription(offer)
+  await pc.setLocalDescription(await pc.createAnswer())
+  socket.emit('webrtc-answer', { targetSocketId: fromSocketId, answer: pc.localDescription })
+})
+
+socket.on('webrtc-answer', async ({ fromSocketId, answer }) => {
+  await getPeerConnection(fromSocketId).setRemoteDescription(answer)
+})
+
+socket.on('webrtc-ice-candidate', async ({ fromSocketId, candidate }) => {
+  await getPeerConnection(fromSocketId).addIceCandidate(candidate)
+})
+
+socket.on('user-left', ({ socketId }) => {
+  peers.get(socketId)?.close()
+  peers.delete(socketId)
+})
+
+window.addEventListener('beforeunload', () => {
+  socket.emit('leave-room')
+  peers.forEach((pc) => pc.close())
+  localStream.getTracks().forEach((track) => track.stop())
+})`,
   },
   {
     id: 'react',
@@ -52,42 +130,130 @@ await rtc.leaveRoom()`,
     title: 'React room component',
     language: 'TSX',
     code: `import { useEffect, useRef, useState } from 'react'
-import { TalkEachOtherRTC } from '@talk-each-other/rtc-web'
+import { io } from 'socket.io-client'
 
-export function LiveRoom({ roomId, token }) {
-  const clientRef = useRef(null)
+export function LiveRoom({ roomId, externalUserId }) {
+  const localVideoRef = useRef(null)
   const [peers, setPeers] = useState([])
 
   useEffect(() => {
-    const rtc = new TalkEachOtherRTC({
-      appKey: import.meta.env.VITE_RTC_APP_KEY,
-      apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
-      signalingUrl: import.meta.env.VITE_SIGNALING_SERVER_URL,
-    })
+    let socket
+    let localStream
+    let stopped = false
+    const peerConnections = new Map()
 
-    clientRef.current = rtc
+    async function start() {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+      const signalingUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || new URL(apiBaseUrl, window.location.origin).origin
 
-    rtc.authenticate(token)
-      .then(() => rtc.joinRoom(roomId, { mode: 'video' }))
-      .then(({ peers }) => setPeers(peers))
+      const tokenResponse = await fetch('/my-app/rtc-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, externalUserId, mode: 'video' }),
+      })
+      const tokenData = await tokenResponse.json()
+      if (!tokenResponse.ok) throw new Error(tokenData.message || 'RTC token failed')
 
-    rtc.on('peer-joined', (peer) => {
-      setPeers((current) => [...current, peer])
-    })
+      const rtcConfig = await fetch(apiBaseUrl + '/rtc/config').then((response) => response.json())
+      const mediaType = tokenData.room.rtc_profile.media_type
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: mediaType === 'video',
+      })
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStream
 
-    rtc.on('peer-left', (peer) => {
-      setPeers((current) => current.filter((item) => item.id !== peer.id))
-    })
+      function peerConnection(socketId) {
+        if (peerConnections.has(socketId)) return peerConnections.get(socketId)
+        const pc = new RTCPeerConnection({
+          iceServers: rtcConfig.iceServers || [],
+          iceTransportPolicy: rtcConfig.iceTransportPolicy || 'all',
+        })
+        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('webrtc-ice-candidate', { targetSocketId: socketId, candidate: event.candidate })
+          }
+        }
+        pc.ontrack = (event) => {
+          setPeers((current) => current.map((peer) => (
+            peer.socketId === socketId ? { ...peer, stream: event.streams[0] } : peer
+          )))
+        }
+        peerConnections.set(socketId, pc)
+        return pc
+      }
+
+      async function offerPeer(socketId) {
+        const pc = peerConnection(socketId)
+        await pc.setLocalDescription(await pc.createOffer())
+        socket.emit('webrtc-offer', { targetSocketId: socketId, offer: pc.localDescription })
+      }
+
+      socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
+      socket.on('existing-users', ({ users = [] }) => {
+        setPeers(users)
+        users.forEach((peer) => offerPeer(peer.socketId))
+      })
+      socket.on('user-joined', (peer) => {
+        setPeers((current) => [...current.filter((item) => item.socketId !== peer.socketId), peer])
+        offerPeer(peer.socketId)
+      })
+      socket.on('user-left', ({ socketId }) => {
+        peerConnections.get(socketId)?.close()
+        peerConnections.delete(socketId)
+        setPeers((current) => current.filter((peer) => peer.socketId !== socketId))
+      })
+      socket.on('webrtc-offer', async ({ fromSocketId, offer }) => {
+        const pc = peerConnection(fromSocketId)
+        await pc.setRemoteDescription(offer)
+        await pc.setLocalDescription(await pc.createAnswer())
+        socket.emit('webrtc-answer', { targetSocketId: fromSocketId, answer: pc.localDescription })
+      })
+      socket.on('webrtc-answer', ({ fromSocketId, answer }) => {
+        peerConnection(fromSocketId).setRemoteDescription(answer)
+      })
+      socket.on('webrtc-ice-candidate', ({ fromSocketId, candidate }) => {
+        peerConnection(fromSocketId).addIceCandidate(candidate)
+      })
+
+      if (stopped) return
+      socket.emit('join-room', {
+        roomId: tokenData.room.signaling_room,
+        databaseRoomId: tokenData.room.id,
+        userId: tokenData.user.user_id,
+        userName: tokenData.user.name,
+        rtcMode: mediaType,
+        micEnabled: true,
+        cameraEnabled: mediaType === 'video',
+      })
+    }
+
+    start().catch(console.error)
 
     return () => {
-      rtc.leaveRoom()
-      rtc.destroy()
+      stopped = true
+      socket?.emit('leave-room')
+      socket?.disconnect()
+      peerConnections.forEach((pc) => pc.close())
+      localStream?.getTracks().forEach((track) => track.stop())
     }
-  }, [roomId, token])
+  }, [roomId, externalUserId])
 
-  return peers.map((peer) => (
-    <video key={peer.id} autoPlay playsInline />
-  ))
+  return (
+    <section>
+      <video ref={localVideoRef} autoPlay muted playsInline />
+      {peers.map((peer) => (
+        <video
+          key={peer.socketId}
+          ref={(element) => {
+            if (element && peer.stream) element.srcObject = peer.stream
+          }}
+          autoPlay
+          playsInline
+        />
+      ))}
+    </section>
+  )
 }`,
   },
   {
@@ -98,7 +264,9 @@ export function LiveRoom({ roomId, token }) {
     code: `import express from 'express'
 
 const app = express()
-const apiBase = 'https://rtc.example.com/api/client'
+app.use(express.json())
+
+const apiBase = process.env.TEO_API_BASE_URL || 'https://your-domain.com/api/client'
 const requireUser = (req, _res, next) => next()
 const clientHeaders = {
   Authorization: 'Bearer ' + process.env.TEO_CLIENT_API_KEY,
@@ -106,11 +274,14 @@ const clientHeaders = {
 }
 
 app.post('/my-app/rtc-token', requireUser, async (req, res) => {
+  const externalUserId = String(req.user.id)
+  const roomId = Number(req.body.roomId)
+
   await fetch(apiBase + '/users/sync', {
     method: 'POST',
     headers: clientHeaders,
     body: JSON.stringify({
-      external_user_id: req.user.id,
+      external_user_id: externalUserId,
       name: req.user.name,
       email: req.user.email,
       avatar_url: req.user.avatarUrl,
@@ -123,10 +294,11 @@ app.post('/my-app/rtc-token', requireUser, async (req, res) => {
     method: 'POST',
     headers: clientHeaders,
     body: JSON.stringify({
-      external_user_id: req.user.id,
-      room_id: req.body.roomId,
+      external_user_id: externalUserId,
+      room_id: roomId,
       role: req.body.role || 'publisher',
       rtc_mode: req.body.mode || 'video',
+      permissions: ['join', 'publish_audio', 'publish_video', 'subscribe', 'chat'],
     }),
   })
   const data = await tokenResponse.json()
@@ -146,82 +318,82 @@ app.post('/my-app/rtc-token', requireUser, async (req, res) => {
   {
     id: 'events',
     label: 'Events',
-    title: 'Realtime callbacks',
+    title: 'Socket.IO event surface',
     language: 'JavaScript',
-    code: `const reportRtcError = (error) => {
-  console.error(error.code, error.message)
-}
-
-rtc.on('connection-state', ({ state }) => {
-  console.log('rtc state', state)
+    code: `socket.on('existing-users', ({ socketId, users }) => {
+  console.log('local socket', socketId, 'existing peers', users)
 })
 
-rtc.on('peer-joined', (peer) => {
-  console.log('peer joined', peer.userId, peer.name, peer.role)
+socket.on('user-joined', (peer) => {
+  console.log('peer joined', peer.socketId, peer.userId, peer.userName)
 })
 
-rtc.on('peer-left', (peer) => {
-  console.log('peer left', peer.userId, peer.reason)
+socket.on('user-left', ({ socketId, userId, userName }) => {
+  console.log('peer left', socketId, userId, userName)
 })
 
-rtc.on('remote-track', ({ peer, stream, kind }) => {
-  console.log('remote track', peer.userId, kind, stream.id)
+socket.on('webrtc-offer', ({ fromSocketId, offer }) => {
+  console.log('answer offer from', fromSocketId, offer.type)
 })
 
-rtc.on('track-muted', ({ peer, kind }) => {
-  console.log('track muted', peer.userId, kind)
+socket.on('webrtc-answer', ({ fromSocketId, answer }) => {
+  console.log('apply answer from', fromSocketId, answer.type)
 })
 
-rtc.on('room-message', ({ id, sender, body, sentAt }) => {
-  console.log('room message', id, sender.name, body, sentAt)
+socket.on('webrtc-ice-candidate', ({ fromSocketId, candidate }) => {
+  console.log('add ICE candidate from', fromSocketId, candidate.candidate)
 })
 
-rtc.on('message-unsent', ({ id, deletedBy }) => {
-  console.log('message unsent', id, deletedBy)
+socket.on('media-state-change', (state) => {
+  console.log('peer media changed', state.socketId, state.micEnabled, state.cameraEnabled)
 })
 
-rtc.on('moderation', ({ action, targetUserId, reason }) => {
-  console.log('moderation', action, targetUserId, reason)
+socket.on('moderation-action', ({ action, targetUserId }) => {
+  console.log('moderation action', action, targetUserId)
 })
 
-rtc.on('error', (error) => {
-  reportRtcError(error)
+socket.emit('media-state-change', {
+  roomId: tokenData.room.signaling_room,
+  rtcMode: 'video',
+  micEnabled: true,
+  cameraEnabled: true,
 })`,
   },
 ]
 
 const flowSteps = [
   ['1', 'Create company app', 'Generate app key, API key, allowed origins, billing scope, and app status.'],
-  ['2', 'Sync free shadow user', 'Map a client app user to tenant-scoped RTC records with no platform signup or invited-user charge.'],
-  ['3', 'Create or select room', 'Use tenant room APIs for audio, video, live, private, or password rooms.'],
+  ['2', 'Sync invited user', 'Map a client app user into the company user ledger with company-paid minutes.'],
+  ['3', 'Create RTC resource', 'Create or reuse an app-side room resource for audio, video, live, private, or password token scope.'],
   ['4', 'Issue RTC token', 'Return a short-lived token scoped to one tenant, app, user, room, and role.'],
-  ['5', 'Join signaling and media', 'The browser or mobile SDK uses the RTC token, never the client API key.'],
-  ['6', 'Bill the client company', 'Start/end sessions and aggregate participant minutes to the client company invoice.'],
+  ['5', 'Join signaling and media', 'The browser receives the RTC token and signaling metadata, then uses Socket.IO and native WebRTC. Never expose the client API key.'],
+  ['6', 'Apply package minutes', 'Start/end sessions and aggregate each invited user minute to the client company package.'],
 ]
 
 const apiMethods = [
   ['GET /api/client/me', 'Verifies API key, app status, tenant status, and package context.'],
-  ['POST /api/client/users/sync', 'Creates or updates a free tenant-scoped shadow user before RTC access.'],
-  ['POST /api/client/rooms', 'Creates an app-scoped room for the synced external user.'],
+  ['POST /api/client/users/sync', 'Creates or updates an invited tenant-scoped user before RTC access.'],
+  ['POST /api/client/rooms', 'Creates an app-scoped RTC resource; billing still follows the synced user ledger.'],
   ['PATCH /api/client/rooms/:id', 'Updates room name, privacy, seats, and feature flags.'],
   ['POST /api/client/rtc/token', 'Issues a short-lived room token for one synced user and one room.'],
   ['POST /api/client/rtc/session/start', 'Starts usage tracking when a user joins RTC.'],
-  ['POST /api/client/rtc/session/end', 'Closes usage tracking and calculates client-company billable minutes.'],
-  ['authenticate(token)', 'Stores the bearer token used for room and RTC requests.'],
-  ['joinRoom(roomId, options)', 'Creates or joins an RTC session and returns signaling metadata.'],
-  ['setAudioEnabled(enabled)', 'Toggles local audio and syncs participant media state.'],
-  ['setVideoEnabled(enabled)', 'Toggles local camera tracks for video-capable rooms.'],
-  ['sendMessage(body)', 'Persists chat and emits the realtime room message event.'],
-  ['leaveRoom()', 'Disconnects WebRTC, leaves signaling, and records usage.'],
+  ['POST /api/client/rtc/session/end', 'Closes usage tracking and adds billable user minutes to the company package.'],
+  ['GET /api/rtc/config', 'Returns ICE servers and transport policy for RTCPeerConnection.'],
+  ['Socket.IO join-room', 'Joins the returned room.signaling_room and receives existing peers.'],
+  ['Socket.IO room-peers', 'Refreshes the current peer list after reconnect.'],
+  ['Socket.IO webrtc-offer / webrtc-answer / webrtc-ice-candidate', 'Relays native WebRTC negotiation between browser peers.'],
+  ['Socket.IO media-state-change', 'Broadcasts mic, camera, and screen-share state.'],
+  ['Socket.IO leave-room', 'Leaves signaling; session/end should still be called by the app backend.'],
 ]
 
 const eventRows = [
-  ['peer-joined', 'A participant joins the signaling room.'],
-  ['peer-left', 'A participant leaves or is disconnected.'],
-  ['remote-track', 'A remote media stream is ready to render.'],
-  ['room-message', 'A chat message has been saved and broadcast.'],
-  ['message-unsent', 'A message was deleted or unsent.'],
-  ['moderation', 'Mute, camera-off, kick, or ban action was applied.'],
+  ['existing-users', 'Sent after join-room with the local socket ID and peers already in the signaling room.'],
+  ['user-joined', 'A peer joined the signaling room and should receive an offer.'],
+  ['user-left', 'A peer left or disconnected; close its RTCPeerConnection.'],
+  ['webrtc-offer / webrtc-answer', 'Offer and answer payloads forwarded to the target socket.'],
+  ['webrtc-ice-candidate', 'ICE candidate payload forwarded to the target socket.'],
+  ['media-state-change', 'Mic, camera, screen-share, and RTC mode changed for a peer.'],
+  ['moderation-action', 'Mute, camera-off, kick, or ban action was applied.'],
 ]
 
 const roomTypeRows = [
@@ -246,23 +418,23 @@ const rtcProfileRows = [
 const buildMilestones = [
   ['1', 'Company-first admin', 'Tenants, apps, packages, status, contacts, and billing setup.'],
   ['2', 'Client API auth', 'API keys resolve company/app and reject suspended or revoked access.'],
-  ['3', 'Shadow users', 'External user sync keeps client users inside the client company app.'],
+  ['3', 'Invited users', 'External user sync keeps client users in the company ledger for package billing.'],
   ['4', 'RTC token API', 'Short-lived JWTs carry tenant, app, room, role, and permission claims.'],
-  ['5', 'Room API', 'Client backends create/list/update/disable/delete tenant rooms.'],
-  ['6', 'Company usage and billing', 'Participant minutes, room minutes, peak concurrency, and client-company invoice state.'],
-  ['7', 'Developer docs', 'Quickstart, route map, SDK examples, errors, webhooks, and test console.'],
+  ['5', 'RTC resource API', 'Client backends create/list/update/disable/delete token-scoped RTC resources.'],
+  ['6', 'Company usage and billing', 'Invited-user minutes, room telemetry, peak concurrency, and client-company invoice state.'],
+  ['7', 'Developer docs', 'Quickstart, route map, native WebRTC examples, errors, webhooks, and test console.'],
   ['8', 'SFU upgrade', 'Add mediasoup, Janus, or LiveKit-style media when room scale demands it.'],
 ]
 
 const tokenClaims = [
   ['tenant_id', 'Prevents cross-company room access.'],
   ['app_id', 'Connects usage and permissions to one client app.'],
-  ['external_user_id', 'Maps the RTC session to the client company user without charging that user.'],
+  ['external_user_id', 'Maps the RTC session to the invited company user whose minutes count toward the package.'],
   ['room_id', 'Limits the token to one room/channel.'],
   ['room_type / rtc_profile', 'Maps to communication/live profile, web mode, media type, and publisher role.'],
   ['role', 'Controls audience, publisher, moderator, and admin behavior.'],
   ['permissions', 'Controls join, publish_audio, publish_video, screen_share, chat, mute, kick.'],
-  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer and the invited user as free.'],
+  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer while synced users spend company package minutes.'],
   ['exp / iat', 'Keeps tokens short-lived. Fifteen minutes is the default target.'],
 ]
 
@@ -274,21 +446,21 @@ const routeGroups = [
       ['POST /api/admin/companies', 'Create tenant, contacts, package, and client-company billing scope.'],
       ['PATCH /api/admin/companies/:id', 'Edit tenant identity, contacts, package, limits, and status.'],
       ['POST /api/admin/client-apps', 'Generate app key, API key, SDK token, and allowed origins.'],
-      ['POST /api/admin/apps/:id/api-keys', 'Rotate credentials and show the raw key once.'],
-      ['GET /api/admin/companies/:id/detail', 'Open company dashboard: apps, rooms, users, usage, billing.'],
+      ['POST /api/admin/client-apps/:appId/rotate-credentials', 'Rotate credentials and show the raw key once.'],
+      ['GET /api/admin/companies/:id/detail', 'Open company dashboard: apps, users, package minutes, usage, billing.'],
     ],
   },
   {
     title: 'Client Company APIs',
     rows: [
       ['GET /api/client/me', 'Verify API key and tenant/app/client billing state.'],
-      ['POST /api/client/users/sync', 'Create or update a free tenant-scoped shadow user.'],
+      ['POST /api/client/users/sync', 'Create or update an invited tenant-scoped user.'],
       ['GET /api/client/users/:external_user_id', 'Read one synced external user.'],
-      ['POST /api/client/rooms', 'Create a tenant/app-scoped RTC room.'],
-      ['GET /api/client/rooms', 'List rooms owned by this client app.'],
-      ['PATCH /api/client/rooms/:id', 'Update room fields and feature flags.'],
-      ['POST /api/client/rooms/:id/disable', 'Disable a room without losing history.'],
-      ['DELETE /api/client/rooms/:id', 'End/archive a room and preserve usage records.'],
+      ['POST /api/client/rooms', 'Create a tenant/app-scoped RTC resource.'],
+      ['GET /api/client/rooms', 'List RTC resources for this client app.'],
+      ['PATCH /api/client/rooms/:id', 'Update resource fields and feature flags.'],
+      ['POST /api/client/rooms/:id/disable', 'Disable an RTC resource without losing history.'],
+      ['DELETE /api/client/rooms/:id', 'End/archive an RTC resource and preserve usage records.'],
       ['POST /api/client/rtc/token', 'Issue a room-scoped RTC token.'],
       ['POST /api/client/rtc/session/start', 'Start usage tracking for a user entering RTC.'],
       ['POST /api/client/rtc/session/end', 'End usage tracking and calculate client-company billable minutes.'],
@@ -408,7 +580,7 @@ function SdkRoadmap() {
 
       <div className="sdk-done-condition">
         <span>MVP done condition</span>
-        <strong>A client company can receive an API key, sync a user, create a room, request an RTC token, join WebRTC from a sample frontend, and see usage in the admin dashboard.</strong>
+        <strong>A client company can receive an API key, sync an invited user, create an RTC resource, request an RTC token, join WebRTC from a sample frontend, and see user minutes in the admin dashboard.</strong>
       </div>
     </section>
   )
@@ -593,9 +765,15 @@ function SdkReliability() {
 }
 
 function SdkConfigCard() {
-  const envExample = `VITE_RTC_APP_KEY=client_app_key
+  const installCommand = 'npm install socket.io-client'
+  const envExample = `# Frontend
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
-VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
+VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000
+VITE_APP_BACKEND_URL=http://127.0.0.1:3000
+
+# Your backend only
+TEO_API_BASE_URL=http://127.0.0.1:8000/api/client
+TEO_CLIENT_API_KEY=copy_full_key_from_admin_once`
 
   return (
     <aside className="glass-card sdk-config-card">
@@ -608,8 +786,8 @@ VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
       </div>
 
       <div className="sdk-install-row">
-        <code>npm install @talk-each-other/rtc-web</code>
-        <CopyButton value="npm install @talk-each-other/rtc-web" />
+        <code>{installCommand}</code>
+        <CopyButton value={installCommand} />
       </div>
 
       <pre>{envExample}</pre>
@@ -617,6 +795,7 @@ VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
       <div className="sdk-capability-list">
         <span>Native WebRTC</span>
         <span>Socket.IO signaling</span>
+        <span>Server-side API key only</span>
         <span>Hashed API keys</span>
         <span>Allowed origins</span>
         <span>Usage logging</span>
@@ -628,36 +807,56 @@ VITE_SIGNALING_SERVER_URL=http://127.0.0.1:8000`
 
 function SdkPlayground() {
   const [config, setConfig] = useState({
-    appKey: 'client_app_key',
-    roomId: 'room_1001',
-    uid: 'web_user_42',
-    token: 'client_rtc_token',
+    tokenEndpoint: '/my-app/rtc-token',
+    roomId: '123',
+    externalUserId: 'user_42',
     mode: 'video',
   })
-  const [stage, setStage] = useState('init')
+  const [stage, setStage] = useState('token')
 
   const stages = [
-    ['init', 'Init'],
-    ['auth', 'Auth'],
-    ['join', 'Join'],
+    ['token', 'Token'],
+    ['media', 'Media'],
+    ['signal', 'Signal'],
     ['publish', 'Publish'],
     ['leave', 'Leave'],
   ]
   const activeIndex = stages.findIndex(([id]) => id === stage)
-  const generatedCode = `const rtc = new TalkEachOtherRTC({
-  appKey: '${config.appKey}',
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
-  signalingUrl: import.meta.env.VITE_SIGNALING_SERVER_URL,
+  const generatedCode = `import { io } from 'socket.io-client'
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
+const signalingUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || new URL(apiBaseUrl, window.location.origin).origin
+
+const tokenResponse = await fetch('${config.tokenEndpoint}', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    roomId: ${Number(config.roomId) || 123},
+    externalUserId: '${config.externalUserId}',
+    mode: '${config.mode}',
+  }),
+})
+const tokenData = await tokenResponse.json()
+if (!tokenResponse.ok) throw new Error(tokenData.message || 'RTC token failed')
+
+const rtcConfig = await fetch(apiBaseUrl + '/rtc/config').then((response) => response.json())
+const localStream = await navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: ${config.mode === 'video'},
 })
 
-await rtc.authenticate('${config.token}')
-
-await rtc.joinRoom('${config.roomId}', {
-  uid: '${config.uid}',
-  mode: '${config.mode}',
+const socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
+socket.emit('join-room', {
+  roomId: tokenData.room.signaling_room,
+  databaseRoomId: tokenData.room.id,
+  userId: tokenData.user.user_id,
+  userName: tokenData.user.name,
+  rtcMode: '${config.mode}',
   micEnabled: true,
   cameraEnabled: ${config.mode === 'video'},
-})`
+})
+
+console.log('ready for RTCPeerConnection', rtcConfig.iceServers, localStream)`
 
   function updateField(field, value) {
     setConfig((current) => ({ ...current, [field]: value }))
@@ -676,16 +875,16 @@ await rtc.joinRoom('${config.roomId}', {
       <div className="sdk-playground-grid">
         <div className="sdk-form-grid">
           <label>
-            <span>App Key</span>
-            <input value={config.appKey} onChange={(event) => updateField('appKey', event.target.value)} />
+            <span>Token Endpoint</span>
+            <input value={config.tokenEndpoint} onChange={(event) => updateField('tokenEndpoint', event.target.value)} />
           </label>
           <label>
             <span>Room ID</span>
             <input value={config.roomId} onChange={(event) => updateField('roomId', event.target.value)} />
           </label>
           <label>
-            <span>User ID</span>
-            <input value={config.uid} onChange={(event) => updateField('uid', event.target.value)} />
+            <span>External User ID</span>
+            <input value={config.externalUserId} onChange={(event) => updateField('externalUserId', event.target.value)} />
           </label>
           <label>
             <span>Mode</span>
@@ -693,10 +892,6 @@ await rtc.joinRoom('${config.roomId}', {
               <option value="video">Video</option>
               <option value="audio">Audio</option>
             </select>
-          </label>
-          <label className="sdk-token-field">
-            <span>Token</span>
-            <textarea value={config.token} onChange={(event) => updateField('token', event.target.value)} />
           </label>
         </div>
 
@@ -737,7 +932,7 @@ export default function SdkView() {
         <div>
           <span className="eyebrow">Developer Docs</span>
           <h1>Self-Hosted RTC Integration</h1>
-          <p>Company app credentials, shadow users, room APIs, short-lived RTC tokens, usage tracking, and SFU-ready media architecture.</p>
+          <p>Company app credentials, invited users, RTC resource APIs, short-lived RTC tokens, package-minute usage tracking, and SFU-ready media architecture.</p>
         </div>
         <div className="sdk-version-card">
           <span>Roadmap</span>

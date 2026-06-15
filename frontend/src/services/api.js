@@ -2,7 +2,7 @@ function defaultApiBaseUrl() {
   if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api'
 
   const { hostname, port, protocol, origin } = window.location
-  const localDevHost = ['localhost', '127.0.0.1', '10.0.2.2', '10.0.3.2'].includes(hostname)
+  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
 
   if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
     return `${protocol}//${hostname}:8000/api`
@@ -154,6 +154,22 @@ export async function updateProfile(profile) {
   })
 
   saveUser(data.user)
+  data.user = normalizeUserForClient(data.user)
+  return data
+}
+
+export async function updateAccountSecurity(payload) {
+  const data = await apiRequest('/auth/me/security', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+
+  if (data.access_token && data.user) {
+    saveSession(data.access_token, data.user)
+  } else if (data.user) {
+    saveUser(data.user)
+  }
+
   data.user = normalizeUserForClient(data.user)
   return data
 }

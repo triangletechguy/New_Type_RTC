@@ -1,9 +1,11 @@
 import { avatarForUser, brandAssets } from '../../assets/rtc/catalog'
 import { canUseAdminDashboard } from '../../utils/roles'
+import { translateApp } from '../rooms/roomsStaticData'
 
-export function Sidebar({ user, currentView, onView, onLogout }) {
+export function Sidebar({ user, currentView, onView, onLogout, language = 'English' }) {
   const showAdminDashboard = canUseAdminDashboard(user) === true
   const avatar = avatarForUser(user, user?.id || 0)
+  const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
   return (
     <aside className="sidebar glass-card">
@@ -13,25 +15,25 @@ export function Sidebar({ user, currentView, onView, onLogout }) {
         </div>
         <div>
           <strong>talk-each-other</strong>
-          <span>RTC service platform</span>
+          <span>{t('RTC service platform')}</span>
         </div>
       </div>
 
-      <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>Rooms</button>
+      <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>{t('Rooms')}</button>
       {showAdminDashboard ? (
-        <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>Admin Dashboard</button>
+        <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>{t('Admin Dashboard')}</button>
       ) : null}
-      <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>Developer Docs</button>
+      <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>{t('Developer Docs')}</button>
 
       <div className="sidebar-user">
         <div className="avatar image-avatar"><img src={avatar} alt="" /></div>
         <div>
-          <strong>{user?.name || 'User'}</strong>
+          <strong>{user?.name || t('User')}</strong>
           <span>{user?.email}</span>
         </div>
       </div>
 
-      <button className="nav-item danger" onClick={onLogout}>Logout</button>
+      <button className="nav-item danger" onClick={onLogout}>{t('Logout')}</button>
     </aside>
   )
 }

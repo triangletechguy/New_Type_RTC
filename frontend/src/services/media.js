@@ -42,6 +42,10 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
         }
   }
 
+  if (requestedMediaMode === 'real') {
+    return createRealMediaStream(requestedRtcMode, options)
+  }
+
   const recovered = await captureAvailableMedia(requestedRtcMode, options)
 
   if (recovered.stream.getTracks().length || requestedMediaMode === 'real') {
@@ -53,6 +57,59 @@ export async function createLocalMediaStream(mediaMode = 'auto', rtcMode = 'vide
     mode: 'mock',
     warning: `${formatMediaError(recovered.primaryError, requestedRtcMode)} Mock media started instead.`,
   }
+}
+
+async function createRealMediaStream(rtcMode, options = {}) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: buildAudioConstraints(options),
+      video: rtcMode === 'video' ? videoConstraints : false,
+    })
+
+    prepareCapturedStream(stream)
+    assertRequiredMediaTracks({ stream }, rtcMode, options)
+
+    return {
+      stream,
+      mode: 'real',
+      warning: null,
+      primaryError: null,
+      failures: {},
+    }
+  } catch (error) {
+    const recovered = await captureAvailableMedia(rtcMode, { ...options, timeoutMs: 0 })
+    const result = {
+      ...recovered,
+      warning: recovered.warning || formatMediaError(error, rtcMode),
+      primaryError: recovered.primaryError || error,
+    }
+
+    assertRequiredMediaTracks(result, rtcMode, options)
+    return result
+  }
+}
+
+function assertRequiredMediaTracks(mediaResult, rtcMode, options = {}) {
+  if (!mediaResult?.stream) return
+
+  const requiredAudio = options.requiredAudio !== false
+  const requiredVideo = rtcMode === 'video' && options.requiredVideo !== false
+  const hasAudio = mediaResult.stream.getAudioTracks().some((track) => track.readyState !== 'ended')
+  const hasVideo = mediaResult.stream.getVideoTracks().some((track) => track.readyState !== 'ended')
+  const missing = []
+
+  if (requiredAudio && !hasAudio) missing.push('audio')
+  if (requiredVideo && !hasVideo) missing.push('video')
+  if (!missing.length) return
+
+  stopMediaStream(mediaResult.stream)
+
+  const message = missing
+    .map((kind) => formatSingleMediaError(mediaResult.failures?.[kind] || mediaResult.primaryError, kind))
+    .join(' ')
+  const error = new Error(message || 'Unable to start the required camera or microphone.')
+  error.name = mediaResult.primaryError?.name || 'MediaError'
+  throw error
 }
 
 export async function requestLocalMediaTrack(kind, options = {}) {
@@ -191,6 +248,7 @@ async function captureCombinedVideoMedia(options = {}) {
       stream,
       mode: 'receive-only',
       warning: buildMediaWarning(stream, failures, null, 'video', ['audio', 'video']),
+      failures,
       primaryError: null,
     }
   }
@@ -202,6 +260,7 @@ async function captureCombinedVideoMedia(options = {}) {
       stream,
       mode: 'real',
       warning: buildMediaWarning(stream, failures, null, 'video', []),
+      failures,
       primaryError: null,
     }
   }
@@ -256,6 +315,7 @@ async function captureSeparateMedia(rtcMode, options = {}) {
     stream,
     mode: stream.getTracks().length ? 'real' : 'receive-only',
     warning: buildMediaWarning(stream, failures, primaryError, rtcMode, pendingKinds),
+    failures,
     primaryError,
   }
 }
@@ -358,6 +418,13 @@ function prepareCapturedTrack(track, kind) {
   } catch {
     // contentHint is optional and browser-dependent.
   }
+}
+
+function prepareCapturedStream(stream) {
+  if (!stream) return
+
+  stream.getAudioTracks().forEach((track) => prepareCapturedTrack(track, 'audio'))
+  stream.getVideoTracks().forEach((track) => prepareCapturedTrack(track, 'video'))
 }
 
 function stopCapturedStream(stream) {

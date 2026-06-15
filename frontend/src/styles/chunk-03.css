@@ -712,14 +712,42 @@
 
 .buzzcast-install-modal button {
   min-width: 76px;
+  border: 1px solid #526079;
   border-radius: 999px;
-  border-color: #526079;
+  background: #ffffff;
   color: #1b2434;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.buzzcast-install-modal button:hover:not(:disabled),
+.buzzcast-install-modal button:focus-visible {
+  border-color: #25324a;
+  background: #eef3ff;
+  color: #101827;
+  box-shadow: 0 0 0 3px rgba(37, 50, 74, .12);
+  transform: none;
 }
 
 .buzzcast-install-modal button.primary {
-  border: 0;
-  background: #d8e5ff;
+  border: 1px solid #3158d4;
+  background: #3158d4;
+  color: #ffffff;
+  text-shadow: none;
+}
+
+.buzzcast-install-modal button.primary:hover:not(:disabled),
+.buzzcast-install-modal button.primary:focus-visible {
+  border-color: #1d3fa5;
+  background: #2547b8;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(49, 88, 212, .18);
+  transform: none;
+}
+
+.buzzcast-install-modal button.primary:active:not(:disabled) {
+  background: #1d3fa5;
+  color: #ffffff;
 }
 
 .buzzcast-host-panel,

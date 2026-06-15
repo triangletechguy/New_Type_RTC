@@ -17,8 +17,8 @@ export function UsageLogCard({ billingMode, logs = [] }) {
         ) : logs.map((log) => (
           <article className="usage-log-row" key={log.id}>
             <div>
-              <strong>{log.room_name || `Room #${log.room_id}`}</strong>
-              <span>{log.user_name} · {log.usage_type}</span>
+              <strong>{log.user_name || `User #${log.user_id}`}</strong>
+              <span>{log.usage_type} · {log.room_name || `Room #${log.room_id}`}</span>
             </div>
             <div>
               <strong>{formatDuration(log.duration_seconds)}</strong>

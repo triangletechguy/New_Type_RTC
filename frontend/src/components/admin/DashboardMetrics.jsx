@@ -6,8 +6,37 @@ function metricValue(value) {
 
 function buildMetrics(dashboard, usageStatusLabel) {
   const dashboardMetrics = dashboard?.metrics
+  const companyScope = dashboard?.company_scope
+  const companyUsers = companyScope?.users || {}
+  const companyUsage = companyScope?.usage || {}
+  const companyPackage = companyScope?.package || {}
 
   if (!dashboardMetrics) {
+    if (companyScope) {
+      return [
+        {
+          label: 'Invited Users',
+          value: companyUsers.invited ?? companyUsers.synced ?? companyUsers.total ?? '-',
+          detail: 'Waiting for company user metrics',
+        },
+        {
+          label: 'Package Minutes',
+          value: companyUsage.month?.minutes ?? dashboard?.minutes_used_this_month ?? '-',
+          detail: 'Waiting for package usage',
+        },
+        {
+          label: 'Minutes Today',
+          value: companyUsage.today?.minutes ?? dashboard?.minutes_used_today ?? '-',
+          detail: 'Waiting for usage metrics',
+        },
+        {
+          label: 'Usage Check',
+          value: usageStatusLabel,
+          detail: 'Waiting for verification metrics',
+        },
+      ]
+    }
+
     return [
       {
         label: 'Active Rooms',
@@ -40,6 +69,61 @@ function buildMetrics(dashboard, usageStatusLabel) {
         detail: 'Waiting for verification metrics',
       },
     ]
+  }
+
+  if (companyScope) {
+    const monthMinutes = companyUsage.month?.minutes ?? dashboardMetrics.usage.month.minutes
+    const allowance = companyPackage.monthly_allowance ?? companyPackage.monthly_minute_allowance ?? 0
+    const remaining = allowance ? Math.max(0, Number(allowance) - Number(monthMinutes || 0)) : 0
+    const invitedUsers = companyUsers.invited ?? companyUsers.synced ?? dashboardMetrics.users.invited ?? dashboardMetrics.users.synced ?? 0
+    const liveUsers = companyUsers.live ?? dashboardMetrics.users.live ?? dashboardMetrics.participants.active_users ?? 0
+    const liveParticipants = companyUsers.live_participants ?? dashboardMetrics.participants.active ?? 0
+    const cards = [
+      {
+        label: 'Invited Users',
+        value: formatNumber(invitedUsers || companyUsers.total || dashboardMetrics.users.total),
+        detail: `${formatNumber(companyUsers.active_synced ?? dashboardMetrics.users.active_synced ?? companyUsers.active)} active synced · ${formatNumber(companyUsers.total ?? dashboardMetrics.users.total)} tenant accounts`,
+        badge: `${formatNumber(companyUsers.synced_apps ?? 0)} apps`,
+        tone: 'mint',
+      },
+      {
+        label: 'Live Company Users',
+        value: formatNumber(liveUsers),
+        detail: `${formatNumber(liveParticipants)} live participants · ${formatNumber(companyUsers.live_sessions ?? dashboardMetrics.sessions.active)} sessions`,
+        badge: `${formatNumber(dashboardMetrics.participants.reconnecting)} reconnecting`,
+        tone: 'sky',
+      },
+      {
+        label: 'Package Minutes',
+        value: formatMinutes(monthMinutes),
+        detail: allowance ? `${formatMinutes(remaining)} remaining of ${formatMinutes(allowance)}` : 'No included monthly allowance',
+        badge: allowance ? `${formatNumber(companyPackage.usage_percent)}% used` : 'custom',
+        tone: 'amber',
+      },
+      {
+        label: 'Usage Today',
+        value: formatMinutes(companyUsage.today?.minutes ?? dashboardMetrics.usage.today.minutes),
+        detail: `${formatNumber(companyUsage.today?.logs ?? dashboardMetrics.usage.today.logs)} logs · ${formatNumber(companyUsage.today?.users ?? dashboardMetrics.usage.today.users)} users`,
+        badge: `${formatNumber(companyUsage.today?.sessions ?? dashboardMetrics.sessions.started_today)} sessions`,
+        tone: 'hot',
+      },
+      {
+        label: 'RTC Sessions',
+        value: formatNumber(dashboardMetrics.sessions.active),
+        detail: `${formatNumber(dashboardMetrics.sessions.started_today)} started · ${formatNumber(dashboardMetrics.sessions.ended_today)} ended today`,
+        badge: `${formatNumber(dashboardMetrics.sessions.total)} total`,
+        tone: 'violet',
+      },
+      {
+        label: 'Usage Check',
+        value: usageStatusLabel,
+        detail: dashboardMetrics.verification.issue_count > 0 ? 'Verification needs review' : 'Company usage records match billing checks',
+        badge: `${formatNumber(dashboardMetrics.verification.issue_count)} issues`,
+        tone: dashboardMetrics.verification.issue_count > 0 ? 'amber' : 'neutral',
+      },
+    ]
+
+    return cards
   }
 
   const cards = [
@@ -116,9 +200,10 @@ function buildMetrics(dashboard, usageStatusLabel) {
 
 export function DashboardMetrics({ dashboard, usageStatusLabel }) {
   const metrics = buildMetrics(dashboard, usageStatusLabel)
+  const compactCompanyMetrics = Boolean(dashboard?.company_scope)
 
   return (
-    <section className="metrics-grid">
+    <section className={compactCompanyMetrics ? 'metrics-grid company-metrics-grid compact' : 'metrics-grid'}>
       {metrics.map((metric) => (
         <div className={`metric metric-card glass-card ${metric.tone || 'neutral'}`} key={metric.label}>
           <div className="metric-topline">
