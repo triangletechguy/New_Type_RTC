@@ -886,6 +886,29 @@
   font-size: 12px;
 }
 
+.buzzcast-card-tags,
+.buzzcast-created-room-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.buzzcast-card-tags i,
+.buzzcast-created-room-tags i {
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .1);
+  color: #d8d3f0;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .buzzcast-submit {
   width: 100%;
   min-height: 42px;

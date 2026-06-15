@@ -1250,6 +1250,44 @@
   opacity: .68;
 }
 
+.buzzcast-host-follow-button {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  bottom: 12px;
+  min-width: 78px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  background: rgba(18, 24, 38, .82);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+  font-size: 12px;
+  font-weight: 950;
+  backdrop-filter: blur(10px);
+}
+
+.buzzcast-host-follow-button.following {
+  background: rgba(25, 92, 79, .86);
+}
+
+.buzzcast-host-follow-button.requested,
+.buzzcast-host-follow-button.incoming {
+  background: rgba(92, 68, 24, .9);
+}
+
+.buzzcast-host-follow-button:not(:disabled):hover,
+.buzzcast-host-follow-button:not(:disabled):focus-visible {
+  border-color: rgba(139, 210, 255, .7);
+  transform: translateY(-1px);
+}
+
+.buzzcast-host-follow-button:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+
 @media (max-width: 860px) {
   .buzzcast-shell.section-live:not(.buzzcast-live-shell) .buzzcast-match-banner {
     min-height: 48px !important;

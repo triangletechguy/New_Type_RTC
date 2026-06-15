@@ -298,11 +298,13 @@ CREATE TABLE IF NOT EXISTS rooms (
     name VARCHAR(150) NOT NULL,
     description TEXT NULL,
     profile_image VARCHAR(255) NULL,
-    room_type ENUM('audio', 'video', 'group_audio', 'group_video', 'solo_live', 'pk_live') NOT NULL DEFAULT 'video',
+    room_type ENUM('audio', 'youtube_audio', 'one_to_one_audio', 'video', 'one_to_one_video', 'group_audio', 'group_video', 'solo_live', 'pk_live') NOT NULL DEFAULT 'video',
     privacy_type ENUM('public', 'private', 'password') NOT NULL DEFAULT 'public',
     password_hash VARCHAR(255) NULL,
     max_mic_count INT DEFAULT 8,
+    stage_requests_enabled BOOLEAN DEFAULT TRUE,
     theme VARCHAR(100) NULL,
+    tags_json JSON NULL,
     chat_enabled BOOLEAN DEFAULT TRUE,
     gift_enabled BOOLEAN DEFAULT FALSE,
     screen_share_enabled BOOLEAN DEFAULT FALSE,
@@ -420,6 +422,33 @@ CREATE TABLE IF NOT EXISTS rtc_session_participants (
     CONSTRAINT fk_participants_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS room_stage_requests (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    session_id BIGINT UNSIGNED NULL,
+    participant_id BIGINT UNSIGNED NULL,
+    requester_user_id BIGINT UNSIGNED NOT NULL,
+    requested_mic TINYINT(1) DEFAULT 1,
+    requested_camera TINYINT(1) DEFAULT 0,
+    requested_rtc_mode ENUM('audio', 'video') NOT NULL DEFAULT 'video',
+    status ENUM('pending', 'approved', 'rejected', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+    response_by BIGINT UNSIGNED NULL,
+    responded_at TIMESTAMP NULL,
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_stage_requests_room_status (room_id, status, created_at),
+    INDEX idx_stage_requests_requester (room_id, requester_user_id, status),
+    INDEX idx_stage_requests_tenant (tenant_id, status),
+    CONSTRAINT fk_stage_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_stage_requests_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_stage_requests_session FOREIGN KEY (session_id) REFERENCES rtc_sessions(id) ON DELETE SET NULL,
+    CONSTRAINT fk_stage_requests_participant FOREIGN KEY (participant_id) REFERENCES rtc_session_participants(id) ON DELETE SET NULL,
+    CONSTRAINT fk_stage_requests_requester FOREIGN KEY (requester_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_stage_requests_response_by FOREIGN KEY (response_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS rtc_events (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,
@@ -499,6 +528,48 @@ CREATE TABLE IF NOT EXISTS chat_message_hides (
     CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS chat_message_reactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    message_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    emoji VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_chat_message_reaction (message_id, user_id, emoji),
+    INDEX idx_chat_message_reactions_message (message_id),
+    INDEX idx_chat_message_reactions_room (tenant_id, room_id, created_at),
+    CONSTRAINT fk_chat_message_reactions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_message_reactions_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_message_reactions_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_chat_message_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS room_gift_transactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    message_id BIGINT UNSIGNED NOT NULL,
+    sender_id BIGINT UNSIGNED NOT NULL,
+    owner_user_id BIGINT UNSIGNED NOT NULL,
+    gift_id VARCHAR(80) NOT NULL,
+    gift_label VARCHAR(120) NOT NULL,
+    gift_emoji VARCHAR(64) NOT NULL,
+    coin_value INT UNSIGNED NOT NULL DEFAULT 0,
+    quantity INT UNSIGNED NOT NULL DEFAULT 1,
+    total_coins INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_room_gift_message (message_id),
+    INDEX idx_room_gifts_room_created (room_id, created_at),
+    INDEX idx_room_gifts_sender (tenant_id, sender_id, created_at),
+    INDEX idx_room_gifts_owner (tenant_id, owner_user_id, created_at),
+    CONSTRAINT fk_room_gifts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_gifts_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_gifts_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_gifts_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_gifts_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS chat_user_blocks (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,
@@ -532,6 +603,21 @@ CREATE TABLE IF NOT EXISTS direct_messages (
     CONSTRAINT fk_direct_messages_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT fk_direct_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_direct_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS direct_message_reactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    message_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    emoji VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_direct_message_reaction (message_id, user_id, emoji),
+    INDEX idx_direct_message_reactions_message (message_id),
+    INDEX idx_direct_message_reactions_tenant (tenant_id, created_at),
+    CONSTRAINT fk_direct_message_reactions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_direct_message_reactions_message FOREIGN KEY (message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_direct_message_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS usage_logs (

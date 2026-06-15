@@ -928,6 +928,45 @@
   gap: 7px;
 }
 
+.room-stage-requests {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(125, 211, 252, .24);
+  border-radius: 8px;
+  background: rgba(14, 116, 144, .16);
+}
+
+.room-stage-requests header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.room-stage-requests header strong {
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.room-stage-requests header small {
+  color: #bae6fd;
+}
+
+.room-ban-list {
+  border-color: rgba(248, 113, 113, .26);
+  background: rgba(127, 29, 29, .18);
+}
+
+.room-ban-list header strong {
+  color: #fee2e2;
+}
+
+.room-ban-list header small {
+  color: #fecaca;
+}
+
 .room-ops-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -977,6 +1016,10 @@
   border-radius: 7px;
   font-size: 10.5px;
   font-weight: 850;
+}
+
+.stage-request-button {
+  min-width: 88px;
 }
 
 .room-role-form {

@@ -46,7 +46,7 @@ export const privacyFilterOptions = [
   { value: 'all', label: 'All access' },
   { value: 'public', label: 'Public' },
   { value: 'private', label: 'Private' },
-  { value: 'password', label: 'Password' },
+  { value: 'password', label: 'Key room' },
 ]
 
 export const roomPrivacyOptions = privacyFilterOptions.slice(1)
@@ -59,6 +59,7 @@ export const themeOptions = [
 ]
 
 export const roomFeatureOptions = [
+  { field: 'stage_requests_enabled', label: 'Stage requests', detail: 'Audience can ask to speak' },
   { field: 'chat_enabled', label: 'Chat', detail: 'Live messages' },
   { field: 'gift_enabled', label: 'Gifts', detail: 'Room reactions' },
   { field: 'screen_share_enabled', label: 'Screen share', detail: 'Presenter tools' },
@@ -97,6 +98,8 @@ export const defaultRoomForm = {
   privacy_type: 'public',
   password: '',
   max_mic_count: 8,
+  tags: '',
+  stage_requests_enabled: true,
   theme: defaultRoomTheme,
   chat_enabled: true,
   gift_enabled: false,
@@ -104,16 +107,34 @@ export const defaultRoomForm = {
   ai_security_enabled: false,
 }
 
+export function normalizeRoomTags(value, maxItems = 6) {
+  const rawTags = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[,\n#]+/)
+  const seen = new Set()
+
+  rawTags.forEach((item) => {
+    const tag = String(item || '').trim().slice(0, 32)
+    if (tag) seen.add(tag)
+  })
+
+  return Array.from(seen).slice(0, maxItems)
+}
+
 export function getRoomMeta(roomType) {
   return roomTypeMeta[roomType] || { label: roomType || 'Room', short: 'Live', tone: 'tone-live' }
 }
 
 export function getRoomTags(room) {
+  const customTags = normalizeRoomTags(room?.tags)
+  if (customTags.length) return customTags
+
   const tags = []
   if (room.chat_enabled) tags.push('Chat')
   if (room.gift_enabled) tags.push('Gifts')
   if (room.screen_share_enabled) tags.push('Share')
   if (room.ai_security_enabled) tags.push('AI Guard')
+  if (room.stage_requests_enabled === false) tags.push('Closed stage')
   return tags.length ? tags : ['Live']
 }
 
@@ -228,11 +249,15 @@ export function validateRoomForm(form) {
   const password = form.password.trim()
   const maxMicCount = Number(form.max_mic_count)
   const maxAllowedSeats = maxSeatsForRoomType(form.room_type)
+  const tagText = typeof form.tags === 'string' ? form.tags : normalizeRoomTags(form.tags).join(', ')
+  const rawTags = tagText.split(/[,\n#]+/).map((tag) => tag.trim()).filter(Boolean)
 
   if (!name) errors.name = 'Room name is required.'
   if (name && name.length < 3) errors.name = 'Use at least 3 characters.'
   if (name.length > 150) errors.name = 'Keep the room name under 150 characters.'
   if (form.description.length > 700) errors.description = 'Keep the description under 700 characters.'
+  if (tagText.length > 180) errors.tags = 'Keep tags under 180 characters.'
+  if (rawTags.length > 6) errors.tags = 'Use up to 6 tags.'
   if (!Number.isInteger(maxMicCount) || maxMicCount < 1 || maxMicCount > maxAllowedSeats) {
     errors.max_mic_count = isOneToOneRoom(form.room_type)
       ? 'Choose 1 or 2 call seats.'
@@ -255,6 +280,8 @@ export function roomFormPayload(form) {
     privacy_type: form.privacy_type,
     password: form.privacy_type === 'password' ? form.password.trim() : undefined,
     max_mic_count: Number.isFinite(maxMicCount) ? maxMicCount : defaultSeatsForRoomType(form.room_type),
+    tags: normalizeRoomTags(form.tags),
+    stage_requests_enabled: form.stage_requests_enabled !== false,
     theme: form.theme === defaultRoomTheme ? undefined : form.theme,
     chat_enabled: form.chat_enabled,
     gift_enabled: form.gift_enabled,
@@ -281,6 +308,8 @@ export function peerMediaFromSignal(user) {
     userName: user?.userName || 'Remote User',
     gender: user?.userGender || user?.gender || '',
     avatarUrl: user?.userAvatarUrl || user?.avatarUrl || user?.avatar_url || '',
+    stageRole: user?.stageRole || user?.stage_role || 'audience',
+    canPublish: signalBoolean(user?.canPublish ?? user?.can_publish, false),
     rtcMode,
     micOn: signalBoolean(user?.micEnabled, true),
     cameraOn: rtcMode === 'video' && signalBoolean(user?.cameraEnabled, false),

@@ -21,9 +21,9 @@ const recordingAudioConstraints = {
 const roomChatSyncIntervalMs = 5000
 const inboxSyncIntervalMs = 5000
 const roomGifts = [
-  { id: 'star', label: 'Star', emoji: '⭐' },
-  { id: 'heart', label: 'Heart', emoji: '❤️' },
-  { id: 'cheer', label: 'Cheer', emoji: '🎉' },
+  { id: 'star', label: 'Star', emoji: '⭐', coin_value: 10 },
+  { id: 'heart', label: 'Heart', emoji: '❤️', coin_value: 25 },
+  { id: 'cheer', label: 'Cheer', emoji: '🎉', coin_value: 50 },
 ]
 
 function EmojiPicker({ open, query, onQueryChange, onPick, onClose, label = 'Emoji picker', t = (value) => value }) {
@@ -75,6 +75,19 @@ function reactionSummaries(message) {
 }
 
 function roomGiftForMessage(message) {
+  const transaction = message?.gift || message?.gift_transaction
+  if (transaction?.gift_id || transaction?.id) {
+    const fallbackGift = roomGifts.find((gift) => gift.id === transaction.gift_id || gift.id === transaction.id)
+    return {
+      id: transaction.gift_id || transaction.id || fallbackGift?.id || 'gift',
+      label: transaction.label || transaction.gift_label || fallbackGift?.label || 'Gift',
+      emoji: transaction.emoji || transaction.gift_emoji || fallbackGift?.emoji || '🎁',
+      coin_value: Number(transaction.coin_value || fallbackGift?.coin_value || 0),
+      quantity: Number(transaction.quantity || 1),
+      total_coins: Number(transaction.total_coins || transaction.coin_value || fallbackGift?.coin_value || 0),
+    }
+  }
+
   const mediaId = String(message?.media_url || '').trim().toLowerCase()
   const body = String(message?.message_body || '').trim().toLowerCase()
 
@@ -83,6 +96,11 @@ function roomGiftForMessage(message) {
     || gift.label.toLowerCase() === body
     || `${gift.emoji} ${gift.label}`.toLowerCase() === body
   )) || null
+}
+
+function formatGiftCoins(value, t = (text) => text) {
+  const coins = Number(value || 0)
+  return t('{coins} coins', { coins: coins.toLocaleString() })
 }
 
 function standaloneEmojiBody(value) {
@@ -429,6 +447,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const [followingUserIds, setFollowingUserIds] = useState({})
   const [requestedContactIds, setRequestedContactIds] = useState([])
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
+  const [giftSummary, setGiftSummary] = useState(null)
   const [typingUsers, setTypingUsers] = useState({})
   const [emojiPickerTarget, setEmojiPickerTarget] = useState('')
   const [emojiQuery, setEmojiQuery] = useState('')
@@ -468,6 +487,9 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const canModerate = canModerateChat(user, room)
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
   const aiGuardActive = isAiGuardEnabled(room)
+  const giftEnabled = room?.gift_enabled !== false
+  const giftTotalCoins = Number(giftSummary?.total_coins || 0)
+  const topGiftSender = Array.isArray(giftSummary?.top_senders) ? giftSummary.top_senders[0] : null
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${t(typingNames.length > 1 ? 'are typing...' : 'is typing...')}`
     : realtimeConnected ? t('No one is typing') : t('Typing status starts after RTC connects')
@@ -683,6 +705,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       if (afterId) mergeRoomMessages(data.messages || [])
       else setMessages(data.messages || [])
       setChatEnabled(data.meta?.chat_enabled !== false)
+      if (data.meta?.gift_summary) setGiftSummary(data.meta.gift_summary)
       setBlockedSenderIds(data.meta?.blocked_user_ids || [])
     } catch (error) {
       setStatus(error.message)
@@ -936,7 +959,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   }
 
   async function sendGift(gift) {
-    if (!gift?.id || !chatEnabled || room?.gift_enabled === false || sending || recording) return
+    if (!gift?.id || !chatEnabled || !giftEnabled || sending || recording) return
 
     try {
       setSending(true)
@@ -945,10 +968,13 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
         method: 'POST',
         body: JSON.stringify({
           message_type: 'gift',
+          gift_id: gift.id,
+          quantity: 1,
           message_body: `${gift.emoji} ${gift.label}`,
         }),
       })
       appendMessage(data.chat_message)
+      if (data.gift_summary) setGiftSummary(data.gift_summary)
 
       if (!data.realtime_broadcasted && socket && signalingRoom) {
         socket.timeout(8000).emit(
@@ -1503,6 +1529,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
 
   useEffect(() => {
     previousRoomMessageCountRef.current = 0
+    setGiftSummary(null)
     loadMessages()
   }, [roomId])
 
@@ -1584,7 +1611,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
     const syncAfterReconnect = () => {
       syncMissedRoomMessages({ full: true }).catch((error) => setStatus(`Chat sync failed: ${error.message}`))
     }
-    const handleMessage = ({ message }) => appendMessage(message)
+    const handleMessage = ({ message, gift_summary: incomingGiftSummary } = {}) => {
+      appendMessage(message)
+      if (incomingGiftSummary) setGiftSummary(incomingGiftSummary)
+    }
     const handleMessageEdited = ({ message }) => replaceMessage(message)
     const handleMessageReaction = (update = {}) => applyRoomReactionUpdate(update)
     const handleMessageDeleted = ({ messageId }) => {
@@ -1725,6 +1755,22 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       </div>
 
       <div className="chat-mode-panel" hidden={chatMode !== 'comments'} data-chat-mode="comments">
+      {giftEnabled ? (
+        <div className="chat-gift-summary" aria-label={t('Gift total')}>
+          <span className="chat-emoji-glyph" aria-hidden="true">🎁</span>
+          <div>
+            <strong>{formatGiftCoins(giftTotalCoins, t)}</strong>
+            <small>
+              {giftSummary?.gift_count
+                ? t('{count} gifts', { count: Number(giftSummary.gift_count || 0).toLocaleString() })
+                : t('No gifts yet')}
+            </small>
+          </div>
+          {topGiftSender ? (
+            <em>{t('Top supporter: {name}', { name: topGiftSender.sender_name || `User #${topGiftSender.sender_id}` })}</em>
+          ) : null}
+        </div>
+      ) : null}
       <div className="messages" ref={messagesRef} role="log" aria-label={t('Room chat messages')}>
         {loading ? (
           <LoadingMovie label={t('Loading chat')} compact />
@@ -1831,6 +1877,8 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 ) : giftMessage ? (
                   <div className="chat-gift-message">
                     <span className="chat-gift-emoji chat-emoji-glyph" role="img" aria-label={gift?.label || t('Gift')}>{gift?.emoji || '🎁'}</span>
+                    <strong>{t(gift?.label || 'Gift')}</strong>
+                    <small>{formatGiftCoins(gift?.total_coins || gift?.coin_value || 0, t)}</small>
                   </div>
                 ) : emojiOnlyBody ? (
                   <div className="chat-standalone-emoji-message">
@@ -1973,7 +2021,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
                 type="button"
                 className="secondary-button chat-gift-button"
                 onClick={() => sendGift(gift)}
-                disabled={!chatEnabled || room?.gift_enabled === false || sending || recording}
+                disabled={!chatEnabled || !giftEnabled || sending || recording}
                 aria-label={t('Send {gift} gift', { gift: t(gift.label) })}
                 title={t('Send {gift} gift', { gift: t(gift.label) })}
               >

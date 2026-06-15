@@ -1746,22 +1746,29 @@
     box-shadow: 0 10px 28px rgba(0, 0, 0, .18) !important;
   }
 
-  .buzzcast-mobile-room-follow > span {
+  .buzzcast-mobile-room-follow > span,
+  .buzzcast-mobile-room-follow > button {
     width: 34px !important;
     height: 34px !important;
     display: grid !important;
     place-items: center !important;
+    border: 0 !important;
     border-radius: 50% !important;
     background: #f4f4f4 !important;
   }
 
-  .buzzcast-mobile-room-follow > span::before {
+  .buzzcast-mobile-room-follow > span::before,
+  .buzzcast-mobile-room-follow > button::before {
     content: "" !important;
     width: 14px !important;
     height: 18px !important;
     border: 2px solid #9b9b9b !important;
     border-radius: 4px !important;
     box-shadow: inset 0 -4px 0 #d7d7d7 !important;
+  }
+
+  .buzzcast-mobile-room-follow > button:not(:disabled):active {
+    transform: scale(.96) !important;
   }
 
   .buzzcast-mobile-room-follow strong,

@@ -475,6 +475,31 @@
   display: none;
 }
 
+.buzzcast-card-copy .buzzcast-card-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  overflow: visible;
+  text-align: left;
+  white-space: normal;
+}
+
+.buzzcast-card-detail-row i {
+  max-width: 100%;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  color: rgba(255, 255, 255, .76);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
 .buzzcast-mobile-live-count {
   display: none;
 }

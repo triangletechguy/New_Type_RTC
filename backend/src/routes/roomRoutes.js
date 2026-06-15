@@ -3,6 +3,18 @@ const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
 const { closeParticipantSession } = require('../services/rtcSessionLifecycle')
+const {
+  ASSIGNABLE_ROOM_ROLES,
+  canApproveStageRequests,
+  canAssignRoomRoles,
+  canManageRoom,
+  canModerateTarget,
+  canPublishRoomMedia,
+  canUpdateRoomSettings,
+  normalizeRoomRole,
+  roleCanBeMovedByStagePermission,
+  roomRoleCapabilities,
+} = require('../utils/roomRoles')
 
 const router = express.Router()
 
@@ -10,23 +22,19 @@ const roomTypes = ['audio', 'youtube_audio', 'one_to_one_audio', 'video', 'one_t
 const validRoomTypes = new Set(roomTypes)
 const validPrivacyTypes = new Set(['public', 'private', 'password'])
 const validRoomStatuses = new Set(['active', 'inactive', 'ended'])
-const validRoomFeeds = new Set(['following', 'for_you', 'explore', 'party', 'nearby', 'latest', 'global'])
+const validRoomFeeds = new Set(['live', 'following', 'nearby', 'party', 'pk', 'new', 'for_you', 'explore', 'latest', 'global'])
 const validRtcModes = new Set(['audio', 'video'])
 const validRtcQualities = new Set(['good', 'fair', 'poor', 'degraded', 'failed', 'connecting', 'idle', 'unknown'])
 const validControlThemes = new Set(['neon', 'midnight', 'studio', 'mint'])
 const validModerationActions = new Set(['mute', 'mute_mic', 'disable_camera', 'kick', 'ban'])
 const validBanTypes = new Set(['temporary', 'permanent'])
-const assignableRoomRoles = new Set(['admin', 'moderator'])
-const roomManagerRoles = new Set(['owner', 'admin', 'moderator'])
+const stagePermissionActions = new Set(['approve', 'reject', 'remove'])
+const stageRequestStatuses = new Set(['pending', 'approved', 'rejected', 'cancelled', 'expired'])
 const MAX_ROOM_SEATS = 20
-const roomRoleRank = {
-  end_user: 0,
-  moderator: 1,
-  admin: 2,
-  owner: 3,
-}
 let roomFollowSchemaPromise = null
 let roomFeatureSchemaPromise = null
+let roomStageRequestSchemaPromise = null
+let roomCreationSchemaPromise = null
 const roomTypeGroups = {
   all: null,
   live: ['solo_live', 'pk_live'],
@@ -79,6 +87,7 @@ async function ensureRoomFeatureSchema() {
       const enumSql = roomTypeEnumSql()
       await query(`ALTER TABLE rooms MODIFY COLUMN room_type ENUM(${enumSql}) NOT NULL DEFAULT 'video'`)
       await query(`ALTER TABLE rtc_sessions MODIFY COLUMN session_type ENUM(${enumSql}) NOT NULL`)
+      await ensureRoomCreationSchema()
     })().catch((error) => {
       roomFeatureSchemaPromise = null
       throw error
@@ -86,6 +95,80 @@ async function ensureRoomFeatureSchema() {
   }
 
   return roomFeatureSchemaPromise
+}
+
+async function ensureRoomColumn(columnName, alterSql) {
+  const rows = await query(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'rooms'
+    AND COLUMN_NAME = :columnName
+    LIMIT 1
+    `,
+    { columnName }
+  )
+
+  if (!rows.length) await query(alterSql)
+}
+
+async function ensureRoomCreationSchema() {
+  if (!roomCreationSchemaPromise) {
+    roomCreationSchemaPromise = (async () => {
+      await ensureRoomColumn(
+        'stage_requests_enabled',
+        'ALTER TABLE rooms ADD COLUMN stage_requests_enabled BOOLEAN DEFAULT TRUE AFTER max_mic_count'
+      )
+      await ensureRoomColumn(
+        'tags_json',
+        'ALTER TABLE rooms ADD COLUMN tags_json JSON NULL AFTER theme'
+      )
+    })().catch((error) => {
+      roomCreationSchemaPromise = null
+      throw error
+    })
+  }
+
+  return roomCreationSchemaPromise
+}
+
+async function ensureRoomStageRequestSchema() {
+  if (!roomStageRequestSchemaPromise) {
+    roomStageRequestSchemaPromise = query(`
+      CREATE TABLE IF NOT EXISTS room_stage_requests (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        room_id BIGINT UNSIGNED NOT NULL,
+        session_id BIGINT UNSIGNED NULL,
+        participant_id BIGINT UNSIGNED NULL,
+        requester_user_id BIGINT UNSIGNED NOT NULL,
+        requested_mic TINYINT(1) DEFAULT 1,
+        requested_camera TINYINT(1) DEFAULT 0,
+        requested_rtc_mode ENUM('audio', 'video') NOT NULL DEFAULT 'video',
+        status ENUM('pending', 'approved', 'rejected', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+        response_by BIGINT UNSIGNED NULL,
+        responded_at TIMESTAMP NULL,
+        expires_at TIMESTAMP NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_stage_requests_room_status (room_id, status, created_at),
+        INDEX idx_stage_requests_requester (room_id, requester_user_id, status),
+        INDEX idx_stage_requests_tenant (tenant_id, status),
+        CONSTRAINT fk_stage_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_stage_requests_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+        CONSTRAINT fk_stage_requests_session FOREIGN KEY (session_id) REFERENCES rtc_sessions(id) ON DELETE SET NULL,
+        CONSTRAINT fk_stage_requests_participant FOREIGN KEY (participant_id) REFERENCES rtc_session_participants(id) ON DELETE SET NULL,
+        CONSTRAINT fk_stage_requests_requester FOREIGN KEY (requester_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_stage_requests_response_by FOREIGN KEY (response_by) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `).catch((error) => {
+      roomStageRequestSchemaPromise = null
+      throw error
+    })
+  }
+
+  return roomStageRequestSchemaPromise
 }
 
 function boundedNumber(value, min, max, fallback = 0, precision = 2) {
@@ -114,6 +197,41 @@ function cleanStringArray(value, maxItems = 8, maxLength = 32) {
   }
 
   return Array.from(seen)
+}
+
+function cleanRoomTags(value) {
+  if (typeof value === 'string') {
+    return cleanStringArray(value.split(/[,\n#]+/), 6, 32)
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return cleanRoomTags(value.toString('utf8'))
+  }
+
+  if (Array.isArray(value)) {
+    return cleanStringArray(value, 6, 32)
+  }
+
+  return []
+}
+
+function parseRoomTags(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return cleanRoomTags(value)
+  if (Buffer.isBuffer(value)) return parseRoomTags(value.toString('utf8'))
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+
+    try {
+      return cleanRoomTags(JSON.parse(trimmed))
+    } catch {
+      return cleanRoomTags(trimmed)
+    }
+  }
+
+  return []
 }
 
 function cleanCountMap(value, maxKeys = 16) {
@@ -284,6 +402,7 @@ function serializeRoom(row) {
     tenant_name: row.tenant_name || null,
     owner_id: Number(row.owner_id),
     owner_name: row.owner_name || null,
+    owner_avatar_url: row.owner_avatar_url || null,
     owner_region: row.owner_region || null,
     owner_followed: Boolean(Number(row.owner_followed || 0)),
     name: row.name,
@@ -293,9 +412,14 @@ function serializeRoom(row) {
     privacy_type: row.privacy_type,
     is_password_protected: row.privacy_type === 'password',
     max_mic_count: Number(row.max_mic_count || 0),
+    stage_requests_enabled: row.stage_requests_enabled === undefined || row.stage_requests_enabled === null
+      ? true
+      : Boolean(Number(row.stage_requests_enabled)),
     active_participants: Number(row.active_participants || 0),
+    active_speakers: Number(row.active_speakers || 0),
     active_participant_previews: parseActiveParticipantPreviews(row.active_participant_previews),
     theme: row.theme,
+    tags: parseRoomTags(row.tags_json),
     chat_enabled: Boolean(Number(row.chat_enabled)),
     gift_enabled: Boolean(Number(row.gift_enabled)),
     screen_share_enabled: Boolean(Number(row.screen_share_enabled)),
@@ -332,20 +456,157 @@ function parseActiveParticipantPreviews(value) {
     }))
 }
 
+function normalizeStageRequestStatus(value, fallback = 'pending') {
+  const status = cleanString(value, 30).toLowerCase()
+  return stageRequestStatuses.has(status) ? status : fallback
+}
+
+function serializeStageRequest(row) {
+  if (!row) return null
+
+  const requesterUserId = Number(row.requester_user_id || row.user_id || 0)
+  const requestedRtcMode = row.requested_rtc_mode === 'audio' ? 'audio' : 'video'
+  const requesterName = row.requester_name || row.user_name || (requesterUserId ? `User #${requesterUserId}` : 'Guest')
+
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    room_id: Number(row.room_id),
+    session_id: row.session_id ? Number(row.session_id) : null,
+    participant_id: row.participant_id ? Number(row.participant_id) : null,
+    requester_user_id: requesterUserId,
+    user_id: requesterUserId,
+    userId: requesterUserId,
+    user_name: requesterName,
+    userName: requesterName,
+    user_gender: row.requester_gender || row.user_gender || '',
+    userGender: row.requester_gender || row.user_gender || '',
+    user_avatar_url: row.requester_avatar_url || row.user_avatar_url || '',
+    userAvatarUrl: row.requester_avatar_url || row.user_avatar_url || '',
+    requested_mic: Boolean(Number(row.requested_mic)),
+    requestedMic: Boolean(Number(row.requested_mic)),
+    requested_camera: Boolean(Number(row.requested_camera)),
+    requestedCamera: Boolean(Number(row.requested_camera)),
+    requested_rtc_mode: requestedRtcMode,
+    requestedRtcMode: requestedRtcMode,
+    status: normalizeStageRequestStatus(row.status),
+    response_by: row.response_by ? Number(row.response_by) : null,
+    responded_at: row.responded_at || null,
+    expires_at: row.expires_at || null,
+    requested_at: row.created_at || row.requested_at || null,
+    requestedAt: row.created_at || row.requested_at || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+  }
+}
+
+async function expireStageRequests(connection, roomId) {
+  await connection.execute(
+    `
+    UPDATE room_stage_requests
+    SET status = 'expired',
+        updated_at = NOW()
+    WHERE room_id = ?
+    AND status = 'pending'
+    AND expires_at IS NOT NULL
+    AND expires_at <= NOW()
+    `,
+    [roomId]
+  )
+}
+
+function stageRequestStatusSql(statuses, params) {
+  const cleanStatuses = (Array.isArray(statuses) ? statuses : [statuses])
+    .map((status) => normalizeStageRequestStatus(status, ''))
+    .filter((status) => stageRequestStatuses.has(status))
+
+  if (!cleanStatuses.length) return ''
+
+  const placeholders = cleanStatuses.map((status) => {
+    params.push(status)
+    return '?'
+  })
+
+  return `AND sr.status IN (${placeholders.join(', ')})`
+}
+
+async function fetchStageRequests(connection, roomId, options = {}) {
+  const params = [roomId]
+  const statusSql = stageRequestStatusSql(options.statuses || ['pending'], params)
+  let userSql = ''
+
+  if (options.userId) {
+    userSql = 'AND sr.requester_user_id = ?'
+    params.push(options.userId)
+  }
+
+  const limit = Math.min(100, Math.max(1, Number(options.limit || 30)))
+
+  const [rows] = await connection.execute(
+    `
+    SELECT
+      sr.*,
+      u.name AS requester_name,
+      u.avatar_url AS requester_avatar_url,
+      u.gender AS requester_gender
+    FROM room_stage_requests sr
+    LEFT JOIN users u ON u.id = sr.requester_user_id
+    WHERE sr.room_id = ?
+    ${statusSql}
+    ${userSql}
+    ORDER BY
+      FIELD(sr.status, 'pending', 'approved', 'rejected', 'cancelled', 'expired'),
+      sr.created_at DESC,
+      sr.id DESC
+    LIMIT ${limit}
+    `,
+    params
+  )
+
+  return rows.map(serializeStageRequest).filter(Boolean)
+}
+
+async function latestStageRequestForUser(connection, roomId, userId, statuses = ['pending']) {
+  const requests = await fetchStageRequests(connection, roomId, { userId, statuses, limit: 1 })
+  return requests[0] || null
+}
+
+async function fetchStageRequestById(connection, roomId, requestId) {
+  const [rows] = await connection.execute(
+    `
+    SELECT
+      sr.*,
+      u.name AS requester_name,
+      u.avatar_url AS requester_avatar_url,
+      u.gender AS requester_gender
+    FROM room_stage_requests sr
+    LEFT JOIN users u ON u.id = sr.requester_user_id
+    WHERE sr.room_id = ?
+    AND sr.id = ?
+    LIMIT 1
+    `,
+    [roomId, requestId]
+  )
+
+  return serializeStageRequest(rows[0])
+}
+
 function roomSelectSql(options = {}) {
   const includeViewerFields = Boolean(options.includeViewerFields)
 
   return `
     SELECT
       r.id, r.tenant_id, r.owner_id, r.name, r.description, r.profile_image,
-      r.room_type, r.privacy_type, r.max_mic_count, r.theme,
+      r.room_type, r.privacy_type, r.max_mic_count, r.stage_requests_enabled, r.theme, r.tags_json,
       r.chat_enabled, r.gift_enabled, r.screen_share_enabled, r.ai_security_enabled,
       r.status, r.created_at, r.updated_at,
       tenant.name AS tenant_name,
       owner.name AS owner_name,
+      owner.avatar_url AS owner_avatar_url,
       owner.current_residence AS owner_region,
       ${includeViewerFields ? 'CASE WHEN followed_owner.followed_user_id IS NULL THEN 0 ELSE 1 END' : '0'} AS owner_followed,
       COALESCE(active_counts.active_participants, 0) AS active_participants,
+      COALESCE(active_counts.active_speakers, 0) AS active_speakers,
       active_counts.active_participant_previews AS active_participant_previews
     FROM rooms r
     LEFT JOIN tenants tenant ON tenant.id = r.tenant_id
@@ -360,6 +621,12 @@ function roomSelectSql(options = {}) {
       SELECT
         active_sessions.room_id,
         COUNT(active_participants.id) AS active_participants,
+        SUM(CASE
+          WHEN active_participants.id IS NOT NULL
+          AND active_participants.role_in_room IN ('owner', 'admin', 'moderator', 'speaker')
+          THEN 1
+          ELSE 0
+        END) AS active_speakers,
         CONCAT('[', GROUP_CONCAT(
           CASE
             WHEN active_participants.id IS NULL THEN NULL
@@ -385,6 +652,7 @@ function roomSelectSql(options = {}) {
 }
 
 async function findPublicRoomById(roomId) {
+  await ensureRoomCreationSchema()
   const rows = await query(
     `
     ${roomSelectSql()}
@@ -505,6 +773,7 @@ function buildRoomListWhere(options, tenantId, userId, user) {
       (
         r.name LIKE :search
         OR r.description LIKE :search
+        OR CAST(r.tags_json AS CHAR) LIKE :search
         OR CAST(r.id AS CHAR) LIKE :search
         OR EXISTS (
           SELECT 1
@@ -535,6 +804,18 @@ function buildRoomListWhere(options, tenantId, userId, user) {
         )
       `)
     }
+  }
+
+  if (options.feed === 'party') {
+    addInCondition(conditions, params, 'r.room_type', ['group_audio', 'group_video', 'audio', 'youtube_audio'], 'partyRoomType')
+  }
+
+  if (options.feed === 'pk') {
+    conditions.push("r.room_type = 'pk_live'")
+  }
+
+  if (options.feed === 'live') {
+    addInCondition(conditions, params, 'r.room_type', ['solo_live', 'pk_live', 'video', 'group_video'], 'liveRoomType')
   }
 
   if (options.feed === 'nearby') {
@@ -570,6 +851,7 @@ function validateRoomPayload(payload) {
   const description = cleanString(payload.description, 700)
   const profileImage = cleanString(payload.profile_image, 255)
   const theme = cleanString(payload.theme, 100)
+  const tags = parseRoomTags(payload.tags ?? payload.room_tags ?? payload.tags_json)
   const roomType = cleanString(payload.room_type, 30) || 'video'
   const privacyType = cleanString(payload.privacy_type, 30) || 'public'
   const password = cleanString(payload.password, 100)
@@ -600,7 +882,9 @@ function validateRoomPayload(payload) {
       privacy_type: privacyType,
       password: privacyType === 'password' ? password : '',
       max_mic_count: maxMicCount || defaultMicCount,
+      stage_requests_enabled: parseBoolean(payload.stage_requests_enabled ?? payload.audience_requests_enabled, true),
       theme: theme || null,
+      tags,
       chat_enabled: parseBoolean(payload.chat_enabled, true),
       gift_enabled: parseBoolean(payload.gift_enabled, false),
       screen_share_enabled: parseBoolean(payload.screen_share_enabled, false),
@@ -623,19 +907,37 @@ async function getRoomRole(connection, roomId, userId) {
   )
 
   if (!rows.length) return 'end_user'
-  return rows[0].role
+  return normalizeRoomRole(rows[0].role)
 }
 
-function canManageRoom(role) {
-  return roomManagerRoles.has(role)
-}
+async function stageSeatCount(connection, sessionId, excludeUserId = null) {
+  const params = [sessionId]
+  let excludeSql = ''
 
-function canUpdateRoomSettings(role) {
-  return role === 'owner' || role === 'admin'
-}
+  if (excludeUserId) {
+    excludeSql = 'AND user_id <> ?'
+    params.push(excludeUserId)
+  }
 
-function canModerateTarget(actorRole, targetRole) {
-  return canManageRoom(actorRole) && (roomRoleRank[actorRole] || 0) > (roomRoleRank[targetRole] || 0)
+  const [rows] = await connection.execute(
+    `
+    SELECT COUNT(*) AS active_count
+    FROM rtc_session_participants
+    WHERE session_id = ?
+    AND left_at IS NULL
+    AND updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
+    AND (
+      role_in_room IN ('owner', 'admin', 'moderator', 'speaker')
+      OR mic_enabled = 1
+      OR camera_enabled = 1
+      OR screen_shared = 1
+    )
+    ${excludeSql}
+    `,
+    params
+  )
+
+  return Number(rows[0]?.active_count || 0)
 }
 
 async function canAccessPrivateRoom(roomId, userId, ownerId) {
@@ -690,6 +992,7 @@ function parseBanOptions(payload = {}) {
 }
 
 async function getRoomControls(connection, room, userId, options = {}) {
+  await ensureRoomStageRequestSchema()
   const isOwner = Number(room.owner_id) === Number(userId)
   const role = options.roleOverride || (isOwner ? 'owner' : await getRoomRole(connection, room.id, userId))
   const [participants] = await connection.execute(
@@ -757,12 +1060,23 @@ async function getRoomControls(connection, room, userId, options = {}) {
     `,
     [room.tenant_id, room.owner_id]
   )
+  await expireStageRequests(connection, room.id)
+  const capabilities = roomRoleCapabilities(role)
+  const stageRequests = capabilities.can_approve_stage
+    ? await fetchStageRequests(connection, room.id, { statuses: ['pending'], limit: 50 })
+    : []
+  const activeBans = capabilities.can_manage
+    ? await fetchActiveRoomBans(connection, room.id)
+    : []
 
   return {
     role,
-    can_manage: canManageRoom(role),
-    can_update_settings: canUpdateRoomSettings(role),
-    can_assign_roles: role === 'owner',
+    capabilities,
+    can_manage: capabilities.can_manage,
+    can_publish_media: capabilities.can_publish_media,
+    can_update_settings: capabilities.can_update_settings,
+    can_assign_roles: capabilities.can_assign_roles,
+    can_approve_stage: capabilities.can_approve_stage,
     room: serializeRoom(room),
     roles: roles.map((roomRole) => ({
       id: roomRole.id,
@@ -780,8 +1094,11 @@ async function getRoomControls(connection, room, userId, options = {}) {
       email: assignableUser.email,
       avatar_url: assignableUser.avatar_url,
     })),
+    stage_requests: stageRequests,
+    active_bans: activeBans,
     participants: participants.map((participant) => {
-      const effectiveRole = participant.effective_role_in_room || participant.role_in_room || 'end_user'
+      const effectiveRole = normalizeRoomRole(participant.effective_role_in_room || participant.role_in_room || 'end_user')
+      const participantCapabilities = roomRoleCapabilities(effectiveRole)
 
       return {
         id: participant.id,
@@ -791,6 +1108,16 @@ async function getRoomControls(connection, room, userId, options = {}) {
         peer_uid: participant.peer_uid,
         role_in_room: effectiveRole,
         session_role_in_room: participant.role_in_room,
+        capabilities: participantCapabilities,
+        stage_access: {
+          role: effectiveRole,
+          can_publish: participantCapabilities.can_publish_media,
+          requires_approval: !participantCapabilities.can_publish_media,
+          requests_enabled: room.stage_requests_enabled === undefined || room.stage_requests_enabled === null
+            ? true
+            : Boolean(Number(room.stage_requests_enabled)),
+          status: participantCapabilities.can_publish_media ? 'approved' : 'audience',
+        },
         joined_at: participant.joined_at,
         left_at: participant.left_at,
         duration_seconds: Number(participant.duration_seconds || 0),
@@ -811,6 +1138,8 @@ async function getRoomControls(connection, room, userId, options = {}) {
 }
 
 async function isUserBanned(roomId, userId) {
+  await expireRoomBansByRoom(roomId)
+
   const rows = await query(
     `
     SELECT id
@@ -831,8 +1160,81 @@ async function isUserBanned(roomId, userId) {
   return rows.length > 0
 }
 
+async function expireRoomBansByRoom(roomId, connection = null) {
+  const runner = connection || { execute: (sql, params) => query(sql, params) }
+  await runner.execute(
+    `
+    UPDATE room_bans
+    SET status = 'expired',
+        updated_at = NOW()
+    WHERE room_id = ?
+    AND status = 'active'
+    AND ban_type = 'temporary'
+    AND ends_at IS NOT NULL
+    AND ends_at <= NOW()
+    `,
+    [roomId]
+  )
+}
+
+function mapRoomBan(row) {
+  if (!row) return null
+
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    room_id: Number(row.room_id),
+    banned_user_id: Number(row.banned_user_id),
+    banned_by: Number(row.banned_by),
+    ban_type: row.ban_type,
+    reason: row.reason || '',
+    starts_at: row.starts_at,
+    ends_at: row.ends_at,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    user_name: row.user_name || `User #${row.banned_user_id}`,
+    user_email: row.user_email || '',
+    user_avatar_url: row.user_avatar_url || '',
+    user_gender: row.user_gender || '',
+    banned_by_name: row.banned_by_name || `User #${row.banned_by}`,
+  }
+}
+
+async function fetchActiveRoomBans(connection, roomId) {
+  await expireRoomBansByRoom(roomId, connection)
+
+  const [bans] = await connection.execute(
+    `
+    SELECT
+      rb.*,
+      banned_user.name AS user_name,
+      banned_user.email AS user_email,
+      banned_user.avatar_url AS user_avatar_url,
+      banned_user.gender AS user_gender,
+      moderator.name AS banned_by_name
+    FROM room_bans rb
+    LEFT JOIN users banned_user ON banned_user.id = rb.banned_user_id
+    LEFT JOIN users moderator ON moderator.id = rb.banned_by
+    WHERE rb.room_id = ?
+    AND rb.status = 'active'
+    AND (
+      rb.ban_type = 'permanent'
+      OR rb.ends_at IS NULL
+      OR rb.ends_at > NOW()
+    )
+    ORDER BY rb.created_at DESC, rb.id DESC
+    LIMIT 100
+    `,
+    [roomId]
+  )
+
+  return bans.map(mapRoomBan).filter(Boolean)
+}
+
 router.get('/', optionalAuthMiddleware, async (req, res, next) => {
   try {
+    await ensureRoomCreationSchema()
     const options = getRoomListOptions(req)
     if (options.error) return res.status(422).json({ message: options.error })
     const tenantId = req.user?.tenant_id || 1
@@ -897,6 +1299,7 @@ router.get('/', optionalAuthMiddleware, async (req, res, next) => {
 router.post('/', authMiddleware, async (req, res, next) => {
   try {
     await ensureRoomFeatureSchema()
+    await ensureRoomCreationSchema()
     const { errors, data } = validateRoomPayload(req.body || {})
 
     if (Object.keys(errors).length) {
@@ -913,11 +1316,11 @@ router.post('/', authMiddleware, async (req, res, next) => {
         `
         INSERT INTO rooms (
           tenant_id, owner_id, name, description, profile_image, room_type,
-          privacy_type, password_hash, max_mic_count, theme,
+          privacy_type, password_hash, max_mic_count, stage_requests_enabled, theme, tags_json,
           chat_enabled, gift_enabled, screen_share_enabled, ai_security_enabled,
           status, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
         `,
         [
           req.user.tenant_id,
@@ -929,7 +1332,9 @@ router.post('/', authMiddleware, async (req, res, next) => {
           data.privacy_type,
           passwordHash,
           data.max_mic_count,
+          data.stage_requests_enabled ? 1 : 0,
           data.theme,
+          data.tags.length ? JSON.stringify(data.tags) : null,
           data.chat_enabled ? 1 : 0,
           data.gift_enabled ? 1 : 0,
           data.screen_share_enabled ? 1 : 0,
@@ -1044,6 +1449,7 @@ router.get('/:id', optionalAuthMiddleware, async (req, res, next) => {
 
 router.get('/:id/controls', authMiddleware, async (req, res, next) => {
   try {
+    await ensureRoomCreationSchema()
     const roomId = parseInteger(req.params.id, null)
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
 
@@ -1079,6 +1485,7 @@ router.get('/:id/controls', authMiddleware, async (req, res, next) => {
 
 router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
   try {
+    await ensureRoomCreationSchema()
     const roomId = parseInteger(req.params.id, null)
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
 
@@ -1108,7 +1515,7 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
 
       const updates = []
       const values = []
-      const booleanFields = ['chat_enabled', 'gift_enabled', 'screen_share_enabled', 'ai_security_enabled']
+      const booleanFields = ['chat_enabled', 'gift_enabled', 'screen_share_enabled', 'ai_security_enabled', 'stage_requests_enabled']
 
       for (const field of booleanFields) {
         if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
@@ -1234,7 +1641,7 @@ async function updateRoomRoleEndpoint(req, res, next, removeRole = false) {
 
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
     if (!targetUserId || targetUserId < 1) return res.status(422).json({ message: 'Invalid user ID.' })
-    if (!removeRole && !assignableRoomRoles.has(role)) return res.status(422).json({ message: 'Assign admin or moderator role.' })
+    if (!removeRole && !ASSIGNABLE_ROOM_ROLES.has(role)) return res.status(422).json({ message: 'Assign admin or moderator role.' })
 
     const result = await transaction(async (connection) => {
       const isPlatformAdmin = userHasRole(req.user, 'super_admin')
@@ -1252,7 +1659,13 @@ async function updateRoomRoleEndpoint(req, res, next, removeRole = false) {
 
       if (!rooms.length) throw createHttpError(404, 'Room not found.')
       const room = rooms[0]
-      if (!isPlatformAdmin && Number(room.owner_id) !== Number(req.user.id)) {
+      const actorRole = isPlatformAdmin
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+
+      if (!canAssignRoomRoles(actorRole)) {
         throw createHttpError(403, 'Only the room owner can assign room admins or moderators.')
       }
       if (Number(targetUserId) === Number(room.owner_id)) {
@@ -1311,7 +1724,7 @@ async function updateRoomRoleEndpoint(req, res, next, removeRole = false) {
         room,
         target_user: users[0],
         assigned_role: removeRole ? null : role,
-        controls: await getRoomControls(connection, room, req.user.id, { roleOverride: 'owner' }),
+        controls: await getRoomControls(connection, room, req.user.id, { roleOverride: actorRole }),
       }
     })
 
@@ -1340,6 +1753,289 @@ async function updateRoomRoleEndpoint(req, res, next, removeRole = false) {
 router.post('/:id/roles', authMiddleware, (req, res, next) => updateRoomRoleEndpoint(req, res, next, false))
 router.put('/:id/roles/:userId', authMiddleware, (req, res, next) => updateRoomRoleEndpoint(req, res, next, false))
 router.delete('/:id/roles/:userId', authMiddleware, (req, res, next) => updateRoomRoleEndpoint(req, res, next, true))
+
+router.get('/:id/stage-requests', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureRoomStageRequestSchema()
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const requestedStatus = cleanString(firstQueryValue(req.query.status), 30) || 'pending'
+    const statuses = requestedStatus === 'all'
+      ? Array.from(stageRequestStatuses)
+      : [normalizeStageRequestStatus(requestedStatus)]
+
+    const result = await transaction(async (connection) => {
+      const isPlatformAdmin = userHasRole(req.user, 'super_admin')
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        ${isPlatformAdmin ? '' : 'AND tenant_id = ?'}
+        LIMIT 1
+        `,
+        isPlatformAdmin ? [roomId] : [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      const actorRole = isPlatformAdmin
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      await expireStageRequests(connection, room.id)
+
+      const canViewRoomQueue = actorRole === 'owner'
+      const requests = await fetchStageRequests(connection, room.id, {
+        statuses,
+        userId: canViewRoomQueue ? null : req.user.id,
+        limit: canViewRoomQueue ? 50 : 10,
+      })
+
+      return { room: serializeRoom(room), role: actorRole, requests }
+    })
+
+    return res.json(result)
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/stage-requests', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureRoomStageRequestSchema()
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const requestedRtcMode = cleanString(req.body?.requested_rtc_mode ?? req.body?.requestedRtcMode, 20) === 'audio' ? 'audio' : 'video'
+    const requestedMic = parseBoolean(req.body?.requested_mic ?? req.body?.requestedMic, true)
+    const requestedCamera = requestedRtcMode === 'video' && parseBoolean(req.body?.requested_camera ?? req.body?.requestedCamera, true)
+
+    const result = await transaction(async (connection) => {
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        AND status = 'active'
+        LIMIT 1
+        `,
+        [roomId]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      if (room.stage_requests_enabled !== undefined && room.stage_requests_enabled !== null && !Boolean(Number(room.stage_requests_enabled))) {
+        throw createHttpError(403, 'Stage requests are closed for this room.')
+      }
+
+      if (Number(room.tenant_id) !== Number(req.user.tenant_id) && !userHasRole(req.user, 'super_admin')) {
+        throw createHttpError(403, 'You can only request stage access in your tenant.')
+      }
+
+      await expireStageRequests(connection, room.id)
+
+      const [participants] = await connection.execute(
+        `
+        SELECT *
+        FROM rtc_session_participants
+        WHERE room_id = ?
+        AND user_id = ?
+        AND left_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [room.id, req.user.id]
+      )
+
+      if (!participants.length) {
+        throw createHttpError(409, 'Enter the room before requesting to join the stage.')
+      }
+
+      const participant = participants[0]
+      const roomRole = Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      const effectiveRole = canPublishRoomMedia(roomRole)
+        ? roomRole
+        : participant.role_in_room || 'audience'
+
+      if (canPublishRoomMedia(effectiveRole)) {
+        throw createHttpError(422, 'You already have permission to join the stage.')
+      }
+
+      await connection.execute(
+        `
+        UPDATE room_stage_requests
+        SET status = 'cancelled',
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND requester_user_id = ?
+        AND status = 'pending'
+        `,
+        [room.id, req.user.id]
+      )
+
+      const [insertResult] = await connection.execute(
+        `
+        INSERT INTO room_stage_requests (
+          tenant_id, room_id, session_id, participant_id, requester_user_id,
+          requested_mic, requested_camera, requested_rtc_mode, status,
+          expires_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW(), NOW())
+        `,
+        [
+          room.tenant_id,
+          room.id,
+          participant.session_id,
+          participant.id,
+          req.user.id,
+          requestedMic ? 1 : 0,
+          requestedCamera ? 1 : 0,
+          requestedRtcMode,
+        ]
+      )
+
+      return {
+        room: serializeRoom(room),
+        request: await fetchStageRequestById(connection, room.id, insertResult.insertId),
+      }
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'stage-join-request-received', {
+        request: result.request,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] stage request realtime broadcast failed', broadcastError)
+    }
+
+    return res.status(201).json({
+      message: 'Request sent to the room owner.',
+      request: result.request,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/stage-requests/:requestId/cancel', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureRoomStageRequestSchema()
+    const roomId = parseInteger(req.params.id, null)
+    const requestId = parseInteger(req.params.requestId, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!requestId || requestId < 1) return res.status(422).json({ message: 'Invalid stage request ID.' })
+
+    const result = await transaction(async (connection) => {
+      const [requests] = await connection.execute(
+        `
+        SELECT sr.*, r.tenant_id, r.owner_id
+        FROM room_stage_requests sr
+        INNER JOIN rooms r ON r.id = sr.room_id
+        WHERE sr.id = ?
+        AND sr.room_id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [requestId, roomId]
+      )
+
+      if (!requests.length) throw createHttpError(404, 'Stage request not found.')
+
+      const request = requests[0]
+      if (Number(request.requester_user_id) !== Number(req.user.id)) {
+        throw createHttpError(403, 'Only the requester can cancel this stage request.')
+      }
+
+      if (request.status === 'pending') {
+        await connection.execute(
+          `
+          UPDATE room_stage_requests
+          SET status = 'cancelled',
+              updated_at = NOW()
+          WHERE id = ?
+          `,
+          [request.id]
+        )
+      }
+
+      return {
+        room: await findPublicRoomById(roomId),
+        request: await fetchStageRequestById(connection, roomId, requestId),
+      }
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'stage-join-request-cancelled', {
+        requestId,
+        request_id: requestId,
+        userId: req.user.id,
+        user_id: req.user.id,
+        request: result.request,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] stage request cancel realtime broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: 'Stage request cancelled.',
+      request: result.request,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function stageRequestResponseEndpoint(req, res, next, action) {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    const requestId = parseInteger(req.params.requestId, null)
+
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!requestId || requestId < 1) return res.status(422).json({ message: 'Invalid stage request ID.' })
+
+    const result = await applyStagePermission({
+      roomId,
+      requestId,
+      action,
+      actor: req.user,
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'stage-permission-updated', {
+        targetUserId: result.target_user_id,
+        target_user_id: result.target_user_id,
+        requestId,
+        request_id: requestId,
+        request: result.request,
+        action: result.action,
+        approved: result.approved,
+        participant: result.participant,
+        ownerUserId: req.user.id,
+        controls: result.controls,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] stage request response realtime broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: result.approved ? 'Stage request approved.' : 'Request declined.',
+      ...result,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/stage-requests/:requestId/approve', authMiddleware, (req, res, next) => stageRequestResponseEndpoint(req, res, next, 'approve'))
+router.post('/:id/stage-requests/:requestId/reject', authMiddleware, (req, res, next) => stageRequestResponseEndpoint(req, res, next, 'reject'))
 
 async function applyModerationAction({ roomId, targetUserId, action, actor, body = {} }) {
   const normalizedAction = normalizeModerationAction(action)
@@ -1635,9 +2331,421 @@ router.post('/:id/participants/:userId/mute', authMiddleware, (req, res, next) =
 router.post('/:id/participants/:userId/kick', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next, 'kick'))
 router.post('/:id/participants/:userId/ban', authMiddleware, (req, res, next) => moderationEndpoint(req, res, next, 'ban'))
 
+router.get('/:id/bans', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const result = await transaction(async (connection) => {
+      const isPlatformAdmin = userHasRole(req.user, 'super_admin')
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        ${isPlatformAdmin ? '' : 'AND tenant_id = ?'}
+        LIMIT 1
+        `,
+        isPlatformAdmin ? [roomId] : [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      const actorRole = isPlatformAdmin
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+
+      if (!canManageRoom(actorRole)) throw createHttpError(403, 'Only room managers can view room bans.')
+
+      return {
+        room: serializeRoom(room),
+        role: actorRole,
+        bans: await fetchActiveRoomBans(connection, room.id),
+      }
+    })
+
+    return res.json(result)
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/:id/bans/:banId', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    const banId = parseInteger(req.params.banId, null)
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!banId || banId < 1) return res.status(422).json({ message: 'Invalid ban ID.' })
+
+    const result = await transaction(async (connection) => {
+      const isPlatformAdmin = userHasRole(req.user, 'super_admin')
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        ${isPlatformAdmin ? '' : 'AND tenant_id = ?'}
+        LIMIT 1
+        FOR UPDATE
+        `,
+        isPlatformAdmin ? [roomId] : [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      await expireRoomBansByRoom(room.id, connection)
+
+      const [bans] = await connection.execute(
+        `
+        SELECT *
+        FROM room_bans
+        WHERE id = ?
+        AND room_id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [banId, room.id]
+      )
+
+      if (!bans.length) throw createHttpError(404, 'Room ban not found.')
+
+      const ban = bans[0]
+      if (ban.status !== 'active') throw createHttpError(409, `This ban is already ${ban.status}.`)
+
+      const actorRole = isPlatformAdmin
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      const targetRole = await getRoomRole(connection, room.id, ban.banned_user_id)
+
+      if (!canModerateTarget(actorRole, targetRole)) {
+        throw createHttpError(403, 'You can only unban users below your room role.')
+      }
+
+      await connection.execute(
+        `
+        UPDATE room_bans
+        SET status = 'revoked',
+            updated_at = NOW()
+        WHERE id = ?
+        `,
+        [ban.id]
+      )
+
+      const [updatedBans] = await connection.execute(
+        `
+        SELECT
+          rb.*,
+          banned_user.name AS user_name,
+          banned_user.email AS user_email,
+          banned_user.avatar_url AS user_avatar_url,
+          banned_user.gender AS user_gender,
+          moderator.name AS banned_by_name
+        FROM room_bans rb
+        LEFT JOIN users banned_user ON banned_user.id = rb.banned_user_id
+        LEFT JOIN users moderator ON moderator.id = rb.banned_by
+        WHERE rb.id = ?
+        LIMIT 1
+        `,
+        [ban.id]
+      )
+
+      return {
+        room: serializeRoom(room),
+        ban: mapRoomBan(updatedBans[0]),
+        target_user_id: Number(ban.banned_user_id),
+        controls: await getRoomControls(connection, room, req.user.id, { roleOverride: actorRole }),
+      }
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'room-ban-revoked', {
+        ban: result.ban,
+        targetUserId: result.target_user_id,
+        target_user_id: result.target_user_id,
+        moderatorUserId: req.user.id,
+        controls: result.controls,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] ban revoke realtime broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: 'Room ban revoked.',
+      ...result,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function applyStagePermission({ roomId, targetUserId, requestId = null, action, actor }) {
+  await ensureRoomStageRequestSchema()
+  const normalizedAction = cleanString(action, 30).toLowerCase()
+  if (!stagePermissionActions.has(normalizedAction)) {
+    throw createHttpError(422, 'Choose approve, reject, or remove.')
+  }
+
+  return transaction(async (connection) => {
+    const [rooms] = await connection.execute(
+      `
+      SELECT *
+      FROM rooms
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [roomId]
+    )
+
+    if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+    const room = rooms[0]
+    if (Number(room.tenant_id) !== Number(actor.tenant_id) && !userHasRole(actor, 'super_admin')) {
+      throw createHttpError(403, 'You can only manage rooms in your tenant.')
+    }
+
+    const actorRole = userHasRole(actor, 'super_admin')
+      ? 'owner'
+      : Number(room.owner_id) === Number(actor.id)
+      ? 'owner'
+      : await getRoomRole(connection, room.id, actor.id)
+
+    if (!canApproveStageRequests(actorRole)) {
+      throw createHttpError(403, 'Only the room owner can approve stage join requests.')
+    }
+
+    let stageRequest = null
+    if (requestId) {
+      const [stageRequestRows] = await connection.execute(
+        `
+        SELECT *
+        FROM room_stage_requests
+        WHERE id = ?
+        AND room_id = ?
+        LIMIT 1
+        FOR UPDATE
+        `,
+        [requestId, room.id]
+      )
+
+      if (!stageRequestRows.length) throw createHttpError(404, 'Stage request not found.')
+      stageRequest = stageRequestRows[0]
+
+      if (!['approve', 'reject'].includes(normalizedAction)) {
+        throw createHttpError(422, 'Stage request endpoints only support approve or reject.')
+      }
+
+      if (stageRequest.status !== 'pending') {
+        throw createHttpError(409, `This stage request is already ${stageRequest.status}.`)
+      }
+
+      targetUserId = Number(stageRequest.requester_user_id)
+    }
+
+    if (!targetUserId || targetUserId < 1) {
+      throw createHttpError(422, 'Invalid participant user ID.')
+    }
+
+    const [participants] = await connection.execute(
+      `
+      SELECT *
+      FROM rtc_session_participants
+      WHERE room_id = ?
+      AND user_id = ?
+      AND left_at IS NULL
+      ORDER BY id DESC
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [room.id, targetUserId]
+    )
+
+    if (!participants.length) throw createHttpError(404, 'Participant is not currently in this room.')
+
+    const participant = participants[0]
+    const targetRoomRole = Number(room.owner_id) === Number(targetUserId)
+      ? 'owner'
+      : await getRoomRole(connection, room.id, targetUserId)
+    const effectiveTargetRole = canPublishRoomMedia(targetRoomRole)
+      ? targetRoomRole
+      : participant.role_in_room || 'audience'
+
+    if (!roleCanBeMovedByStagePermission(effectiveTargetRole)) {
+      throw createHttpError(422, 'Room managers already have stage access.')
+    }
+
+    const nextRole = normalizedAction === 'approve' ? 'speaker' : 'audience'
+    if (normalizedAction === 'approve') {
+      const activeStageSeats = await stageSeatCount(connection, participant.session_id, targetUserId)
+      const maxParticipants = Math.max(1, Number(room.max_mic_count || 1))
+      if (activeStageSeats >= maxParticipants) {
+        throw createHttpError(409, 'The room stage is full. Free a mic seat before approving another speaker.')
+      }
+    }
+
+    await connection.execute(
+      `
+      UPDATE rtc_session_participants
+      SET role_in_room = ?,
+          mic_enabled = CASE WHEN ? = 'speaker' THEN mic_enabled ELSE 0 END,
+          camera_enabled = CASE WHEN ? = 'speaker' THEN camera_enabled ELSE 0 END,
+          screen_shared = CASE WHEN ? = 'speaker' THEN screen_shared ELSE 0 END,
+          updated_at = NOW()
+      WHERE id = ?
+      `,
+      [nextRole, nextRole, nextRole, nextRole, participant.id]
+    )
+
+    if (normalizedAction !== 'remove') {
+      const nextRequestStatus = normalizedAction === 'approve' ? 'approved' : 'rejected'
+
+      if (stageRequest) {
+        await connection.execute(
+          `
+          UPDATE room_stage_requests
+          SET status = ?,
+              response_by = ?,
+              responded_at = NOW(),
+              participant_id = ?,
+              session_id = ?,
+              updated_at = NOW()
+          WHERE id = ?
+          `,
+          [nextRequestStatus, actor.id, participant.id, participant.session_id, stageRequest.id]
+        )
+      } else {
+        await connection.execute(
+          `
+          UPDATE room_stage_requests
+          SET status = ?,
+              response_by = ?,
+              responded_at = NOW(),
+              participant_id = ?,
+              session_id = ?,
+              updated_at = NOW()
+          WHERE room_id = ?
+          AND requester_user_id = ?
+          AND status = 'pending'
+          ORDER BY id DESC
+          LIMIT 1
+          `,
+          [nextRequestStatus, actor.id, participant.id, participant.session_id, room.id, targetUserId]
+        )
+      }
+
+      await connection.execute(
+        `
+        UPDATE room_stage_requests
+        SET status = 'cancelled',
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND requester_user_id = ?
+        AND status = 'pending'
+        `,
+        [room.id, targetUserId]
+      )
+    } else {
+      await connection.execute(
+        `
+        UPDATE room_stage_requests
+        SET status = 'cancelled',
+            updated_at = NOW()
+        WHERE room_id = ?
+        AND requester_user_id = ?
+        AND status = 'pending'
+        `,
+        [room.id, targetUserId]
+      )
+    }
+
+    const [updatedParticipants] = await connection.execute(
+      `SELECT * FROM rtc_session_participants WHERE id = ? LIMIT 1`,
+      [participant.id]
+    )
+
+    const updatedRole = normalizeRoomRole(updatedParticipants[0]?.role_in_room || nextRole, 'audience')
+    const updatedCapabilities = roomRoleCapabilities(updatedRole)
+    const updatedParticipant = updatedParticipants[0]
+      ? {
+          ...updatedParticipants[0],
+          role_in_room: updatedRole,
+          capabilities: updatedCapabilities,
+          stage_access: {
+            role: updatedRole,
+            can_publish: updatedCapabilities.can_publish_media,
+            requires_approval: !updatedCapabilities.can_publish_media,
+            requests_enabled: room.stage_requests_enabled === undefined || room.stage_requests_enabled === null
+              ? true
+              : Boolean(Number(room.stage_requests_enabled)),
+            status: updatedCapabilities.can_publish_media ? 'approved' : 'audience',
+          },
+        }
+      : null
+    const updatedRequest = stageRequest
+      ? await fetchStageRequestById(connection, room.id, stageRequest.id)
+      : await latestStageRequestForUser(connection, room.id, targetUserId, ['approved', 'rejected', 'cancelled'])
+    const controls = await getRoomControls(connection, room, actor.id, { roleOverride: actorRole })
+
+    return {
+      action: normalizedAction,
+      approved: normalizedAction === 'approve',
+      target_user_id: targetUserId,
+      request: updatedRequest,
+      participant: updatedParticipant,
+      controls,
+      room: controls.room,
+    }
+  })
+}
+
+router.post('/:id/participants/:userId/stage', authMiddleware, async (req, res, next) => {
+  try {
+    const roomId = parseInteger(req.params.id, null)
+    const targetUserId = parseInteger(req.params.userId, null)
+
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+    if (!targetUserId || targetUserId < 1) return res.status(422).json({ message: 'Invalid participant user ID.' })
+
+    const result = await applyStagePermission({
+      roomId,
+      targetUserId,
+      action: req.body?.action || 'approve',
+      actor: req.user,
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'stage-permission-updated', {
+        targetUserId,
+        target_user_id: targetUserId,
+        request: result.request,
+        action: result.action,
+        approved: result.approved,
+        participant: result.participant,
+        ownerUserId: req.user.id,
+        controls: result.controls,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] stage permission realtime broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: result.approved ? 'Stage request approved.' : 'Stage request declined.',
+      ...result,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.post('/:id/join', authMiddleware, async (req, res, next) => {
   try {
     await ensureRoomFeatureSchema()
+    await ensureRoomStageRequestSchema()
     const roomId = parseInteger(req.params.id, null)
     if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
 
@@ -1689,7 +2797,7 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
       ? 'audio'
       : requestedRtcMode
 
-    const joinOptions = {
+    const requestedJoinOptions = {
       rtc_mode: effectiveRtcMode,
       mic_enabled: parseBoolean(req.body?.mic_enabled, true),
       camera_enabled: effectiveRtcMode === 'video' && parseBoolean(req.body?.camera_enabled, true),
@@ -1743,11 +2851,28 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
         [session.id, req.user.id]
       )
 
+      const currentRoomRole = Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      const defaultSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : 'audience'
+      await expireStageRequests(connection, room.id)
+
       if (activeParticipants.length) {
+        const existingSessionRole = activeParticipants[0].role_in_room || defaultSessionRole
+        const effectiveSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : existingSessionRole
+        const canPublishOnJoin = canPublishRoomMedia(effectiveSessionRole)
+        const joinOptions = {
+          rtc_mode: requestedJoinOptions.rtc_mode,
+          mic_enabled: canPublishOnJoin && requestedJoinOptions.mic_enabled,
+          camera_enabled: canPublishOnJoin && requestedJoinOptions.camera_enabled,
+          screen_shared: false,
+        }
+
         await connection.execute(
           `
           UPDATE rtc_session_participants
-          SET mic_enabled = ?,
+          SET role_in_room = ?,
+              mic_enabled = ?,
               camera_enabled = ?,
               screen_shared = ?,
               connection_status = 'connected',
@@ -1755,6 +2880,7 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
           WHERE id = ?
           `,
           [
+            effectiveSessionRole,
             joinOptions.mic_enabled ? 1 : 0,
             joinOptions.camera_enabled ? 1 : 0,
             joinOptions.screen_shared ? 1 : 0,
@@ -1767,28 +2893,26 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
           [activeParticipants[0].id]
         )
 
-        return { alreadyJoined: true, session, participant: participants[0], rtcMode: joinOptions.rtc_mode }
+        const stageRequest = canPublishOnJoin
+          ? null
+          : await latestStageRequestForUser(connection, room.id, req.user.id, ['pending'])
+
+        return { alreadyJoined: true, session, participant: participants[0], rtcMode: joinOptions.rtc_mode, stageRequest }
       }
 
-      const [activeCountRows] = await connection.execute(
-        `
-        SELECT COUNT(*) AS active_count
-        FROM rtc_session_participants
-        WHERE session_id = ?
-        AND left_at IS NULL
-        AND updated_at >= DATE_SUB(NOW(), INTERVAL 90 SECOND)
-        `,
-        [session.id]
-      )
-
-      const activeCount = Number(activeCountRows[0]?.active_count || 0)
+      const canPublishOnJoin = canPublishRoomMedia(defaultSessionRole)
+      const joinOptions = {
+        rtc_mode: requestedJoinOptions.rtc_mode,
+        mic_enabled: canPublishOnJoin && requestedJoinOptions.mic_enabled,
+        camera_enabled: canPublishOnJoin && requestedJoinOptions.camera_enabled,
+        screen_shared: false,
+      }
+      const activeCount = canPublishOnJoin ? await stageSeatCount(connection, session.id) : 0
       const maxParticipants = Math.max(1, Number(room.max_mic_count || 1))
 
       if (activeCount >= maxParticipants) {
-        throw createHttpError(409, 'Room is full. Try another room or increase the mic seat limit.')
+        throw createHttpError(409, 'The room stage is full. Wait for the owner to free a mic seat.')
       }
-
-      const roleInRoom = await getRoomRole(connection, room.id, req.user.id)
 
       const [insertParticipant] = await connection.execute(
         `
@@ -1804,7 +2928,7 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
           room.id,
           req.user.id,
           req.user.id,
-          roleInRoom || 'end_user',
+          defaultSessionRole,
           joinOptions.mic_enabled ? 1 : 0,
           joinOptions.camera_enabled ? 1 : 0,
           joinOptions.screen_shared ? 1 : 0,
@@ -1827,14 +2951,22 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
             room_type: room.room_type,
             rtc_provider: 'native_webrtc',
             rtc_mode: joinOptions.rtc_mode,
+            role_in_room: defaultSessionRole,
             mic_enabled: joinOptions.mic_enabled,
             camera_enabled: joinOptions.camera_enabled,
           }),
         ]
       )
 
-      return { alreadyJoined: false, session, participant: participants[0], rtcMode: joinOptions.rtc_mode }
+      const stageRequest = canPublishOnJoin
+        ? null
+        : await latestStageRequestForUser(connection, room.id, req.user.id, ['pending'])
+
+      return { alreadyJoined: false, session, participant: participants[0], rtcMode: joinOptions.rtc_mode, stageRequest }
     })
+
+    const joinedRole = normalizeRoomRole(result.participant.role_in_room || 'audience', 'audience')
+    const joinedCapabilities = roomRoleCapabilities(joinedRole)
 
     return res.json({
       message: result.alreadyJoined ? 'Already joined room' : 'Joined room successfully',
@@ -1851,6 +2983,21 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
         rtc_mode: result.rtcMode,
         mic_enabled: Boolean(Number(result.participant.mic_enabled)),
         camera_enabled: Boolean(Number(result.participant.camera_enabled)),
+        stage_access: {
+          role: joinedRole,
+          can_publish: joinedCapabilities.can_publish_media,
+          requires_approval: !joinedCapabilities.can_publish_media,
+          requests_enabled: room.stage_requests_enabled === undefined || room.stage_requests_enabled === null
+            ? true
+            : Boolean(Number(room.stage_requests_enabled)),
+          status: joinedCapabilities.can_publish_media
+            ? 'approved'
+            : result.stageRequest
+            ? 'pending'
+            : 'audience',
+        },
+        role_capabilities: joinedCapabilities,
+        stage_request: result.stageRequest,
       },
     })
   } catch (error) {
@@ -1901,14 +3048,25 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       const currentMicEnabled = Boolean(Number(participant.mic_enabled))
       const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
       const currentScreenShared = Boolean(Number(participant.screen_shared))
+      const roomRole = Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      const effectiveParticipantRole = canPublishRoomMedia(roomRole)
+        ? roomRole
+        : participant.role_in_room || 'audience'
       const micEnabled = parseBoolean(req.body?.mic_enabled, currentMicEnabled)
       const cameraEnabled = roomSupportsVideo(room.room_type)
         ? parseBoolean(req.body?.camera_enabled, currentCameraEnabled)
         : false
       const screenShared = parseBoolean(req.body?.screen_shared, currentScreenShared)
+      const wantsToPublish = micEnabled || cameraEnabled || screenShared
 
       if (screenShared && !Boolean(Number(room.screen_share_enabled))) {
         throw createHttpError(403, 'Screen share is disabled in this room.')
+      }
+
+      if (wantsToPublish && !canPublishRoomMedia(effectiveParticipantRole)) {
+        throw createHttpError(403, 'Ask the room owner for permission before joining the mic or camera stage.')
       }
 
       await connection.execute(
@@ -1958,6 +3116,9 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       return { participant: updatedParticipants[0], mediaChanges }
     })
 
+    const mediaRole = normalizeRoomRole(result.participant.role_in_room || 'audience', 'audience')
+    const mediaCapabilities = roomRoleCapabilities(mediaRole)
+
     return res.json({
       message: 'Media state updated',
       participant: result.participant,
@@ -1965,6 +3126,16 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
         mic_enabled: Boolean(Number(result.participant.mic_enabled)),
         camera_enabled: Boolean(Number(result.participant.camera_enabled)),
         screen_shared: Boolean(Number(result.participant.screen_shared)),
+        stage_access: {
+          role: mediaRole,
+          can_publish: mediaCapabilities.can_publish_media,
+          requires_approval: !mediaCapabilities.can_publish_media,
+          requests_enabled: room.stage_requests_enabled === undefined || room.stage_requests_enabled === null
+            ? true
+            : Boolean(Number(room.stage_requests_enabled)),
+          status: mediaCapabilities.can_publish_media ? 'approved' : 'audience',
+        },
+        role_capabilities: mediaCapabilities,
       },
       events: result.mediaChanges,
     })

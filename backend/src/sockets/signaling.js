@@ -1,5 +1,6 @@
 const { query } = require('../config/db')
 const { closeActiveParticipantForUser, touchActiveParticipant } = require('../services/rtcSessionLifecycle')
+const { canPublishRoomMedia, normalizeRoomRole } = require('../utils/roomRoles')
 
 const PRESENCE_CLOSE_GRACE_MS = Math.max(5000, Number(process.env.RTC_PRESENCE_CLOSE_GRACE_MS || 15000))
 
@@ -29,6 +30,70 @@ function registerSignaling(io) {
     return normalizeRtcMode(rtcMode) === 'video' && normalizeBoolean(value, defaultValue)
   }
 
+  async function fetchParticipantStageAccess(databaseRoomId, userId) {
+    if (!databaseRoomId || !userId) return null
+
+    const participants = await query(
+      `
+      SELECT role_in_room
+      FROM rtc_session_participants
+      WHERE room_id = :roomId
+      AND user_id = :userId
+      AND left_at IS NULL
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      { roomId: databaseRoomId, userId }
+    )
+
+    if (!participants.length) return { stageRole: 'audience', canPublish: false }
+
+    const stageRole = normalizeRoomRole(participants[0].role_in_room || 'audience', 'audience')
+    return {
+      stageRole,
+      canPublish: canPublishRoomMedia(stageRole),
+    }
+  }
+
+  async function activeRoomBanForUser(databaseRoomId, userId) {
+    if (!databaseRoomId || !userId) return null
+
+    await query(
+      `
+      UPDATE room_bans
+      SET status = 'expired',
+          updated_at = NOW()
+      WHERE room_id = :roomId
+      AND banned_user_id = :userId
+      AND status = 'active'
+      AND ban_type = 'temporary'
+      AND ends_at IS NOT NULL
+      AND ends_at <= NOW()
+      `,
+      { roomId: databaseRoomId, userId }
+    )
+
+    const bans = await query(
+      `
+      SELECT id, room_id, banned_user_id, ban_type, reason, starts_at, ends_at, status
+      FROM room_bans
+      WHERE room_id = :roomId
+      AND banned_user_id = :userId
+      AND status = 'active'
+      AND (
+        ban_type = 'permanent'
+        OR ends_at IS NULL
+        OR ends_at > NOW()
+      )
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      { roomId: databaseRoomId, userId }
+    )
+
+    return bans[0] || null
+  }
+
   function serializeUser(socketId, user) {
     return {
       socketId,
@@ -36,6 +101,8 @@ function registerSignaling(io) {
       userName: user.userName,
       userGender: user.userGender,
       userAvatarUrl: user.userAvatarUrl,
+      stageRole: user.stageRole,
+      canPublish: user.canPublish,
       rtcMode: user.rtcMode,
       micEnabled: user.micEnabled,
       cameraEnabled: user.cameraEnabled,
@@ -263,7 +330,7 @@ function registerSignaling(io) {
   io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id)
 
-    socket.on('join-room', ({ roomId, databaseRoomId, roomDbId, userId, userName, userGender, userAvatarUrl, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+    socket.on('join-room', async ({ roomId, databaseRoomId, roomDbId, userId, userName, userGender, userAvatarUrl, stageRole, canPublish, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -271,78 +338,175 @@ function registerSignaling(io) {
         return
       }
 
-      const roomKey = String(roomId)
-      const users = getRoomUsers(roomKey)
-      const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, {}, { databaseRoomId, roomDbId })
-      const replacedUsers = removeDuplicateUserSockets(roomKey, users, userId, socket.id)
+      try {
+        const roomKey = String(roomId)
+        const users = getRoomUsers(roomKey)
+        const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, {}, { databaseRoomId, roomDbId })
+        const activeBan = resolvedDatabaseRoomId && userId
+          ? await activeRoomBanForUser(resolvedDatabaseRoomId, userId)
+          : null
 
-      const existingUsers = Array.from(users.entries()).map(([socketId, user]) => serializeUser(socketId, user))
+        if (activeBan) {
+          const payload = {
+            ok: false,
+            reason: 'banned',
+            message: 'You are banned from this room.',
+            ban: activeBan,
+          }
+          socket.emit('room-access-denied', payload)
+          if (typeof acknowledge === 'function') acknowledge(payload)
+          return
+        }
 
-      replacedUsers.forEach(({ socketId, user }) => {
-        socket.to(roomKey).emit('user-left', {
-          socketId,
-          userId: user.userId,
-          userName: user.userName,
+        const stageAccess = resolvedDatabaseRoomId && userId
+          ? await fetchParticipantStageAccess(resolvedDatabaseRoomId, userId)
+          : null
+        const effectiveStageRole = stageAccess?.stageRole || stageRole || 'audience'
+        const effectiveCanPublish = stageAccess
+          ? stageAccess.canPublish
+          : normalizeBoolean(canPublish, false)
+        const effectiveRtcMode = normalizeRtcMode(rtcMode)
+        const effectiveMicEnabled = effectiveCanPublish && normalizeBoolean(micEnabled, true)
+        const effectiveCameraEnabled = effectiveCanPublish && normalizeCameraEnabled(cameraEnabled, effectiveRtcMode, false)
+        const effectiveScreenShared = effectiveCanPublish && normalizeBoolean(screenShared, false)
+        const replacedUsers = removeDuplicateUserSockets(roomKey, users, userId, socket.id)
+
+        const existingUsers = Array.from(users.entries()).map(([socketId, user]) => serializeUser(socketId, user))
+
+        replacedUsers.forEach(({ socketId, user }) => {
+          socket.to(roomKey).emit('user-left', {
+            socketId,
+            userId: user.userId,
+            userName: user.userName,
+          })
         })
-      })
 
-      users.set(socket.id, {
-        userId: userId || null,
-        databaseRoomId: resolvedDatabaseRoomId,
-        userName: userName || 'Guest',
-        userGender: userGender || '',
-        userAvatarUrl: userAvatarUrl || '',
-        rtcMode: normalizeRtcMode(rtcMode),
-        micEnabled: normalizeBoolean(micEnabled, true),
-        cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
-        screenShared: normalizeBoolean(screenShared, false),
-      })
+        users.set(socket.id, {
+          userId: userId || null,
+          databaseRoomId: resolvedDatabaseRoomId,
+          userName: userName || 'Guest',
+          userGender: userGender || '',
+          userAvatarUrl: userAvatarUrl || '',
+          stageRole: effectiveStageRole,
+          canPublish: effectiveCanPublish,
+          rtcMode: effectiveRtcMode,
+          micEnabled: effectiveMicEnabled,
+          cameraEnabled: effectiveCameraEnabled,
+          screenShared: effectiveScreenShared,
+        })
 
-      socket.join(roomKey)
-      if (userId) socket.join(userSocketRoom(userId))
-      cancelPendingPresenceClose(resolvedDatabaseRoomId, userId)
-      if (resolvedDatabaseRoomId && userId) {
-        touchActiveParticipant({
-          roomId: resolvedDatabaseRoomId,
-          userId,
-          micEnabled: normalizeBoolean(micEnabled, true),
-          cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
-          screenShared: normalizeBoolean(screenShared, false),
-        }).catch((error) => console.error('[signaling] presence touch failed', error))
-      }
+        socket.join(roomKey)
+        if (userId) socket.join(userSocketRoom(userId))
+        cancelPendingPresenceClose(resolvedDatabaseRoomId, userId)
+        if (resolvedDatabaseRoomId && userId) {
+          touchActiveParticipant({
+            roomId: resolvedDatabaseRoomId,
+            userId,
+            micEnabled: effectiveMicEnabled,
+            cameraEnabled: effectiveCameraEnabled,
+            screenShared: effectiveScreenShared,
+          }).catch((error) => console.error('[signaling] presence touch failed', error))
+        }
 
-      socket.emit('existing-users', {
-        ok: true,
-        roomId: roomKey,
-        socketId: socket.id,
-        users: existingUsers,
-      })
-
-      if (typeof acknowledge === 'function') {
-        acknowledge({
+        socket.emit('existing-users', {
           ok: true,
           roomId: roomKey,
           socketId: socket.id,
           users: existingUsers,
         })
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: true,
+            roomId: roomKey,
+            socketId: socket.id,
+            users: existingUsers,
+          })
+        }
+
+        socket.to(roomKey).emit('user-joined', {
+          socketId: socket.id,
+          userId: userId || null,
+          userName: userName || 'Guest',
+          userGender: userGender || '',
+          userAvatarUrl: userAvatarUrl || '',
+          stageRole: effectiveStageRole,
+          canPublish: effectiveCanPublish,
+          rtcMode: effectiveRtcMode,
+          micEnabled: effectiveMicEnabled,
+          cameraEnabled: effectiveCameraEnabled,
+          screenShared: effectiveScreenShared,
+        })
+
+        console.log(`Socket ${socket.id} joined room ${roomKey}`)
+      } catch (error) {
+        console.error('[signaling] join-room failed', error)
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: false,
+            message: error.message || 'Signaling room join failed.',
+          })
+        }
       }
-
-      socket.to(roomKey).emit('user-joined', {
-        socketId: socket.id,
-        userId: userId || null,
-        userName: userName || 'Guest',
-        userGender: userGender || '',
-        userAvatarUrl: userAvatarUrl || '',
-        rtcMode: normalizeRtcMode(rtcMode),
-        micEnabled: normalizeBoolean(micEnabled, true),
-        cameraEnabled: normalizeCameraEnabled(cameraEnabled, rtcMode, false),
-        screenShared: normalizeBoolean(screenShared, false),
-      })
-
-      console.log(`Socket ${socket.id} joined room ${roomKey}`)
     })
 
-    socket.on('rtc-presence', ({ roomId, databaseRoomId, roomDbId, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+    socket.on('stage-join-request', ({ roomId, requestedMic, requestedCamera, requestedRtcMode } = {}, acknowledge) => {
+      if (!roomId) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Missing signaling room ID.' })
+        return
+      }
+
+      const roomKey = String(roomId)
+      const users = rooms.get(roomKey)
+      const currentUser = users?.get(socket.id)
+
+      if (!users || !currentUser) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Socket is not in this signaling room.' })
+        return
+      }
+
+      const request = {
+        id: `${roomKey}:${currentUser.userId || socket.id}:${Date.now()}`,
+        roomId: roomKey,
+        socketId: socket.id,
+        userId: currentUser.userId || null,
+        userName: currentUser.userName || 'Guest',
+        userGender: currentUser.userGender || '',
+        userAvatarUrl: currentUser.userAvatarUrl || '',
+        requestedMic: normalizeBoolean(requestedMic, true),
+        requestedCamera: normalizeRtcMode(requestedRtcMode || currentUser.rtcMode) === 'video' && normalizeBoolean(requestedCamera, true),
+        requestedRtcMode: normalizeRtcMode(requestedRtcMode || currentUser.rtcMode),
+        requestedAt: new Date().toISOString(),
+      }
+
+      socket.to(roomKey).emit('stage-join-request-received', { request })
+      acknowledgeSignal(acknowledge, { ok: true, request })
+    })
+
+    socket.on('stage-join-request-cancelled', ({ roomId, requestId } = {}, acknowledge) => {
+      if (!roomId) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Missing signaling room ID.' })
+        return
+      }
+
+      const roomKey = String(roomId)
+      const users = rooms.get(roomKey)
+      const currentUser = users?.get(socket.id)
+
+      if (!users || !currentUser) {
+        acknowledgeSignal(acknowledge, { ok: false, message: 'Socket is not in this signaling room.' })
+        return
+      }
+
+      socket.to(roomKey).emit('stage-join-request-cancelled', {
+        requestId,
+        userId: currentUser.userId || null,
+        socketId: socket.id,
+      })
+      acknowledgeSignal(acknowledge, { ok: true })
+    })
+
+    socket.on('rtc-presence', async ({ roomId, databaseRoomId, roomDbId, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -362,12 +526,38 @@ function registerSignaling(io) {
       }
 
       const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, currentUser, { databaseRoomId, roomDbId })
+      let stageAccess = null
+
+      try {
+        stageAccess = await fetchParticipantStageAccess(resolvedDatabaseRoomId, currentUser.userId)
+      } catch (error) {
+        if (typeof acknowledge === 'function') acknowledge({ ok: false, message: error.message || 'Presence permission check failed.' })
+        return
+      }
+
+      const nextCanPublish = stageAccess ? stageAccess.canPublish : currentUser.canPublish
+      const nextMicEnabled = normalizeBoolean(micEnabled, currentUser.micEnabled)
+      const nextCameraEnabled = normalizeCameraEnabled(cameraEnabled, currentUser.rtcMode, currentUser.cameraEnabled)
+      const nextScreenShared = normalizeBoolean(screenShared, currentUser.screenShared)
+
+      if ((nextMicEnabled || nextCameraEnabled || nextScreenShared) && !nextCanPublish) {
+        if (typeof acknowledge === 'function') {
+          acknowledge({
+            ok: false,
+            message: 'Ask the room owner for permission before joining the mic or camera stage.',
+          })
+        }
+        return
+      }
+
       const nextUser = {
         ...currentUser,
         databaseRoomId: resolvedDatabaseRoomId,
-        micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
-        cameraEnabled: normalizeCameraEnabled(cameraEnabled, currentUser.rtcMode, currentUser.cameraEnabled),
-        screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
+        stageRole: stageAccess?.stageRole || currentUser.stageRole || 'audience',
+        canPublish: nextCanPublish,
+        micEnabled: nextCanPublish && nextMicEnabled,
+        cameraEnabled: nextCanPublish && nextCameraEnabled,
+        screenShared: nextCanPublish && nextScreenShared,
       }
 
       users.set(socket.id, nextUser)
@@ -423,7 +613,7 @@ function registerSignaling(io) {
       forwardPeerSignal(socket, 'webrtc-ice-candidate', targetSocketId, candidate ? { candidate } : null, acknowledge)
     })
 
-    socket.on('media-state-change', ({ roomId, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
+    socket.on('media-state-change', async ({ roomId, stageRole, canPublish, rtcMode, micEnabled, cameraEnabled, screenShared } = {}, acknowledge) => {
       if (!roomId) {
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: false, message: 'Missing signaling room ID.' })
@@ -442,26 +632,56 @@ function registerSignaling(io) {
         return
       }
 
-      const nextRtcMode = normalizeRtcMode(rtcMode || currentUser.rtcMode)
-      const nextUser = {
-        ...currentUser,
-        rtcMode: nextRtcMode,
-        micEnabled: normalizeBoolean(micEnabled, currentUser.micEnabled),
-        cameraEnabled: normalizeCameraEnabled(cameraEnabled, nextRtcMode, currentUser.cameraEnabled),
-        screenShared: normalizeBoolean(screenShared, currentUser.screenShared),
-      }
+      try {
+        const resolvedDatabaseRoomId = resolveDatabaseRoomId(roomKey, currentUser)
+        const stageAccess = resolvedDatabaseRoomId && currentUser.userId
+          ? await fetchParticipantStageAccess(resolvedDatabaseRoomId, currentUser.userId)
+          : null
+        const nextRtcMode = normalizeRtcMode(rtcMode || currentUser.rtcMode)
+        const nextStageRole = stageAccess?.stageRole || stageRole || currentUser.stageRole || 'audience'
+        const nextCanPublish = stageAccess
+          ? stageAccess.canPublish
+          : normalizeBoolean(canPublish, currentUser.canPublish)
+        const nextMicEnabled = normalizeBoolean(micEnabled, currentUser.micEnabled)
+        const nextCameraEnabled = normalizeCameraEnabled(cameraEnabled, nextRtcMode, currentUser.cameraEnabled)
+        const nextScreenShared = normalizeBoolean(screenShared, currentUser.screenShared)
+        const wantsToPublish = nextMicEnabled || nextCameraEnabled || nextScreenShared
 
-      users.set(socket.id, nextUser)
+        if (wantsToPublish && !nextCanPublish) {
+          acknowledgeSignal(acknowledge, {
+            ok: false,
+            message: 'Ask the room owner for permission before joining the mic or camera stage.',
+          })
+          return
+        }
 
-      const payload = {
-        roomId: roomKey,
-        ...serializeUser(socket.id, nextUser),
-      }
+        const nextUser = {
+          ...currentUser,
+          stageRole: nextStageRole,
+          canPublish: nextCanPublish,
+          rtcMode: nextRtcMode,
+          micEnabled: nextCanPublish && nextMicEnabled,
+          cameraEnabled: nextCanPublish && nextCameraEnabled,
+          screenShared: nextCanPublish && nextScreenShared,
+        }
 
-      socket.to(roomKey).emit('media-state-change', payload)
+        users.set(socket.id, nextUser)
 
-      if (typeof acknowledge === 'function') {
-        acknowledge({ ok: true, ...payload })
+        const payload = {
+          roomId: roomKey,
+          ...serializeUser(socket.id, nextUser),
+        }
+
+        socket.to(roomKey).emit('media-state-change', payload)
+
+        if (typeof acknowledge === 'function') {
+          acknowledge({ ok: true, ...payload })
+        }
+      } catch (error) {
+        acknowledgeSignal(acknowledge, {
+          ok: false,
+          message: error.message || 'Media state signaling failed.',
+        })
       }
     })
 

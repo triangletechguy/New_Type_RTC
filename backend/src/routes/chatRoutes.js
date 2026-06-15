@@ -1,10 +1,15 @@
 const express = require('express')
-const { query } = require('../config/db')
+const { query, transaction } = require('../config/db')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 
 const validMessageTypes = new Set(['text', 'image', 'voice', 'gift', 'system'])
+const roomGiftCatalog = [
+  { id: 'star', label: 'Star', emoji: '\u2b50', coin_value: 10 },
+  { id: 'heart', label: 'Heart', emoji: '\u2764\ufe0f', coin_value: 25 },
+  { id: 'cheer', label: 'Cheer', emoji: '\ud83c\udf89', coin_value: 50 },
+]
 const imageDataUrlPattern = /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i
 const giftDataUrlPattern = /^data:(image\/(png|jpe?g|gif|webp|svg\+xml)|application\/(octet-stream|x-svga));base64,[a-z0-9+/=\s]+$/i
 const audioDataUrlPattern = /^data:audio\/(webm|ogg|mpeg|mp3|mp4|wav|x-m4a)(;codecs=[^;]+)?;base64,[a-z0-9+/=\s]+$/i
@@ -33,6 +38,52 @@ async function ensureChatSchema() {
         INDEX idx_chat_message_hides_user_id (user_id),
         CONSTRAINT fk_chat_message_hides_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         CONSTRAINT fk_chat_message_hides_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS chat_message_reactions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        room_id BIGINT UNSIGNED NOT NULL,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        emoji VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_chat_message_reaction (message_id, user_id, emoji),
+        INDEX idx_chat_message_reactions_message (message_id),
+        INDEX idx_chat_message_reactions_room (tenant_id, room_id, created_at),
+        CONSTRAINT fk_chat_message_reactions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_message_reactions_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_message_reactions_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_chat_message_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
+      CREATE TABLE IF NOT EXISTS room_gift_transactions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        room_id BIGINT UNSIGNED NOT NULL,
+        message_id BIGINT UNSIGNED NOT NULL,
+        sender_id BIGINT UNSIGNED NOT NULL,
+        owner_user_id BIGINT UNSIGNED NOT NULL,
+        gift_id VARCHAR(80) NOT NULL,
+        gift_label VARCHAR(120) NOT NULL,
+        gift_emoji VARCHAR(64) NOT NULL,
+        coin_value INT UNSIGNED NOT NULL DEFAULT 0,
+        quantity INT UNSIGNED NOT NULL DEFAULT 1,
+        total_coins INT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_room_gift_message (message_id),
+        INDEX idx_room_gifts_room_created (room_id, created_at),
+        INDEX idx_room_gifts_sender (tenant_id, sender_id, created_at),
+        INDEX idx_room_gifts_owner (tenant_id, owner_user_id, created_at),
+        CONSTRAINT fk_room_gifts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_gifts_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_gifts_message FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_gifts_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_gifts_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
       )
       `)
 
@@ -91,6 +142,23 @@ async function ensureChatSchema() {
       `)
 
       await query(`
+      CREATE TABLE IF NOT EXISTS direct_message_reactions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        message_id BIGINT UNSIGNED NOT NULL,
+        user_id BIGINT UNSIGNED NOT NULL,
+        emoji VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_direct_message_reaction (message_id, user_id, emoji),
+        INDEX idx_direct_message_reactions_message (message_id),
+        INDEX idx_direct_message_reactions_tenant (tenant_id, created_at),
+        CONSTRAINT fk_direct_message_reactions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_message_reactions_message FOREIGN KEY (message_id) REFERENCES direct_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_direct_message_reactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+      `)
+
+      await query(`
       CREATE TABLE IF NOT EXISTS user_follows (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         tenant_id BIGINT UNSIGNED NOT NULL,
@@ -145,6 +213,45 @@ function cleanMessageBody(value) {
 
 function cleanMediaUrl(value) {
   return String(value || '').trim()
+}
+
+function cleanGiftId(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')
+}
+
+function giftForPayload(payload = {}, body = '', mediaUrl = '') {
+  const giftId = cleanGiftId(payload.gift_id || payload.giftId || mediaUrl)
+  if (giftId) {
+    const gift = roomGiftCatalog.find((item) => item.id === giftId)
+    if (gift) return gift
+  }
+
+  const cleanBody = String(body || '').trim().toLowerCase()
+  return roomGiftCatalog.find((gift) => {
+    const label = gift.label.toLowerCase()
+    return cleanBody === label || cleanBody === `${gift.emoji} ${gift.label}`.toLowerCase()
+  }) || null
+}
+
+function parseGiftQuantity(value) {
+  if (value === undefined || value === null || value === '') return 1
+  const quantity = Number(value)
+  return Number.isInteger(quantity) && quantity > 0 && quantity <= 99 ? quantity : null
+}
+
+function giftMessageBody(gift, quantity = 1) {
+  return quantity > 1 ? `${gift.emoji} ${gift.label} x${quantity}` : `${gift.emoji} ${gift.label}`
+}
+
+function cleanReactionEmoji(value) {
+  return String(value || '').trim()
+}
+
+function reactionEmojiError(emoji) {
+  if (!emoji) return 'Reaction is required.'
+  if (emoji.length > 64) return 'Reaction is too long.'
+  if (/[\u0000-\u001f\u007f]/.test(emoji)) return 'Reaction is invalid.'
+  return ''
 }
 
 function imageMediaError(mediaUrl) {
@@ -241,6 +348,193 @@ function directMessageSelectSql() {
   `
 }
 
+async function attachReactionSummaries(messages, tableName, userId) {
+  const validTables = new Set(['chat_message_reactions', 'direct_message_reactions'])
+  const list = Array.isArray(messages) ? messages.filter(Boolean) : []
+  if (!list.length) return list
+  if (!validTables.has(tableName)) throw new Error('Invalid reaction table.')
+
+  const messageIds = [...new Set(list.map((message) => Number(message.id)).filter(Boolean))]
+  if (!messageIds.length) {
+    return list.map((message) => ({ ...message, reactions: [], reaction_count: 0 }))
+  }
+
+  const params = { userId: Number(userId || 0) }
+  const placeholders = messageIds.map((messageId, index) => {
+    const key = `messageId${index}`
+    params[key] = messageId
+    return `:${key}`
+  })
+
+  const rows = await query(
+    `
+    SELECT
+      message_id,
+      emoji,
+      COUNT(*) AS count,
+      SUM(CASE WHEN user_id = :userId THEN 1 ELSE 0 END) AS reacted_by_me,
+      MIN(created_at) AS first_reacted_at
+    FROM ${tableName}
+    WHERE message_id IN (${placeholders.join(', ')})
+    GROUP BY message_id, emoji
+    ORDER BY first_reacted_at ASC, emoji ASC
+    `,
+    params
+  )
+
+  const reactionsByMessageId = rows.reduce((map, row) => {
+    const messageId = Number(row.message_id)
+    if (!map.has(messageId)) map.set(messageId, [])
+    map.get(messageId).push({
+      emoji: row.emoji,
+      count: Number(row.count || 0),
+      reacted_by_me: Boolean(Number(row.reacted_by_me || 0)),
+    })
+    return map
+  }, new Map())
+
+  return list.map((message) => {
+    const reactions = reactionsByMessageId.get(Number(message.id)) || []
+    return {
+      ...message,
+      reactions,
+      reaction_count: reactions.reduce((total, reaction) => total + Number(reaction.count || 0), 0),
+    }
+  })
+}
+
+function mapGiftTransaction(row) {
+  if (!row) return null
+
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    room_id: Number(row.room_id),
+    message_id: Number(row.message_id),
+    sender_id: Number(row.sender_id),
+    owner_user_id: Number(row.owner_user_id),
+    gift_id: row.gift_id,
+    label: row.gift_label,
+    emoji: row.gift_emoji,
+    coin_value: Number(row.coin_value || 0),
+    quantity: Number(row.quantity || 1),
+    total_coins: Number(row.total_coins || 0),
+    created_at: row.created_at,
+  }
+}
+
+async function attachRoomGiftTransactions(messages) {
+  const list = Array.isArray(messages) ? messages.filter(Boolean) : []
+  if (!list.length) return list
+
+  const messageIds = [...new Set(
+    list
+      .filter((message) => message.message_type === 'gift')
+      .map((message) => Number(message.id))
+      .filter(Boolean)
+  )]
+
+  if (!messageIds.length) return list
+
+  const params = {}
+  const placeholders = messageIds.map((messageId, index) => {
+    const key = `giftMessageId${index}`
+    params[key] = messageId
+    return `:${key}`
+  })
+
+  const rows = await query(
+    `
+    SELECT *
+    FROM room_gift_transactions
+    WHERE message_id IN (${placeholders.join(', ')})
+    `,
+    params
+  )
+
+  const giftsByMessageId = rows.reduce((map, row) => {
+    map.set(Number(row.message_id), mapGiftTransaction(row))
+    return map
+  }, new Map())
+
+  return list.map((message) => {
+    const gift = giftsByMessageId.get(Number(message.id))
+    return gift ? { ...message, gift } : message
+  })
+}
+
+async function hydrateRoomMessages(messages, userId) {
+  const withReactions = await attachRoomMessageReactions(messages, userId)
+  return attachRoomGiftTransactions(withReactions)
+}
+
+async function roomGiftSummary(roomId, tenantId, userId = null) {
+  const [summaryRows, senderRows] = await Promise.all([
+    query(
+      `
+      SELECT
+        COUNT(*) AS gift_count,
+        COUNT(DISTINCT sender_id) AS sender_count,
+        COALESCE(SUM(total_coins), 0) AS total_coins,
+        COALESCE(SUM(CASE WHEN sender_id = :userId THEN total_coins ELSE 0 END), 0) AS my_total_coins
+      FROM room_gift_transactions
+      WHERE room_id = :roomId
+      AND tenant_id = :tenantId
+      `,
+      { roomId, tenantId, userId: Number(userId || 0) }
+    ),
+    query(
+      `
+      SELECT
+        rgt.sender_id,
+        u.name AS sender_name,
+        u.avatar_url AS sender_avatar_url,
+        u.gender AS sender_gender,
+        COUNT(*) AS gift_count,
+        COALESCE(SUM(rgt.total_coins), 0) AS total_coins
+      FROM room_gift_transactions rgt
+      LEFT JOIN users u ON u.id = rgt.sender_id
+      WHERE rgt.room_id = :roomId
+      AND rgt.tenant_id = :tenantId
+      GROUP BY rgt.sender_id, u.name, u.avatar_url, u.gender
+      ORDER BY total_coins DESC, gift_count DESC, rgt.sender_id ASC
+      LIMIT 5
+      `,
+      { roomId, tenantId }
+    ),
+  ])
+
+  const summary = summaryRows[0] || {}
+  return {
+    total_coins: Number(summary.total_coins || 0),
+    gift_count: Number(summary.gift_count || 0),
+    sender_count: Number(summary.sender_count || 0),
+    my_total_coins: Number(summary.my_total_coins || 0),
+    top_senders: senderRows.map((row) => ({
+      sender_id: Number(row.sender_id),
+      sender_name: row.sender_name,
+      sender_avatar_url: row.sender_avatar_url,
+      sender_gender: row.sender_gender,
+      gift_count: Number(row.gift_count || 0),
+      total_coins: Number(row.total_coins || 0),
+    })),
+  }
+}
+
+async function attachRoomMessageReactions(messages, userId) {
+  return attachReactionSummaries(messages, 'chat_message_reactions', userId)
+}
+
+async function attachDirectMessageReactions(messages, userId) {
+  return attachReactionSummaries(messages, 'direct_message_reactions', userId)
+}
+
+async function fetchChatMessageById(messageId, userId) {
+  const messages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, { id: messageId })
+  const hydratedMessages = await hydrateRoomMessages(messages, userId)
+  return hydratedMessages[0] || null
+}
+
 function userHasTenantModerationRole(user) {
   const roles = Array.isArray(user?.roles) ? user.roles : []
   return roles.some((role) => ['super_admin', 'client_admin', 'admin', 'moderator'].includes(
@@ -325,9 +619,9 @@ async function emitRoomRealtime(req, room, eventName, payload = {}) {
   return true
 }
 
-async function broadcastRoomChatMessage(req, room, message) {
+async function broadcastRoomChatMessage(req, room, message, extraPayload = {}) {
   if (!message?.id) return false
-  return emitRoomRealtime(req, room, 'chat-message', { message })
+  return emitRoomRealtime(req, room, 'chat-message', { message, ...extraPayload })
 }
 
 async function blockedUserIdsForRoom(roomId, userId) {
@@ -448,9 +742,12 @@ async function findDirectMessageForUser(messageId, user) {
   return messages[0] || null
 }
 
-async function fetchDirectMessageById(messageId) {
+async function fetchDirectMessageById(messageId, userId = null) {
   const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, { id: messageId })
-  return messages[0] || null
+  const hydratedMessages = userId
+    ? await attachDirectMessageReactions(messages, userId)
+    : messages
+  return hydratedMessages[0] || null
 }
 
 function mapFollowRequest(row) {
@@ -549,6 +846,7 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
 
     const room = await findRoomForChat(roomId)
     if (!room) return res.status(404).json({ message: 'Room not found.' })
+    if (Number(room.tenant_id) !== Number(req.user.tenant_id)) return res.status(404).json({ message: 'Room not found.' })
     const blockedUserIds = await blockedUserIdsForRoom(roomId, req.user.id)
 
     const params = { tenantId: room.tenant_id, roomId, userId: req.user.id }
@@ -580,13 +878,40 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       params
     )
 
+    const hydratedMessages = await hydrateRoomMessages(messages.reverse(), req.user.id)
+    const giftSummary = await roomGiftSummary(roomId, room.tenant_id, req.user.id)
+
     return res.json({
-      messages: messages.reverse(),
+      messages: hydratedMessages,
       meta: {
         limit,
         chat_enabled: Boolean(Number(room.chat_enabled)),
+        gift_enabled: Boolean(Number(room.gift_enabled)),
+        gift_summary: giftSummary,
         blocked_user_ids: blockedUserIds,
       },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/rooms/:id/gifts/summary', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const roomId = parsePositiveInteger(req.params.id)
+    if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const room = await findRoomForChat(roomId)
+    if (!room || Number(room.tenant_id) !== Number(req.user.tenant_id)) {
+      return res.status(404).json({ message: 'Room not found.' })
+    }
+
+    return res.json({
+      room_id: roomId,
+      gift_enabled: Boolean(Number(room.gift_enabled)),
+      gift_summary: await roomGiftSummary(roomId, room.tenant_id, req.user.id),
     })
   } catch (error) {
     next(error)
@@ -602,6 +927,8 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     const messageType = String(req.body?.message_type || 'text').trim()
     const mediaUrl = cleanMediaUrl(req.body?.media_url)
     const parentMessageId = parsePositiveInteger(req.body?.parent_message_id)
+    const gift = messageType === 'gift' ? giftForPayload(req.body, body, mediaUrl) : null
+    const giftQuantity = messageType === 'gift' ? parseGiftQuantity(req.body?.quantity) : 1
 
     if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
 
@@ -615,9 +942,8 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       const mediaError = audioMediaError(mediaUrl)
       if (mediaError) return res.status(422).json({ message: mediaError })
     } else if (messageType === 'gift') {
-      if (!body) return res.status(422).json({ message: 'Choose a gift before sending.' })
-      const mediaError = giftMediaError(mediaUrl)
-      if (mediaError) return res.status(422).json({ message: mediaError })
+      if (!gift) return res.status(422).json({ message: 'Choose a valid gift before sending.' })
+      if (!giftQuantity) return res.status(422).json({ message: 'Gift quantity must be between 1 and 99.' })
     } else if (!body) {
       return res.status(422).json({ message: 'Message body is required.' })
     }
@@ -625,6 +951,7 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     const room = await findRoomForChat(roomId)
 
     if (!room) return res.status(404).json({ message: 'Room not found.' })
+    if (Number(room.tenant_id) !== Number(req.user.tenant_id)) return res.status(404).json({ message: 'Room not found.' })
 
     if (!room.chat_enabled) {
       return res.status(403).json({ message: 'Chat is disabled in this room.' })
@@ -637,40 +964,90 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       if (securityError) return res.status(422).json({ message: securityError })
     }
 
-    const result = await query(
-      `
-      INSERT INTO chat_messages (
-        tenant_id, room_id, session_id, sender_id, parent_message_id,
-        message_type, message_body, media_url, is_deleted, is_unsent,
-        created_at, updated_at
-      )
-      VALUES (
-        :tenantId, :roomId, NULL, :senderId, :parentMessageId,
-        :messageType, :messageBody, :mediaUrl, 0, 0, NOW(), NOW()
-      )
-      `,
-      {
-        tenantId: room.tenant_id,
-        roomId,
-        senderId: req.user.id,
-        parentMessageId,
-        messageType,
-        messageBody: messageType === 'image'
-          ? (body || 'sent a photo')
-          : messageType === 'voice' ? (body || 'sent a voice message') : body,
-        mediaUrl: ['image', 'voice', 'gift'].includes(messageType) ? mediaUrl : mediaUrl || null,
-      }
-    )
+    const messageBody = messageType === 'gift'
+      ? giftMessageBody(gift, giftQuantity)
+      : messageType === 'image'
+        ? (body || 'sent a photo')
+        : messageType === 'voice' ? (body || 'sent a voice message') : body
+    const messageMediaUrl = messageType === 'gift'
+      ? gift.id
+      : ['image', 'voice'].includes(messageType) ? mediaUrl : mediaUrl || null
 
-    const messages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
-      id: result.insertId,
-    })
+    const result = messageType === 'gift'
+      ? await transaction(async (connection) => {
+        const [messageResult] = await connection.execute(
+          `
+          INSERT INTO chat_messages (
+            tenant_id, room_id, session_id, sender_id, parent_message_id,
+            message_type, message_body, media_url, is_deleted, is_unsent,
+            created_at, updated_at
+          )
+          VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, NOW(), NOW())
+          `,
+          [room.tenant_id, roomId, req.user.id, parentMessageId, messageType, messageBody, messageMediaUrl]
+        )
 
-    const chatMessage = messages[0]
+        await connection.execute(
+          `
+          INSERT INTO room_gift_transactions (
+            tenant_id, room_id, message_id, sender_id, owner_user_id,
+            gift_id, gift_label, gift_emoji, coin_value, quantity, total_coins, created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            roomId,
+            messageResult.insertId,
+            req.user.id,
+            room.owner_id,
+            gift.id,
+            gift.label,
+            gift.emoji,
+            gift.coin_value,
+            giftQuantity,
+            gift.coin_value * giftQuantity,
+          ]
+        )
+
+        return messageResult
+      })
+      : await query(
+        `
+        INSERT INTO chat_messages (
+          tenant_id, room_id, session_id, sender_id, parent_message_id,
+          message_type, message_body, media_url, is_deleted, is_unsent,
+          created_at, updated_at
+        )
+        VALUES (
+          :tenantId, :roomId, NULL, :senderId, :parentMessageId,
+          :messageType, :messageBody, :mediaUrl, 0, 0, NOW(), NOW()
+        )
+        `,
+        {
+          tenantId: room.tenant_id,
+          roomId,
+          senderId: req.user.id,
+          parentMessageId,
+          messageType,
+          messageBody,
+          mediaUrl: messageMediaUrl,
+        }
+      )
+
+    const chatMessage = await fetchChatMessageById(result.insertId, req.user.id)
+    const giftSummary = messageType === 'gift'
+      ? await roomGiftSummary(roomId, room.tenant_id, req.user.id)
+      : null
     let realtimeBroadcasted = false
 
     try {
-      realtimeBroadcasted = await broadcastRoomChatMessage(req, room, chatMessage)
+      realtimeBroadcasted = await broadcastRoomChatMessage(
+        req,
+        room,
+        chatMessage,
+        giftSummary ? { gift_summary: giftSummary } : {}
+      )
     } catch (broadcastError) {
       console.error('[chat] realtime broadcast failed', broadcastError)
     }
@@ -678,6 +1055,115 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
     return res.status(201).json({
       message: 'Message sent successfully',
       chat_message: chatMessage,
+      ...(giftSummary ? { gift_summary: giftSummary } : {}),
+      realtime_broadcasted: realtimeBroadcasted,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/messages/:id/reactions', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const emoji = cleanReactionEmoji(req.body?.emoji)
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    const emojiError = reactionEmojiError(emoji)
+    if (emojiError) return res.status(422).json({ message: emojiError })
+
+    const messages = await query(
+      `
+      SELECT *
+      FROM chat_messages
+      WHERE id = :messageId
+      AND tenant_id = :tenantId
+      LIMIT 1
+      `,
+      { messageId, tenantId: req.user.tenant_id }
+    )
+
+    if (!messages.length) return res.status(404).json({ message: 'Message not found.' })
+    const message = messages[0]
+
+    if (Number(message.is_deleted) || Number(message.is_unsent)) {
+      return res.status(422).json({ message: 'Deleted messages cannot be reacted to.' })
+    }
+
+    const room = await findRoomForChat(message.room_id)
+    if (!room || Number(room.tenant_id) !== Number(req.user.tenant_id)) {
+      return res.status(404).json({ message: 'Room not found.' })
+    }
+
+    const existingReactions = await query(
+      `
+      SELECT id
+      FROM chat_message_reactions
+      WHERE message_id = :messageId
+      AND user_id = :userId
+      AND emoji = :emoji
+      LIMIT 1
+      `,
+      { messageId, userId: req.user.id, emoji }
+    )
+
+    const reacted = existingReactions.length === 0
+
+    if (reacted) {
+      await query(
+        `
+        INSERT IGNORE INTO chat_message_reactions (
+          tenant_id, room_id, message_id, user_id, emoji, created_at
+        )
+        VALUES (
+          :tenantId, :roomId, :messageId, :userId, :emoji, NOW()
+        )
+        `,
+        {
+          tenantId: req.user.tenant_id,
+          roomId: message.room_id,
+          messageId,
+          userId: req.user.id,
+          emoji,
+        }
+      )
+    } else {
+      await query(
+        `
+        DELETE FROM chat_message_reactions
+        WHERE id = :reactionId
+        AND user_id = :userId
+        `,
+        { reactionId: existingReactions[0].id, userId: req.user.id }
+      )
+    }
+
+    const updatedMessage = await fetchChatMessageById(messageId, req.user.id)
+    const realtimePayload = {
+      message_id: updatedMessage.id,
+      room_id: updatedMessage.room_id,
+      emoji,
+      reacted,
+      reactions: updatedMessage.reactions,
+      reaction_count: updatedMessage.reaction_count,
+      message: updatedMessage,
+    }
+    let realtimeBroadcasted = false
+
+    try {
+      realtimeBroadcasted = await emitRoomRealtime(req, room, 'chat-message-reaction', realtimePayload)
+    } catch (broadcastError) {
+      console.error('[chat] realtime reaction broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: reacted ? 'Reaction added.' : 'Reaction removed.',
+      reacted,
+      chat_message: updatedMessage,
+      reactions: updatedMessage.reactions,
+      reaction_count: updatedMessage.reaction_count,
       realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {
@@ -1121,7 +1607,7 @@ router.patch('/direct-messages/messages/:id', authMiddleware, async (req, res, n
       { messageBody: body, messageId }
     )
 
-    const directMessage = await fetchDirectMessageById(messageId)
+    const directMessage = await fetchDirectMessageById(messageId, req.user.id)
     emitDirectMessageRealtime(req, directMessage, 'direct-message-edited', {
       direct_message: directMessage,
     })
@@ -1194,6 +1680,88 @@ router.delete('/direct-messages/messages/:id', authMiddleware, async (req, res, 
   }
 })
 
+router.post('/direct-messages/messages/:id/reactions', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const messageId = parsePositiveInteger(req.params.id)
+    const emoji = cleanReactionEmoji(req.body?.emoji)
+
+    if (!messageId) return res.status(422).json({ message: 'Invalid message ID.' })
+    const emojiError = reactionEmojiError(emoji)
+    if (emojiError) return res.status(422).json({ message: emojiError })
+
+    const message = await findDirectMessageForUser(messageId, req.user)
+    if (!message || Number(message.is_deleted)) return res.status(404).json({ message: 'Message not found.' })
+
+    const existingReactions = await query(
+      `
+      SELECT id
+      FROM direct_message_reactions
+      WHERE message_id = :messageId
+      AND user_id = :userId
+      AND emoji = :emoji
+      LIMIT 1
+      `,
+      { messageId, userId: req.user.id, emoji }
+    )
+
+    const reacted = existingReactions.length === 0
+
+    if (reacted) {
+      await query(
+        `
+        INSERT IGNORE INTO direct_message_reactions (
+          tenant_id, message_id, user_id, emoji, created_at
+        )
+        VALUES (
+          :tenantId, :messageId, :userId, :emoji, NOW()
+        )
+        `,
+        {
+          tenantId: req.user.tenant_id,
+          messageId,
+          userId: req.user.id,
+          emoji,
+        }
+      )
+    } else {
+      await query(
+        `
+        DELETE FROM direct_message_reactions
+        WHERE id = :reactionId
+        AND user_id = :userId
+        `,
+        { reactionId: existingReactions[0].id, userId: req.user.id }
+      )
+    }
+
+    const directMessage = await fetchDirectMessageById(messageId, req.user.id)
+    const realtimePayload = {
+      source: 'http',
+      message_id: directMessage.id,
+      emoji,
+      reacted,
+      reactions: directMessage.reactions,
+      reaction_count: directMessage.reaction_count,
+      direct_message: directMessage,
+      message: directMessage,
+    }
+
+    emitDirectMessageRealtime(req, directMessage, 'direct-message-reaction', realtimePayload)
+
+    return res.json({
+      message: reacted ? 'Reaction added.' : 'Reaction removed.',
+      reacted,
+      direct_message: directMessage,
+      reactions: directMessage.reactions,
+      reaction_count: directMessage.reaction_count,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) => {
   try {
     await ensureChatSchema()
@@ -1229,9 +1797,11 @@ router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) =>
       { tenantId: req.user.tenant_id, userId: req.user.id, peerId }
     )
 
+    const hydratedMessages = await attachDirectMessageReactions(messages.reverse(), req.user.id)
+
     return res.json({
       peer,
-      messages: messages.reverse(),
+      messages: hydratedMessages,
     })
   } catch (error) {
     next(error)
@@ -1292,10 +1862,7 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
       }
     )
 
-    const messages = await query(`${directMessageSelectSql()} WHERE dm.id = :id LIMIT 1`, {
-      id: result.insertId,
-    })
-    const directMessage = messages[0]
+    const directMessage = await fetchDirectMessageById(result.insertId, req.user.id)
     const realtimePayload = {
       direct_message: directMessage,
       peer,
@@ -1368,10 +1935,7 @@ router.patch('/messages/:id', authMiddleware, async (req, res, next) => {
       { messageBody: body, messageId }
     )
 
-    const updatedMessages = await query(`${messageSelectSql()} WHERE cm.id = :id LIMIT 1`, {
-      id: messageId,
-    })
-    const updatedMessage = updatedMessages[0]
+    const updatedMessage = await fetchChatMessageById(messageId, req.user.id)
     const updatedRoom = updatedMessage?.room_id ? room || await findRoomForChat(updatedMessage.room_id) : null
     let realtimeBroadcasted = false
 
