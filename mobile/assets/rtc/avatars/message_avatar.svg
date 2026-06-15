@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Message avatar icon</title>
+  <desc id="desc">A clean chat bubble with three dots inside a glowing round blue avatar for a message function.</desc>
+  <defs>
+    <radialGradient id="bg" cx="28%" cy="23%" r="78%">
+      <stop offset="0%" stop-color="#62F0FF"/>
+      <stop offset="43%" stop-color="#5067FF"/>
+      <stop offset="100%" stop-color="#211B38"/>
+    </radialGradient>
+    <linearGradient id="bubble" x1="16" y1="14" x2="48" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9D5FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#000" flood-opacity="0.42"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#45D5FF" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="#151322"/>
+  <circle cx="32" cy="32" r="27.5" fill="url(#bg)" filter="url(#shadow)"/>
+  <circle cx="32" cy="32" r="26.5" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.18"/>
+  <path d="M18 25.2c0-5 4.1-9.2 9.2-9.2h9.9c5.1 0 9.2 4.1 9.2 9.2v7.1c0 5.1-4.1 9.2-9.2 9.2h-6.6l-7.4 5.6c-1 .8-2.5.1-2.5-1.2v-5.2A9.17 9.17 0 0 1 18 32.3v-7.1Z" fill="#151322" opacity="0.24"/>
+  <path d="M17.7 24.2c0-5.1 4.2-9.3 9.3-9.3h10c5.2 0 9.3 4.2 9.3 9.3v7.5c0 5.2-4.2 9.3-9.3 9.3h-6.7l-7.6 5.8c-.9.7-2.2 0-2.2-1.1v-5.6a9.35 9.35 0 0 1-2.8-6.7v-9.2Z" fill="none" stroke="url(#bubble)" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="26.1" cy="28" r="2.8" fill="#FFFFFF"/>
+  <circle cx="32" cy="28" r="2.8" fill="#FFFFFF" opacity="0.92"/>
+  <circle cx="37.9" cy="28" r="2.8" fill="#FFFFFF" opacity="0.78"/>
+</svg>

@@ -6,7 +6,6 @@ class AppConfig {
 
   static const _apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
   static const _signalingUrlOverride = String.fromEnvironment('SIGNALING_URL');
-  static const _webAppUrlOverride = String.fromEnvironment('WEB_APP_URL');
 
   static String get apiBaseUrl => _apiBaseUrlOverride.isNotEmpty
       ? _apiBaseUrlOverride
@@ -15,8 +14,4 @@ class AppConfig {
   static String get signalingUrl => _signalingUrlOverride.isNotEmpty
       ? _signalingUrlOverride
       : 'http://10.0.2.2:8000';
-
-  static String get webAppUrl => _webAppUrlOverride.isNotEmpty
-      ? _webAppUrlOverride
-      : 'http://10.0.2.2:5173';
 }

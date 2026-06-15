@@ -16,6 +16,7 @@ const { registerSignaling } = require('./sockets/signaling')
 const { emailDeliveryStatus } = require('./utils/email')
 
 const PORT = Number(process.env.PORT || 8000)
+const HOST = process.env.HOST || '127.0.0.1'
 
 function positiveIntegerEnv(key, fallback) {
   const value = Number(process.env[key])
@@ -271,8 +272,8 @@ const io = new Server(server, {
 app.set('io', io)
 registerSignaling(io)
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Node RTC backend running on http://127.0.0.1:${PORT}`)
-  console.log(`Socket.IO signaling running on http://127.0.0.1:${PORT}`)
+server.listen(PORT, HOST, () => {
+  console.log(`Node RTC backend running on http://${HOST}:${PORT}`)
+  console.log(`Socket.IO signaling running on http://${HOST}:${PORT}`)
   console.log(`Allowed origins: ${allowedOrigins.join(', ')}`)
 })
