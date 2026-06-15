@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
-import { apiRequest, updateAccountSecurity } from '../../services/api'
+import { apiRequest, saveUser, updateAccountSecurity } from '../../services/api'
 import { formatChatTime } from '../../utils/formatters'
 import { getPasswordError, normalizeEmail } from '../../utils/authValidation'
 import { canUseAdminDashboard } from '../../utils/roles'
@@ -56,6 +56,9 @@ const appDownloadQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=176x1
 const maxDmPhotoBytes = 5 * 1024 * 1024
 const maxDmAudioBytes = 5 * 1024 * 1024
 const dmAudioBitsPerSecond = 32000
+const newestRoomWindowMs = 3 * 24 * 60 * 60 * 1000
+const serverBackedPrivacySettings = new Set(['messagePrivacy', 'privateInvite', 'hideSensitive'])
+const messagePrivacyValues = new Set(['everyone', 'followers', 'nobody'])
 const roomAccessCodeInputProps = {
   type: 'text',
   autoComplete: 'off',
@@ -102,6 +105,45 @@ function savedRoomSettings() {
     return saved && typeof saved === 'object' ? saved : {}
   } catch {
     return {}
+  }
+}
+
+function normalizeMessagePrivacySetting(value, fallback = 'everyone') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'followers_only' || normalized === 'follower') return 'followers'
+  return messagePrivacyValues.has(normalized) ? normalized : fallback
+}
+
+function normalizeSettingsBoolean(value, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return fallback
+}
+
+function privacySettingsFromUser(user) {
+  if (!user) return null
+
+  const settings = user.privacy_settings || {}
+  const hasPrivacySettings = Boolean(
+    settings.messagePrivacy
+      || user.message_privacy
+      || Object.prototype.hasOwnProperty.call(settings, 'privateInvite')
+      || Object.prototype.hasOwnProperty.call(user, 'private_live_invitation')
+      || Object.prototype.hasOwnProperty.call(settings, 'hideSensitive')
+      || Object.prototype.hasOwnProperty.call(user, 'hide_sensitive_content')
+  )
+
+  if (!hasPrivacySettings) return null
+
+  return {
+    messagePrivacy: normalizeMessagePrivacySetting(settings.messagePrivacy || user.message_privacy, 'everyone'),
+    privateInvite: normalizeSettingsBoolean(settings.privateInvite ?? user.private_live_invitation, true),
+    hideSensitive: normalizeSettingsBoolean(settings.hideSensitive ?? user.hide_sensitive_content, true),
   }
 }
 
@@ -258,6 +300,48 @@ function cardAvatarIndex(card, fallback = 0) {
   return Number(numericId || fallback)
 }
 
+function cardCreatedAtMs(card) {
+  const timestamp = new Date(card?.room?.created_at || card?.createdAt || card?.created_at || 0).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function compareCardsByNewest(a, b) {
+  return cardCreatedAtMs(b) - cardCreatedAtMs(a) || Number(cardAvatarIndex(b)) - Number(cardAvatarIndex(a))
+}
+
+function compareCardsByOldest(a, b) {
+  return cardCreatedAtMs(a) - cardCreatedAtMs(b) || Number(cardAvatarIndex(a)) - Number(cardAvatarIndex(b))
+}
+
+function cardMatchesSortBucket(card, sort, nowMs = Date.now()) {
+  if (sort !== 'newest' && sort !== 'oldest') return true
+
+  const createdAtMs = cardCreatedAtMs(card)
+  if (!createdAtMs) return sort === 'oldest'
+
+  const isNewest = nowMs - createdAtMs <= newestRoomWindowMs
+  return sort === 'newest' ? isNewest : !isNewest
+}
+
+function sortCardsForView(cards, sort) {
+  const nextCards = [...cards]
+
+  if (sort === 'name') {
+    nextCards.sort((a, b) => (
+      String(a.title || '').localeCompare(String(b.title || ''))
+      || compareCardsByNewest(a, b)
+    ))
+  } else if (sort === 'active') {
+    nextCards.sort((a, b) => Number(b.viewers || 0) - Number(a.viewers || 0) || compareCardsByNewest(a, b))
+  } else if (sort === 'newest') {
+    nextCards.sort(compareCardsByNewest)
+  } else if (sort === 'oldest') {
+    nextCards.sort(compareCardsByOldest)
+  }
+
+  return nextCards
+}
+
 function cardCover(card, fallback = 0) {
   if (card?.room) return coverForRoomType(card.room.room_type, card.room.privacy_type, cardAvatarIndex(card, fallback))
   if (card?.roomType || card?.privacy) return coverForRoomType(card.roomType, card.privacy, cardAvatarIndex(card, fallback))
@@ -332,6 +416,7 @@ function roomToFeedCard(room, index) {
     status: room.status || 'active',
     following: Boolean(room.owner_followed),
     size: index === 0 ? 'feature' : '',
+    createdAt: room.created_at || room.updated_at || '',
     roomType: room.room_type,
     privacy: room.privacy_type,
     tags,
@@ -606,14 +691,15 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [selectedPolicyId, setSelectedPolicyId] = useState('')
   const [settingsDraft, setSettingsDraft] = useState(() => {
     const saved = savedRoomSettings()
+    const userPrivacy = privacySettingsFromUser(user)
     return {
       phoneBound: Boolean(saved.phoneBound),
       emailBound: Boolean(saved.emailBound || user?.email),
       loginPasswordSet: saved.loginPasswordSet !== false,
       deviceAlerts: saved.deviceAlerts !== false,
-      messagePrivacy: saved.messagePrivacy || 'everyone',
-      privateInvite: saved.privateInvite !== false,
-      hideSensitive: saved.hideSensitive !== false,
+      messagePrivacy: userPrivacy?.messagePrivacy || normalizeMessagePrivacySetting(saved.messagePrivacy, 'everyone'),
+      privateInvite: userPrivacy ? userPrivacy.privateInvite : saved.privateInvite !== false,
+      hideSensitive: userPrivacy ? userPrivacy.hideSensitive : saved.hideSensitive !== false,
       contentMode: saved.contentMode || 'warning',
       language: normalizeSettingsLanguage(saved.language || language || 'English'),
       region: user?.current_residence || saved.region || 'United States',
@@ -674,6 +760,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const dmRecordingChunksRef = useRef([])
   const dmRecordingStartedAtRef = useRef(0)
   const dmRecordingTimerRef = useRef(null)
+  const roomListRequestRef = useRef(0)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -743,10 +830,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
-    return roomCards
+    const cards = roomCards
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
-      .slice(0, 48)
-  }, [filter, privacyFilter, roomCards])
+      .filter((card) => cardMatchesSortBucket(card, sort))
+
+    return sortCardsForView(cards, sort).slice(0, 48)
+  }, [filter, privacyFilter, roomCards, sort])
   const recentRoomCards = useMemo(() => {
     const cardsById = new Map(visibleCards.map((card) => [String(card.id), card]))
     const rememberedCards = recentRoomIds
@@ -761,9 +850,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
     const candidateCards = roomCards
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
+      .filter((card) => cardMatchesSortBucket(card, sort))
       .filter((card) => !searchTerm || includesTerm(`${card.title} ${card.host} ${card.roomType} ${card.badge} ${card.category} ${card.privacy || 'public'} ${card.country} ${(card.tags || []).join(' ')}`))
 
-    return candidateCards.slice(0, 8).map((card) => ({
+    return sortCardsForView(candidateCards, sort).slice(0, 8).map((card) => ({
       id: card.id,
       type: 'room',
       name: card.title,
@@ -773,7 +863,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       room: card.room,
       card,
     }))
-  }, [filter, privacyFilter, roomCards, searchTerm])
+  }, [filter, privacyFilter, roomCards, searchTerm, sort])
 
   const activeHelpItem = popularHelp.find((item) => item.id === activeHelp) || popularHelp[0]
   const directMessageThreads = useMemo(() => {
@@ -802,9 +892,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         const searchable = `${name} ${previewText}`.toLowerCase()
         const isFollowing = contact.following === undefined ? true : Boolean(contact.following)
         const isFollower = Boolean(contact.follower)
+        const hasConversation = Boolean(contact.has_conversation || contact.last_message)
+        const canMessage = contact.can_message === undefined ? true : Boolean(contact.can_message)
         const relationshipLabel = Boolean(contact.mutual) || (isFollowing && isFollower)
           ? 'Mutual follow'
-          : isFollower && !isFollowing ? 'Follower' : 'Following'
+          : isFollower && !isFollowing ? 'Follower' : isFollowing ? 'Following' : hasConversation ? 'Conversation' : 'Open'
 
         if (messageTerm && !searchable.includes(messageTerm)) return null
 
@@ -819,6 +911,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           time: lastMessage?.created_at ? formatChatTime(lastMessage.created_at) : '',
           unread: readThreadIds.includes(id) ? 0 : Number(contact.unread || 0),
           following: isFollowing || isFollower || Boolean(contact.mutual),
+          canMessage,
           relationshipLabel,
         }
       })
@@ -829,6 +922,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const activeThreadMessages = activeThreadData ? (dmMessages[activeThreadData.id] || []) : []
   const canSendDm = Boolean(
     activeThreadData?.peerId
+    && activeThreadData.canMessage !== false
     && !sendingDm
     && !dmRecording
     && (dmInput.trim() || dmPhotoDraft || dmAudioDraft)
@@ -840,12 +934,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const activeThreadFollowed = Boolean(activeThreadData?.following)
   const unreadThreadCount = messageThreads.reduce((total, thread) => total + Number(thread.unread || 0), 0)
   const dmNotice = !activeThreadData
-    ? 'No follower conversations yet.'
-    : activeThreadData.relationshipLabel === 'Follower'
+    ? 'No private conversations yet.'
+    : activeThreadData.canMessage === false
+      ? 'This user is not accepting new private messages from you.'
+      : activeThreadData.relationshipLabel === 'Follower'
       ? 'This user follows you. Private messages are open.'
       : activeThreadData.relationshipLabel === 'Following'
         ? 'You follow this user. Private messages are open.'
-        : 'You follow each other. Private messages are open.'
+        : activeThreadData.relationshipLabel === 'Conversation'
+          ? 'Private messages are open for this conversation.'
+          : 'You follow each other. Private messages are open.'
   const rankingRows = useMemo(() => {
     const cards = roomCards
 
@@ -1258,7 +1356,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       const contacts = Array.isArray(data.contacts) ? data.contacts : data.threads || []
       setDmContacts(contacts)
       if (!contacts.length && !quiet) {
-        setDmStatus('No follower contacts yet. Follow users or accept follows from live rooms to start private messages.')
+        setDmStatus('No private message contacts yet.')
       } else if (!quiet) {
         setDmStatus('')
       }
@@ -1311,9 +1409,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       const nextContact = {
         ...previousContact,
         ...contact,
-        following: previousContact?.following,
-        follower: previousContact?.follower,
-        mutual: previousContact?.mutual,
+        following: previousContact?.following ?? contact.following,
+        follower: previousContact?.follower ?? contact.follower,
+        mutual: previousContact?.mutual ?? contact.mutual,
+        has_conversation: previousContact?.has_conversation ?? contact.has_conversation,
+        can_message: previousContact?.can_message ?? contact.can_message,
       }
 
       return [
@@ -1446,7 +1546,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function openDmPhotoPicker() {
-    if (!activeThreadData?.peerId || sendingDm || dmRecording) return
+    if (!activeThreadData?.peerId || activeThreadData.canMessage === false || sendingDm || dmRecording) return
     dmPhotoInputRef.current?.click()
   }
 
@@ -1485,7 +1585,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   async function startDmAudioRecording() {
-    if (!activeThreadData?.peerId || sendingDm || dmRecording) return
+    if (!activeThreadData?.peerId || activeThreadData.canMessage === false || sendingDm || dmRecording) return
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setDmStatus('Audio recording is not supported in this browser.')
       return
@@ -1626,9 +1726,36 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     scrollMobileShellToTop()
   }
 
-  function updateSettings(field, value, message) {
+  async function updateSettings(field, value, message) {
+    const previousValue = settingsDraft[field]
     setSettingsDraft((previous) => ({ ...previous, [field]: value }))
     setSettingsStatus(message)
+
+    if (!serverBackedPrivacySettings.has(field) || !user) return
+
+    try {
+      const data = await apiRequest('/auth/me/privacy-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: value }),
+      })
+
+      if (data.user) {
+        saveUser(data.user)
+        onUserUpdated?.(data.user)
+      }
+
+      if (data.privacy_settings) {
+        setSettingsDraft((previous) => ({
+          ...previous,
+          ...privacySettingsFromUser({ privacy_settings: data.privacy_settings }),
+        }))
+      }
+
+      setSettingsStatus(data.message || message)
+    } catch (error) {
+      setSettingsDraft((previous) => ({ ...previous, [field]: previousValue }))
+      setSettingsStatus(`Privacy setting failed: ${error.message}`)
+    }
   }
 
   function openSecurityAction(field) {
@@ -1946,6 +2073,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     preserveStatus = false,
     throwOnError = false,
   } = {}) {
+    const requestId = roomListRequestRef.current + 1
+    roomListRequestRef.current = requestId
+    const isLatestRoomRequest = () => roomListRequestRef.current === requestId
+
     setLoadingRooms(true)
     const path = buildRoomsPath({
       page,
@@ -1958,24 +2089,27 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     })
 
     function applyRoomData(data) {
+      if (!isLatestRoomRequest()) return false
       const meta = data.rooms?.meta || { page, per_page: 24, total: 0, total_pages: 1 }
       setRooms(data.rooms?.data || [])
       setRoomMeta(meta)
       if (!preserveStatus) {
         setStatus(meta.total === 1 ? 'Showing 1 room' : `Showing ${meta.total} rooms`)
       }
+      return true
     }
 
     try {
       if (!quiet) setStatus('Loading rooms...')
-      applyRoomData(await apiRequest(path))
-      return true
+      return applyRoomData(await apiRequest(path))
     } catch (error) {
+      if (!isLatestRoomRequest()) return false
+
       if (error.status === 401) {
         try {
-          applyRoomData(await apiRequest(path))
-          return true
+          return applyRoomData(await apiRequest(path))
         } catch (retryError) {
+          if (!isLatestRoomRequest()) return false
           if (!preserveStatus) setStatus(retryError.message)
           if (throwOnError) throw retryError
           return false
@@ -1986,7 +2120,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       if (throwOnError) throw error
       return false
     } finally {
-      setLoadingRooms(false)
+      if (isLatestRoomRequest()) setLoadingRooms(false)
     }
   }
 
@@ -2234,6 +2368,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (!requireAuth('Log in to send chat messages.', 'login')) return
     if (!activeThreadData?.peerId) {
       setDmStatus('No private conversation is selected.')
+      return
+    }
+    if (activeThreadData.canMessage === false) {
+      setDmStatus('This user is not accepting new private messages from you.')
       return
     }
     if (sendingDm || dmRecording) return
@@ -3430,11 +3568,13 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   useEffect(() => {
+    const userPrivacy = privacySettingsFromUser(user)
     setSettingsDraft((previous) => ({
       ...previous,
       phoneBound: previous.phoneBound || Boolean(user?.phone),
       emailBound: previous.emailBound || Boolean(user?.email),
       region: user?.current_residence || previous.region || 'United States',
+      ...(userPrivacy || {}),
     }))
     setFeedbackForm((previous) => ({
       ...previous,
@@ -3445,7 +3585,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       phone: user?.phone || previous.phone || '',
       email: user?.email || previous.email || '',
     }))
-  }, [user?.email, user?.phone, user?.current_residence])
+  }, [user?.email, user?.phone, user?.current_residence, user?.privacy_settings, user?.message_privacy, user?.private_live_invitation, user?.hide_sensitive_content])
 
   useEffect(() => {
     if (!user?.id) {
@@ -3748,8 +3888,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <input
               value={messageSearch}
               onChange={(event) => setMessageSearch(event.target.value)}
-              placeholder="Search followers"
-              aria-label="Search followers"
+              placeholder="Search messages"
+              aria-label="Search messages"
             />
             {loadingDmContacts ? <div className="buzzcast-empty-state compact"><LoadingMovie label="Loading messages" inline /></div> : null}
             {messageThreads.map((thread) => (
@@ -3776,7 +3916,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               </button>
             ))}
             {!loadingDmContacts && !messageThreads.length ? (
-              <div className="buzzcast-empty-state compact">No follower messages yet.</div>
+              <div className="buzzcast-empty-state compact">No private messages yet.</div>
             ) : null}
           </aside>
           <main>
@@ -3800,7 +3940,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <button type="button" className="buzzcast-dm-more" onClick={() => setDmStatus('Private chat options are available after a conversation is active.')} aria-label="More options">...</button>
                 </header>
                 <p className="buzzcast-dm-intro">
-                  Private messages with follower contacts appear here.
+                  Private messages appear here when the other user's privacy settings allow the conversation.
                 </p>
                 <div className={activeThreadFollowed ? 'buzzcast-dm-notice open' : 'buzzcast-dm-notice'}>
                   {dmStatus || dmNotice}
@@ -3876,7 +4016,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     type="file"
                     accept="image/*"
                     onChange={stageDmPhotoDraft}
-                    disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
+                    disabled={!activeThreadData?.peerId || activeThreadData.canMessage === false || sendingDm || dmRecording}
                   />
                   {dmPhotoDraft ? (
                     <div className="chat-photo-draft buzzcast-dm-draft photo">
@@ -3905,7 +4045,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                     placeholder={(dmPhotoDraft || dmAudioDraft) ? 'Add a caption...' : 'Type a message...'}
                     maxLength={1200}
                     rows={2}
-                    disabled={sendingDm || dmRecording}
+                    disabled={activeThreadData.canMessage === false || sendingDm || dmRecording}
                   />
                   <div className="chat-form-footer">
                     <span>{dmInput.length}/1200</span>
@@ -3914,7 +4054,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                         type="button"
                         className={dmRecording ? 'secondary-button chat-audio-button buzzcast-dm-composer-icon mic recording' : 'secondary-button chat-audio-button buzzcast-dm-composer-icon mic'}
                         onClick={toggleDmAudioRecording}
-                        disabled={!activeThreadData?.peerId || sendingDm}
+                        disabled={!activeThreadData?.peerId || activeThreadData.canMessage === false || sendingDm}
                         aria-label={dmRecording ? 'Stop recording voice message' : 'Record voice message'}
                         title={dmRecording ? 'Stop recording' : 'Record voice message'}
                       >
@@ -3925,7 +4065,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                         type="button"
                         className="secondary-button chat-photo-button buzzcast-dm-composer-icon photo"
                         onClick={openDmPhotoPicker}
-                        disabled={!activeThreadData?.peerId || sendingDm || dmRecording}
+                        disabled={!activeThreadData?.peerId || activeThreadData.canMessage === false || sendingDm || dmRecording}
                         aria-label="Send photo"
                         title="Send photo"
                       >
@@ -3984,8 +4124,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <div className="buzzcast-empty-state visual">
                 <img src={roomAssets.sidebarEmpty} alt="" loading="lazy" />
                 <div>
-                  <strong>No follower messages yet</strong>
-                  <span>Conversations appear here after you follow a user or accept their follow.</span>
+                  <strong>No private messages yet</strong>
+                  <span>Conversations appear here when a private message starts.</span>
                 </div>
               </div>
             )}

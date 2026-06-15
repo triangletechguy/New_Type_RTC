@@ -43,6 +43,7 @@ const roomTypeGroups = {
   voice: ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'],
   pk: ['pk_live'],
 }
+const newestRoomWindowDays = 3
 const sortOptions = {
   newest: 'r.created_at DESC, r.id DESC',
   oldest: 'r.created_at ASC, r.id ASC',
@@ -731,6 +732,12 @@ function buildRoomListWhere(options, tenantId, userId, user) {
   if (options.privacy !== 'all') {
     conditions.push('r.privacy_type = :privacy')
     params.privacy = options.privacy
+  }
+
+  if (options.sort === 'newest') {
+    conditions.push(`r.created_at >= DATE_SUB(NOW(), INTERVAL ${newestRoomWindowDays} DAY)`)
+  } else if (options.sort === 'oldest') {
+    conditions.push(`r.created_at < DATE_SUB(NOW(), INTERVAL ${newestRoomWindowDays} DAY)`)
   }
 
   if (!userId) {

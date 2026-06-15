@@ -540,15 +540,16 @@ export class NativeRtcClient {
   ensureReceiveTransceiver(peerConnection, kind) {
     const mediaKind = kind === 'audio' ? 'audio' : 'video'
     const existingTransceiver = this.findTransceiverForKind(peerConnection, mediaKind)
+    const receiveDirection = mediaKind === 'audio' ? 'sendrecv' : 'recvonly'
 
     if (existingTransceiver) {
       if (!existingTransceiver.sender?.track) {
-        this.setTransceiverDirection(existingTransceiver, 'recvonly')
+        this.setTransceiverDirection(existingTransceiver, receiveDirection)
       }
       return existingTransceiver
     }
 
-    return peerConnection.addTransceiver(mediaKind, { direction: 'recvonly' })
+    return peerConnection.addTransceiver(mediaKind, { direction: receiveDirection })
   }
 
   liveLocalTrack(kind) {
@@ -596,7 +597,7 @@ export class NativeRtcClient {
     const transceiver = this.findTransceiverForKind(peerConnection, mediaKind)
 
     if (transceiver?.sender) {
-      this.setTransceiverDirection(transceiver, track ? 'sendrecv' : 'recvonly')
+      this.setTransceiverDirection(transceiver, track || mediaKind === 'audio' ? 'sendrecv' : 'recvonly')
       await transceiver.sender.replaceTrack(track || null)
       if (track) await this.tuneSenderForTrack(transceiver.sender, track)
       return transceiver.sender
@@ -828,6 +829,7 @@ export class NativeRtcClient {
     this.emitPeerState(remoteSocketId, peerConnection)
     this.startStats(remoteSocketId)
     this.tuneAllSenders().catch(() => {})
+    this.syncLocalTracksToPeerConnection(peerConnection).catch(() => {})
     return peerConnection
   }
 

@@ -220,10 +220,14 @@ export default function App() {
 
   function changeView(nextView) {
     if (nextView === 'admin' && !user) {
-      requireAuth('Log in to open the admin dashboard.', 'login')
+      requireAuth('Log in to open creator tools.', 'login')
       return
     }
     if (nextView === 'admin' && !canAccessAdminDashboard) return
+    if (nextView === 'sdk' && !canAccessAdminDashboard) {
+      requireAuth('Developer docs are available to BuzzCast admins.', 'login')
+      return
+    }
     setActiveRoom(null)
     setView(nextView)
     setBrowserRoute({ view: nextView, activeRoom: null })
@@ -289,7 +293,7 @@ export default function App() {
   }
 
   const canAccessAdminDashboard = canUseAdminDashboard(user)
-  const safeView = view === 'admin' && !canAccessAdminDashboard ? 'rooms' : view
+  const safeView = ['admin', 'sdk'].includes(view) && !canAccessAdminDashboard ? 'rooms' : view
 
   if (safeView === 'rooms') {
     return (

@@ -34,12 +34,22 @@ class RoomListScreen extends StatefulWidget {
 
 class _RoomListScreenState extends State<RoomListScreen> {
   final _search = TextEditingController();
+  final _messageInput = TextEditingController();
   late Future<List<Room>> _rooms;
+  Future<List<Map<String, dynamic>>>? _messageContacts;
+  Future<List<Map<String, dynamic>>>? _activeConversation;
+  _MobileNavAction _activeNav = _MobileNavAction.live;
+  String _mobileRoomGroup = 'recently';
+  String _activeSettings = 'account';
   String _activeFeed = 'for_you';
   String _activeType = 'all';
   String _activePrivacy = 'all';
   String _activeSort = 'active';
   String _query = '';
+  String _settingsStatus = 'Changes are applied immediately for this session.';
+  String _messageStatus = '';
+  bool _searchOpen = false;
+  int? _activeContactId;
   int? _deletingRoomId;
 
   @override
@@ -54,6 +64,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   void dispose() {
     _search.dispose();
+    _messageInput.dispose();
     super.dispose();
   }
 
@@ -82,10 +93,26 @@ class _RoomListScreenState extends State<RoomListScreen> {
       search: _query,
     );
     setState(() {
+      _activeNav = _MobileNavAction.live;
       _activeFeed = tab.value;
       _activeSort = tab.sort;
+      _mobileRoomGroup = switch (tab.value) {
+        'following' => 'follow',
+        'global' => 'group',
+        _ => 'recently',
+      };
       _rooms = future;
     });
+  }
+
+  void _changeMobileRoomGroup(String value) {
+    final feed = switch (value) {
+      'follow' => _feedTabForValue('following'),
+      'group' => _feedTabForValue('global'),
+      _ => _feedTabForValue('for_you'),
+    };
+    _changeFeed(feed);
+    setState(() => _mobileRoomGroup = value);
   }
 
   void _changeType(String value) {
@@ -204,30 +231,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   void _handleBottomNav(_MobileNavAction action) {
-    switch (action) {
-      case _MobileNavAction.live:
-        _returnToLiveFeed();
-      case _MobileNavAction.profile:
-        final onOpenProfile = widget.onOpenProfile;
-        if (onOpenProfile != null) {
-          onOpenProfile();
-        } else {
-          _showRailMessage('Profile is not available in this session.');
-        }
-      case _MobileNavAction.settings:
-        final onOpenSettings = widget.onOpenSettings;
-        if (onOpenSettings != null) {
-          onOpenSettings();
-        } else {
-          _showRailMessage('Settings are not available in this session.');
-        }
-      case _MobileNavAction.help:
-        final onOpenSdk = widget.onOpenSdk;
-        if (onOpenSdk != null) {
-          onOpenSdk();
-        } else {
-          _showRailMessage('Help is not available in this session.');
-        }
+    setState(() => _activeNav = action);
+    if (action == _MobileNavAction.live) {
+      _returnToLiveFeed();
+    } else if (action == _MobileNavAction.message) {
+      _loadMessageContacts();
     }
   }
 
@@ -241,13 +249,52 @@ class _RoomListScreenState extends State<RoomListScreen> {
       search: '',
     );
     setState(() {
+      _activeNav = _MobileNavAction.live;
       _activeFeed = 'for_you';
       _activeType = 'all';
       _activePrivacy = 'all';
       _activeSort = 'active';
+      _mobileRoomGroup = 'recently';
       _query = '';
       _rooms = future;
     });
+  }
+
+  void _loadMessageContacts() {
+    _messageContacts = widget.api.directMessageContacts();
+  }
+
+  void _openConversation(Map<String, dynamic> contact) {
+    final peerId = _mapInt(contact['peer_id'] ?? contact['id']);
+    if (peerId == null) return;
+    setState(() {
+      _activeContactId = peerId;
+      _activeConversation = widget.api.directMessages(peerId);
+      _messageStatus = '';
+    });
+  }
+
+  Future<void> _sendDirectMessage() async {
+    final peerId = _activeContactId;
+    final body = _messageInput.text.trim();
+    if (peerId == null || body.isEmpty) return;
+
+    setState(() => _messageStatus = 'Sending...');
+    try {
+      await widget.api.sendDirectMessage(peerId, body: body);
+      _messageInput.clear();
+      setState(() {
+        _activeConversation = widget.api.directMessages(peerId);
+        _messageContacts = widget.api.directMessageContacts();
+        _messageStatus = '';
+      });
+    } catch (error) {
+      setState(() => _messageStatus = apiErrorMessage(error));
+    }
+  }
+
+  void _updateSettingsStatus(String message) {
+    setState(() => _settingsStatus = message);
   }
 
   void _showRailMessage(String message) {
@@ -288,153 +335,168 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return RtcMobileFrame(
       backgroundColor: RtcPalette.lobbyBg,
       bottomNavigation: _MobileBottomNav(
-        user: widget.user,
+        active: _activeNav,
         onSelected: _handleBottomNav,
       ),
-      child: SafeArea(
-        top: false,
-        child: FutureBuilder<List<Room>>(
-          future: _rooms,
-          builder: (context, snapshot) {
-            final rooms = snapshot.data ?? const <Room>[];
-            final visibleRooms = _visibleRooms(rooms);
-            final activeFeed = _feedTabForValue(_activeFeed);
-            final totalParticipants = rooms.fold<int>(
-              0,
-              (sum, room) => sum + room.activeParticipants,
-            );
-
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                key: const ValueKey('room_lobby_scroll'),
-                padding: const EdgeInsets.only(bottom: 18),
-                children: [
-                  _MobileLobbyHero(
-                    user: widget.user,
-                    feed: activeFeed,
-                    roomCount: rooms.length,
-                    shownCount: visibleRooms.length,
-                    participantCount: totalParticipants,
-                    actions: _HeaderActions(
-                      user: widget.user,
-                      onProfile: widget.onOpenProfile,
-                      onSettings: widget.onOpenSettings,
-                      onAdmin: widget.onOpenAdmin,
-                      onSdk: widget.onOpenSdk,
-                      onRefresh: _refresh,
-                      onLogout: _logout,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: _FeedTabs(
-                      active: _activeFeed,
-                      onChanged: _changeFeed,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: _SearchBox(
-                      controller: _search,
-                      onSubmitted: (_) => _refresh(),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: _FilterControls(
-                      type: _activeType,
-                      privacy: _activePrivacy,
-                      sort: _activeSort,
-                      onTypeChanged: _changeType,
-                      onPrivacyChanged: _changePrivacy,
-                      onSortChanged: _changeSort,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: _CreateRoomButton(onPressed: _openCreateRoomSheet),
-                  ),
-                  const SizedBox(height: 12),
-                  if (snapshot.connectionState != ConnectionState.done)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: RtcLoadingPanel(label: 'Loading rooms...'),
-                    )
-                  else if (snapshot.hasError)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: RtcMessagePanel(
-                        icon: Icons.cloud_off,
-                        title: 'Could not load rooms',
-                        detail: apiErrorMessage(snapshot.error!),
-                        actionLabel: 'Retry',
-                        onAction: _refresh,
-                      ),
-                    )
-                  else if (visibleRooms.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: RtcMessagePanel(
-                        icon: Icons.meeting_room_outlined,
-                        title: rooms.isEmpty
-                            ? 'No active rooms'
-                            : 'No matching rooms',
-                        detail: rooms.isEmpty
-                            ? 'Create the first live room for this feed.'
-                            : 'Try another room name, host, or room type.',
-                        actionLabel: rooms.isEmpty
-                            ? 'Create room'
-                            : 'Reset filters',
-                        onAction: rooms.isEmpty
-                            ? _openCreateRoomSheet
-                            : () async {
-                                _search.clear();
-                                final future = widget.api.rooms();
-                                setState(() {
-                                  _activeFeed = 'for_you';
-                                  _activeType = 'all';
-                                  _activePrivacy = 'all';
-                                  _activeSort = 'active';
-                                  _query = '';
-                                  _rooms = future;
-                                });
-                                await future;
-                              },
-                      ),
-                    )
-                  else ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: _FeedSummary(
-                        total: rooms.length,
-                        shown: visibleRooms.length,
-                        status: '${activeFeed.label} · $_activeSort',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ...visibleRooms.asMap().entries.map(
-                      (entry) => Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                        child: _RoomCard(
-                          room: entry.value,
-                          index: entry.key,
-                          featured: entry.key == 0,
-                          canDelete: entry.value.ownerId == widget.user.id,
-                          deleting: _deletingRoomId == entry.value.id,
-                          onDelete: () => _deleteRoom(entry.value),
-                          onTap: () => _openRoom(entry.value),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            );
+      child: switch (_activeNav) {
+        _MobileNavAction.live => _buildLiveTab(),
+        _MobileNavAction.help => _HelpTab(
+          onSubmitFeedback: () {
+            _showRailMessage('Feedback form is coming soon.');
           },
         ),
+        _MobileNavAction.settings => _SettingsTab(
+          active: _activeSettings,
+          status: _settingsStatus,
+          onChanged: (value) => setState(() => _activeSettings = value),
+          onStatus: _updateSettingsStatus,
+        ),
+        _MobileNavAction.message => _MessageTab(
+          user: widget.user,
+          contactsFuture: _messageContacts ??= widget.api
+              .directMessageContacts(),
+          activeContactId: _activeContactId,
+          conversationFuture: _activeConversation,
+          input: _messageInput,
+          status: _messageStatus,
+          onOpenContact: _openConversation,
+          onSend: _sendDirectMessage,
+        ),
+        _MobileNavAction.profile => _MeTab(
+          user: widget.user,
+          onEditProfile: widget.onOpenProfile,
+          onLogout: _logout,
+        ),
+      },
+    );
+  }
+
+  Widget _buildLiveTab() {
+    return SafeArea(
+      top: false,
+      child: FutureBuilder<List<Room>>(
+        future: _rooms,
+        builder: (context, snapshot) {
+          final rooms = snapshot.data ?? const <Room>[];
+          final visibleRooms = _visibleRooms(rooms);
+          final featuredRoom = _featuredRoom(rooms);
+
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              key: const ValueKey('room_lobby_scroll'),
+              padding: const EdgeInsets.only(bottom: 18),
+              children: [
+                _MobileHomeHero(
+                  user: widget.user,
+                  activeFeed: _activeFeed,
+                  featuredRoom: featuredRoom,
+                  onFeedChanged: (value) =>
+                      _changeFeed(_feedTabForValue(value)),
+                  onHome: _returnToLiveFeed,
+                  onSearch: () => setState(() {
+                    _searchOpen = !_searchOpen;
+                    _query = _search.text.trim().toLowerCase();
+                  }),
+                  search: _search,
+                  searchOpen: _searchOpen,
+                  onSearchSubmitted: (_) => _refresh(),
+                ),
+                _MobileRoomGroupTabs(
+                  active: _mobileRoomGroup,
+                  onChanged: _changeMobileRoomGroup,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                  child: _FilterControls(
+                    type: _activeType,
+                    privacy: _activePrivacy,
+                    sort: _activeSort,
+                    onTypeChanged: _changeType,
+                    onPrivacyChanged: _changePrivacy,
+                    onSortChanged: _changeSort,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (snapshot.connectionState != ConnectionState.done)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: RtcLoadingPanel(label: 'Loading rooms...'),
+                  )
+                else if (snapshot.hasError)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: RtcMessagePanel(
+                      icon: Icons.cloud_off,
+                      title: 'Could not load rooms',
+                      detail: apiErrorMessage(snapshot.error!),
+                      actionLabel: 'Retry',
+                      onAction: _refresh,
+                    ),
+                  )
+                else if (visibleRooms.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: RtcMessagePanel(
+                      icon: Icons.meeting_room_outlined,
+                      title: rooms.isEmpty
+                          ? 'No active rooms'
+                          : 'No matching rooms',
+                      detail: rooms.isEmpty
+                          ? 'Create the first live room for this feed.'
+                          : 'Try another room name, host, or room type.',
+                      actionLabel: rooms.isEmpty
+                          ? 'Create room'
+                          : 'Reset filters',
+                      onAction: rooms.isEmpty
+                          ? _openCreateRoomSheet
+                          : () async {
+                              _search.clear();
+                              final future = widget.api.rooms();
+                              setState(() {
+                                _activeFeed = 'for_you';
+                                _activeType = 'all';
+                                _activePrivacy = 'all';
+                                _activeSort = 'active';
+                                _mobileRoomGroup = 'recently';
+                                _query = '';
+                                _rooms = future;
+                              });
+                              await future;
+                            },
+                    ),
+                  )
+                else
+                  ...visibleRooms.asMap().entries.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      child: _RoomCard(
+                        room: entry.value,
+                        index: entry.key,
+                        featured: entry.key == 0,
+                        canDelete: entry.value.ownerId == widget.user.id,
+                        deleting: _deletingRoomId == entry.value.id,
+                        onDelete: () => _deleteRoom(entry.value),
+                        onTap: () => _openRoom(entry.value),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  Room? _featuredRoom(List<Room> rooms) {
+    if (_activeFeed == 'following') {
+      return rooms
+          .where((room) => room.ownerFollowed || room.ownerId == widget.user.id)
+          .firstOrNull;
+    }
+    return rooms.where((room) => room.ownerId == widget.user.id).firstOrNull ??
+        rooms.firstOrNull;
   }
 }
 
@@ -1054,165 +1116,320 @@ class _RoomLaunchSummary extends StatelessWidget {
   }
 }
 
-class _HeaderActions extends StatelessWidget {
-  const _HeaderActions({
+class _MobileHomeHero extends StatelessWidget {
+  const _MobileHomeHero({
     required this.user,
-    required this.onProfile,
-    required this.onSettings,
-    required this.onAdmin,
-    required this.onSdk,
-    required this.onRefresh,
-    required this.onLogout,
+    required this.activeFeed,
+    required this.featuredRoom,
+    required this.onFeedChanged,
+    required this.onHome,
+    required this.onSearch,
+    required this.search,
+    required this.searchOpen,
+    required this.onSearchSubmitted,
   });
 
   final AppUser user;
-  final VoidCallback? onProfile;
-  final VoidCallback? onSettings;
-  final VoidCallback? onAdmin;
-  final VoidCallback? onSdk;
-  final VoidCallback onRefresh;
-  final VoidCallback onLogout;
+  final String activeFeed;
+  final Room? featuredRoom;
+  final ValueChanged<String> onFeedChanged;
+  final VoidCallback onHome;
+  final VoidCallback onSearch;
+  final TextEditingController search;
+  final bool searchOpen;
+  final ValueChanged<String> onSearchSubmitted;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(RtcRadius.brand),
-          onTap: onProfile,
-          child: InitialAvatar(user: user, size: 40),
+    final top = MediaQuery.paddingOf(context).top;
+    return Container(
+      padding: EdgeInsets.fromLTRB(10, top + 10, 10, 10),
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(RtcAssets.smartMobileHeroBg),
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
         ),
-        const SizedBox(width: 6),
-        if (onAdmin != null) ...[
-          RtcIconButton(
-            tooltip: 'Admin Dashboard',
-            icon: Icons.admin_panel_settings_outlined,
-            onPressed: onAdmin!,
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 78,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: -10,
+                  top: -8,
+                  child: Image.asset(
+                    RtcAssets.smartGoatHeader,
+                    width: 82,
+                    height: 72,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                Positioned(
+                  left: 26,
+                  bottom: 3,
+                  child: _RoundAssetButton(
+                    asset: RtcAssets.smartHomeIcon,
+                    tooltip: 'Home',
+                    onTap: onHome,
+                  ),
+                ),
+                Positioned(
+                  left: 78,
+                  right: 56,
+                  bottom: 8,
+                  child: _HeroFeedTabs(
+                    active: activeFeed,
+                    onChanged: onFeedChanged,
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 3,
+                  child: _RoundAssetButton(
+                    asset: RtcAssets.smartSearchIcon,
+                    tooltip: 'Search',
+                    onTap: onSearch,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 6),
-        ],
-        if (onSettings != null) ...[
-          RtcIconButton(
-            tooltip: 'Settings',
-            icon: Icons.settings_outlined,
-            onPressed: onSettings!,
+          if (searchOpen) ...[
+            const SizedBox(height: 8),
+            _SearchBox(controller: search, onSubmitted: onSearchSubmitted),
+          ],
+          const SizedBox(height: 8),
+          _FeaturedRoomCard(
+            room: featuredRoom,
+            user: user,
+            ribbon: activeFeed == 'following' ? 'Follow' : 'Mine',
           ),
-          const SizedBox(width: 6),
         ],
-        if (onSdk != null) ...[
-          RtcIconButton(
-            tooltip: 'Developer Docs',
-            icon: Icons.integration_instructions_outlined,
-            onPressed: onSdk!,
-          ),
-          const SizedBox(width: 6),
-        ],
-        RtcIconButton(
-          tooltip: 'Refresh',
-          icon: Icons.refresh,
-          onPressed: onRefresh,
-        ),
-        const SizedBox(width: 6),
-        RtcIconButton(
-          tooltip: 'Sign out',
-          icon: Icons.logout,
-          onPressed: onLogout,
-        ),
-      ],
+      ),
     );
   }
 }
 
-class _MobileLobbyHero extends StatelessWidget {
-  const _MobileLobbyHero({
-    required this.user,
-    required this.feed,
-    required this.roomCount,
-    required this.shownCount,
-    required this.participantCount,
-    required this.actions,
+class _RoundAssetButton extends StatelessWidget {
+  const _RoundAssetButton({
+    required this.asset,
+    required this.tooltip,
+    required this.onTap,
   });
 
-  final AppUser user;
-  final _FeedTab feed;
-  final int roomCount;
-  final int shownCount;
-  final int participantCount;
-  final Widget actions;
+  final String asset;
+  final String tooltip;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return RtcLobbyHero(
-      title: 'TalkEachOther',
-      subtitle:
-          '${compactNumber(shownCount)}/${compactNumber(roomCount)} rooms · ${compactNumber(participantCount)} live',
-      leading: InitialAvatar(user: user, size: 48),
-      background: const AssetImage(RtcAssets.smartMobileHeroBg),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.48),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: RtcPalette.lobbySurface,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color.fromRGBO(15, 23, 42, 0.1),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
+            ),
+            child: Image.asset(asset, width: 25, height: 25),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroFeedTabs extends StatelessWidget {
+  const _HeroFeedTabs({required this.active, required this.onChanged});
+
+  final String active;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const tabs = [
+      _FilterOption(value: 'following', label: 'Mine'),
+      _FilterOption(value: 'for_you', label: 'Popular'),
+      _FilterOption(value: 'explore', label: 'Explore'),
+    ];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: tabs.map((tab) {
+        final selected = active == tab.value;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(tab.value),
+          child: SizedBox(
+            height: 36,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  tab.label,
+                  style: TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  width: selected ? 18 : 0,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: RtcPalette.lobbyInk,
+                    borderRadius: BorderRadius.circular(RtcRadius.pill),
+                  ),
                 ),
               ],
             ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _FeaturedRoomCard extends StatelessWidget {
+  const _FeaturedRoomCard({
+    required this.room,
+    required this.user,
+    required this.ribbon,
+  });
+
+  final Room? room;
+  final AppUser user;
+  final String ribbon;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = room?.name ?? '${_displayName(user)} Live Room';
+    final type = room == null ? 'Live Video Room' : room!.roomTypeLabel;
+    final image = room == null
+        ? RtcAssets.avatarImageForUser(user)
+        : RtcAssets.coverImageForRoom(room!, room!.id);
+    final count = room?.activeParticipants ?? 0;
+
+    return Container(
+      height: 82,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: RtcPalette.lobbySurface,
+        borderRadius: BorderRadius.circular(9),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(15, 23, 42, 0.08),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(10),
             child: Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    RtcAssets.videoRoom,
-                    width: 58,
-                    height: 58,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(width: 10),
+                RtcAvatarToken(label: title, image: image, size: 60),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        feed.label,
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: RtcPalette.lobbyInk,
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w900,
-                          height: 1.1,
+                          height: 1,
                         ),
                       ),
                       const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Image.asset(
+                            RtcAssets.smartBars,
+                            width: 18,
+                            height: 18,
+                          ),
+                          const SizedBox(width: 5),
+                          Image.asset(
+                            RtcAssets.smartGroupIcon,
+                            width: 18,
+                            height: 18,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            compactNumber(count),
+                            style: const TextStyle(
+                              color: RtcPalette.lobbySoft,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Image.asset(
+                            RtcAssets.smartLockIcon,
+                            width: 17,
+                            height: 17,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
                       Text(
-                        feed.detail,
+                        type,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFF8B8B8B),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                          color: RtcPalette.lobbyTealDark,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right, color: RtcPalette.lobbyGold),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: actions,
+          Positioned(
+            right: -34,
+            top: -1,
+            child: Transform.rotate(
+              angle: 0.78,
+              child: Container(
+                width: 94,
+                height: 25,
+                alignment: Alignment.center,
+                color: const Color(0xFFFF6686),
+                child: Text(
+                  ribbon,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -1220,81 +1437,1441 @@ class _MobileLobbyHero extends StatelessWidget {
   }
 }
 
-class _CreateRoomButton extends StatelessWidget {
-  const _CreateRoomButton({required this.onPressed});
+class _MobileRoomGroupTabs extends StatelessWidget {
+  const _MobileRoomGroupTabs({required this.active, required this.onChanged});
 
-  final VoidCallback onPressed;
+  final String active;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: const Icon(Icons.add),
-        label: const Text('Create room'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: RtcPalette.lobbyTealDark,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          textStyle: const TextStyle(fontWeight: FontWeight.w900),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+    const tabs = [
+      _FilterOption(value: 'recently', label: 'Recently'),
+      _FilterOption(value: 'follow', label: 'Follow'),
+      _FilterOption(value: 'group', label: 'Group'),
+    ];
+    return Container(
+      height: 56,
+      color: Colors.white,
+      child: Row(
+        children: tabs.map((tab) {
+          final selected = active == tab.value;
+          return Expanded(
+            child: InkWell(
+              onTap: () => onChanged(tab.value),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    tab.label,
+                    style: const TextStyle(
+                      color: RtcPalette.lobbyInk,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: selected ? 18 : 0,
+                    height: 2.5,
+                    decoration: BoxDecoration(
+                      color: RtcPalette.lobbyInk,
+                      borderRadius: BorderRadius.circular(RtcRadius.pill),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 }
 
-enum _MobileNavAction { live, profile, settings, help }
+enum _MobileNavAction { live, help, settings, message, profile }
 
 class _MobileBottomNav extends StatelessWidget {
-  const _MobileBottomNav({required this.user, required this.onSelected});
+  const _MobileBottomNav({required this.active, required this.onSelected});
 
-  final AppUser user;
+  final _MobileNavAction active;
   final ValueChanged<_MobileNavAction> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final useAdminAvatar = RtcAssets.shouldUseAdminAvatar(user);
+    final activeIndex = _MobileNavAction.values.indexOf(active);
     return RtcMobileBottomNav(
-      activeIndex: 0,
+      activeIndex: activeIndex < 0 ? 0 : activeIndex,
       onChanged: (index) => onSelected(_MobileNavAction.values[index]),
       items: [
-        const RtcMobileBottomNavItem(asset: RtcAssets.railLive, label: 'Live'),
-        RtcMobileBottomNavItem(
-          asset: useAdminAvatar ? RtcAssets.adminDashboardAvatar : null,
-          image: useAdminAvatar ? null : RtcAssets.avatarImageForUser(user),
-          label: 'Me',
+        const RtcMobileBottomNavItem(
+          icon: Icons.video_camera_back_outlined,
+          label: 'Live',
+        ),
+        const RtcMobileBottomNavItem(
+          asset: RtcAssets.feedbackHelpIcon,
+          label: 'Help',
         ),
         const RtcMobileBottomNavItem(
           asset: RtcAssets.settingsIcon,
           label: 'Settings',
         ),
         const RtcMobileBottomNavItem(
-          asset: RtcAssets.feedbackHelpIcon,
-          label: 'Help',
+          icon: Icons.chat_bubble_outline_rounded,
+          label: 'Message',
+        ),
+        const RtcMobileBottomNavItem(
+          icon: Icons.person_outline_rounded,
+          label: 'Me',
         ),
       ],
     );
   }
 }
 
-class _FeedTabs extends StatelessWidget {
-  const _FeedTabs({required this.active, required this.onChanged});
+class _HelpTab extends StatelessWidget {
+  const _HelpTab({required this.onSubmitFeedback});
 
-  final String active;
-  final ValueChanged<_FeedTab> onChanged;
+  final VoidCallback onSubmitFeedback;
 
   @override
   Widget build(BuildContext context) {
-    final activeIndex = _feedTabs.indexWhere((tab) => tab.value == active);
-    return RtcCompactTabs(
-      tabs: _feedTabs.map((tab) => tab.mobileLabel).toList(),
-      activeIndex: activeIndex < 0 ? 1 : activeIndex,
-      onChanged: (index) => onChanged(_feedTabs[index]),
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+        children: [
+          _LightHeroPanel(
+            eyebrow: 'SUPPORT CENTER',
+            title: 'Feedback and Help',
+            detail:
+                'Find room, chat, account, and safety answers, then send a report if something still needs attention.',
+            actions: const [
+              _HeroMetric(label: 'Records', value: '0'),
+              _HeroMetric(label: 'Submit feedback', value: ''),
+            ],
+          ),
+          const SizedBox(height: 28),
+          const Row(
+            children: [
+              Expanded(
+                child: _HelpStatCard(title: 'Help', detail: '5 guides'),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: _HelpStatCard(title: 'FAQ', detail: '14 answers'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const _HelpStatCard(title: 'Records', detail: '0 saved'),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _popularHelp.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = _popularHelp[index];
+                return _PillButton(label: item.title, active: index == 0);
+              },
+            ),
+          ),
+          const SizedBox(height: 22),
+          _WhitePanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'POPULAR GUIDE',
+                  style: TextStyle(
+                    color: RtcPalette.lobbyTealDark,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _popularHelp.first.title,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _popularHelp.first.body,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbySoft,
+                    fontSize: 14,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {},
+                        child: const Text('Browse FAQ'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: onSubmitFeedback,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: RtcPalette.lobbyTealDark,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Report a problem'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab({
+    required this.active,
+    required this.status,
+    required this.onChanged,
+    required this.onStatus,
+  });
+
+  final String active;
+  final String status;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeMeta = _settingsNav.firstWhere(
+      (item) => item.value == active,
+      orElse: () => _settingsNav.first,
+    );
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 18),
+        children: [
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _settingsNav.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = _settingsNav[index];
+                return _SettingsChip(
+                  item: item,
+                  active: item.value == active,
+                  onTap: () => onChanged(item.value),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          _WhitePanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activeMeta.label,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  status,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbySoft,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _SettingsContent(active: active, onStatus: onStatus),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsContent extends StatelessWidget {
+  const _SettingsContent({required this.active, required this.onStatus});
+
+  final String active;
+  final ValueChanged<String> onStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = switch (active) {
+      'privacy' => const [
+        _SettingsRowData('Who can send me a message', 'Everyone'),
+        _SettingsRowData('Private live invitation', 'Allowed'),
+        _SettingsRowData('Blacklist', 'Open'),
+        _SettingsRowData('Live broadcast you are not interested in', 'Show'),
+      ],
+      'content' => const [
+        _SettingsRowData('Restricted Mode', 'Choose'),
+        _SettingsRowData('Warning Mode', 'Selected'),
+        _SettingsRowData('All Modes', 'Choose'),
+      ],
+      'language' => const [
+        _SettingsRowData('Current language', 'English'),
+        _SettingsRowData('Spanish', 'Choose'),
+        _SettingsRowData('French', 'Choose'),
+        _SettingsRowData('Korean', 'Choose'),
+      ],
+      'region' => const [
+        _SettingsRowData('Region', 'United States'),
+        _SettingsRowData('Nearby rooms', 'Enabled'),
+      ],
+      'terms' => const [
+        _SettingsRowData('Terms of Service', 'Open'),
+        _SettingsRowData('Privacy Policy', 'Open'),
+        _SettingsRowData('Child Safety Policy', 'Open'),
+        _SettingsRowData('Anti-Bullying Policy', 'Open'),
+      ],
+      _ => const [
+        _SettingsRowData('Binding cell phone', 'Bind cell phone'),
+        _SettingsRowData('Binding email', 'Bound'),
+        _SettingsRowData('Set login password', 'Set'),
+        _SettingsRowData('Devices Logged In', 'Alerts on'),
+      ],
+    };
+    final details = switch (active) {
+      'privacy' => const [
+        'Controls the personal inbox and room chat shortcuts.',
+        'Allow hosts to invite you into private live rooms.',
+        'Blocked users are controlled from the chat user menu.',
+        'Filtered from your feed.',
+      ],
+      'content' => const [
+        'Hide potentially sensitive content.',
+        'Show a warning before sensitive rooms open.',
+        'Show all room content that is available to your account.',
+      ],
+      'language' => const [
+        'Choose the language used by mobile account screens.',
+        'Translate mobile account copy.',
+        'Translate mobile account copy.',
+        'Translate mobile account copy.',
+      ],
+      'region' => const [
+        'Choose the region used by mobile account screens.',
+        'Nearby hosts and regional rooms appear in the feed.',
+      ],
+      'terms' => const [
+        'Production terms and service rules.',
+        'How account and room data is handled.',
+        'Safety standards for younger users.',
+        'Community behavior policy.',
+      ],
+      _ => const [
+        'Recommended for account recovery and high-value account changes.',
+        'Used for login recovery and security notices.',
+        'Protect this account when signing in on a new device.',
+        'Show alerts when a new device logs in.',
+      ],
+    };
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: RtcPalette.lobbyLine),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: List.generate(rows.length, (index) {
+          final row = rows[index];
+          return _SettingsLightRow(
+            title: row.title,
+            detail: details[index],
+            trailing: row.trailing,
+            last: index == rows.length - 1,
+            onTap: () => onStatus('${row.title} updated.'),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _MessageTab extends StatelessWidget {
+  const _MessageTab({
+    required this.user,
+    required this.contactsFuture,
+    required this.activeContactId,
+    required this.conversationFuture,
+    required this.input,
+    required this.status,
+    required this.onOpenContact,
+    required this.onSend,
+  });
+
+  final AppUser user;
+  final Future<List<Map<String, dynamic>>> contactsFuture;
+  final int? activeContactId;
+  final Future<List<Map<String, dynamic>>>? conversationFuture;
+  final TextEditingController input;
+  final String status;
+  final ValueChanged<Map<String, dynamic>> onOpenContact;
+  final Future<void> Function() onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: contactsFuture,
+        builder: (context, contactsSnapshot) {
+          final contacts =
+              contactsSnapshot.data ?? const <Map<String, dynamic>>[];
+          if (activeContactId == null && contacts.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              onOpenContact(contacts.first);
+            });
+          }
+          final activeContact = contacts
+              .where(
+                (contact) => _mapInt(contact['peer_id']) == activeContactId,
+              )
+              .firstOrNull;
+
+          return Column(
+            children: [
+              _MessageHeader(contact: activeContact),
+              Expanded(
+                child: activeContact == null
+                    ? _MessageContactList(
+                        loading:
+                            contactsSnapshot.connectionState !=
+                            ConnectionState.done,
+                        contacts: contacts,
+                        onOpen: onOpenContact,
+                      )
+                    : _ConversationBody(
+                        user: user,
+                        contact: activeContact,
+                        conversationFuture: conversationFuture,
+                      ),
+              ),
+              if (status.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: Text(
+                    status,
+                    style: const TextStyle(
+                      color: RtcPalette.lobbySoft,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              _DirectMessageComposer(input: input, onSend: onSend),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MeTab extends StatelessWidget {
+  const _MeTab({
+    required this.user,
+    required this.onEditProfile,
+    required this.onLogout,
+  });
+
+  final AppUser user;
+  final VoidCallback? onEditProfile;
+  final Future<void> Function() onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    final birthday = _dateOnly(user.birthday).isEmpty
+        ? 'Not set'
+        : _dateOnly(user.birthday);
+    final rows = [
+      _SettingsRowData('Name', _displayName(user)),
+      _SettingsRowData('Gender', _genderLabel(user.gender)),
+      _SettingsRowData('Age', user.age?.toString() ?? 'Not set'),
+      _SettingsRowData('Birthday', birthday),
+      _SettingsRowData('Email', user.email.isEmpty ? 'Not set' : user.email),
+      _SettingsRowData(
+        'Current Residence',
+        user.currentResidence.isEmpty ? 'Not set' : user.currentResidence,
+      ),
+    ];
+
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 18),
+        children: [
+          _ProfileSummaryCard(user: user),
+          const SizedBox(height: 12),
+          _WhitePanel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 14, 14, 10),
+                  child: Text(
+                    'Profile',
+                    style: TextStyle(
+                      color: RtcPalette.lobbyInk,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                ...rows.map(
+                  (row) => _ProfileLightRow(
+                    label: row.title,
+                    value: row.trailing,
+                    last: row == rows.last,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: onEditProfile,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: RtcPalette.lobbyTealDark,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                  child: const Text('Edit profile'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: onLogout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF991B1B),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                  child: const Text('Sign out'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LightHeroPanel extends StatelessWidget {
+  const _LightHeroPanel({
+    required this.eyebrow,
+    required this.title,
+    required this.detail,
+    this.actions = const [],
+  });
+
+  final String eyebrow;
+  final String title;
+  final String detail;
+  final List<_HeroMetric> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF6EDBC9), Color(0xFFE7DE66)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            eyebrow,
+            style: const TextStyle(
+              color: RtcPalette.lobbyTealDark,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            title,
+            style: const TextStyle(
+              color: RtcPalette.lobbyInk,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            detail,
+            style: const TextStyle(
+              color: Color(0xFF24575D),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Row(
+              children: actions
+                  .map(
+                    (action) => Expanded(
+                      child: Container(
+                        height: 40,
+                        margin: EdgeInsets.only(
+                          right: action == actions.last ? 0 : 8,
+                        ),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: action.value.isEmpty
+                              ? RtcPalette.bg
+                              : Colors.white.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              action.label,
+                              style: TextStyle(
+                                color: action.value.isEmpty
+                                    ? Colors.white
+                                    : RtcPalette.lobbyInk,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (action.value.isNotEmpty)
+                              Text(
+                                action.value,
+                                style: const TextStyle(
+                                  color: RtcPalette.lobbySoft,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroMetric {
+  const _HeroMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+class _WhitePanel extends StatelessWidget {
+  const _WhitePanel({
+    required this.child,
+    this.padding = const EdgeInsets.all(14),
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: RtcPalette.lobbyLine),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(15, 23, 42, 0.06),
+            blurRadius: 22,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _HelpStatCard extends StatelessWidget {
+  const _HelpStatCard({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return _WhitePanel(
+      child: SizedBox(
+        height: 58,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: RtcPalette.lobbyInk,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              detail,
+              style: const TextStyle(
+                color: RtcPalette.lobbySoft,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  const _PillButton({required this.label, this.active = false});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: active ? RtcPalette.lobbyTealDark : const Color(0xFFF4F7F8),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: active ? Colors.white : RtcPalette.lobbySoft,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsChip extends StatelessWidget {
+  const _SettingsChip({
+    required this.item,
+    required this.active,
+    required this.onTap,
+  });
+
+  final _SettingsNavItem item;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: active ? RtcPalette.lobbyTealDark : Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: RtcPalette.lobbyLine),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 10,
+                backgroundColor: active
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : const Color(0xFFF4F7F8),
+                child: Text(
+                  item.icon,
+                  style: TextStyle(
+                    color: active ? Colors.white : RtcPalette.lobbySoft,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                item.label,
+                style: TextStyle(
+                  color: active ? Colors.white : RtcPalette.lobbyInk,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsLightRow extends StatelessWidget {
+  const _SettingsLightRow({
+    required this.title,
+    required this.detail,
+    required this.trailing,
+    required this.last,
+    required this.onTap,
+  });
+
+  final String title;
+  final String detail;
+  final String trailing;
+  final bool last;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : const Border(bottom: BorderSide(color: RtcPalette.lobbyLine)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: RtcPalette.lobbyInk,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    detail,
+                    style: const TextStyle(
+                      color: RtcPalette.lobbySoft,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: RtcPalette.lobbyMint,
+                borderRadius: BorderRadius.circular(RtcRadius.pill),
+              ),
+              child: Text(
+                trailing,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: RtcPalette.lobbyTealDark,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageHeader extends StatelessWidget {
+  const _MessageHeader({required this.contact});
+
+  final Map<String, dynamic>? contact;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _mapString(contact?['peer_name'] ?? contact?['name']);
+    final peerId = _mapInt(contact?['peer_id']);
+    return Container(
+      height: 64,
+      margin: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: const BoxDecoration(color: Colors.white),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 18,
+            backgroundColor: Color(0xFF4F46E5),
+            child: Icon(Icons.arrow_back, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 10),
+          RtcAvatarToken(
+            label: name.isEmpty ? 'Message' : name,
+            image: _contactImage(contact),
+            size: 42,
+            borderRadius: RtcRadius.pill,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name.isEmpty ? 'Messages' : name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: RtcPalette.lobbyInk,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          if (peerId != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: RtcPalette.lobbyMint,
+                borderRadius: BorderRadius.circular(RtcRadius.pill),
+              ),
+              child: const Text(
+                'Mutual follow',
+                style: TextStyle(
+                  color: RtcPalette.lobbyTealDark,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          const CircleAvatar(
+            radius: 18,
+            backgroundColor: Color(0xFFF8FAFB),
+            child: Icon(Icons.more_horiz, color: RtcPalette.lobbyInk),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageContactList extends StatelessWidget {
+  const _MessageContactList({
+    required this.loading,
+    required this.contacts,
+    required this.onOpen,
+  });
+
+  final bool loading;
+  final List<Map<String, dynamic>> contacts;
+  final ValueChanged<Map<String, dynamic>> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (contacts.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No follower messages yet.',
+            style: TextStyle(
+              color: RtcPalette.lobbySoft,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      itemCount: contacts.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final contact = contacts[index];
+        final name = _mapString(contact['peer_name']);
+        final last = contact['last_message'];
+        return _WhitePanel(
+          padding: const EdgeInsets.all(10),
+          child: ListTile(
+            onTap: () => onOpen(contact),
+            contentPadding: EdgeInsets.zero,
+            leading: RtcAvatarToken(
+              label: name,
+              image: _contactImage(contact),
+              size: 44,
+              borderRadius: RtcRadius.pill,
+            ),
+            title: Text(
+              name,
+              style: const TextStyle(
+                color: RtcPalette.lobbyInk,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            subtitle: Text(
+              _messageBody(
+                last is Map ? last : null,
+                fallback: 'No messages yet',
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ConversationBody extends StatelessWidget {
+  const _ConversationBody({
+    required this.user,
+    required this.contact,
+    required this.conversationFuture,
+  });
+
+  final AppUser user;
+  final Map<String, dynamic> contact;
+  final Future<List<Map<String, dynamic>>>? conversationFuture;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: conversationFuture,
+      builder: (context, snapshot) {
+        final messages = snapshot.data ?? const <Map<String, dynamic>>[];
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 18),
+          children: [
+            Container(
+              margin: const EdgeInsets.only(bottom: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              decoration: BoxDecoration(
+                color: RtcPalette.lobbyMint,
+                borderRadius: BorderRadius.circular(RtcRadius.pill),
+              ),
+              child: const Text(
+                'You follow each other. Private messages are open.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: RtcPalette.lobbyTealDark,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (snapshot.connectionState != ConnectionState.done)
+              const Center(child: CircularProgressIndicator())
+            else if (messages.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No messages with this user yet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: RtcPalette.lobbySoft,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              )
+            else
+              ...messages.map(
+                (message) => _DirectMessageBubble(
+                  message: message,
+                  mine: _mapInt(message['sender_id']) == user.id,
+                  contact: contact,
+                  user: user,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DirectMessageBubble extends StatelessWidget {
+  const _DirectMessageBubble({
+    required this.message,
+    required this.mine,
+    required this.contact,
+    required this.user,
+  });
+
+  final Map<String, dynamic> message;
+  final bool mine;
+  final Map<String, dynamic> contact;
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = mine ? 'You' : _mapString(contact['peer_name']);
+    final avatar = mine
+        ? RtcAssets.avatarImageForUser(user)
+        : _contactImage(contact);
+    return Padding(
+      padding: EdgeInsets.only(
+        left: mine ? 58 : 0,
+        right: mine ? 0 : 58,
+        bottom: 14,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: mine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        children: [
+          if (!mine) ...[
+            RtcAvatarToken(
+              label: name,
+              image: avatar,
+              size: 34,
+              borderRadius: RtcRadius.pill,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: mine ? const Color(0xFFDDFCE6) : Colors.white,
+                border: Border.all(
+                  color: mine ? const Color(0xFF86EFAC) : Colors.transparent,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          color: RtcPalette.lobbySoft,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _messageTime(message),
+                        style: const TextStyle(
+                          color: RtcPalette.lobbyMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _messageBody(message),
+                    style: const TextStyle(
+                      color: RtcPalette.lobbyInk,
+                      fontSize: 14,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (mine) ...[
+            const SizedBox(width: 8),
+            RtcAvatarToken(
+              label: name,
+              image: avatar,
+              size: 34,
+              borderRadius: RtcRadius.pill,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DirectMessageComposer extends StatelessWidget {
+  const _DirectMessageComposer({required this.input, required this.onSend});
+
+  final TextEditingController input;
+  final Future<void> Function() onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(15, 23, 42, 0.08),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            backgroundColor: RtcPalette.lobbyGold,
+            child: Icon(Icons.circle, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: input,
+              minLines: 1,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                filled: true,
+                fillColor: const Color(0xFFF8FAFB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              style: const TextStyle(color: RtcPalette.lobbyInk),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: onSend,
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFF7CE8A),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.send_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSummaryCard extends StatelessWidget {
+  const _ProfileSummaryCard({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF68D9C7), Color(0xFFE5DE65)],
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: RtcAvatarToken(
+              label: _displayName(user),
+              image: RtcAssets.avatarImageForUser(user),
+              size: 70,
+              borderRadius: RtcRadius.pill,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _displayName(user),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'ID:${user.id}',
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    _TinyProfilePill(user.age?.toString() ?? '--'),
+                    _TinyProfilePill(_genderLabel(user.gender)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Email ${user.email}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  user.currentResidence.isEmpty
+                      ? 'Not set'
+                      : user.currentResidence,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyProfilePill extends StatelessWidget {
+  const _TinyProfilePill(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B63FF),
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileLightRow extends StatelessWidget {
+  const _ProfileLightRow({
+    required this.label,
+    required this.value,
+    required this.last,
+  });
+
+  final String label;
+  final String value;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: RtcPalette.lobbyLine)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: RtcPalette.lobbySoft,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: RtcPalette.lobbyInk,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1365,199 +2942,85 @@ class _FilterControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: RtcPalette.lobbySurface,
-        border: Border.all(color: RtcPalette.lobbyLine),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(15, 23, 42, 0.05),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 36,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _typeFilters.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final option = _typeFilters[index];
-                return _MobileFilterChip(
-                  label: option.label,
-                  selected: option.value == type,
-                  onTap: () => onTypeChanged(option.value),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _LightDropdown(
-                  label: 'Access',
-                  value: privacy,
-                  options: _privacyFilters,
-                  onChanged: onPrivacyChanged,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _LightDropdown(
-                  label: 'Sort',
-                  value: sort,
-                  options: _sortOptions,
-                  onChanged: onSortChanged,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MobileFilterChip extends StatelessWidget {
-  const _MobileFilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? RtcPalette.lobbyMint : const Color(0xFFF5F7F8),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 13),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? RtcPalette.lobbyTealDark : Colors.transparent,
-            ),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? RtcPalette.lobbyTealDark : RtcPalette.lobbySoft,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _LightDropdown(
+            value: type,
+            options: _typeFilters,
+            onChanged: onTypeChanged,
           ),
         ),
-      ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _LightDropdown(
+            value: privacy,
+            options: _privacyFilters,
+            onChanged: onPrivacyChanged,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _LightDropdown(
+            value: sort,
+            options: _sortOptions,
+            onChanged: onSortChanged,
+          ),
+        ),
+      ],
     );
   }
 }
 
 class _LightDropdown extends StatelessWidget {
   const _LightDropdown({
-    required this.label,
     required this.value,
     required this.options,
     required this.onChanged,
   });
 
-  final String label;
   final String value;
   final List<_FilterOption> options;
   final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      dropdownColor: RtcPalette.lobbySurface,
-      iconEnabledColor: RtcPalette.lobbySoft,
-      style: const TextStyle(
-        color: RtcPalette.lobbyInk,
-        fontSize: 13,
-        fontWeight: FontWeight.w800,
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: RtcPalette.lobbyLine),
+        borderRadius: BorderRadius.circular(8),
       ),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(
-          color: RtcPalette.lobbySoft,
-          fontWeight: FontWeight.w800,
-        ),
-        filled: true,
-        fillColor: const Color(0xFFF8FAFB),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: RtcPalette.lobbyLine),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: RtcPalette.lobbyTealDark,
-            width: 1.4,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: RtcPalette.lobbySurface,
+          iconEnabledColor: RtcPalette.lobbyInk,
+          style: const TextStyle(
+            color: RtcPalette.lobbyInk,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
           ),
+          items: options
+              .map(
+                (option) => DropdownMenuItem(
+                  value: option.value,
+                  child: Text(
+                    option.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (next) {
+            if (next != null) onChanged(next);
+          },
         ),
       ),
-      items: options
-          .map(
-            (option) => DropdownMenuItem(
-              value: option.value,
-              child: Text(
-                option.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
-    );
-  }
-}
-
-class _FeedSummary extends StatelessWidget {
-  const _FeedSummary({
-    required this.total,
-    required this.shown,
-    required this.status,
-  });
-
-  final int total;
-  final int shown;
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            '$shown of $total rooms · $status',
-            style: const TextStyle(
-              color: RtcPalette.lobbySoft,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1583,45 +3046,132 @@ class _RoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tags = <String>[
-      if (featured) 'Featured',
-      formatPrivacy(room.privacyType),
-      if (room.displayRegion.isNotEmpty) room.displayRegion,
-      ...room.featureTags.take(1),
-    ];
-
-    return RtcLobbyRoomRow(
-      title: room.name,
-      subtitle: room.displayHost,
-      image: RtcAssets.coverImageForRoom(room, index),
-      badge: room.roomTypeLabel,
-      tags: tags,
-      liveCount: room.activeParticipants,
-      locked: room.isLocked,
-      onTap: onTap,
-      trailing: canDelete
-          ? SizedBox.square(
-              dimension: 38,
-              child: IconButton(
-                tooltip: deleting ? 'Deleting room' : 'Delete room',
-                padding: EdgeInsets.zero,
-                onPressed: deleting ? null : onDelete,
-                icon: deleting
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: RtcPalette.lobbyTealDark,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.delete_outline,
-                        color: RtcPalette.red,
-                        size: 22,
-                      ),
+    final meta = room.roomTypeLabel;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        onLongPress: canDelete && !deleting ? onDelete : null,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 92),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border.all(color: RtcPalette.lobbyLine),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(15, 23, 42, 0.07),
+                blurRadius: 18,
+                offset: Offset(0, 10),
               ),
-            )
-          : null,
+            ],
+          ),
+          child: Row(
+            children: [
+              RtcAvatarToken(
+                label: room.name,
+                image: RtcAssets.coverImageForRoom(room, index),
+                size: 80,
+                borderRadius: 9,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      room.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbyInk,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      room.displayHost,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbySoft,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            meta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: RtcPalette.lobbyTealDark,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          room.isLocked
+                              ? 'password'
+                              : '${compactNumber(room.activeParticipants)} watching',
+                          style: const TextStyle(
+                            color: RtcPalette.lobbySoft,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.graphic_eq_rounded,
+                        color: RtcPalette.lobbyGold,
+                        size: 15,
+                      ),
+                      Text(
+                        compactNumber(room.activeParticipants),
+                        style: const TextStyle(
+                          color: RtcPalette.lobbySoft,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (deleting) ...[
+                    const SizedBox(height: 12),
+                    const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: RtcPalette.lobbyTealDark,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1679,6 +3229,37 @@ class _RoomFormValues {
   final String privacyType;
   final String password;
   final String maxMicCount;
+}
+
+class _PopularHelpItem {
+  const _PopularHelpItem({
+    required this.id,
+    required this.title,
+    required this.body,
+  });
+
+  final String id;
+  final String title;
+  final String body;
+}
+
+class _SettingsNavItem {
+  const _SettingsNavItem({
+    required this.value,
+    required this.label,
+    required this.icon,
+  });
+
+  final String value;
+  final String label;
+  final String icon;
+}
+
+class _SettingsRowData {
+  const _SettingsRowData(this.title, this.trailing);
+
+  final String title;
+  final String trailing;
 }
 
 const _defaultRoomTheme = 'neon';
@@ -1798,6 +3379,48 @@ const _sortOptions = [
   _FilterOption(value: 'oldest', label: 'Oldest'),
 ];
 
+const _popularHelp = [
+  _PopularHelpItem(
+    id: 'create-room',
+    title: 'How to create a room',
+    body:
+        'Open the create room panel, choose the room type and privacy, then publish the room when the details are ready.',
+  ),
+  _PopularHelpItem(
+    id: 'vip',
+    title: 'How to become VIP/SVIP',
+    body:
+        'Open the personal center to review available VIP access, rewards, and account privileges.',
+  ),
+  _PopularHelpItem(
+    id: 'bind',
+    title: 'How do I bind my phone number and email address?',
+    body:
+        'For account security, bind your mobile phone number and email address in Settings, Account Security.',
+  ),
+  _PopularHelpItem(
+    id: 'mvp',
+    title: 'How to become an MVP and its benefits',
+    body:
+        'MVP status unlocks monthly rewards, profile progress, and room benefits after qualifying top-up milestones.',
+  ),
+  _PopularHelpItem(
+    id: 'missing',
+    title: 'I submitted feedback but need help',
+    body:
+        'Open Feedback record to review previous reports, or submit a new ticket with screenshots and device details.',
+  ),
+];
+
+const _settingsNav = [
+  _SettingsNavItem(value: 'account', label: 'Account Security', icon: 'U'),
+  _SettingsNavItem(value: 'privacy', label: 'Privacy Settings', icon: 'S'),
+  _SettingsNavItem(value: 'content', label: 'Content Preferences', icon: 'F'),
+  _SettingsNavItem(value: 'language', label: 'Multi-Language', icon: 'A'),
+  _SettingsNavItem(value: 'region', label: 'Region', icon: 'P'),
+  _SettingsNavItem(value: 'terms', label: 'Terms and Policies', icon: 'D'),
+];
+
 _FeedTab _feedTabForValue(String value) {
   return _feedTabs.firstWhere(
     (tab) => tab.value == value,
@@ -1808,6 +3431,70 @@ _FeedTab _feedTabForValue(String value) {
 String _defaultLiveRoomName(String displayName) {
   final ownerName = displayName.trim();
   return ownerName.isEmpty ? 'Enterprise Live Room' : '$ownerName Live Room';
+}
+
+String _displayName(AppUser user) {
+  final name = user.name.trim();
+  if (name.isNotEmpty) return name;
+  final emailName = user.email.split('@').first.trim();
+  return emailName.isEmpty ? 'User' : emailName;
+}
+
+String _genderLabel(String value) {
+  return switch (value.trim().toLowerCase()) {
+    'male' => 'Male',
+    'female' => 'Female',
+    'non_binary' || 'non-binary' => 'Non-binary',
+    'prefer_not_to_say' => 'Private',
+    _ => 'Profile',
+  };
+}
+
+String _dateOnly(String value) {
+  final text = value.trim();
+  return text.length >= 10 ? text.substring(0, 10) : text;
+}
+
+String _mapString(Object? value) {
+  return (value ?? '').toString().trim();
+}
+
+int? _mapInt(Object? value) {
+  if (value is int) return value;
+  return int.tryParse(value?.toString() ?? '');
+}
+
+ImageProvider _contactImage(Map<String, dynamic>? contact) {
+  final avatarUrl = _mapString(
+    contact?['peer_avatar_url'] ?? contact?['avatar_url'],
+  );
+  if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+    return NetworkImage(avatarUrl);
+  }
+  if (avatarUrl.startsWith('assets/')) return AssetImage(avatarUrl);
+  return AssetImage(
+    RtcAssets.avatarForIndex(_mapInt(contact?['peer_id']) ?? 0),
+  );
+}
+
+String _messageBody(Map<dynamic, dynamic>? message, {String fallback = ''}) {
+  if (message == null) return fallback;
+  final type = _mapString(message['message_type']);
+  final body = _mapString(message['message_body'] ?? message['body']);
+  if (type == 'image') return body.isEmpty ? 'Photo' : body;
+  if (type == 'voice') return body.isEmpty ? 'Voice message' : body;
+  return body.isEmpty ? fallback : body;
+}
+
+String _messageTime(Map<String, dynamic> message) {
+  final raw = _mapString(message['created_at'] ?? message['createdAt']);
+  final date = DateTime.tryParse(raw);
+  if (date == null) return '';
+  final local = date.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final suffix = local.hour >= 12 ? 'PM' : 'AM';
+  return '$hour:$minute $suffix';
 }
 
 bool _isOneToOneRoom(String roomType) {

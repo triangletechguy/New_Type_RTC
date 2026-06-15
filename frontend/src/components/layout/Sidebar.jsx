@@ -4,6 +4,7 @@ import { translateApp } from '../rooms/roomsStaticData'
 
 export function Sidebar({ user, currentView, onView, onLogout, language = 'English' }) {
   const showAdminDashboard = canUseAdminDashboard(user) === true
+  const showDeveloperDocs = showAdminDashboard
   const avatar = avatarForUser(user, user?.id || 0)
   const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
@@ -11,19 +12,21 @@ export function Sidebar({ user, currentView, onView, onLogout, language = 'Engli
     <aside className="sidebar glass-card">
       <div className="logo-row">
         <div className="logo-mark image-mark">
-          <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
+          <img src={brandAssets.appIconSmall} alt="BuzzCast" decoding="async" />
         </div>
         <div>
-          <strong>talk-each-other</strong>
-          <span>{t('RTC service platform')}</span>
+          <strong>BuzzCast</strong>
+          <span>{t('Live social rooms')}</span>
         </div>
       </div>
 
-      <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>{t('Rooms')}</button>
+      <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>{t('Live Rooms')}</button>
       {showAdminDashboard ? (
         <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>{t('Admin Dashboard')}</button>
       ) : null}
-      <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>{t('Developer Docs')}</button>
+      {showDeveloperDocs ? (
+        <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>{t('Developer Docs')}</button>
+      ) : null}
 
       <div className="sidebar-user">
         <div className="avatar image-avatar"><img src={avatar} alt="" /></div>

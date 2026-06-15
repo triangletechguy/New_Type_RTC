@@ -401,9 +401,47 @@ class ApiClient {
     String privacy = 'all',
     String sort = 'active',
     String search = '',
-    int perPage = 50,
+    int perPage = 60,
+  }) async {
+    final firstPage = await _roomPage(
+      feed: feed,
+      type: type,
+      privacy: privacy,
+      sort: sort,
+      search: search,
+      perPage: perPage,
+      page: 1,
+    );
+    final rooms = [...firstPage.rooms];
+    final totalPages = firstPage.totalPages.clamp(1, 20);
+
+    for (var page = 2; page <= totalPages; page += 1) {
+      final nextPage = await _roomPage(
+        feed: feed,
+        type: type,
+        privacy: privacy,
+        sort: sort,
+        search: search,
+        perPage: perPage,
+        page: page,
+      );
+      rooms.addAll(nextPage.rooms);
+    }
+
+    return rooms;
+  }
+
+  Future<_RoomPage> _roomPage({
+    required String feed,
+    required String type,
+    required String privacy,
+    required String sort,
+    required String search,
+    required int perPage,
+    required int page,
   }) async {
     final query = <String, Object>{
+      'page': page,
       'status': 'active',
       'privacy': privacy,
       'type': type,
@@ -421,11 +459,18 @@ class ApiClient {
     final data = response.data ?? {};
     final roomsEnvelope = data['rooms'];
     final rows = roomsEnvelope is Map ? roomsEnvelope['data'] : roomsEnvelope;
-    if (rows is! List) return const [];
-    return rows
-        .whereType<Map>()
-        .map((row) => Room.fromJson(Map<String, dynamic>.from(row)))
-        .toList();
+    final meta = roomsEnvelope is Map ? roomsEnvelope['meta'] : null;
+    final totalPages = meta is Map
+        ? int.tryParse((meta['total_pages'] ?? '').toString()) ?? 1
+        : 1;
+    if (rows is! List) return _RoomPage(const [], totalPages);
+    return _RoomPage(
+      rows
+          .whereType<Map>()
+          .map((row) => Room.fromJson(Map<String, dynamic>.from(row)))
+          .toList(),
+      totalPages,
+    );
   }
 
   Future<Room> createRoom({
@@ -503,6 +548,58 @@ class ApiClient {
         'camera_enabled': cameraEnabled,
         'screen_shared': screenShared,
       },
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> createStageRequest(
+    int roomId, {
+    bool requestedMic = true,
+    bool requestedCamera = true,
+    String requestedRtcMode = 'video',
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/stage-requests',
+      data: {
+        'requested_mic': requestedMic,
+        'requested_camera': requestedRtcMode == 'video' && requestedCamera,
+        'requested_rtc_mode': requestedRtcMode == 'audio' ? 'audio' : 'video',
+      },
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> cancelStageRequest(
+    int roomId,
+    int requestId,
+  ) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/stage-requests/$requestId/cancel',
+      data: const <String, dynamic>{},
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> respondToStageRequest(
+    int roomId,
+    int requestId, {
+    required bool approve,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/stage-requests/$requestId/${approve ? 'approve' : 'reject'}',
+      data: const <String, dynamic>{},
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> updateParticipantStagePermission(
+    int roomId,
+    int userId, {
+    required bool approve,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/participants/$userId/stage',
+      data: {'action': approve ? 'approve' : 'reject'},
     );
     return response.data ?? {};
   }
@@ -595,6 +692,55 @@ class ApiClient {
     return response.data ?? {};
   }
 
+  Future<List<Map<String, dynamic>>> directMessageContacts() async {
+    final response = await dio.get<Map<String, dynamic>>(
+      '/direct-messages/contacts',
+    );
+    final rows = response.data?['contacts'];
+    return rows is List
+        ? rows
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList()
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<List<Map<String, dynamic>>> directMessages(
+    int userId, {
+    int limit = 50,
+  }) async {
+    final response = await dio.get<Map<String, dynamic>>(
+      '/direct-messages/$userId',
+      queryParameters: {'limit': limit},
+    );
+    final rows = response.data?['messages'];
+    return rows is List
+        ? rows
+              .whereType<Map>()
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList()
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> sendDirectMessage(
+    int userId, {
+    required String body,
+    String messageType = 'text',
+    String mediaUrl = '',
+  }) async {
+    final payload = <String, Object?>{
+      'message_body': body.trim(),
+      'message_type': messageType,
+    };
+    if (mediaUrl.trim().isNotEmpty) payload['media_url'] = mediaUrl.trim();
+
+    final response = await dio.post<Map<String, dynamic>>(
+      '/direct-messages/$userId',
+      data: payload,
+    );
+    return response.data ?? {};
+  }
+
   Future<void> logout() async {
     try {
       final token = _session?.token ?? await _sessionStore.read(_tokenKey);
@@ -645,6 +791,13 @@ class ApiClient {
   void _setToken(String token) {
     dio.options.headers['Authorization'] = 'Bearer $token';
   }
+}
+
+class _RoomPage {
+  const _RoomPage(this.rooms, this.totalPages);
+
+  final List<Room> rooms;
+  final int totalPages;
 }
 
 AppUser _userFromEnvelope(Map<String, dynamic> data) {

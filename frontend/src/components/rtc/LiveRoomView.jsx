@@ -1104,7 +1104,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       voiceEffectRef.current = 'natural'
       setVoiceEffect('natural')
       stopAudioEffectPipeline({ stopSource: false })
-      setStatus(`Audio effects unavailable; joining with normal microphone: ${error.message}`)
+      setStatus(`Voice effects unavailable; joining with normal microphone: ${error.message}`)
       return stream
     }
 
@@ -1837,7 +1837,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         } catch (error) {
           voiceEffectRef.current = 'natural'
           setVoiceEffect('natural')
-          setStatus(`Audio effects unavailable; using normal microphone: ${error.message}`)
+          setStatus(`Voice effects unavailable; using normal microphone: ${error.message}`)
           outgoingTrack = track
         }
       }
@@ -3071,7 +3071,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     }
   }
 
-  async function applyBeautySettings(nextSettings, successStatus = 'Beauty settings applied') {
+  async function applyBeautySettings(nextSettings, successStatus = 'Filter settings applied') {
     const normalizedSettings = normalizeBeautySettings(nextSettings)
     const effectActive = isCameraFilterEffectActive(cameraFilterRef.current, normalizedSettings, backgroundEffectRef.current)
     const pipeline = cameraFilterPipelineRef.current
@@ -3081,19 +3081,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     beautySettingsRef.current = normalizedSettings
 
     if (rtcModeRef.current === 'audio') {
-      setStatus('Beauty filters are available in video rooms.')
+      setStatus('Filters are available in video rooms.')
       return
     }
 
     if (!joinedRef.current) {
-      setStatus('Beauty settings selected. They will apply when you connect RTC.')
+      setStatus('Filter settings selected. They will apply when you enter the room.')
       return
     }
 
     try {
       if (pipeline && isLiveTrack(filteredCameraTrackRef.current) && effectActive) {
         pipeline.setBeautySettings(normalizedSettings)
-        setStatus(sharingScreen ? 'Beauty settings selected. They will apply when screen share stops.' : successStatus)
+        setStatus(sharingScreen ? 'Filter settings selected. They will apply when screen share stops.' : successStatus)
         return
       }
 
@@ -3115,14 +3115,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       }
 
       if (!sourceTrack && effectActive) {
-        setStatus('Beauty settings selected. Turn camera on to apply them.')
+        setStatus('Filter settings selected. Turn camera on to apply them.')
       } else if (screenShareTrackRef.current) {
-        setStatus('Beauty settings selected. They will apply when screen share stops.')
+        setStatus('Filter settings selected. They will apply when screen share stops.')
       } else {
         setStatus(successStatus)
       }
     } catch (error) {
-      setStatus(`Beauty filter failed: ${error.message}`)
+      setStatus(`Filter failed: ${error.message}`)
     }
   }
 
@@ -3132,7 +3132,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       [settingId]: value,
     })
 
-    applyBeautySettings(nextSettings).catch((error) => setStatus(`Beauty filter failed: ${error.message}`))
+    applyBeautySettings(nextSettings).catch((error) => setStatus(`Filter failed: ${error.message}`))
   }
 
   function toggleBeautyMirror() {
@@ -3359,7 +3359,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setShowPasswordRecovery(false)
       resetRtcState()
       setConnectStep('backend')
-      setStatus(`Joining room #${roomId}...`)
+      setStatus('Entering room...')
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
       const requestedMicIntent = Boolean(micOnRef.current)
@@ -3367,7 +3367,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       desiredMicOnRef.current = requestedMicIntent
       desiredCameraOnRef.current = requestedCameraIntent
       const rtcConfigPromise = getRtcConfig().catch((error) => {
-        setConnectionIssue(`Could not load TURN/ICE config: ${error.message}`)
+        setConnectionIssue(`Connection setup warning: ${error.message}`)
         return { iceServers: [], iceTransportPolicy: 'all', turnConfigured: false }
       })
       const socket = createSignalingSocket()
@@ -3378,7 +3378,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
       setMediaState('idle')
       setSignalingState('connecting')
-      setStatus('Preparing room, TURN, and signaling...')
+      setStatus('Preparing live room...')
 
       const joinData = await apiRequest(`/rooms/${roomId}/join`, {
         method: 'POST',
@@ -3485,14 +3485,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setRtcConfigState(rtcConfig)
 
       const missingProductionTurn = joinedRtcMode === 'video' && !isLocalBrowserHost() && !rtcConfig.turnConfigured
-      const productionTurnWarning = 'TURN is not configured. Your local camera can start, but remote video may fail on some networks until TURN_URLS and TURN_SHARED_SECRET are set and PM2 is restarted.'
+      const productionTurnWarning = 'Video relay is not fully configured. Some viewers on strict networks may have trouble seeing video.'
       if (missingProductionTurn) {
         setConnectionIssue(productionTurnWarning)
       }
 
       setConnectStep('signaling')
       setSignalingState('connecting')
-      setStatus(rtcConfig.turnConfigured ? 'Connecting with TURN enabled...' : 'Connecting without TURN. Remote video may fail on strict networks.')
+      setStatus('Connecting to the live room...')
 
       const rtcClient = new NativeRtcClient({
         socket,
@@ -3510,7 +3510,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           if (['connected', 'completed'].includes(String(state || '').toLowerCase())) {
             resetPeerNegotiationRetry(remoteSocketId)
           }
-          if (state === 'failed') setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} connection failed. A TURN server may be required for this network.`)
+          if (state === 'failed') setConnectionIssue('A viewer connection failed. Video relay may need attention.')
         },
         onPeerStats: (remoteSocketId, stats) => {
           setPeerStats((previous) => {
@@ -3526,11 +3526,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               peerStatesRef.current = next
               return next
             })
-            setStatus(`Recovering peer ${remoteSocketId.slice(0, 6)}${detail ? `: ${detail}` : ''}`)
+            setStatus('Restoring a viewer connection...')
           }
 
           if (recoveryState === 'failed') {
-            setConnectionIssue(`Peer ${remoteSocketId.slice(0, 6)} recovery failed${detail ? `: ${detail}` : ''}`)
+            setConnectionIssue('A viewer connection could not be restored.')
           }
         },
       })
@@ -3557,8 +3557,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           if (joinedRef.current && signalingRoomRef.current) {
             rejoinSignalingRoom(socket, rtcClient).catch((error) => {
               setSignalingState('error')
-              setConnectionIssue(`Signaling recovery failed: ${error.message}`)
-              setStatus(`Signaling recovery failed: ${error.message}`)
+              setConnectionIssue(`Live connection recovery failed: ${error.message}`)
+              setStatus(`Live connection recovery failed: ${error.message}`)
             })
           } else {
             setSignalingState('connected')
@@ -3568,8 +3568,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       })
       socket.on('connect_error', (error) => {
         setSignalingState('error')
-        setConnectionIssue(`Signaling error: ${error.message}`)
-        setStatus(`Signaling error: ${error.message}`)
+        setConnectionIssue(`Live connection error: ${error.message}`)
+        setStatus(`Live connection error: ${error.message}`)
       })
       socket.io.on('reconnect_attempt', () => {
         if (socketRef.current === socket) {
@@ -3584,13 +3584,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.io.on('reconnect_error', (error) => {
         if (socketRef.current === socket) {
           setSignalingState('error')
-          setConnectionIssue(`Signaling reconnect failed: ${error.message}`)
+          setConnectionIssue(`Live reconnect failed: ${error.message}`)
         }
       })
       socket.io.on('reconnect_failed', () => {
         if (socketRef.current === socket) {
           setSignalingState('failed')
-          setConnectionIssue('Signaling reconnect failed.')
+          setConnectionIssue('Live reconnect failed.')
         }
       })
 
@@ -3612,7 +3612,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           peerStatesRef.current = next
           return next
         })
-        setStatus(`Peer joined: ${socketId.slice(0, 6)}`)
+        setStatus(`${payload.userName || 'Someone'} joined.`)
         triggerJoinEffect(payload.userName)
         await beginPeerNegotiation(socketId, rtcClient, 'Peer')
       })
@@ -3666,7 +3666,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       socket.on('peer-signal-error', ({ targetSocketId, message }) => {
         if (!targetSocketId) return
         forgetRemotePeer(targetSocketId, rtcClient)
-        setStatus(message || 'Peer signal target changed; refreshing room peers...')
+          setStatus(message || 'Refreshing room viewers...')
         refreshSignalingPeers(rtcClient, 'signal target change').catch((error) => {
           setStatus(`Peer refresh failed: ${error.message}`)
         })
@@ -3886,9 +3886,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         if (socketRef.current === socket) {
           setSignalingState(joinedRef.current ? 'reconnecting' : 'idle')
           if (joinedRef.current) {
-            setStatus(`Signaling reconnecting; media stays active (${reason})`)
+            setStatus('Reconnecting live room. Media stays active.')
           } else {
-            setStatus(`Signaling disconnected: ${reason}`)
+            setStatus('Live room disconnected.')
           }
         }
       })
@@ -3943,7 +3943,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setSignalingState('connected')
       setConnectionIssue(missingProductionTurn ? productionTurnWarning : '')
       const connectedStatus = joinedStageAccess.canPublish
-        ? (missingProductionTurn ? `Connected without TURN to ${joinData.rtc.signaling_room}` : `Connected to ${joinData.rtc.signaling_room}`)
+        ? (missingProductionTurn ? 'You are on stage. Video relay needs attention.' : 'You are on stage.')
         : 'Entered as audience. You can watch and listen until the room owner approves you to join.'
       setStatus(media.warning || connectedMediaWarning || connectedStatus)
     } catch (error) {
@@ -4491,12 +4491,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
   const activeToolTitle = {
-    audio: t('Audio effects'),
-    filters: t('Beauty & Background'),
-    guard: t('AI guard'),
-    manage: t('Room Ops'),
+    audio: t('Voice effects'),
+    filters: t('Filters'),
+    guard: t('Safety'),
+    manage: t('Host Controls'),
     screen: t('Screen share'),
-  }[activeToolPanel] || t('Room tools')
+  }[activeToolPanel] || t('Room menu')
   const visibleTileCount = (localStageStream || remoteTiles.length ? 1 : 0) + remoteTiles.length
   const hasVisibleStageTiles = visibleTileCount > 0
   const stageTileHeight = stageTileHeightForFrame(stageFrameSize, visibleTileCount)
@@ -4566,7 +4566,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 <img src={roomOwnerAvatar} alt="" loading="lazy" />
               </span>
               <strong title={roomTitle}>{roomTitle}</strong>
-              <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
+              <span>{room?.owner_name || t('Live room')}</span>
             </div>
 
             <div ref={stageStreamsRef} className={stageStreamsClassName} style={stageFrameStyle} data-tile-count={visibleTileCount}>
@@ -4673,7 +4673,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     <button type="button" className={screenSharing ? 'danger-button' : 'primary-button'} onClick={toggleScreenShare} disabled={mediaUpdating.screen || !canPublishStageMedia}>
                       {mediaUpdating.screen ? t('Working...') : screenSharing ? t('Stop sharing') : t('Start screen share')}
                     </button>
-                    <small>{audienceMode ? t('Owner approval required') : room?.screen_share_enabled === false ? t('Screen share is turned off for this room.') : t('Presenter tools are available for this room.')}</small>
+                    <small>{audienceMode ? t('Owner approval required') : room?.screen_share_enabled === false ? t('Screen share is turned off for this room.') : t('Share your screen with the room.')}</small>
                   </div>
                 ) : activeToolPanel === 'audio' ? (
                   <div className="tool-status-panel camera-filter-panel">
@@ -4719,7 +4719,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       </div>
                     </section>
                     <div className="camera-filter-footer">
-                      <small>{t('Voice presets are sent through the SDK audio options for compatible processors.')}</small>
+                      <small>{t('Choose how your voice sounds on stage.')}</small>
                     </div>
                   </div>
                 ) : activeToolPanel === 'filters' ? (
@@ -4841,7 +4841,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     {controlsLoading ? <LoadingMovie label={t('Loading controls')} compact /> : null}
                     {!roomControls ? (
                       <div className="empty-chat">
-                        <strong>{t('Room controls')}</strong>
+                        <strong>{t('Host Controls')}</strong>
                         <span>{t('Available to the room owner, admins, and moderators.')}</span>
                         <button type="button" className="secondary-button" onClick={() => loadRoomControls()} disabled={controlsLoading}>{t('Refresh')}</button>
                       </div>
@@ -4990,13 +4990,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   </div>
                 ) : (
                   <div className="tool-status-panel ai-guard-panel">
-                    <p>{aiGuardActive ? t('AI guard is active. It checks room text before sending and blocks risky phrases.') : t('AI guard is off for this room. Turn it on in room settings to block risky room text.')}</p>
+                    <p>{aiGuardActive ? t('Safety is active. It checks room text before sending and blocks risky phrases.') : t('Safety tools are off for this room.')}</p>
                     <div className="guard-summary">
                       <span>{aiGuardActive ? t('Active') : t('Off')}</span>
                       <strong>{guardFindings.length}</strong>
                       <small>{t(guardFindings.length === 1 ? 'flagged message' : 'flagged messages')}</small>
                     </div>
-                    <div className="guard-function-grid" aria-label={t('AI guard function')}>
+                    <div className="guard-function-grid" aria-label={t('Safety function')}>
                       <span>
                         <strong>{t('Checks text')}</strong>
                         <small>{t('Scans room chat before send')}</small>
@@ -5069,23 +5069,23 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <button
                 className={`media-control-button effect-text-button utility audio-effects-button${activeToolPanel === 'audio' ? ' active' : ''}${audioEffectsActive ? ' has-effect' : ''}`}
                 onClick={() => toggleToolPanel('audio')}
-                aria-label={activeToolPanel === 'audio' ? t('Close audio effects') : t('Open audio effects')}
+                aria-label={activeToolPanel === 'audio' ? t('Close voice effects') : t('Open voice effects')}
                 aria-pressed={activeToolPanel === 'audio'}
-                title={t('Audio effects')}
+                title={t('Voice effects')}
               >
                 <span className="control-glyph effects"></span>
-                <span>{t('Audio')}</span>
+                <span>{t('Voice')}</span>
               </button>
               <button
                 className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
                 onClick={() => toggleToolPanel('filters')}
                 disabled={filterButtonDisabled}
-                aria-label={activeToolPanel === 'filters' ? t('Close beauty and background controls') : t('Open beauty and background controls')}
+                aria-label={activeToolPanel === 'filters' ? t('Close filters') : t('Open filters')}
                 aria-pressed={activeToolPanel === 'filters'}
-                title={t('Beauty and background')}
+                title={t('Filters')}
               >
                 <span className="control-glyph beauty"></span>
-                <span>{t('Beauty')}</span>
+                <span>{t('Filter')}</span>
               </button>
               <button
                 className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
@@ -5097,10 +5097,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               >
                 <span className="control-glyph screen"></span>
               </button>
-              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label={t('AI guard')} title={t('AI guard')}>
+              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label={t('Safety')} title={t('Safety')}>
                 <span className="control-glyph guard"></span>
               </button>
-              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Room operations')} title={t('Room operations')}>
+              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Host Controls')} title={t('Host Controls')}>
                 <span className="control-glyph ops"></span>
               </button>
             </div>
@@ -5153,7 +5153,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <header>
               <div>
                 <strong>{expandedScreenShareTile.mediaState.userName || t('Screen share')}</strong>
-                <span>{t('Room ID: {id}', { id: room?.id || roomId })}</span>
+                <span>{room?.name || t('Live room')}</span>
               </div>
               <button type="button" onClick={() => setExpandedScreenShareId('')} aria-label={t('Close screen share')}>x</button>
             </header>

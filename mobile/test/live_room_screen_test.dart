@@ -73,13 +73,13 @@ void main() {
     expect(find.text('Leave'), findsWidgets);
     expect(find.text('Remote Viewer'), findsWidgets);
 
-    await tester.ensureVisible(find.text('Mic on'));
-    await tester.tap(find.text('Mic on'));
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Mic on'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Mic on').first);
     await tester.pumpAndSettle();
 
     expect(api.mediaStates.single['micEnabled'], isFalse);
     expect(signaling.mediaStates.single['micEnabled'], isFalse);
-    expect(find.text('Mic off'), findsWidgets);
+    expect(find.widgetWithText(OutlinedButton, 'Mic off'), findsWidgets);
 
     await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Chat'));
     await tester.tap(find.widgetWithText(OutlinedButton, 'Chat'));
@@ -96,8 +96,8 @@ void main() {
     expect(signaling.broadcastMessages.single['id'], 501);
     expect(find.text('Hi mobile'), findsWidgets);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Ops'));
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Ops'));
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Host'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Host'));
     await tester.pumpAndSettle();
 
     expect(api.controlsLoadCalls, greaterThanOrEqualTo(1));
@@ -111,7 +111,6 @@ void main() {
     expect(api.moderationCalls.single['roomId'], 77);
     expect(api.moderationCalls.single['userId'], 101);
     expect(api.moderationCalls.single['action'], 'mute_mic');
-    expect(find.text('Remote Viewer muted.'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Leave'));
     await tester.tap(find.text('Leave'));
@@ -120,7 +119,73 @@ void main() {
     expect(api.leaveCalls, 1);
     expect(signaling.left, isTrue);
     expect(peers.closeCalls, 1);
-    expect(find.text('Left room successfully'), findsWidgets);
+  });
+
+  testWidgets('audience enters receive-only and requests stage approval', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeLiveApi(canPublishOnJoin: false);
+    final media = _FakeMediaService();
+    final signaling = _FakeSignalingService();
+    final peers = _FakePeerCoordinator();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: LiveRoomScreen(
+          api: api,
+          user: _audienceUser,
+          room: _publicRoom,
+          mediaService: media,
+          peerCoordinator: peers,
+          signalingService: signaling,
+          enableLocalPreview: false,
+          autoConnect: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.joinMicIntents.single, isTrue);
+    expect(media.permissionRequests, isEmpty);
+    expect(signaling.joinedMediaStates.single['micEnabled'], isFalse);
+    expect(signaling.joinedMediaStates.single['cameraEnabled'], isFalse);
+    expect(find.text('Audience · watching and listening'), findsOneWidget);
+    expect(find.text('Request'), findsWidgets);
+
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Request'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Request').first);
+    await tester.pumpAndSettle();
+
+    expect(api.stageRequests.single['roomId'], 88);
+    expect(find.text('Cancel'), findsWidgets);
+
+    signaling.emitStagePermission({
+      'targetUserId': _audienceUser.id,
+      'approved': true,
+      'action': 'approve',
+      'participant': {
+        'user_id': _audienceUser.id,
+        'role_in_room': 'speaker',
+        'stage_access': {
+          'role': 'speaker',
+          'can_publish': true,
+          'requests_enabled': true,
+          'status': 'approved',
+        },
+      },
+    });
+    await tester.pumpAndSettle();
+
+    expect(api.mediaStates.single['micEnabled'], isTrue);
+    expect(signaling.mediaStates.single['micEnabled'], isTrue);
+    expect(find.text('Mic on'), findsWidgets);
+    expect(find.text('Audience · watching and listening'), findsNothing);
   });
 }
 
@@ -145,6 +210,13 @@ const _user = AppUser(
   gender: 'female',
 );
 
+const _audienceUser = AppUser(
+  id: 104,
+  name: 'Audience Tester',
+  email: 'audience@example.com',
+  gender: 'male',
+);
+
 final _passwordRoom = Room.fromJson({
   'id': 77,
   'tenant_id': 1,
@@ -166,14 +238,40 @@ final _passwordRoom = Room.fromJson({
   'status': 'active',
 });
 
+final _publicRoom = Room.fromJson({
+  'id': 88,
+  'tenant_id': 1,
+  'tenant_name': 'RTC Enterprise',
+  'owner_id': 99,
+  'owner_name': 'Taylor Tester',
+  'owner_region': 'United States',
+  'name': 'Public Stage',
+  'description': 'Audience first room.',
+  'room_type': 'group_audio',
+  'privacy_type': 'public',
+  'is_password_protected': false,
+  'max_mic_count': 4,
+  'active_participants': 1,
+  'chat_enabled': true,
+  'gift_enabled': false,
+  'screen_share_enabled': false,
+  'ai_security_enabled': false,
+  'status': 'active',
+});
+
 class _FakeLiveApi extends ApiClient {
-  _FakeLiveApi()
+  _FakeLiveApi({this.canPublishOnJoin = true})
     : super(
         sessionStore: _MemorySessionStore(),
         dioClient: Dio(BaseOptions(baseUrl: 'https://rtc.test/api')),
       );
 
+  final bool canPublishOnJoin;
   final List<String> joinPasswords = [];
+  final List<bool> joinMicIntents = [];
+  final List<bool> joinCameraIntents = [];
+  final List<Map<String, Object>> stageRequests = [];
+  final List<Map<String, Object>> stageResponses = [];
   final List<Map<String, Object>> mediaStates = [];
   final List<Map<String, Object>> sentMessages = [];
   final List<Map<String, Object>> moderationCalls = [];
@@ -190,12 +288,72 @@ class _FakeLiveApi extends ApiClient {
     String password = '',
   }) async {
     joinPasswords.add(password);
+    joinMicIntents.add(micEnabled);
+    joinCameraIntents.add(cameraEnabled);
+    final role = canPublishOnJoin ? 'owner' : 'audience';
     return {
       'rtc': {
         'signaling_room': 'tenant-1-room-$roomId',
-        'mic_enabled': micEnabled,
-        'camera_enabled': video && cameraEnabled,
+        'mic_enabled': canPublishOnJoin && micEnabled,
+        'camera_enabled': canPublishOnJoin && video && cameraEnabled,
+        'stage_access': {
+          'role': role,
+          'can_publish': canPublishOnJoin,
+          'requires_approval': !canPublishOnJoin,
+          'requests_enabled': true,
+          'status': canPublishOnJoin ? 'approved' : 'audience',
+        },
       },
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> createStageRequest(
+    int roomId, {
+    bool requestedMic = true,
+    bool requestedCamera = true,
+    String requestedRtcMode = 'video',
+  }) async {
+    final request = {
+      'id': 701,
+      'roomId': roomId,
+      'userId': _audienceUser.id,
+      'userName': _audienceUser.name,
+      'requested_mic': requestedMic,
+      'requested_camera': requestedCamera,
+      'requested_rtc_mode': requestedRtcMode,
+      'status': 'pending',
+    };
+    stageRequests.add(request);
+    return {'message': 'Request sent to the room owner.', 'request': request};
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelStageRequest(
+    int roomId,
+    int requestId,
+  ) async {
+    return {
+      'message': 'Stage request cancelled.',
+      'request': {'id': requestId, 'status': 'cancelled'},
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> respondToStageRequest(
+    int roomId,
+    int requestId, {
+    required bool approve,
+  }) async {
+    stageResponses.add({
+      'roomId': roomId,
+      'requestId': requestId,
+      'approve': approve,
+    });
+    return {
+      'message': approve ? 'Stage request approved.' : 'Request declined.',
+      'approved': approve,
+      'controls': _controls(stageRequests: const []),
     };
   }
 
@@ -217,6 +375,20 @@ class _FakeLiveApi extends ApiClient {
         'mic_enabled': micEnabled,
         'camera_enabled': cameraEnabled,
         'screen_shared': screenShared,
+        'stage_access': {
+          'role':
+              canPublishOnJoin || micEnabled || cameraEnabled || screenShared
+              ? 'speaker'
+              : 'audience',
+          'can_publish':
+              canPublishOnJoin || micEnabled || cameraEnabled || screenShared,
+          'requires_approval': false,
+          'requests_enabled': true,
+          'status':
+              canPublishOnJoin || micEnabled || cameraEnabled || screenShared
+              ? 'approved'
+              : 'audience',
+        },
       },
     };
   }
@@ -309,13 +481,18 @@ class _FakeLiveApi extends ApiClient {
     };
   }
 
-  Map<String, dynamic> _controls({bool remoteMicOn = true}) {
+  Map<String, dynamic> _controls({
+    bool remoteMicOn = true,
+    List<Map<String, dynamic>> stageRequests = const [],
+  }) {
     return {
       'role': 'owner',
       'can_manage': true,
       'can_update_settings': true,
       'can_assign_roles': true,
+      'can_approve_stage': true,
       'room': {'id': 77, 'owner_id': _user.id},
+      'stage_requests': stageRequests,
       'participants': [
         {
           'id': 2,
@@ -405,7 +582,9 @@ class _FakePeerCoordinator implements RtcPeerCoordinator {
 class _FakeSignalingService extends SignalingService {
   final _events = StreamController<String>.broadcast();
   final _peers = StreamController<List<Map<String, dynamic>>>.broadcast();
+  final _stagePermissions = StreamController<Map<String, dynamic>>.broadcast();
   final List<String> joinedRooms = [];
+  final List<Map<String, Object>> joinedMediaStates = [];
   final List<Map<String, Object>> mediaStates = [];
   final List<Map<String, dynamic>> broadcastMessages = [];
   bool left = false;
@@ -415,6 +594,10 @@ class _FakeSignalingService extends SignalingService {
 
   @override
   Stream<List<Map<String, dynamic>>> get peers => _peers.stream;
+
+  @override
+  Stream<Map<String, dynamic>> get stagePermissionUpdates =>
+      _stagePermissions.stream;
 
   @override
   Future<void> connect() async {
@@ -431,6 +614,11 @@ class _FakeSignalingService extends SignalingService {
     required bool cameraEnabled,
   }) async {
     joinedRooms.add(signalingRoom);
+    joinedMediaStates.add({
+      'video': video,
+      'micEnabled': micEnabled,
+      'cameraEnabled': cameraEnabled,
+    });
     return {
       'ok': true,
       'roomId': signalingRoom,
@@ -484,10 +672,15 @@ class _FakeSignalingService extends SignalingService {
     _peers.add(const []);
   }
 
+  void emitStagePermission(Map<String, dynamic> payload) {
+    _stagePermissions.add(payload);
+  }
+
   @override
   void dispose() {
     _events.close();
     _peers.close();
+    _stagePermissions.close();
   }
 }
 

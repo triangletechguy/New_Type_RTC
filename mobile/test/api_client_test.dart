@@ -189,6 +189,47 @@ void main() {
   });
 
   test(
+    'rooms uses the web feed query and combines all returned pages',
+    () async {
+      final store = _MemorySessionStore();
+      final seenPages = <String>[];
+      final adapter = _MockHttpAdapter((options) {
+        expect(options.uri.path, endsWith('/rooms'));
+        expect(options.method, 'GET');
+        expect(options.uri.queryParameters['feed'], 'for_you');
+        expect(options.uri.queryParameters['status'], 'active');
+        expect(options.uri.queryParameters['type'], 'all');
+        expect(options.uri.queryParameters['privacy'], 'all');
+        expect(options.uri.queryParameters['sort'], 'active');
+        expect(options.uri.queryParameters['per_page'], '2');
+
+        final page = options.uri.queryParameters['page'] ?? '1';
+        seenPages.add(page);
+
+        return _MockResponse.ok({
+          'rooms': {
+            'data': page == '1'
+                ? [_roomJson(1, 'Room 1'), _roomJson(2, 'Room 2')]
+                : [_roomJson(3, 'Room 3')],
+            'meta': {
+              'page': int.parse(page),
+              'per_page': 2,
+              'total': 3,
+              'total_pages': 2,
+            },
+          },
+        });
+      });
+      final client = _client(adapter, store);
+
+      final rooms = await client.rooms(perPage: 2);
+
+      expect(seenPages, ['1', '2']);
+      expect(rooms.map((room) => room.name), ['Room 1', 'Room 2', 'Room 3']);
+    },
+  );
+
+  test(
     'live room APIs send password, media state, and leave payloads',
     () async {
       final store = _MemorySessionStore();
@@ -396,6 +437,78 @@ void main() {
       'POST /api/rooms/7/participants/101/mute',
       'POST /api/rooms/7/participants/101/moderation',
       'POST /api/rooms/7/participants/101/ban',
+    ]);
+  });
+
+  test('stage request APIs use the room permission endpoints', () async {
+    final store = _MemorySessionStore();
+    final seen = <String>[];
+    final adapter = _MockHttpAdapter((options) {
+      seen.add('${options.method} ${options.uri.path}');
+      final body = Map<String, dynamic>.from(options.data as Map? ?? {});
+
+      if (options.uri.path.endsWith('/rooms/7/stage-requests')) {
+        expect(options.method, 'POST');
+        expect(body['requested_mic'], isTrue);
+        expect(body['requested_camera'], isFalse);
+        expect(body['requested_rtc_mode'], 'audio');
+        return _MockResponse.ok({
+          'request': {'id': 55, 'status': 'pending'},
+        });
+      }
+
+      if (options.uri.path.endsWith('/rooms/7/stage-requests/55/cancel')) {
+        expect(options.method, 'POST');
+        return _MockResponse.ok({
+          'request': {'id': 55, 'status': 'cancelled'},
+        });
+      }
+
+      if (options.uri.path.endsWith('/rooms/7/stage-requests/55/approve')) {
+        expect(options.method, 'POST');
+        return _MockResponse.ok({'approved': true});
+      }
+
+      if (options.uri.path.endsWith('/rooms/7/stage-requests/55/reject')) {
+        expect(options.method, 'POST');
+        return _MockResponse.ok({'approved': false});
+      }
+
+      if (options.uri.path.endsWith('/rooms/7/participants/101/stage')) {
+        expect(options.method, 'POST');
+        expect(body['action'], 'approve');
+        return _MockResponse.ok({'approved': true});
+      }
+
+      throw StateError('Unexpected request ${options.method} ${options.uri}');
+    });
+    final client = _client(adapter, store);
+
+    final request = await client.createStageRequest(
+      7,
+      requestedRtcMode: 'audio',
+      requestedCamera: true,
+    );
+    final cancel = await client.cancelStageRequest(7, 55);
+    final approve = await client.respondToStageRequest(7, 55, approve: true);
+    final reject = await client.respondToStageRequest(7, 55, approve: false);
+    final participant = await client.updateParticipantStagePermission(
+      7,
+      101,
+      approve: true,
+    );
+
+    expect(request['request']['status'], 'pending');
+    expect(cancel['request']['status'], 'cancelled');
+    expect(approve['approved'], isTrue);
+    expect(reject['approved'], isFalse);
+    expect(participant['approved'], isTrue);
+    expect(seen, [
+      'POST /api/rooms/7/stage-requests',
+      'POST /api/rooms/7/stage-requests/55/cancel',
+      'POST /api/rooms/7/stage-requests/55/approve',
+      'POST /api/rooms/7/stage-requests/55/reject',
+      'POST /api/rooms/7/participants/101/stage',
     ]);
   });
 
@@ -622,6 +735,25 @@ Map<String, dynamic> _userJson({String email = 'admin@gmail.com'}) {
     'roles': const [
       {'name': 'super_admin'},
     ],
+  };
+}
+
+Map<String, dynamic> _roomJson(int id, String name) {
+  return {
+    'id': id,
+    'tenant_id': 1,
+    'tenant_name': 'RTC Enterprise',
+    'owner_id': id + 10,
+    'owner_name': 'Host $id',
+    'owner_region': 'United States',
+    'name': name,
+    'description': 'A test room.',
+    'room_type': id.isEven ? 'audio' : 'group_video',
+    'privacy_type': 'public',
+    'max_mic_count': 8,
+    'active_participants': 10 - id,
+    'chat_enabled': 1,
+    'status': 'active',
   };
 }
 

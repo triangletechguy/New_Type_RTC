@@ -59,6 +59,11 @@ class SignalingService {
   final _moderationActions = StreamController<Map<String, dynamic>>.broadcast();
   final _roomControlsUpdates =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _stageJoinRequests = StreamController<Map<String, dynamic>>.broadcast();
+  final _stageJoinRequestCancellations =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _stagePermissionUpdates =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<String> get events => _events.stream;
   Stream<List<Map<String, dynamic>>> get peers => _peers.stream;
@@ -73,6 +78,12 @@ class SignalingService {
       _moderationActions.stream;
   Stream<Map<String, dynamic>> get roomControlsUpdates =>
       _roomControlsUpdates.stream;
+  Stream<Map<String, dynamic>> get stageJoinRequests =>
+      _stageJoinRequests.stream;
+  Stream<Map<String, dynamic>> get stageJoinRequestCancellations =>
+      _stageJoinRequestCancellations.stream;
+  Stream<Map<String, dynamic>> get stagePermissionUpdates =>
+      _stagePermissionUpdates.stream;
 
   String? get socketId => _socket?.id;
 
@@ -130,6 +141,12 @@ class SignalingService {
     socket.on('moderation-action', _handleModerationActionPayload);
     socket.on('room-controls-updated', _handleRoomControlsUpdatedPayload);
     socket.on('room-roles-updated', _handleRoomControlsUpdatedPayload);
+    socket.on('stage-join-request-received', _handleStageJoinRequestPayload);
+    socket.on(
+      'stage-join-request-cancelled',
+      _handleStageJoinRequestCancellationPayload,
+    );
+    socket.on('stage-permission-updated', _handleStagePermissionPayload);
     socket.on('room-session-replaced', (payload) {
       final roomId = payload is Map ? payload['roomId']?.toString() : null;
       final replacedRoom = roomId ?? _activeSignalingRoom ?? 'room';
@@ -362,6 +379,9 @@ class SignalingService {
     _roomMessageDeleted.close();
     _moderationActions.close();
     _roomControlsUpdates.close();
+    _stageJoinRequests.close();
+    _stageJoinRequestCancellations.close();
+    _stagePermissionUpdates.close();
   }
 
   Future<Map<String, dynamic>> _emitPeerSignal(
@@ -496,6 +516,41 @@ class SignalingService {
     }
     _roomControlsUpdates.add(Map<String, dynamic>.from(controls));
     _events.add('Room controls updated.');
+  }
+
+  void _handleStageJoinRequestPayload(Object? payload) {
+    final data = _payloadMap(payload);
+    final request = data?['request'];
+    if (request is! Map) {
+      _events.add('Received invalid stage request.');
+      return;
+    }
+    _stageJoinRequests.add(Map<String, dynamic>.from(request));
+    _events.add('Stage request received.');
+  }
+
+  void _handleStageJoinRequestCancellationPayload(Object? payload) {
+    final data = _payloadMap(payload);
+    if (data == null) {
+      _events.add('Received invalid stage request cancellation.');
+      return;
+    }
+    _stageJoinRequestCancellations.add(data);
+    _events.add('Stage request cancelled.');
+  }
+
+  void _handleStagePermissionPayload(Object? payload) {
+    final data = _payloadMap(payload);
+    if (data == null) {
+      _events.add('Received invalid stage permission update.');
+      return;
+    }
+    final controls = data['controls'];
+    if (controls is Map) {
+      _roomControlsUpdates.add(Map<String, dynamic>.from(controls));
+    }
+    _stagePermissionUpdates.add(data);
+    _events.add('Stage permission updated.');
   }
 
   Map<String, dynamic>? _payloadMap(Object? payload) {

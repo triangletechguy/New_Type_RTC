@@ -55,7 +55,7 @@ void main() {
     expect(room.matchesSearch('group'), isTrue);
   });
 
-  testWidgets('room lobby shows web feed tabs and rich room metadata', (
+  testWidgets('room lobby shows mobile tabs, filters, and room metadata', (
     tester,
   ) async {
     final api = _FakeRoomApi([
@@ -81,23 +81,35 @@ void main() {
 
     expect(api.calls.first['feed'], 'for_you');
     expect(api.calls.first['sort'], 'active');
-    expect(find.text('TalkEachOther'), findsOneWidget);
-    expect(find.text('Create room'), findsOneWidget);
     expect(find.text('Live'), findsWidgets);
-    expect(find.text('Me'), findsOneWidget);
-    expect(find.text('App'), findsNothing);
-    expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('Help'), findsOneWidget);
+    expect(find.text('Help'), findsWidgets);
+    expect(find.text('Settings'), findsWidgets);
+    expect(find.text('Message'), findsOneWidget);
+    expect(find.text('Me'), findsWidgets);
+    expect(find.text('Create room'), findsNothing);
+    expect(find.text('Mine'), findsWidgets);
     expect(find.text('Popular'), findsWidgets);
     expect(find.text('Explore'), findsOneWidget);
-    expect(find.text('Nearby'), findsOneWidget);
-    await tester.tap(find.text('Latest').last);
+    expect(find.text('Recently'), findsOneWidget);
+    expect(find.text('Follow'), findsWidgets);
+    expect(find.text('Group'), findsOneWidget);
+    expect(find.text('All types'), findsOneWidget);
+    expect(find.text('All access'), findsOneWidget);
+    expect(find.text('Most active'), findsOneWidget);
+
+    await tester.tap(find.text('Explore'));
     await tester.pumpAndSettle();
 
-    expect(api.calls.last['feed'], 'latest');
-    expect(api.calls.last['sort'], 'newest');
+    expect(api.calls.last['feed'], 'explore');
+    expect(api.calls.last['sort'], 'active');
 
-    await tester.tap(find.text('Live').last);
+    await tester.tap(find.text('Group'));
+    await tester.pumpAndSettle();
+
+    expect(api.calls.last['feed'], 'global');
+    expect(api.calls.last['sort'], 'active');
+
+    await tester.tap(find.text('Recently'));
     await tester.pumpAndSettle();
 
     expect(api.calls.last['feed'], 'for_you');
@@ -115,43 +127,41 @@ void main() {
     expect(find.text('24'), findsWidgets);
   });
 
-  testWidgets('bottom rail actions match the web mobile shell', (tester) async {
-    final api = _FakeRoomApi([
-      _room(
-        id: 1,
-        name: 'Popular Video Room',
-        ownerName: 'Alex Host',
-        roomType: 'group_video',
-        privacyType: 'public',
-        activeParticipants: 24,
+  testWidgets('popular mobile feed keeps every returned room visible', (
+    tester,
+  ) async {
+    final rooms = List<Room>.generate(
+      10,
+      (index) => _room(
+        id: index + 1,
+        name: 'Room ${index + 1}',
+        ownerName: 'Host ${index + 1}',
+        roomType: index.isEven ? 'group_video' : 'audio',
+        privacyType: index % 3 == 0 ? 'password' : 'public',
+        activeParticipants: 20 - index,
       ),
-    ]);
-    var profileOpens = 0;
-    var settingsOpens = 0;
-    var helpOpens = 0;
-
-    await _pumpLobby(
-      tester,
-      api,
-      onOpenProfile: () => profileOpens += 1,
-      onOpenSettings: () => settingsOpens += 1,
-      onOpenSdk: () => helpOpens += 1,
     );
+    final api = _FakeRoomApi(rooms);
 
-    await tester.tap(find.text('Me'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Help'));
+    await _pumpLobby(tester, api);
+
+    expect(api.calls.first['feed'], 'for_you');
+    expect(api.calls.first['sort'], 'active');
+
+    await tester.tap(find.text('Recently'));
     await tester.pumpAndSettle();
 
-    expect(profileOpens, 1);
-    expect(settingsOpens, 1);
-    expect(helpOpens, 1);
-    expect(find.text('App'), findsNothing);
+    expect(api.calls.last['feed'], 'for_you');
+    expect(api.calls.last['sort'], 'active');
+    await tester.scrollUntilVisible(
+      find.text('Room 10'),
+      280,
+      scrollable: find.byType(Scrollable),
+    );
+    expect(find.text('Room 10'), findsWidgets);
   });
 
-  testWidgets('create room sheet matches web host validation and payload', (
+  testWidgets('bottom navigation opens the requested mobile tabs', (
     tester,
   ) async {
     final api = _FakeRoomApi([
@@ -164,6 +174,39 @@ void main() {
         activeParticipants: 24,
       ),
     ]);
+
+    await _pumpLobby(tester, api);
+
+    await tester.tap(find.text('Help').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Feedback and Help'), findsOneWidget);
+    expect(find.text('How to create a room'), findsWidgets);
+
+    await tester.tap(find.text('Settings').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Account Security'), findsWidgets);
+    expect(find.text('Binding cell phone'), findsOneWidget);
+
+    await tester.tap(find.text('Message').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Messages'), findsWidgets);
+    expect(find.text('No follower messages yet.'), findsOneWidget);
+
+    await tester.tap(find.text('Me').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Taylor Tester'), findsWidgets);
+    expect(find.text('Profile'), findsWidgets);
+    expect(find.text('Email'), findsOneWidget);
+
+    await tester.tap(find.text('Live').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Popular Video Room'), findsWidgets);
+  });
+
+  testWidgets('create room sheet matches web host validation and payload', (
+    tester,
+  ) async {
+    final api = _FakeRoomApi([]);
 
     await _pumpLobby(tester, api);
     await tester.tap(find.text('Create room').first);
@@ -329,7 +372,7 @@ class _FakeRoomApi extends ApiClient {
     String privacy = 'all',
     String sort = 'active',
     String search = '',
-    int perPage = 50,
+    int perPage = 60,
   }) async {
     calls.add({
       'feed': feed,
@@ -341,6 +384,23 @@ class _FakeRoomApi extends ApiClient {
     });
     return rows;
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> directMessageContacts() async => [];
+
+  @override
+  Future<List<Map<String, dynamic>>> directMessages(
+    int userId, {
+    int limit = 50,
+  }) async => [];
+
+  @override
+  Future<Map<String, dynamic>> sendDirectMessage(
+    int userId, {
+    required String body,
+    String messageType = 'text',
+    String mediaUrl = '',
+  }) async => {'id': 1, 'body': body, 'message': body, 'sender_id': 99};
 
   @override
   Future<Room> createRoom({

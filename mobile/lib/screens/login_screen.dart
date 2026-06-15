@@ -715,7 +715,7 @@ class _PreviewLiveCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'talk-each-other Studio',
+                              'BuzzCast Studio',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(

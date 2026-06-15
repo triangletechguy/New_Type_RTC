@@ -83,9 +83,7 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
     _video = video;
     for (final peer in _peers.values) {
       await _syncLocalTracks(peer);
-      if (_shouldInitiate(peer.socketId)) {
-        unawaited(_makeOffer(peer, force: true));
-      }
+      unawaited(_makeOffer(peer, force: true));
     }
   }
 

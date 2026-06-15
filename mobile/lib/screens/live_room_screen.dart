@@ -59,6 +59,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   StreamSubscription<int>? _roomMessageDeletedSub;
   StreamSubscription<Map<String, dynamic>>? _moderationActionSub;
   StreamSubscription<Map<String, dynamic>>? _roomControlsUpdateSub;
+  StreamSubscription<Map<String, dynamic>>? _stageJoinRequestSub;
+  StreamSubscription<Map<String, dynamic>>? _stageRequestCancellationSub;
+  StreamSubscription<Map<String, dynamic>>? _stagePermissionSub;
   MediaStream? _localStream;
   bool _rendererReady = false;
   bool _joining = false;
@@ -71,12 +74,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   bool _chatLoading = false;
   bool _chatSending = false;
   bool _controlsLoading = false;
+  bool _canPublishStage = false;
+  bool _stageRequestsEnabled = true;
+  bool _stageRequestSending = false;
   String _rtcMode = 'audio';
   String _connectStep = 'ready';
   String _status = 'Ready to join';
-  String? _signalingRoom;
+  String _stageRole = 'audience';
+  String _stageRequestStatus = '';
   String? _activePanel;
   Map<String, dynamic>? _roomControls;
+  Map<String, dynamic>? _ownStageRequest;
+  final _stageActionIds = <int>{};
 
   bool get _videoMode => _rtcMode == 'video' && widget.room.supportsVideo;
 
@@ -126,6 +135,24 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       if (!mounted) return;
       setState(() => _roomControls = controls);
     });
+    _stageJoinRequestSub = _signaling.stageJoinRequests.listen((request) {
+      if (!mounted) return;
+      setState(() {
+        _roomControls = _upsertStageRequest(_roomControls, request);
+        _status = '${_stageRequestName(request)} wants to join the mic stage.';
+      });
+    });
+    _stageRequestCancellationSub = _signaling.stageJoinRequestCancellations
+        .listen((payload) {
+          if (!mounted) return;
+          setState(() {
+            _roomControls = _removeStageRequest(_roomControls, payload);
+            _status = 'Stage request cancelled.';
+          });
+        });
+    _stagePermissionSub = _signaling.stagePermissionUpdates.listen((payload) {
+      unawaited(_handleStagePermissionUpdate(payload));
+    });
     if (widget.enableLocalPreview) _initializeRenderer();
     if (widget.autoConnect) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _join());
@@ -142,6 +169,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _roomMessageDeletedSub?.cancel();
     _moderationActionSub?.cancel();
     _roomControlsUpdateSub?.cancel();
+    _stageJoinRequestSub?.cancel();
+    _stageRequestCancellationSub?.cancel();
+    _stagePermissionSub?.cancel();
     _roomPassword.dispose();
     _chatComposer.dispose();
     _stopLocalMedia();
@@ -173,23 +203,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
     setState(() {
       _joining = true;
-      _connectStep = 'media';
-      _status = 'Preparing media permissions...';
+      _connectStep = 'backend';
+      _status = 'Joining backend room...';
     });
 
     try {
       final video = widget.room.supportsVideo && _rtcMode == 'video';
-      await _openLocalMedia(video: video);
-
-      setState(() {
-        _connectStep = 'backend';
-        _status = 'Joining backend room...';
-      });
+      final requestedMic = _micOn;
+      final requestedCamera = video && _cameraOn;
       final joinData = await widget.api.joinRoom(
         widget.room.id,
         video: video,
-        micEnabled: _micOn,
-        cameraEnabled: video && _cameraOn,
+        micEnabled: requestedMic,
+        cameraEnabled: requestedCamera,
         password: _roomPassword.text,
       );
       final rtc = Map<String, dynamic>.from(joinData['rtc'] as Map? ?? {});
@@ -197,10 +223,45 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       if (signalingRoom.isEmpty) {
         throw StateError('Backend did not return rtc.signaling_room.');
       }
+      final stageAccess = _stageAccessFromRtc(rtc);
+      final canPublishStage = _signalBool(stageAccess['canPublish']);
+      final serverMic = canPublishStage && rtc['mic_enabled'] != false;
+      final serverCamera =
+          canPublishStage && video && rtc['camera_enabled'] == true;
+      final stageRequest = _mapValue(rtc['stage_request']);
+
+      setState(() {
+        _stageRole = stageAccess['role']?.toString() ?? 'audience';
+        _canPublishStage = canPublishStage;
+        _stageRequestsEnabled = _signalBool(
+          stageAccess['requestsEnabled'],
+          true,
+        );
+        _stageRequestStatus = canPublishStage
+            ? ''
+            : stageRequest == null
+            ? ''
+            : 'pending';
+        _ownStageRequest = stageRequest;
+        _micOn = serverMic;
+        _cameraOn = serverCamera;
+        _screenSharing = false;
+      });
+
+      if (canPublishStage) {
+        setState(() {
+          _connectStep = 'media';
+          _status = 'Preparing approved stage media...';
+        });
+        await _openLocalMedia(video: video);
+      } else {
+        _stopLocalMedia();
+        await _peerCoordinator.setLocalStream(null, video: video);
+      }
 
       setState(() {
         _connectStep = 'signaling';
-        _status = 'Connecting signaling...';
+        _status = 'Connecting live room...';
       });
       await _signaling.connect();
       await _signaling.joinRoom(
@@ -208,8 +269,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         databaseRoomId: widget.room.id,
         user: widget.user,
         video: video,
-        micEnabled: rtc['mic_enabled'] != false,
-        cameraEnabled: rtc['camera_enabled'] == true,
+        micEnabled: serverMic,
+        cameraEnabled: serverCamera,
       );
       unawaited(
         _signaling
@@ -227,12 +288,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       setState(() {
         _joined = true;
         _connectStep = 'connected';
-        _signalingRoom = signalingRoom;
-        _micOn = rtc['mic_enabled'] != false;
-        _cameraOn = video && rtc['camera_enabled'] == true;
+        _micOn = serverMic;
+        _cameraOn = serverCamera;
         _screenSharing = false;
         _activePanel = null;
-        _status = 'Connected to $signalingRoom';
+        _status = canPublishStage
+            ? 'You are on stage.'
+            : 'Entered as audience. Ask the owner to join.';
       });
       _applyLocalMediaState();
       await _peerCoordinator.setLocalStream(_localStream, video: video);
@@ -261,6 +323,23 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     }
   }
 
+  Future<void> _ensureLocalStageMedia({required bool video}) async {
+    if (!widget.enableLocalPreview) {
+      await _peerCoordinator.setLocalStream(_localStream, video: video);
+      return;
+    }
+
+    final stream = _localStream;
+    final hasAudio = stream?.getAudioTracks().isNotEmpty == true;
+    final hasVideo = stream?.getVideoTracks().isNotEmpty == true;
+    if (hasAudio && (!video || hasVideo)) {
+      await _peerCoordinator.setLocalStream(stream, video: video);
+      return;
+    }
+
+    await _openLocalMedia(video: video);
+  }
+
   Future<void> _leave({bool popAfterLeave = false}) async {
     if (_leaving) return;
     setState(() {
@@ -285,10 +364,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       setState(() {
         _joined = false;
         _connectStep = 'ready';
-        _signalingRoom = null;
         _peers.clear();
         _peerStates.clear();
         _screenSharing = false;
+        _canPublishStage = false;
+        _stageRole = 'audience';
+        _stageRequestStatus = '';
+        _ownStageRequest = null;
         _status = message;
       });
       _addEvent(message);
@@ -299,6 +381,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         _joined = false;
         _connectStep = 'ready';
         _status = apiErrorMessage(error);
+        _canPublishStage = false;
+        _stageRole = 'audience';
+        _stageRequestStatus = '';
+        _ownStageRequest = null;
       });
       if (popAfterLeave) Navigator.of(context).pop();
     } finally {
@@ -307,11 +393,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   }
 
   Future<void> _toggleMic() async {
+    if (!_canPublishStage) {
+      await _requestStageJoin();
+      return;
+    }
     await _syncMediaState(micOn: !_micOn, cameraOn: _cameraOn);
   }
 
   Future<void> _toggleCamera() async {
     if (!_videoMode) return;
+    if (!_canPublishStage) {
+      await _requestStageJoin();
+      return;
+    }
     await _syncMediaState(micOn: _micOn, cameraOn: !_cameraOn);
   }
 
@@ -325,6 +419,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     final previousCamera = _cameraOn;
     final previousScreen = _screenSharing;
     final nextScreen = screenSharing ?? _screenSharing;
+    final wantsToPublish = micOn || (_videoMode && cameraOn) || nextScreen;
+
+    if (wantsToPublish && !_canPublishStage) {
+      await _requestStageJoin();
+      return;
+    }
 
     setState(() {
       _mediaUpdating = true;
@@ -336,6 +436,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _applyLocalMediaState();
 
     try {
+      if (wantsToPublish) {
+        await _ensureLocalStageMedia(video: _videoMode);
+      }
       if (_joined) {
         final data = await widget.api.updateRoomMediaState(
           widget.room.id,
@@ -347,10 +450,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         final serverMic = rtc['mic_enabled'] != false;
         final serverCamera = _videoMode && rtc['camera_enabled'] == true;
         final serverScreen = rtc['screen_shared'] == true;
+        final stageAccess = _stageAccessFromRtc(rtc);
         setState(() {
           _micOn = serverMic;
           _cameraOn = serverCamera;
           _screenSharing = serverScreen;
+          _stageRole = stageAccess['role']?.toString() ?? _stageRole;
+          _canPublishStage = _signalBool(
+            stageAccess['canPublish'],
+            _canPublishStage,
+          );
+          _stageRequestsEnabled = _signalBool(
+            stageAccess['requestsEnabled'],
+            _stageRequestsEnabled,
+          );
         });
         _applyLocalMediaState();
         await _signaling
@@ -382,6 +495,195 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       _applyLocalMediaState();
     } finally {
       if (mounted) setState(() => _mediaUpdating = false);
+    }
+  }
+
+  Future<void> _requestStageJoin() async {
+    if (_stageRequestSending) return;
+    if (!_joined) {
+      setState(() => _status = 'Enter the room before requesting to join.');
+      return;
+    }
+    if (_canPublishStage) {
+      setState(() => _status = 'You already have permission to join.');
+      return;
+    }
+    if (!_stageRequestsEnabled) {
+      setState(() => _status = 'Stage requests are closed for this room.');
+      return;
+    }
+
+    setState(() {
+      _stageRequestSending = true;
+      _stageRequestStatus = 'pending';
+      _status = 'Sending request to the room owner...';
+    });
+
+    try {
+      final data = await widget.api.createStageRequest(
+        widget.room.id,
+        requestedMic: true,
+        requestedCamera: _videoMode,
+        requestedRtcMode: _rtcMode,
+      );
+      final request = _mapValue(data['request']);
+      if (!mounted) return;
+      setState(() {
+        _ownStageRequest = request;
+        _stageRequestStatus = 'pending';
+        _status = 'Request sent. Waiting for owner approval.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _ownStageRequest = null;
+        _stageRequestStatus = '';
+        _status = apiErrorMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _stageRequestSending = false);
+    }
+  }
+
+  Future<void> _cancelStageJoinRequest() async {
+    if (_stageRequestSending) return;
+    final requestId = _intValue(_ownStageRequest?['id']);
+    if (requestId == null) {
+      setState(() {
+        _ownStageRequest = null;
+        _stageRequestStatus = '';
+        _status = 'Stage request cleared.';
+      });
+      return;
+    }
+
+    setState(() {
+      _stageRequestSending = true;
+      _status = 'Cancelling stage request...';
+    });
+
+    try {
+      await widget.api.cancelStageRequest(widget.room.id, requestId);
+      if (!mounted) return;
+      setState(() {
+        _ownStageRequest = null;
+        _stageRequestStatus = '';
+        _status = 'Stage request cancelled.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = apiErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _stageRequestSending = false);
+    }
+  }
+
+  Future<void> _handleStagePermissionUpdate(
+    Map<String, dynamic> payload,
+  ) async {
+    final controls = _mapValue(payload['controls']);
+    final targetUserId = _intValue(
+      payload['targetUserId'] ?? payload['target_user_id'],
+    );
+    final approved = _signalBool(payload['approved']);
+    final action = payload['action']?.toString() ?? '';
+
+    if (mounted && controls != null) {
+      setState(() => _roomControls = controls);
+    }
+
+    if (targetUserId != widget.user.id) {
+      if (mounted && action.isNotEmpty) {
+        setState(() => _status = 'Stage permission updated.');
+      }
+      return;
+    }
+
+    final participant = _mapValue(payload['participant']);
+    final stageAccess = _stageAccessFromParticipant(participant);
+    final nextCanPublish = approved && _signalBool(stageAccess['canPublish']);
+
+    if (!nextCanPublish) {
+      if (!mounted) return;
+      setState(() {
+        _canPublishStage = false;
+        _stageRole = 'audience';
+        _stageRequestStatus = '';
+        _ownStageRequest = null;
+        _micOn = false;
+        _cameraOn = false;
+        _screenSharing = false;
+        _status = approved
+            ? 'Stage permission removed.'
+            : 'Room owner declined the stage request.';
+      });
+      _applyLocalMediaState();
+      await _peerCoordinator.setLocalStream(null, video: _videoMode);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _canPublishStage = true;
+      _stageRole = stageAccess['role']?.toString() ?? 'speaker';
+      _stageRequestsEnabled = _signalBool(
+        stageAccess['requestsEnabled'],
+        _stageRequestsEnabled,
+      );
+      _stageRequestStatus = '';
+      _ownStageRequest = null;
+      _status = 'Owner approved. Starting stage media...';
+    });
+    await _syncMediaState(micOn: true, cameraOn: _videoMode);
+  }
+
+  Future<void> _applyStagePermission(
+    Map<String, dynamic> request,
+    bool approve,
+  ) async {
+    final requestId = _intValue(request['id']);
+    final userId = _intValue(
+      request['userId'] ?? request['user_id'] ?? request['requester_user_id'],
+    );
+    final actionKey = requestId ?? userId;
+    if (actionKey == null || _stageActionIds.contains(actionKey)) return;
+
+    setState(() {
+      _stageActionIds.add(actionKey);
+      _status = approve ? 'Approving stage request...' : 'Declining request...';
+    });
+
+    try {
+      final data = requestId != null
+          ? await widget.api.respondToStageRequest(
+              widget.room.id,
+              requestId,
+              approve: approve,
+            )
+          : await widget.api.updateParticipantStagePermission(
+              widget.room.id,
+              userId!,
+              approve: approve,
+            );
+      final controls = _mapValue(data['controls']);
+      if (!mounted) return;
+      setState(() {
+        if (controls != null) {
+          _roomControls = controls;
+        } else {
+          _roomControls = _removeStageRequest(_roomControls, request);
+        }
+        _status = approve
+            ? '${_stageRequestName(request)} can join the stage.'
+            : '${_stageRequestName(request)} remains audience.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = apiErrorMessage(error));
+    } finally {
+      if (mounted) {
+        setState(() => _stageActionIds.remove(actionKey));
+      }
     }
   }
 
@@ -509,7 +811,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     setState(() {
       _joined = false;
       _connectStep = 'ready';
-      _signalingRoom = null;
       _peers.clear();
       _peerStates.clear();
       _screenSharing = false;
@@ -750,13 +1051,30 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                   cameraOn: _cameraOn,
                   screenSharing: _screenSharing,
                   rtcMode: _rtcMode,
+                  canPublishStage: _canPublishStage,
+                  stageRequestStatus: _stageRequestStatus,
+                  stageRequestsEnabled: _stageRequestsEnabled,
+                  stageRequestSending: _stageRequestSending,
                   connectStep: _connectStep,
                   status: _status,
                   onJoin: _joining || _joined ? null : _join,
                   onLeave: _joined || _joining ? () => _leave() : null,
-                  onToggleMic: _joined && !_mediaUpdating ? _toggleMic : null,
-                  onToggleCamera: _joined && _videoMode && !_mediaUpdating
+                  onToggleMic:
+                      _joined && !_mediaUpdating && !_stageRequestSending
+                      ? _toggleMic
+                      : null,
+                  onToggleCamera:
+                      _joined &&
+                          _videoMode &&
+                          !_mediaUpdating &&
+                          !_stageRequestSending
                       ? _toggleCamera
+                      : null,
+                  onRequestStage: _joined && !_canPublishStage
+                      ? _requestStageJoin
+                      : null,
+                  onCancelStageRequest: _joined && !_canPublishStage
+                      ? _cancelStageJoinRequest
                       : null,
                   onOpenTools: _togglePanel,
                 ),
@@ -775,6 +1093,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                     controlsLoading: _controlsLoading,
                     moderatingUserIds: _moderatingUserIds,
                     screenSharing: _screenSharing,
+                    canPublishStage: _canPublishStage,
+                    stageActionIds: _stageActionIds,
                     status: _status,
                     onJoin: _joining || _joined ? null : _join,
                     onSendChat: _sendChatMessage,
@@ -786,6 +1106,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                     onToggleScreenSharing:
                         widget.room.screenShareEnabled &&
                             _joined &&
+                            _canPublishStage &&
                             !_mediaUpdating
                         ? () => _syncMediaState(
                             micOn: _micOn,
@@ -793,6 +1114,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                             screenSharing: !_screenSharing,
                           )
                         : null,
+                    onApplyStagePermission: _applyStagePermission,
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -800,10 +1122,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                   room: widget.room,
                   peers: _peers,
                   joined: _joined,
-                  signalingRoom: _signalingRoom,
+                  rtcMode: _rtcMode,
                 ),
-                const SizedBox(height: 10),
-                _EventPanel(events: _events),
               ],
             ),
           ),
@@ -986,7 +1306,7 @@ class _LiveTopBar extends StatelessWidget {
             ),
           const SizedBox(width: 6),
           _LiveCircleIconButton(
-            tooltip: 'Room tools',
+            tooltip: 'Room menu',
             icon: Icons.more_horiz_rounded,
             onPressed: onOpenTools,
             size: 34,
@@ -1053,12 +1373,18 @@ class _LiveStagePanel extends StatelessWidget {
     required this.cameraOn,
     required this.screenSharing,
     required this.rtcMode,
+    required this.canPublishStage,
+    required this.stageRequestStatus,
+    required this.stageRequestsEnabled,
+    required this.stageRequestSending,
     required this.connectStep,
     required this.status,
     required this.onJoin,
     required this.onLeave,
     required this.onToggleMic,
     required this.onToggleCamera,
+    required this.onRequestStage,
+    required this.onCancelStageRequest,
     required this.onOpenTools,
   });
 
@@ -1078,12 +1404,18 @@ class _LiveStagePanel extends StatelessWidget {
   final bool cameraOn;
   final bool screenSharing;
   final String rtcMode;
+  final bool canPublishStage;
+  final String stageRequestStatus;
+  final bool stageRequestsEnabled;
+  final bool stageRequestSending;
   final String connectStep;
   final String status;
   final VoidCallback? onJoin;
   final VoidCallback? onLeave;
   final VoidCallback? onToggleMic;
   final VoidCallback? onToggleCamera;
+  final VoidCallback? onRequestStage;
+  final VoidCallback? onCancelStageRequest;
   final ValueChanged<String> onOpenTools;
 
   @override
@@ -1102,6 +1434,7 @@ class _LiveStagePanel extends StatelessWidget {
           cameraOn: cameraOn,
           screenSharing: screenSharing,
           rtcMode: rtcMode,
+          canPublishStage: canPublishStage,
           onJoin: onJoin,
         ),
         if (remoteRenderers.isNotEmpty) ...[
@@ -1120,11 +1453,22 @@ class _LiveStagePanel extends StatelessWidget {
           peerStates: peerStates,
           joined: joined,
           micOn: micOn,
+          canPublishStage: canPublishStage,
         ),
         const SizedBox(height: 10),
         _ConnectSteps(active: connectStep),
         const SizedBox(height: 10),
-        _LiveGuideRow(room: room, joined: joined, onJoin: onJoin),
+        _LiveGuideRow(
+          room: room,
+          joined: joined,
+          canPublishStage: canPublishStage,
+          stageRequestStatus: stageRequestStatus,
+          stageRequestsEnabled: stageRequestsEnabled,
+          stageRequestSending: stageRequestSending,
+          onJoin: onJoin,
+          onRequestStage: onRequestStage,
+          onCancelStageRequest: onCancelStageRequest,
+        ),
         const SizedBox(height: 10),
         _LiveCommentPreview(
           room: room,
@@ -1135,6 +1479,7 @@ class _LiveStagePanel extends StatelessWidget {
           joined: joined,
           micOn: micOn,
           cameraOn: cameraOn,
+          canPublishStage: canPublishStage,
         ),
         const SizedBox(height: 12),
         _LiveControlBar(
@@ -1147,9 +1492,15 @@ class _LiveStagePanel extends StatelessWidget {
           screenSharing: screenSharing,
           room: room,
           rtcMode: rtcMode,
+          canPublishStage: canPublishStage,
+          stageRequestStatus: stageRequestStatus,
+          stageRequestsEnabled: stageRequestsEnabled,
+          stageRequestSending: stageRequestSending,
           onLeave: onLeave,
           onToggleMic: onToggleMic,
           onToggleCamera: onToggleCamera,
+          onRequestStage: onRequestStage,
+          onCancelStageRequest: onCancelStageRequest,
           onOpenTools: onOpenTools,
         ),
       ],
@@ -1169,6 +1520,7 @@ class _LiveVideoCard extends StatelessWidget {
     required this.cameraOn,
     required this.screenSharing,
     required this.rtcMode,
+    required this.canPublishStage,
     required this.onJoin,
   });
 
@@ -1182,6 +1534,7 @@ class _LiveVideoCard extends StatelessWidget {
   final bool cameraOn;
   final bool screenSharing;
   final String rtcMode;
+  final bool canPublishStage;
   final VoidCallback? onJoin;
 
   @override
@@ -1251,7 +1604,7 @@ class _LiveVideoCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Room ID: ${room.id}',
+                          '${room.roomTypeLabel} · ${room.displayHost}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1330,7 +1683,9 @@ class _LiveVideoCard extends StatelessWidget {
                       screenSharing
                           ? 'Screen share stage'
                           : joined
-                          ? '${user.name} · ${cameraOn ? 'camera' : rtcMode}'
+                          ? canPublishStage
+                                ? '${user.name} · ${cameraOn ? 'camera' : rtcMode}'
+                                : '${user.name} · audience'
                           : 'Tap to join room',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1435,6 +1790,7 @@ class _StageSeatGrid extends StatelessWidget {
     required this.peerStates,
     required this.joined,
     required this.micOn,
+    required this.canPublishStage,
   });
 
   final Room room;
@@ -1443,28 +1799,37 @@ class _StageSeatGrid extends StatelessWidget {
   final Map<String, String> peerStates;
   final bool joined;
   final bool micOn;
+  final bool canPublishStage;
 
   @override
   Widget build(BuildContext context) {
     final visibleSeatCount = room.maxMicCount.clamp(4, 8).toInt();
     final useAdminAvatar = RtcAssets.shouldUseAdminAvatar(user);
-    final seats = <Widget>[
-      RtcStageSeat(
-        number: 1,
-        label: joined ? user.name : room.displayHost,
-        state: joined
-            ? micOn
-                  ? RtcSeatState.speaking
-                  : RtcSeatState.muted
-            : RtcSeatState.occupied,
-        image: joined && !useAdminAvatar
-            ? RtcAssets.avatarImageForUser(user)
-            : null,
-        asset: joined && useAdminAvatar ? RtcAssets.adminDashboardAvatar : null,
-      ),
-    ];
+    final seats = <Widget>[];
+    if (!joined || canPublishStage) {
+      seats.add(
+        RtcStageSeat(
+          number: 1,
+          label: joined ? user.name : room.displayHost,
+          state: joined
+              ? micOn
+                    ? RtcSeatState.speaking
+                    : RtcSeatState.muted
+              : RtcSeatState.occupied,
+          image: joined && !useAdminAvatar
+              ? RtcAssets.avatarImageForUser(user)
+              : null,
+          asset: joined && useAdminAvatar
+              ? RtcAssets.adminDashboardAvatar
+              : null,
+        ),
+      );
+    }
 
-    for (final peer in peers.take(visibleSeatCount - seats.length)) {
+    final stagePeers = peers
+        .where(_peerCanPublish)
+        .take(visibleSeatCount - seats.length);
+    for (final peer in stagePeers) {
       final socketId = peer['socketId']?.toString();
       final label = _peerName(peer);
       final micEnabled = _signalBool(peer['micEnabled'], true);
@@ -1508,15 +1873,37 @@ class _LiveGuideRow extends StatelessWidget {
   const _LiveGuideRow({
     required this.room,
     required this.joined,
+    required this.canPublishStage,
+    required this.stageRequestStatus,
+    required this.stageRequestsEnabled,
+    required this.stageRequestSending,
     required this.onJoin,
+    required this.onRequestStage,
+    required this.onCancelStageRequest,
   });
 
   final Room room;
   final bool joined;
+  final bool canPublishStage;
+  final String stageRequestStatus;
+  final bool stageRequestsEnabled;
+  final bool stageRequestSending;
   final VoidCallback? onJoin;
+  final VoidCallback? onRequestStage;
+  final VoidCallback? onCancelStageRequest;
 
   @override
   Widget build(BuildContext context) {
+    final pending = stageRequestStatus == 'pending';
+    final action = !joined
+        ? onJoin
+        : canPublishStage
+        ? null
+        : pending
+        ? onCancelStageRequest
+        : stageRequestsEnabled
+        ? onRequestStage
+        : null;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -1548,7 +1935,7 @@ class _LiveGuideRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
-            onTap: joined ? null : onJoin,
+            onTap: stageRequestSending ? null : action,
             child: Container(
               width: 72,
               alignment: Alignment.center,
@@ -1562,7 +1949,15 @@ class _LiveGuideRow extends StatelessWidget {
                 ),
               ),
               child: Icon(
-                joined ? Icons.graphic_eq_rounded : Icons.mic_rounded,
+                stageRequestSending
+                    ? Icons.hourglass_top_rounded
+                    : !joined
+                    ? Icons.login_rounded
+                    : canPublishStage
+                    ? Icons.graphic_eq_rounded
+                    : pending
+                    ? Icons.close_rounded
+                    : Icons.record_voice_over_rounded,
                 color: Colors.white,
               ),
             ),
@@ -1583,6 +1978,7 @@ class _LiveCommentPreview extends StatelessWidget {
     required this.joined,
     required this.micOn,
     required this.cameraOn,
+    required this.canPublishStage,
   });
 
   final Room room;
@@ -1593,6 +1989,7 @@ class _LiveCommentPreview extends StatelessWidget {
   final bool joined;
   final bool micOn;
   final bool cameraOn;
+  final bool canPublishStage;
 
   @override
   Widget build(BuildContext context) {
@@ -1629,8 +2026,9 @@ class _LiveCommentPreview extends StatelessWidget {
         if (joined)
           RtcChatBubble(
             sender: user.name,
-            message:
-                '${micOn ? 'Mic on' : 'Mic off'} · ${cameraOn ? 'Camera on' : 'Camera off'}',
+            message: canPublishStage
+                ? '${micOn ? 'Mic on' : 'Mic off'} · ${cameraOn ? 'Camera on' : 'Camera off'}'
+                : 'Audience · watching and listening',
             mine: true,
           ),
       ],
@@ -1834,9 +2232,15 @@ class _LiveControlBar extends StatelessWidget {
     required this.screenSharing,
     required this.room,
     required this.rtcMode,
+    required this.canPublishStage,
+    required this.stageRequestStatus,
+    required this.stageRequestsEnabled,
+    required this.stageRequestSending,
     required this.onLeave,
     required this.onToggleMic,
     required this.onToggleCamera,
+    required this.onRequestStage,
+    required this.onCancelStageRequest,
     required this.onOpenTools,
   });
 
@@ -1849,22 +2253,54 @@ class _LiveControlBar extends StatelessWidget {
   final bool screenSharing;
   final Room room;
   final String rtcMode;
+  final bool canPublishStage;
+  final String stageRequestStatus;
+  final bool stageRequestsEnabled;
+  final bool stageRequestSending;
   final VoidCallback? onLeave;
   final VoidCallback? onToggleMic;
   final VoidCallback? onToggleCamera;
+  final VoidCallback? onRequestStage;
+  final VoidCallback? onCancelStageRequest;
   final ValueChanged<String> onOpenTools;
 
   @override
   Widget build(BuildContext context) {
+    final audienceMode = joined && !canPublishStage;
+    final pending = stageRequestStatus == 'pending';
+    final requestLabel = stageRequestSending
+        ? 'Sending'
+        : pending
+        ? 'Cancel'
+        : stageRequestsEnabled
+        ? 'Request'
+        : 'Closed';
+    final requestAction = pending ? onCancelStageRequest : onRequestStage;
     return Column(
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
+              if (audienceMode) ...[
+                RtcStageActionButton(
+                  icon: pending
+                      ? Icons.hourglass_top_rounded
+                      : Icons.record_voice_over_rounded,
+                  label: requestLabel,
+                  active: pending,
+                  onPressed:
+                      stageRequestSending || !stageRequestsEnabled && !pending
+                      ? null
+                      : requestAction,
+                ),
+                const SizedBox(width: 8),
+              ],
               RtcStageActionButton(
                 icon: micOn ? Icons.mic : Icons.mic_off,
-                label: mediaUpdating
+                label: audienceMode
+                    ? 'Locked'
+                    : mediaUpdating
                     ? 'Saving'
                     : micOn
                     ? 'Mic on'
@@ -1875,7 +2311,9 @@ class _LiveControlBar extends StatelessWidget {
               const SizedBox(width: 8),
               RtcStageActionButton(
                 icon: cameraOn ? Icons.videocam : Icons.videocam_off,
-                label: rtcMode == 'video'
+                label: audienceMode
+                    ? 'Locked'
+                    : rtcMode == 'video'
                     ? cameraOn
                           ? 'Camera on'
                           : 'Camera off'
@@ -1886,13 +2324,13 @@ class _LiveControlBar extends StatelessWidget {
               const SizedBox(width: 8),
               RtcStageActionButton(
                 icon: Icons.graphic_eq,
-                label: 'Audio',
+                label: 'Voice',
                 onPressed: () => onOpenTools('audio'),
               ),
               const SizedBox(width: 8),
               RtcStageActionButton(
                 icon: Icons.auto_awesome,
-                label: 'Beauty',
+                label: 'Filter',
                 onPressed: rtcMode == 'video'
                     ? () => onOpenTools('beauty')
                     : null,
@@ -1904,20 +2342,20 @@ class _LiveControlBar extends StatelessWidget {
                     : Icons.screen_share_outlined,
                 label: 'Share',
                 active: screenSharing,
-                onPressed: room.screenShareEnabled
+                onPressed: room.screenShareEnabled && canPublishStage
                     ? () => onOpenTools('screen')
                     : null,
               ),
               const SizedBox(width: 8),
               RtcStageActionButton(
                 icon: Icons.admin_panel_settings_outlined,
-                label: 'Ops',
+                label: 'Host',
                 onPressed: () => onOpenTools('ops'),
               ),
               const SizedBox(width: 8),
               RtcStageActionButton(
                 icon: Icons.shield_outlined,
-                label: 'Guard',
+                label: 'Safety',
                 active: room.aiSecurityEnabled,
                 onPressed: () => onOpenTools('guard'),
               ),
@@ -1959,6 +2397,8 @@ class _LiveToolPanel extends StatelessWidget {
     required this.controlsLoading,
     required this.moderatingUserIds,
     required this.screenSharing,
+    required this.canPublishStage,
+    required this.stageActionIds,
     required this.status,
     required this.onJoin,
     required this.onSendChat,
@@ -1966,6 +2406,7 @@ class _LiveToolPanel extends StatelessWidget {
     required this.onLoadControls,
     required this.onModerateParticipant,
     required this.onToggleScreenSharing,
+    required this.onApplyStagePermission,
   });
 
   final String panel;
@@ -1980,6 +2421,8 @@ class _LiveToolPanel extends StatelessWidget {
   final bool controlsLoading;
   final Set<int> moderatingUserIds;
   final bool screenSharing;
+  final bool canPublishStage;
+  final Set<int> stageActionIds;
   final String status;
   final VoidCallback? onJoin;
   final VoidCallback onSendChat;
@@ -1988,18 +2431,20 @@ class _LiveToolPanel extends StatelessWidget {
   final void Function(Map<String, dynamic> participant, String action)
   onModerateParticipant;
   final VoidCallback? onToggleScreenSharing;
+  final void Function(Map<String, dynamic> request, bool approve)
+  onApplyStagePermission;
 
   @override
   Widget build(BuildContext context) {
     final title = switch (panel) {
       'access' => 'Room Access',
-      'audio' => 'Audio Effects',
-      'beauty' => 'Beauty & Background',
+      'audio' => 'Voice Effects',
+      'beauty' => 'Filters',
       'screen' => 'Screen Share',
-      'ops' => 'Room Ops',
-      'guard' => 'Guard',
+      'ops' => 'Host Controls',
+      'guard' => 'Safety',
       'chat' => 'Live Chat',
-      _ => 'Room Tools',
+      _ => 'Room Menu',
     };
 
     return RtcActionSheetPanel(
@@ -2053,10 +2498,12 @@ class _LiveToolPanel extends StatelessWidget {
                 ? Icons.stop_screen_share_outlined
                 : Icons.screen_share_outlined,
             title: screenSharing ? 'Stop sharing' : 'Start screen share',
-            subtitle: room.screenShareEnabled
+            subtitle: !canPublishStage
+                ? 'Owner approval is required.'
+                : room.screenShareEnabled
                 ? 'Presenter tools are available.'
                 : 'Screen share is turned off.',
-            onTap: onToggleScreenSharing,
+            onTap: canPublishStage ? onToggleScreenSharing : null,
             trailing: Icon(
               screenSharing
                   ? Icons.check_circle_rounded
@@ -2082,8 +2529,10 @@ class _LiveToolPanel extends StatelessWidget {
             controls: roomControls,
             loading: controlsLoading,
             moderatingUserIds: moderatingUserIds,
+            stageActionIds: stageActionIds,
             onRefresh: onLoadControls,
             onModerate: onModerateParticipant,
+            onApplyStagePermission: onApplyStagePermission,
           )
         else
           ..._toolChips(panel, room).map(
@@ -2219,16 +2668,21 @@ class _RoomOpsPanel extends StatelessWidget {
     required this.controls,
     required this.loading,
     required this.moderatingUserIds,
+    required this.stageActionIds,
     required this.onRefresh,
     required this.onModerate,
+    required this.onApplyStagePermission,
   });
 
   final Map<String, dynamic>? controls;
   final bool loading;
   final Set<int> moderatingUserIds;
+  final Set<int> stageActionIds;
   final VoidCallback onRefresh;
   final void Function(Map<String, dynamic> participant, String action)
   onModerate;
+  final void Function(Map<String, dynamic> request, bool approve)
+  onApplyStagePermission;
 
   @override
   Widget build(BuildContext context) {
@@ -2262,6 +2716,7 @@ class _RoomOpsPanel extends StatelessWidget {
     }
 
     final participants = _mapList(data['participants']);
+    final stageRequests = _mapList(data['stage_requests']);
     final role = data['role']?.toString() ?? 'member';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2298,6 +2753,28 @@ class _RoomOpsPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
+        if (stageRequests.isNotEmpty) ...[
+          RtcSheetActionTile(
+            icon: Icons.record_voice_over_rounded,
+            title:
+                '${stageRequests.length} stage request${stageRequests.length == 1 ? '' : 's'}',
+            subtitle: 'Approve only people who should speak or use camera.',
+            onTap: null,
+            trailing: const Icon(
+              Icons.notifications_active_rounded,
+              color: RtcPalette.lobbyTealDark,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...stageRequests.map(
+            (request) => _StageRequestTile(
+              request: request,
+              busy: stageActionIds.contains(_stageRequestActionKey(request)),
+              onApply: onApplyStagePermission,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         if (participants.isEmpty)
           const Text(
             'No active participants yet.',
@@ -2438,6 +2915,102 @@ class _OpsParticipantTile extends StatelessWidget {
   }
 }
 
+class _StageRequestTile extends StatelessWidget {
+  const _StageRequestTile({
+    required this.request,
+    required this.busy,
+    required this.onApply,
+  });
+
+  final Map<String, dynamic> request;
+  final bool busy;
+  final void Function(Map<String, dynamic> request, bool approve) onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _stageRequestName(request);
+    final wantsCamera = _signalBool(
+      request['requested_camera'] ?? request['requestedCamera'],
+    );
+    final wantsMic = _signalBool(
+      request['requested_mic'] ?? request['requestedMic'],
+      true,
+    );
+    final detail =
+        '${wantsMic ? 'mic' : 'listen'} · ${wantsCamera ? 'camera' : 'audio'}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border.all(color: const Color(0xFFFBBF24)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.record_voice_over_rounded,
+                color: RtcPalette.lobbyTealDark,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbyInk,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbySoft,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (busy)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _OpsActionButton(
+                label: 'Approve',
+                onPressed: busy ? null : () => onApply(request, true),
+              ),
+              _OpsActionButton(
+                label: 'Decline',
+                destructive: true,
+                onPressed: busy ? null : () => onApply(request, false),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OpsActionButton extends StatelessWidget {
   const _OpsActionButton({
     required this.label,
@@ -2472,13 +3045,13 @@ class _RoomInfoPanel extends StatelessWidget {
     required this.room,
     required this.peers,
     required this.joined,
-    required this.signalingRoom,
+    required this.rtcMode,
   });
 
   final Room room;
   final List<Map<String, dynamic>> peers;
   final bool joined;
-  final String? signalingRoom;
+  final String rtcMode;
 
   @override
   Widget build(BuildContext context) {
@@ -2488,8 +3061,8 @@ class _RoomInfoPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           RtcSectionHeader(
-            eyebrow: 'ROOM STATUS',
-            title: 'Participants',
+            eyebrow: 'LIVE ROOM',
+            title: 'On Stage',
             detail: room.description.isEmpty
                 ? room.displayHost
                 : room.description,
@@ -2500,10 +3073,13 @@ class _RoomInfoPanel extends StatelessWidget {
             runSpacing: 8,
             children: [
               MetricChip(label: 'Signal', value: joined ? 'Connected' : 'Idle'),
-              MetricChip(label: 'Room ID', value: '${room.id}'),
+              MetricChip(label: 'Mode', value: _modeLabel(rtcMode)),
               MetricChip(label: 'Host', value: room.displayHost),
               MetricChip(label: 'Region', value: room.displayRegion),
-              MetricChip(label: 'Socket', value: signalingRoom ?? '-'),
+              MetricChip(
+                label: 'People',
+                value: '${peers.length + (joined ? 1 : 0)}',
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -2532,54 +3108,6 @@ class _RoomInfoPanel extends StatelessWidget {
                   detail:
                       '${_signalBool(peer['micEnabled'], true) ? 'mic on' : 'mic off'} · ${_signalBool(peer['cameraEnabled'], false) ? 'cam on' : 'cam off'}',
                   state: RtcStatusState.good,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EventPanel extends StatelessWidget {
-  const _EventPanel({required this.events});
-
-  final List<String> events;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      color: RtcPalette.stagePanel,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Signaling Events',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (events.isEmpty)
-            const Text(
-              'No signaling events yet.',
-              style: TextStyle(
-                color: RtcPalette.muted,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else
-            ...events.map(
-              (event) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  event,
-                  style: const TextStyle(
-                    color: RtcPalette.soft,
-                    fontWeight: FontWeight.w700,
-                  ),
                 ),
               ),
             ),
@@ -2670,6 +3198,133 @@ Map<String, dynamic>? _mapValue(Object? value) {
   return value is Map ? Map<String, dynamic>.from(value) : null;
 }
 
+Map<String, dynamic> _stageAccessFromRtc(Map<String, dynamic> rtc) {
+  final access = _mapValue(rtc['stage_access']);
+  final role = access?['role']?.toString() ?? 'audience';
+  final canPublish = _signalBool(
+    access?['can_publish'] ?? access?['canPublish'],
+    _roomRoleCanPublish(role),
+  );
+  return {
+    'role': role,
+    'canPublish': canPublish,
+    'requestsEnabled': _signalBool(
+      access?['requests_enabled'] ?? access?['requestsEnabled'],
+      true,
+    ),
+    'status':
+        access?['status']?.toString() ?? (canPublish ? 'approved' : 'audience'),
+  };
+}
+
+Map<String, dynamic> _stageAccessFromParticipant(
+  Map<String, dynamic>? participant,
+) {
+  final access = _mapValue(participant?['stage_access']);
+  final role =
+      access?['role']?.toString() ??
+      participant?['role_in_room']?.toString() ??
+      participant?['stageRole']?.toString() ??
+      'audience';
+  final canPublish = _signalBool(
+    access?['can_publish'] ??
+        access?['canPublish'] ??
+        participant?['can_publish'] ??
+        participant?['canPublish'],
+    _roomRoleCanPublish(role),
+  );
+  return {
+    'role': role,
+    'canPublish': canPublish,
+    'requestsEnabled': _signalBool(
+      access?['requests_enabled'] ?? access?['requestsEnabled'],
+      true,
+    ),
+    'status':
+        access?['status']?.toString() ?? (canPublish ? 'approved' : 'audience'),
+  };
+}
+
+bool _roomRoleCanPublish(String role) {
+  return const {
+    'owner',
+    'admin',
+    'moderator',
+    'speaker',
+  }.contains(role.trim().toLowerCase());
+}
+
+bool _peerCanPublish(Map<String, dynamic> peer) {
+  final role =
+      (peer['stageRole'] ?? peer['stage_role'] ?? peer['role_in_room'] ?? '')
+          .toString();
+  return _signalBool(peer['canPublish'] ?? peer['can_publish']) ||
+      _roomRoleCanPublish(role);
+}
+
+Map<String, dynamic>? _upsertStageRequest(
+  Map<String, dynamic>? controls,
+  Map<String, dynamic> request,
+) {
+  if (controls == null) return controls;
+  final next = Map<String, dynamic>.from(controls);
+  final requests = _mapList(next['stage_requests']);
+  final key = _stageRequestActionKey(request);
+  final index = requests.indexWhere(
+    (item) => _stageRequestActionKey(item) == key,
+  );
+  if (index >= 0) {
+    requests[index] = request;
+  } else {
+    requests.insert(0, request);
+  }
+  next['stage_requests'] = requests;
+  return next;
+}
+
+Map<String, dynamic>? _removeStageRequest(
+  Map<String, dynamic>? controls,
+  Map<String, dynamic> request,
+) {
+  if (controls == null) return controls;
+  final next = Map<String, dynamic>.from(controls);
+  final key = _stageRequestActionKey(request);
+  final userId = _intValue(
+    request['userId'] ?? request['user_id'] ?? request['requester_user_id'],
+  );
+  next['stage_requests'] = _mapList(next['stage_requests']).where((item) {
+    final itemKey = _stageRequestActionKey(item);
+    final itemUserId = _intValue(
+      item['userId'] ?? item['user_id'] ?? item['requester_user_id'],
+    );
+    if (key != null && itemKey == key) return false;
+    if (userId != null && itemUserId == userId) return false;
+    return true;
+  }).toList();
+  return next;
+}
+
+int? _stageRequestActionKey(Map<String, dynamic> request) {
+  return _intValue(
+        request['id'] ?? request['requestId'] ?? request['request_id'],
+      ) ??
+      _intValue(
+        request['userId'] ?? request['user_id'] ?? request['requester_user_id'],
+      );
+}
+
+String _stageRequestName(Map<String, dynamic> request) {
+  return (request['userName'] ??
+          request['user_name'] ??
+          request['requester_name'] ??
+          request['requesterUserName'] ??
+          request['userId'] ??
+          request['user_id'] ??
+          request['requester_user_id'] ??
+          'Participant')
+      .toString();
+}
+
 int? _intValue(Object? value) {
   if (value is int) return value;
   return int.tryParse(value?.toString() ?? '');
@@ -2757,7 +3412,7 @@ const _connectSteps = [
   _ConnectStep(value: 'ready', label: 'Ready'),
   _ConnectStep(value: 'media', label: 'Media'),
   _ConnectStep(value: 'backend', label: 'Room'),
-  _ConnectStep(value: 'signaling', label: 'Signal'),
+  _ConnectStep(value: 'signaling', label: 'Connect'),
   _ConnectStep(value: 'connected', label: 'Live'),
 ];
 
@@ -2792,17 +3447,17 @@ bool _signalBool(Object? value, [bool fallback = false]) {
 String _toolDetail(String panel, Room room, bool joined) {
   return switch (panel) {
     'access' => 'Private and password room entry.',
-    'audio' => 'Noise cancellation and voice presets.',
-    'beauty' => 'Camera effects and background options.',
+    'audio' => 'Voice style and sound controls.',
+    'beauty' => 'Camera filters and background options.',
     'screen' =>
       room.screenShareEnabled
           ? 'Presenter tools are available.'
           : 'Screen share is turned off.',
-    'ops' => joined ? 'Active participant controls.' : 'Room controls.',
+    'ops' => joined ? 'Host controls and stage requests.' : 'Host controls.',
     'guard' =>
-      room.aiSecurityEnabled ? 'Moderation layer active.' : 'Guard off.',
+      room.aiSecurityEnabled ? 'Safety tools are active.' : 'Safety tools off.',
     'chat' => room.chatEnabled ? 'Room comments.' : 'Comments off.',
-    _ => 'Room tools.',
+    _ => 'Room menu.',
   };
 }
 
@@ -2836,7 +3491,7 @@ List<_ToolChip> _toolChips(String panel, Room room) {
       _ToolChip('Access', formatPrivacy(room.privacyType)),
     ],
     'guard' => [
-      _ToolChip('Guard', room.aiSecurityEnabled ? 'Active' : 'Off'),
+      _ToolChip('Safety', room.aiSecurityEnabled ? 'Active' : 'Off'),
       _ToolChip('Chat', room.chatEnabled ? 'On' : 'Off'),
       _ToolChip('Gifts', room.giftEnabled ? 'On' : 'Off'),
     ],

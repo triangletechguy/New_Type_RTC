@@ -1,6 +1,10 @@
 const express = require('express')
 const { query, transaction } = require('../config/db')
 const { authMiddleware } = require('../middleware/auth')
+const {
+  ensureUserPrivacySettingsSchema,
+  formatUserPrivacySettings,
+} = require('../utils/userPrivacySettings')
 
 const router = express.Router()
 
@@ -28,6 +32,8 @@ let chatSchemaPromise = null
 async function ensureChatSchema() {
   if (!chatSchemaPromise) {
     chatSchemaPromise = (async () => {
+      await ensureUserPrivacySettingsSchema()
+
       await query(`
       CREATE TABLE IF NOT EXISTS chat_message_hides (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -641,10 +647,11 @@ async function blockedUserIdsForRoom(roomId, userId) {
 async function findUserForDirectMessage(userId, tenantId) {
   const users = await query(
     `
-    SELECT id, name, avatar_url, gender
+    SELECT id, name, avatar_url, gender, message_privacy, private_live_invitation, hide_sensitive_content
     FROM users
     WHERE id = :userId
     AND tenant_id = :tenantId
+    AND status = 'active'
     LIMIT 1
     `,
     { userId, tenantId }
@@ -705,6 +712,65 @@ async function usersHaveDirectMessageRelationship(userId, peerId, tenantId) {
   )
 
   return rows.length > 0
+}
+
+async function usersHaveDirectMessageHistory(userId, peerId, tenantId) {
+  if (!userId || !peerId || Number(userId) === Number(peerId)) return false
+
+  const rows = await query(
+    `
+    SELECT id
+    FROM direct_messages
+    WHERE tenant_id = :tenantId
+    AND (
+      (sender_id = :userId AND recipient_id = :peerId)
+      OR (sender_id = :peerId AND recipient_id = :userId)
+    )
+    LIMIT 1
+    `,
+    { tenantId, userId, peerId }
+  )
+
+  return rows.length > 0
+}
+
+async function directMessagePrivacyPermission(senderId, recipientId, tenantId) {
+  if (!senderId || !recipientId || Number(senderId) === Number(recipientId)) {
+    return { allowed: false, reason: 'You cannot message yourself.' }
+  }
+
+  const rows = await query(
+    `
+    SELECT message_privacy, private_live_invitation, hide_sensitive_content
+    FROM users
+    WHERE id = :recipientId
+    AND tenant_id = :tenantId
+    AND status = 'active'
+    LIMIT 1
+    `,
+    { recipientId, tenantId }
+  )
+
+  if (!rows.length) return { allowed: false, reason: 'User not found.' }
+
+  const settings = formatUserPrivacySettings(rows[0])
+  if (settings.messagePrivacy === 'everyone') return { allowed: true, settings }
+  if (settings.messagePrivacy === 'nobody') {
+    return { allowed: false, reason: 'This user is not accepting private messages.' }
+  }
+
+  const senderFollowsRecipient = await userFollowsPeer(senderId, recipientId, tenantId)
+  return senderFollowsRecipient
+    ? { allowed: true, settings }
+    : { allowed: false, reason: 'This user only accepts private messages from followers.' }
+}
+
+async function canOpenDirectMessageConversation(userId, peerId, tenantId) {
+  if (await usersHaveDirectMessageHistory(userId, peerId, tenantId)) return true
+  if (await usersHaveDirectMessageRelationship(userId, peerId, tenantId)) return true
+
+  const permission = await directMessagePrivacyPermission(userId, peerId, tenantId)
+  return permission.allowed
 }
 
 function userSocketRoom(userId) {
@@ -1427,6 +1493,7 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
         peer.name AS peer_name,
         peer.avatar_url AS peer_avatar_url,
         peer.gender AS peer_gender,
+        peer.message_privacy AS peer_message_privacy,
         dm.id AS last_message_id,
         dm.sender_id,
         dm.recipient_id,
@@ -1453,15 +1520,6 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
       ) latest
       INNER JOIN direct_messages dm ON dm.id = latest.last_message_id
       INNER JOIN users peer ON peer.id = latest.peer_id
-      WHERE EXISTS (
-        SELECT 1
-        FROM user_follows uf
-        WHERE uf.tenant_id = :tenantId
-        AND (
-          (uf.follower_id = :userId AND uf.followed_user_id = latest.peer_id)
-          OR (uf.follower_id = latest.peer_id AND uf.followed_user_id = :userId)
-        )
-      )
       ORDER BY dm.id DESC
       LIMIT 40
       `,
@@ -1474,6 +1532,8 @@ router.get('/direct-messages/threads', authMiddleware, async (req, res, next) =>
         peer_name: row.peer_name,
         peer_avatar_url: row.peer_avatar_url,
         peer_gender: row.peer_gender,
+        message_privacy: row.peer_message_privacy || 'everyone',
+        can_message: row.peer_message_privacy !== 'nobody',
         last_message: row,
       })),
     })
@@ -1493,8 +1553,10 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
         u.name AS peer_name,
         u.avatar_url AS peer_avatar_url,
         u.gender AS peer_gender,
+        u.message_privacy AS peer_message_privacy,
         contacts.following,
         contacts.follower,
+        contacts.has_conversation,
         dm.id AS last_message_id,
         dm.sender_id,
         dm.recipient_id,
@@ -1507,17 +1569,34 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
         SELECT
           contact_edges.peer_id,
           MAX(contact_edges.following) AS following,
-          MAX(contact_edges.follower) AS follower
+          MAX(contact_edges.follower) AS follower,
+          MAX(contact_edges.has_conversation) AS has_conversation
         FROM (
-          SELECT followed_user_id AS peer_id, 1 AS following, 0 AS follower
+          SELECT followed_user_id AS peer_id, 1 AS following, 0 AS follower, 0 AS has_conversation
           FROM user_follows
           WHERE tenant_id = :tenantId
           AND follower_id = :userId
           UNION ALL
-          SELECT follower_id AS peer_id, 0 AS following, 1 AS follower
+          SELECT follower_id AS peer_id, 0 AS following, 1 AS follower, 0 AS has_conversation
           FROM user_follows
           WHERE tenant_id = :tenantId
           AND followed_user_id = :userId
+          UNION ALL
+          SELECT
+            CASE WHEN sender_id = :userId THEN recipient_id ELSE sender_id END AS peer_id,
+            0 AS following,
+            0 AS follower,
+            1 AS has_conversation
+          FROM direct_messages
+          WHERE tenant_id = :tenantId
+          AND is_deleted = 0
+          AND (sender_id = :userId OR recipient_id = :userId)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM direct_message_hides hidden
+            WHERE hidden.message_id = direct_messages.id
+            AND hidden.user_id = :userId
+          )
         ) contact_edges
         GROUP BY contact_edges.peer_id
       ) contacts
@@ -1564,6 +1643,10 @@ router.get('/direct-messages/contacts', authMiddleware, async (req, res, next) =
         following: Boolean(Number(row.following || 0)),
         follower: Boolean(Number(row.follower || 0)),
         mutual: Boolean(Number(row.following || 0) && Number(row.follower || 0)),
+        has_conversation: Boolean(Number(row.has_conversation || 0)),
+        message_privacy: row.peer_message_privacy || 'everyone',
+        can_message: row.peer_message_privacy === 'everyone'
+          || (row.peer_message_privacy === 'followers' && Boolean(Number(row.following || 0))),
         last_message: row.last_message_id ? row : null,
       })),
     })
@@ -1773,8 +1856,8 @@ router.get('/direct-messages/:userId', authMiddleware, async (req, res, next) =>
 
     const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
-    const canMessagePeer = await usersHaveDirectMessageRelationship(req.user.id, peerId, req.user.tenant_id)
-    if (!canMessagePeer) return res.status(403).json({ message: 'Follow this user or accept their follow before starting a private chat.' })
+    const canOpenConversation = await canOpenDirectMessageConversation(req.user.id, peerId, req.user.tenant_id)
+    if (!canOpenConversation) return res.status(403).json({ message: 'This user is not accepting private messages from you.' })
 
     const messages = await query(
       `
@@ -1836,8 +1919,8 @@ router.post('/direct-messages/:userId', authMiddleware, async (req, res, next) =
 
     const peer = await findUserForDirectMessage(peerId, req.user.tenant_id)
     if (!peer) return res.status(404).json({ message: 'User not found.' })
-    const canMessagePeer = await usersHaveDirectMessageRelationship(req.user.id, peerId, req.user.tenant_id)
-    if (!canMessagePeer) return res.status(403).json({ message: 'Follow this user or accept their follow before sending a private message.' })
+    const messagePermission = await directMessagePrivacyPermission(req.user.id, peerId, req.user.tenant_id)
+    if (!messagePermission.allowed) return res.status(403).json({ message: messagePermission.reason })
 
     const result = await query(
       `
