@@ -9490,6 +9490,43 @@
     background: linear-gradient(180deg, #ffd95a, #f07f23) !important;
     color: #2b0600 !important;
   }
+
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-live-topbar,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-live-rail,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-web-room-chrome,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-room-summary,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-web-seat-grid,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-web-stage-guide-row,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-web-mic-line,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .live-rtc-status-card,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .rtc-health-strip,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .rtc-diagnostics-panel {
+    display: none !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-live-main {
+    width: 100% !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    grid-template-columns: minmax(0, 1fr) clamp(380px, 28vw, 430px) !important;
+    gap: 0 !important;
+    background: transparent !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-live-stage-panel,
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-rtc-stage {
+    height: 100vh !important;
+    min-height: 100vh !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-owner-shell .buzzcast-room-controls {
+    bottom: 34px !important;
+    left: 50% !important;
+    right: auto !important;
+    max-width: min(100% - 46px, 760px) !important;
+    transform: translateX(-50%) !important;
+  }
 }
 
 @media (min-width: 821px) {
