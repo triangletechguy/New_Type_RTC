@@ -4606,7 +4606,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomGuideText = room?.description?.trim()
     || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
   const joinerLayoutActive = audienceMode
-  const chatPresentation = 'default'
+  const chatPresentation = joinerLayoutActive ? 'joiner' : 'default'
   const liveShellClassName = `buzzcast-shell buzzcast-live-shell ${joinerLayoutActive ? 'buzzcast-live-joiner-shell' : 'buzzcast-live-owner-shell'}`
   const ownerRemoteTile = remoteTiles.find(({ mediaState }) => Number(mediaState?.userId || 0) === Number(roomOwnerId || 0))
     || remoteTiles.find(({ mediaState }) => String(mediaState?.stageRole || '').toLowerCase() === 'owner')
