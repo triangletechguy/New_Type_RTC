@@ -4057,7 +4057,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       if (currentlyJoined && next && !hasLiveLocalTrack('audio')) {
         setStatus('Requesting microphone permission...')
-        await attachNewLocalTrack('audio', { publish: false })
+        await attachNewLocalTrack('audio', { publish: true, enabled: true })
         applyLocalMediaState(next, cameraOn)
       }
 
@@ -4161,7 +4161,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     try {
       if (currentlyJoined && next && !hasLiveLocalCameraTrack()) {
         setStatus('Requesting camera permission...')
-        await attachNewLocalTrack('video', { publish: false })
+        await attachNewLocalTrack('video', { publish: true, enabled: true })
         attachedFreshTrack = true
         applyLocalMediaState(micOn, next)
       }

@@ -373,7 +373,7 @@ async function ensureRoomFollowSchema() {
 }
 
 function roomSupportsVideo(roomType) {
-  return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return validRoomTypes.has(roomType)
 }
 
 function isOneToOneRoom(roomType) {
@@ -628,18 +628,18 @@ function roomSelectSql(options = {}) {
           THEN 1
           ELSE 0
         END) AS active_speakers,
-        CONCAT('[', GROUP_CONCAT(
+        COALESCE(CONCAT('[', GROUP_CONCAT(
           CASE
             WHEN active_participants.id IS NULL THEN NULL
-            ELSE JSON_OBJECT(
+            ELSE CAST(JSON_OBJECT(
               'user_id', active_participants.user_id,
               'name', COALESCE(active_users.name, CONCAT('User #', active_participants.user_id)),
               'avatar_url', active_users.avatar_url
-            )
+            ) AS CHAR)
           END
           ORDER BY active_participants.updated_at DESC, active_participants.id DESC
           SEPARATOR ','
-        ), ']') AS active_participant_previews
+        ), ']'), '[]') AS active_participant_previews
       FROM rtc_sessions active_sessions
       LEFT JOIN rtc_session_participants active_participants
         ON active_participants.session_id = active_sessions.id

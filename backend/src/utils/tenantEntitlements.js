@@ -49,7 +49,17 @@ function parseJsonArray(value) {
 }
 
 function roomSupportsVideo(roomType) {
-  return ['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'].includes(roomType)
+  return [
+    'audio',
+    'youtube_audio',
+    'one_to_one_audio',
+    'video',
+    'one_to_one_video',
+    'group_audio',
+    'group_video',
+    'solo_live',
+    'pk_live',
+  ].includes(roomType)
 }
 
 function roomTypeFeature(roomType) {
