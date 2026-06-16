@@ -9499,10 +9499,19 @@
       linear-gradient(180deg, #171724 0%, #11111d 100%) !important;
   }
 
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-live-topbar,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-live-rail {
+    display: none !important;
+  }
+
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-live-main {
     grid-template-columns: minmax(0, 1fr) clamp(380px, 31vw, 460px) !important;
     gap: 10px !important;
-    padding: 10px 10px 10px 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    padding: 10px 10px 10px 10px !important;
     background: #171724 !important;
   }
 
@@ -9515,7 +9524,8 @@
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-rtc-stage {
-    min-height: calc(100vh - var(--topbar-height, 74px)) !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
     display: grid !important;
     place-items: center !important;
     padding: 22px !important;
@@ -9546,7 +9556,7 @@
     grid-template-rows: minmax(0, 1fr) !important;
     gap: 0 !important;
     align-self: stretch !important;
-    min-height: min(760px, calc(100vh - 118px)) !important;
+    min-height: calc(100vh - 64px) !important;
   }
 
   html body .buzzcast-joiner-owner-stage > header {
@@ -9599,7 +9609,7 @@
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel {
-    height: calc(100vh - var(--topbar-height, 74px) - 20px) !important;
+    height: calc(100vh - 20px) !important;
     min-height: 0 !important;
     display: grid !important;
     grid-template-rows: auto auto minmax(0, 1fr) auto auto !important;

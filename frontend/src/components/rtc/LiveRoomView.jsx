@@ -4513,6 +4513,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const activeRoomBans = Array.isArray(roomControls?.active_bans) ? roomControls.active_bans : []
   const ownerCanApproveStage = Boolean(roomControls?.can_approve_stage ?? roomControls?.capabilities?.can_approve_stage ?? roomControls?.role === 'owner')
   const currentUserId = Number(user?.id || 0)
+  const explicitRoomOwnerId = Number(room?.owner_id || 0)
+  const isCurrentUserRoomOwner = explicitRoomOwnerId > 0 && explicitRoomOwnerId === currentUserId
   const visibleStageRequests = stageRequests.filter((request) => Number(request.userId || 0) !== currentUserId)
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
@@ -4605,7 +4607,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     : t('Voice')
   const roomGuideText = room?.description?.trim()
     || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
-  const joinerLayoutActive = audienceMode
+  const joinerLayoutActive = audienceMode || Boolean(room && !isCurrentUserRoomOwner && !canPublishStageMedia)
   const chatPresentation = joinerLayoutActive ? 'joiner' : 'default'
   const liveShellClassName = `buzzcast-shell buzzcast-live-shell ${joinerLayoutActive ? 'buzzcast-live-joiner-shell' : 'buzzcast-live-owner-shell'}`
   const ownerRemoteTile = remoteTiles.find(({ mediaState }) => Number(mediaState?.userId || 0) === Number(roomOwnerId || 0))
