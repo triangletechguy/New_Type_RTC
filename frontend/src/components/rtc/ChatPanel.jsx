@@ -416,7 +416,23 @@ async function optimizePhotoFile(file) {
   }
 }
 
-export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStream = null, focusRequest = 0, externalMessage = null, inboxPeerRequest = null, followRefreshKey = 0, language = 'English', onMessagesChange }) {
+export function ChatPanel({
+  roomId,
+  signalingRoom,
+  socket,
+  user,
+  room,
+  localStream = null,
+  focusRequest = 0,
+  externalMessage = null,
+  inboxPeerRequest = null,
+  followRefreshKey = 0,
+  language = 'English',
+  presentation = 'default',
+  participantPreview = [],
+  guideText = '',
+  onMessagesChange,
+}) {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
@@ -473,6 +489,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const previousInboxMessageCountRef = useRef(0)
   const latestRoomMessageIdRef = useRef(0)
   const t = (key, replacements = {}) => translateApp(language, key, replacements)
+  const joinerPresentation = presentation === 'joiner'
 
   const realtimeConnected = Boolean(socket?.connected && signalingRoom)
   const typingNames = Object.values(typingUsers)
@@ -1548,6 +1565,10 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   }, [chatMode])
 
   useEffect(() => {
+    if (joinerPresentation && chatMode !== 'comments') setChatMode('comments')
+  }, [joinerPresentation, chatMode])
+
+  useEffect(() => {
     if (chatMode !== 'inbox' || !inboxTarget?.id) return undefined
 
     const interval = window.setInterval(() => {
@@ -1721,36 +1742,62 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
 
   return (
     <>
-    <aside className="chat-panel glass-card">
-      <div className="chat-panel-header">
-        <div>
-          <span className="eyebrow">{chatMode === 'inbox' ? t('Personal Inbox') : t('Room Comments')}</span>
-          <h3>{chatMode === 'inbox' ? (inboxTarget?.name || t('Inbox')) : t('Live Chat')}</h3>
-        </div>
-        <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
-          {chatMode === 'inbox' ? t('Private') : typingNames.length ? t('Typing') : realtimeConnected ? t('Realtime') : t('Saved')}
-        </span>
-      </div>
-      <div className="chat-mode-tabs" role="tablist" aria-label={t('Message section')}>
-        <button
-          type="button"
-          className={chatMode === 'comments' ? 'active' : ''}
-          onClick={showRoomComments}
-          role="tab"
-          aria-selected={chatMode === 'comments'}
-        >
-          {t('Room')}
-        </button>
-        <button
-          type="button"
-          className={chatMode === 'inbox' ? 'active' : ''}
-          onClick={showPersonalInbox}
-          role="tab"
-          aria-selected={chatMode === 'inbox'}
-        >
-          {t('Inbox')}
-        </button>
-      </div>
+    <aside className={joinerPresentation ? 'chat-panel glass-card joiner-chat-panel' : 'chat-panel glass-card'}>
+      {joinerPresentation ? (
+        <>
+          <div className="joiner-chat-roster" aria-label={t('Room people')}>
+            <div>
+              {participantPreview.slice(0, 5).map((participant, index) => (
+                <span key={participant.id || `${participant.name}-${index}`} className="image-avatar">
+                  <img
+                    src={participant.avatarUrl || avatarForUser({ id: participant.id, name: participant.name }, participant.id || index)}
+                    alt={participant.name || ''}
+                    loading="lazy"
+                  />
+                </span>
+              ))}
+            </div>
+            <button type="button" onClick={showRoomComments} aria-label={t('Room chat')}>
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+          <p className="joiner-chat-guide">
+            {guideText || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')}
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="chat-panel-header">
+            <div>
+              <span className="eyebrow">{chatMode === 'inbox' ? t('Personal Inbox') : t('Room Comments')}</span>
+              <h3>{chatMode === 'inbox' ? (inboxTarget?.name || t('Inbox')) : t('Live Chat')}</h3>
+            </div>
+            <span className={realtimeConnected ? 'chat-connection online' : 'chat-connection'}>
+              {chatMode === 'inbox' ? t('Private') : typingNames.length ? t('Typing') : realtimeConnected ? t('Realtime') : t('Saved')}
+            </span>
+          </div>
+          <div className="chat-mode-tabs" role="tablist" aria-label={t('Message section')}>
+            <button
+              type="button"
+              className={chatMode === 'comments' ? 'active' : ''}
+              onClick={showRoomComments}
+              role="tab"
+              aria-selected={chatMode === 'comments'}
+            >
+              {t('Room')}
+            </button>
+            <button
+              type="button"
+              className={chatMode === 'inbox' ? 'active' : ''}
+              onClick={showPersonalInbox}
+              role="tab"
+              aria-selected={chatMode === 'inbox'}
+            >
+              {t('Inbox')}
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="chat-mode-panel" hidden={chatMode !== 'comments'} data-chat-mode="comments">
       <div className="messages" ref={messagesRef} role="log" aria-label={t('Room chat messages')}>
@@ -1953,7 +2000,7 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
           onChange={(event) => updateText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           onBlur={stopTyping}
-          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? t('Add a caption') : t('Message this room')) : t('Chat is disabled')}
+          placeholder={chatEnabled ? ((photoDraft || audioDraft) ? t('Add a caption') : joinerPresentation ? t('Send a chat') : t('Message this room')) : t('Chat is disabled')}
           maxLength={1200}
           rows={2}
           disabled={!chatEnabled || sending || recording}

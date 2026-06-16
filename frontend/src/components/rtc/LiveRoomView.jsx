@@ -4605,10 +4605,53 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     : t('Voice')
   const roomGuideText = room?.description?.trim()
     || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
+  const joinerLayoutActive = audienceMode
+  const liveShellClassName = `buzzcast-shell buzzcast-live-shell ${joinerLayoutActive ? 'buzzcast-live-joiner-shell' : 'buzzcast-live-owner-shell'}`
+  const ownerRemoteTile = remoteTiles.find(({ mediaState }) => Number(mediaState?.userId || 0) === Number(roomOwnerId || 0))
+    || remoteTiles.find(({ mediaState }) => String(mediaState?.stageRole || '').toLowerCase() === 'owner')
+    || remoteTiles.find(({ mediaState }) => mediaState?.canPublish !== false)
+    || remoteTiles[0]
+    || null
+  const ownerVideoMediaState = ownerRemoteTile?.mediaState || {}
+  const ownerVideoRtcMode = ownerVideoMediaState.rtcMode || defaultRtcModeForRoom(room) || 'video'
+  const ownerVideoCameraOn = ownerVideoMediaState.screenShared === true
+    || ownerVideoMediaState.cameraOn === true
+    || (!ownerRemoteTile ? false : ownerVideoRtcMode !== 'audio' && ownerVideoMediaState.cameraOn !== false)
+  const joinerChatParticipantMap = new Map()
+  const addJoinerChatParticipant = (participant) => {
+    const id = String(participant.id || participant.name || joinerChatParticipantMap.size)
+    if (!participant.name && !participant.avatarUrl) return
+    if (!joinerChatParticipantMap.has(id)) joinerChatParticipantMap.set(id, participant)
+  }
+
+  addJoinerChatParticipant({
+    id: roomOwnerId || 'owner',
+    name: roomOwnerName,
+    avatarUrl: roomOwnerAvatar,
+  })
+  remoteTiles.forEach(({ socketId, mediaState }) => {
+    addJoinerChatParticipant({
+      id: mediaState?.userId || socketId,
+      name: mediaState?.userName || t('Remote User'),
+      avatarUrl: mediaState?.avatarUrl || avatarForUser({
+        id: mediaState?.userId,
+        name: mediaState?.userName || t('Remote User'),
+        gender: mediaState?.gender || '',
+      }, mediaState?.userId || socketId.length),
+    })
+  })
+  if (joined) {
+    addJoinerChatParticipant({
+      id: user?.id || 'me',
+      name: user?.name || t('You'),
+      avatarUrl: profileAvatar,
+    })
+  }
+  const joinerChatParticipants = Array.from(joinerChatParticipantMap.values())
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
-    <div className="buzzcast-shell buzzcast-live-shell">
+    <div className={liveShellClassName}>
       <header className="buzzcast-topbar buzzcast-live-topbar">
         <button type="button" className="buzzcast-logo buzzcast-live-logo" onClick={handleBack} aria-label={t('Back to rooms')}>
           <div className="buzzcast-logo-mark image-mark">
@@ -4697,6 +4740,36 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </button>
               </div>
             </section>
+
+            {joinerLayoutActive ? (
+              <section className="buzzcast-joiner-owner-stage" aria-label={t('Owner live video')}>
+                <header>
+                  <span className="image-avatar">
+                    <img src={roomOwnerAvatar} alt="" loading="lazy" />
+                  </span>
+                  <div>
+                    <strong>{roomOwnerName}</strong>
+                    <small>{ownerRemoteTile ? t('Owner live video') : t('Waiting for owner video')}</small>
+                  </div>
+                </header>
+                <div className="buzzcast-joiner-owner-video-frame">
+                  <VideoTile
+                    stream={ownerRemoteTile?.stream || null}
+                    label={ownerRemoteTile?.label || roomOwnerName}
+                    userId={ownerVideoMediaState.userId || roomOwnerId}
+                    gender={ownerVideoMediaState.gender || ''}
+                    avatarUrl={ownerVideoMediaState.avatarUrl || roomOwnerAvatar}
+                    badge={ownerVideoMediaState.screenShared ? 'screen' : 'owner'}
+                    micOn={ownerVideoMediaState.micOn !== false}
+                    cameraOn={ownerVideoCameraOn}
+                    rtcMode={ownerVideoRtcMode}
+                    connectionState={ownerRemoteTile?.peerState || (joined ? 'waiting' : 'idle')}
+                    showMediaState
+                    language={language}
+                  />
+                </div>
+              </section>
+            ) : null}
 
             <div className={roomSummaryClassName} aria-label={t('Room summary')}>
               <span className="buzzcast-room-summary-avatar image-avatar">
@@ -5295,6 +5368,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             inboxPeerRequest={inboxPeerRequest}
             followRefreshKey={followRefreshKey}
             language={language}
+            presentation={joinerLayoutActive ? 'joiner' : 'default'}
+            participantPreview={joinerChatParticipants}
+            guideText={roomGuideText}
             onMessagesChange={setChatMessages}
           />
         </aside>
