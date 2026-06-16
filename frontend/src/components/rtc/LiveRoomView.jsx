@@ -3384,8 +3384,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       setStatus('Entering room...')
 
       const selectedRtcMode = normalizeRtcMode(rtcMode, room)
-      const requestedMicIntent = Boolean(micOnRef.current)
-      const requestedCameraIntent = selectedRtcMode === 'video' && Boolean(cameraOnRef.current)
+      const requestedMicIntent = false
+      const requestedCameraIntent = false
       desiredMicOnRef.current = requestedMicIntent
       desiredCameraOnRef.current = requestedCameraIntent
       const rtcConfigPromise = getRtcConfig().catch((error) => {
@@ -5289,12 +5289,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
             <div className="buzzcast-room-controls">
               {!joined ? (
-                <button className="primary-button buzzcast-connect-button" onClick={joinRoom} disabled={joining}>
-                  {joining ? t('Entering...') : connectAttempted ? t('Re-enter') : t('Enter Room')}
+                <button className="primary-button buzzcast-connect-button" onClick={connectAttempted ? () => leaveRoom() : joinRoom} disabled={joining}>
+                  {joining ? t('Entering...') : connectAttempted ? t('Leave') : t('Enter Room')}
                 </button>
               ) : (
                 <>
-                  <button className="secondary-button buzzcast-connect-button" onClick={() => leaveRoom()}>
+                  <button className="primary-button buzzcast-connect-button" onClick={() => leaveRoom()}>
                     {t('Leave')}
                   </button>
                   {audienceMode ? (
