@@ -29,6 +29,51 @@ const aiSecurityRules = [
 ]
 let chatSchemaPromise = null
 
+function assertSchemaIdentifier(value, label) {
+  if (!/^[a-zA-Z0-9_]+$/.test(String(value || ''))) {
+    throw new Error(`Invalid ${label}.`)
+  }
+}
+
+async function columnExists(tableName, columnName) {
+  assertSchemaIdentifier(tableName, 'table name')
+  assertSchemaIdentifier(columnName, 'column name')
+
+  const rows = await query(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = :tableName
+    AND COLUMN_NAME = :columnName
+    LIMIT 1
+    `,
+    { tableName, columnName }
+  )
+
+  return rows.length > 0
+}
+
+async function ensureColumn(tableName, columnName, definition) {
+  if (await columnExists(tableName, columnName)) return
+
+  assertSchemaIdentifier(tableName, 'table name')
+  assertSchemaIdentifier(columnName, 'column name')
+  await query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+}
+
+async function ensureChatSchemaColumns() {
+  await ensureColumn('chat_message_reactions', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('room_gift_transactions', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('direct_messages', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('direct_messages', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn('direct_message_reactions', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('user_follows', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('user_follow_requests', 'created_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn('user_follow_requests', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn('user_follow_requests', 'responded_at', 'TIMESTAMP NULL DEFAULT NULL')
+}
+
 async function ensureChatSchema() {
   if (!chatSchemaPromise) {
     chatSchemaPromise = (async () => {
@@ -198,6 +243,8 @@ async function ensureChatSchema() {
         CONSTRAINT fk_follow_requests_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
       )
       `)
+
+      await ensureChatSchemaColumns()
     })().catch((error) => {
       chatSchemaPromise = null
       throw error

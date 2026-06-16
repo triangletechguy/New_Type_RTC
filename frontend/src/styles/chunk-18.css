@@ -9663,23 +9663,99 @@
     align-items: center !important;
   }
 
-  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-roster .image-avatar {
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar {
+    position: relative !important;
     width: 38px !important;
     height: 38px !important;
+    min-height: 38px !important;
     margin-right: -10px !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar:disabled {
+    cursor: default !important;
+    opacity: 1 !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar .image-avatar {
+    width: 38px !important;
+    height: 38px !important;
+    display: block !important;
     overflow: hidden !important;
     border: 2px solid #302f40 !important;
     border-radius: 50% !important;
     background: #4fd3e8 !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, .24) !important;
+    transition: transform .16s ease, box-shadow .16s ease !important;
   }
 
-  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-roster .image-avatar img {
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar:not(:disabled):hover .image-avatar,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar:not(:disabled):focus-visible .image-avatar {
+    transform: translateY(-2px) scale(1.05) !important;
+    box-shadow: 0 0 0 2px rgba(109, 242, 255, .5), 0 8px 18px rgba(0, 0, 0, .34) !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar .image-avatar img {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
   }
 
-  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-roster button {
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-popover {
+    position: absolute !important;
+    left: 50% !important;
+    top: calc(100% + 8px) !important;
+    z-index: 40 !important;
+    min-width: 126px !important;
+    max-width: 180px !important;
+    display: grid !important;
+    gap: 2px !important;
+    padding: 8px 10px !important;
+    border: 1px solid rgba(111, 238, 255, .28) !important;
+    border-radius: 8px !important;
+    background: rgba(25, 25, 38, .98) !important;
+    color: #fff !important;
+    box-shadow: 0 14px 28px rgba(0, 0, 0, .34) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translate(-50%, -4px) !important;
+    transition: opacity .14s ease, transform .14s ease !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-popover strong,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-popover small {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-align: center !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-popover strong {
+    color: #f8fbff !important;
+    font-size: 12px !important;
+    font-weight: 1000 !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-popover small {
+    color: #6df2ff !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar:hover .joiner-roster-popover,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-roster-avatar:focus-visible .joiner-roster-popover {
+    opacity: 1 !important;
+    transform: translate(-50%, 0) !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-roster > button {
     width: 34px !important;
     height: 34px !important;
     min-height: 34px !important;
@@ -9693,6 +9769,10 @@
     line-height: 1 !important;
   }
 
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-roster > button.is-open span {
+    transform: rotate(180deg) !important;
+  }
+
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-guide {
     margin: 0 0 4px !important;
     color: #6df2ff !important;
@@ -9702,12 +9782,87 @@
     text-shadow: 0 1px 0 rgba(0, 0, 0, .28) !important;
   }
 
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-guide.compact {
+    min-height: 28px !important;
+    display: flex !important;
+    align-items: center !important;
+    color: #f8fbff !important;
+    line-height: 1.25 !important;
+  }
+
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .chat-mode-panel:not([hidden]) {
     min-height: 0 !important;
     height: 100% !important;
     display: grid !important;
     grid-template-rows: minmax(0, 1fr) auto auto !important;
     overflow: hidden !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .chat-mode-panel[data-chat-mode="inbox"]:not([hidden]) {
+    grid-template-rows: minmax(0, 1fr) auto !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .personal-inbox {
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 10px !important;
+    overflow: hidden !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip {
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    padding: 0 0 6px !important;
+    scrollbar-width: none !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip button {
+    width: 62px !important;
+    min-width: 62px !important;
+    display: grid !important;
+    justify-items: center !important;
+    gap: 4px !important;
+    padding: 6px !important;
+    border: 1px solid rgba(109, 242, 255, .16) !important;
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, .045) !important;
+    color: #f8fbff !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip button.active {
+    border-color: rgba(109, 242, 255, .48) !important;
+    background: rgba(109, 242, 255, .12) !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip .image-avatar,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip .image-avatar img {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 50% !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip b,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip small {
+    width: 100% !important;
+    overflow: hidden !important;
+    text-align: center !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip b {
+    font-size: 10px !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .inbox-thread-strip small {
+    color: rgba(248, 251, 255, .58) !important;
+    font-size: 9px !important;
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .messages {
@@ -9800,7 +9955,8 @@
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .joiner-chat-panel .chat-form {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 34px !important;
+    width: 100% !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 7px !important;
     align-items: center !important;
     padding: 8px 0 0 !important;

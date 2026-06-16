@@ -4628,8 +4628,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     id: roomOwnerId || 'owner',
     name: roomOwnerName,
     avatarUrl: roomOwnerAvatar,
+    gender: room?.owner_gender || '',
+    followStatus: followStatusForPeer(roomOwnerId),
+    isSelf: Number(roomOwnerId || 0) === Number(user?.id || 0),
   })
   remoteTiles.forEach(({ socketId, mediaState }) => {
+    const peerId = Number(mediaState?.userId || 0)
     addJoinerChatParticipant({
       id: mediaState?.userId || socketId,
       name: mediaState?.userName || t('Remote User'),
@@ -4638,6 +4642,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         name: mediaState?.userName || t('Remote User'),
         gender: mediaState?.gender || '',
       }, mediaState?.userId || socketId.length),
+      gender: mediaState?.gender || '',
+      followStatus: followStatusForPeer(peerId),
+      isSelf: peerId > 0 && peerId === Number(user?.id || 0),
     })
   })
   if (joined) {
@@ -4645,6 +4652,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       id: user?.id || 'me',
       name: user?.name || t('You'),
       avatarUrl: profileAvatar,
+      gender: user?.gender || '',
+      followStatus: '',
+      isSelf: true,
     })
   }
   const joinerChatParticipants = Array.from(joinerChatParticipantMap.values())
@@ -5371,6 +5381,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             presentation={joinerLayoutActive ? 'joiner' : 'default'}
             participantPreview={joinerChatParticipants}
             guideText={roomGuideText}
+            onParticipantAction={handlePeerFollowAction}
             onMessagesChange={setChatMessages}
           />
         </aside>

@@ -431,6 +431,7 @@ export function ChatPanel({
   presentation = 'default',
   participantPreview = [],
   guideText = '',
+  onParticipantAction,
   onMessagesChange,
 }) {
   const [messages, setMessages] = useState([])
@@ -1299,13 +1300,13 @@ export function ChatPanel({
   async function loadInboxThreads({ quiet = false } = {}) {
     try {
       if (!quiet) setLoadingInbox(true)
-      setStatus('')
+      if (!quiet) setStatus('')
       const data = await apiRequest('/direct-messages/contacts')
       const contacts = data.contacts || data.threads || []
       setInboxThreads(contacts)
       setFollowedContactIds(contacts.map((contact) => Number(contact.peer_id)).filter(Boolean))
     } catch (error) {
-      setStatus(`Inbox failed: ${error.message}`)
+      if (!quiet) setStatus(`Inbox failed: ${error.message}`)
     } finally {
       if (!quiet) setLoadingInbox(false)
     }
@@ -1391,6 +1392,31 @@ export function ChatPanel({
 
     setChatMode('inbox')
     if (!recording) clearComposerDrafts()
+  }
+
+  function participantActionLabel(participant) {
+    const status = String(participant?.followStatus || '')
+    if (participant?.isSelf) return t('You')
+    if (status === 'following') return t('Message')
+    if (status === 'requested') return t('Requested')
+    if (status === 'incoming') return t('Respond')
+    if (status === 'loading') return t('...')
+    return t('Follow')
+  }
+
+  function participantActionDisabled(participant) {
+    const status = String(participant?.followStatus || '')
+    return participant?.isSelf || status === 'requested' || status === 'loading' || !Number(participant?.id || 0)
+  }
+
+  function handleParticipantAction(participant) {
+    if (participantActionDisabled(participant) || typeof onParticipantAction !== 'function') return
+    onParticipantAction({
+      id: Number(participant.id),
+      name: participant.name,
+      avatar_url: participant.avatarUrl || participant.avatar_url || '',
+      gender: participant.gender || '',
+    })
   }
 
   async function sendInboxMessage(event) {
@@ -1565,8 +1591,8 @@ export function ChatPanel({
   }, [chatMode])
 
   useEffect(() => {
-    if (joinerPresentation && chatMode !== 'comments') setChatMode('comments')
-  }, [joinerPresentation, chatMode])
+    if (joinerPresentation) setChatMode('comments')
+  }, [joinerPresentation])
 
   useEffect(() => {
     if (chatMode !== 'inbox' || !inboxTarget?.id) return undefined
@@ -1748,22 +1774,47 @@ export function ChatPanel({
           <div className="joiner-chat-roster" aria-label={t('Room people')}>
             <div>
               {participantPreview.slice(0, 5).map((participant, index) => (
-                <span key={participant.id || `${participant.name}-${index}`} className="image-avatar">
-                  <img
-                    src={participant.avatarUrl || avatarForUser({ id: participant.id, name: participant.name }, participant.id || index)}
-                    alt={participant.name || ''}
-                    loading="lazy"
-                  />
-                </span>
+                <button
+                  key={participant.id || `${participant.name}-${index}`}
+                  type="button"
+                  className="joiner-roster-avatar"
+                  onClick={() => handleParticipantAction(participant)}
+                  disabled={participantActionDisabled(participant)}
+                  aria-label={`${participant.name || t('User')} - ${participantActionLabel(participant)}`}
+                  title={`${participant.name || t('User')} - ${participantActionLabel(participant)}`}
+                >
+                  <span className="image-avatar">
+                    <img
+                      src={participant.avatarUrl || avatarForUser({ id: participant.id, name: participant.name }, participant.id || index)}
+                      alt=""
+                      loading="lazy"
+                    />
+                  </span>
+                  <span className="joiner-roster-popover" aria-hidden="true">
+                    <strong>{participant.name || t('User')}</strong>
+                    <small>{participantActionLabel(participant)}</small>
+                  </span>
+                </button>
               ))}
             </div>
-            <button type="button" onClick={showRoomComments} aria-label={t('Room chat')}>
+            <button
+              type="button"
+              className={chatMode === 'inbox' ? 'is-open' : ''}
+              onClick={chatMode === 'inbox' ? showRoomComments : showPersonalInbox}
+              aria-label={chatMode === 'inbox' ? t('Room chat') : t('Inbox')}
+            >
               <span aria-hidden="true">›</span>
             </button>
           </div>
-          <p className="joiner-chat-guide">
-            {guideText || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')}
-          </p>
+          {chatMode === 'comments' ? (
+            <p className="joiner-chat-guide">
+              {guideText || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')}
+            </p>
+          ) : (
+            <p className="joiner-chat-guide compact">
+              {inboxTarget?.name ? t('Message {name}', { name: inboxTarget.name }) : t('Personal Inbox')}
+            </p>
+          )}
         </>
       ) : (
         <>
