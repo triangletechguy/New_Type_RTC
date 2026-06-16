@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Voice icon</title>
+  <desc id="desc">Speaker with sound waves icon matching the white UI style.</desc>
+  <path d="M4.5 9.4H8.15L13 5.7V18.3L8.15 14.6H4.5V9.4Z" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16.15 9.15C16.95 9.95 17.4 10.98 17.4 12C17.4 13.02 16.95 14.05 16.15 14.85" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18.9 6.65C20.25 8.05 21 9.95 21 12C21 14.05 20.25 15.95 18.9 17.35" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

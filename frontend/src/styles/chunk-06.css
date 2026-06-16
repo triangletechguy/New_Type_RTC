@@ -553,6 +553,22 @@
   color: #f8fafc;
 }
 
+.media-control-button.locked {
+  border-color: rgba(251, 191, 36, .34);
+  background: rgba(120, 53, 15, .2);
+  color: #fde68a;
+  cursor: pointer;
+}
+
+.media-control-button.locked:not(:disabled):hover {
+  border-color: rgba(251, 191, 36, .52);
+  background: rgba(146, 64, 14, .28);
+}
+
+.media-control-button.locked:disabled {
+  cursor: not-allowed;
+}
+
 .media-control-button.muted::before {
   content: "";
   position: absolute;

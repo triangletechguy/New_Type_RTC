@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="icon-refresh" viewBox="0 0 24 24">
+    <path d="M20 6.25V10.75H15.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18.12 15.42C16.98 17.52 14.75 18.95 12.19 18.95C8.36 18.95 5.25 15.84 5.25 12.01C5.25 8.18 8.36 5.07 12.19 5.07C15.06 5.07 17.52 6.81 18.56 9.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-voice" viewBox="0 0 24 24">
+    <path d="M4.5 9.4H8.15L13 5.7V18.3L8.15 14.6H4.5V9.4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M16.15 9.15C16.95 9.95 17.4 10.98 17.4 12C17.4 13.02 16.95 14.05 16.15 14.85" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18.9 6.65C20.25 8.05 21 9.95 21 12C21 14.05 20.25 15.95 18.9 17.35" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-playlist" viewBox="0 0 24 24">
+    <path d="M4.5 6.5H14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M4.5 11.5H14.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M4.5 16.5H11.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M16.25 14.35V19.1L20.35 16.72L16.25 14.35Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-power" viewBox="0 0 24 24">
+    <path d="M12 3.75V12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M7.15 6.85C5.82 8.05 5 9.8 5 11.75C5 15.62 8.13 18.75 12 18.75C15.87 18.75 19 15.62 19 11.75C19 9.8 18.18 8.05 16.85 6.85" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-share" viewBox="0 0 24 24">
+    <path d="M10.5 5.5H6.75C5.78 5.5 5 6.28 5 7.25V17.25C5 18.22 5.78 19 6.75 19H16.75C17.72 19 18.5 18.22 18.5 17.25V13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M13.5 4.75H19.25V10.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M19 5L11.25 12.75" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="icon-more" viewBox="0 0 24 24">
+    <circle cx="6.5" cy="12" r="1.7" fill="currentColor"/>
+    <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
+    <circle cx="17.5" cy="12" r="1.7" fill="currentColor"/>
+  </symbol>
+</svg>

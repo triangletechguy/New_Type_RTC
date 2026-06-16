@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { actionAvatarAssets, avatarForUser, brandAssets, coverForRoomType } from '../../assets/rtc/catalog'
+import { actionAvatarAssets, avatarForUser, brandAssets, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
 import { apiRequest, getRtcConfig } from '../../services/api'
 import { createLocalMediaStream, requestLocalMediaTrack, stopMediaStream } from '../../services/media'
 import { NativeRtcClient } from '../../services/rtcClient'
@@ -23,10 +23,13 @@ import {
   supportsCameraFilterPipeline,
 } from '../../services/videoFilters'
 import {
+  defaultSeatsForRoomType,
   defaultRtcModeForRoom,
+  getRoomMeta,
   getInitialMediaMode,
   isLocalBrowserHost,
   isPasswordJoinError,
+  maxSeatsForRoomType,
   normalizeRtcMode,
   peerMediaFromSignal,
   peerMediaMapFromUsers,
@@ -192,6 +195,13 @@ function formatRtcLatency(value) {
 function formatRtcLoss(value) {
   const number = Number(value || 0)
   return `${number.toFixed(number > 0 && number < 10 ? 1 : 0)}%`
+}
+
+function formatCompactCount(value) {
+  const number = Number(value || 0)
+  if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
+  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`
+  return String(Math.max(0, Math.trunc(number)))
 }
 
 function hasInboundVideoTrack(stream) {
@@ -1973,30 +1983,33 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function publishMediaState(nextMicOn, nextCameraOn, options = {}) {
     const currentRtcMode = rtcModeRef.current
-    const allowedCameraOn = canSignalCameraEnabled(nextCameraOn, currentRtcMode)
-    if (!joinedRef.current || !activeRoomIdRef.current) return { micOn: nextMicOn, cameraOn: allowedCameraOn }
+    const canPublishCurrentStage = Boolean(stageAccessRef.current?.canPublish)
+    const allowedMicOn = canPublishCurrentStage && Boolean(nextMicOn)
+    const allowedCameraOn = canPublishCurrentStage && canSignalCameraEnabled(nextCameraOn, currentRtcMode)
+    if (!joinedRef.current || !activeRoomIdRef.current) return { micOn: allowedMicOn, cameraOn: allowedCameraOn }
 
     const includesScreenState = Object.prototype.hasOwnProperty.call(options, 'screenShared')
     const data = await apiRequest(`/rooms/${activeRoomIdRef.current}/media-state`, {
       method: 'POST',
       body: JSON.stringify({
-        mic_enabled: nextMicOn,
+        mic_enabled: allowedMicOn,
         camera_enabled: allowedCameraOn,
-        ...(includesScreenState ? { screen_shared: options.screenShared } : {}),
+        ...(includesScreenState ? { screen_shared: canPublishCurrentStage && Boolean(options.screenShared) } : {}),
       }),
     })
 
-    const serverMicOn = Boolean(data.rtc?.mic_enabled)
-    const serverCameraOn = canSignalCameraEnabled(data.rtc?.camera_enabled, currentRtcMode)
+    const nextStageAccess = data.rtc?.stage_access ? stageAccessFromRtc(data) : stageAccessRef.current
+    const serverCanPublish = Boolean(nextStageAccess?.canPublish)
+    const serverMicOn = serverCanPublish && Boolean(data.rtc?.mic_enabled)
+    const serverCameraOn = serverCanPublish && canSignalCameraEnabled(data.rtc?.camera_enabled, currentRtcMode)
     micOnRef.current = serverMicOn
     cameraOnRef.current = serverCameraOn
     applyLocalMediaState(serverMicOn, serverCameraOn)
     setMicOn(serverMicOn)
     setCameraOn(serverCameraOn)
-    if (data.rtc?.stage_access) {
-      const nextAccess = stageAccessFromRtc(data)
-      stageAccessRef.current = nextAccess
-      setStageAccess(nextAccess)
+    if (nextStageAccess) {
+      stageAccessRef.current = nextStageAccess
+      setStageAccess(nextStageAccess)
     }
 
     if (socketRef.current && signalingRoomRef.current) {
@@ -2007,7 +2020,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
         rtcMode: currentRtcMode,
         micEnabled: serverMicOn,
         cameraEnabled: serverCameraOn,
-        ...(includesScreenState ? { screenShared: Boolean(data.rtc?.screen_shared) } : {}),
+        ...(includesScreenState ? { screenShared: serverCanPublish && Boolean(data.rtc?.screen_shared) } : {}),
       }).catch((error) => setStatus(`Media state saved, signaling sync failed: ${error.message}`))
     }
 
@@ -2176,7 +2189,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     screenShared = screenShareTrackRef.current?.readyState === 'live',
   } = {}) {
     const normalizedMode = normalizeRtcMode(payloadRtcMode, room)
-    const allowedCameraEnabled = canSignalCameraEnabled(cameraEnabled, normalizedMode)
+    const canPublishCurrentStage = Boolean(stageAccessRef.current?.canPublish)
+    const allowedMicEnabled = canPublishCurrentStage && Boolean(micEnabled)
+    const allowedCameraEnabled = canPublishCurrentStage && canSignalCameraEnabled(cameraEnabled, normalizedMode)
 
     return {
       roomId: payloadRoomId,
@@ -2186,11 +2201,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       userGender: user?.gender || '',
       userAvatarUrl: user?.avatar_url || '',
       stageRole: stageAccessRef.current?.role || 'audience',
-      canPublish: Boolean(stageAccessRef.current?.canPublish),
+      canPublish: canPublishCurrentStage,
       rtcMode: normalizedMode,
-      micEnabled: Boolean(micEnabled),
+      micEnabled: allowedMicEnabled,
       cameraEnabled: allowedCameraEnabled,
-      screenShared: Boolean(screenShared),
+      screenShared: canPublishCurrentStage && Boolean(screenShared),
     }
   }
 
@@ -2287,6 +2302,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     setActiveToolPanel(null)
     setChatFocusRequest((request) => request + 1)
     setStatus(room?.chat_enabled === false ? 'Chat is disabled for this room.' : 'Chat composer is ready')
+  }
+
+  async function refreshLiveRoomChrome() {
+    setStatus('Refreshing room...')
+    const jobs = [loadRoomControls({ quiet: true })]
+    if (joinedRef.current) jobs.push(refreshSignalingPeers(rtcRef.current, 'manual refresh'))
+    await Promise.allSettled(jobs)
   }
 
   async function loadRoomControls({ quiet = false } = {}) {
@@ -4433,16 +4455,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const stageRequestPending = stageRequestStatus === 'pending'
   const canCancelStageRequest = stageRequestPending && Number(ownStageRequest?.id || 0) > 0
   const localStageStream = localStream && (canPublishStageMedia || localAudioAvailable || localVideoAvailable) ? localStream : null
-  const micCanRetry = joined && !micOn && !localAudioAvailable
-  const cameraCanRetry = joined && rtcMode === 'video' && !cameraOn && !localVideoAvailable
-  const micButtonDisabled = !joined || joining || mediaUpdating.mic || !canPublishStageMedia
-  const cameraButtonDisabled = !joined || joining || mediaUpdating.camera || !canPublishStageMedia || rtcMode === 'audio' || screenSharing
+  const micCanRetry = joined && canPublishStageMedia && !micOn && !localAudioAvailable
+  const cameraCanRetry = joined && canPublishStageMedia && rtcMode === 'video' && !cameraOn && !localVideoAvailable
+  const micControlActive = joined && canPublishStageMedia && micOn
+  const cameraControlActive = joined && canPublishStageMedia && cameraOn
+  const audienceStageBlocked = audienceMode && (stageRequestPending || !stageRequestsEnabled)
+  const micButtonDisabled = !joined || joining || mediaUpdating.mic || stageRequestSending || audienceStageBlocked
+  const cameraButtonDisabled = !joined || joining || mediaUpdating.camera || stageRequestSending || audienceStageBlocked || rtcMode === 'audio' || screenSharing
   const micButtonTitle = micCanRetry
     ? t('Start microphone')
-    : audienceMode ? t('Owner approval required') : mediaUpdating.mic ? t('Saving microphone') : micOn ? t('Mute microphone') : t('Unmute microphone')
+    : audienceMode ? (stageRequestPending ? t('Waiting for room owner approval') : !stageRequestsEnabled ? t('Stage requests are closed') : t('Request mic access')) : mediaUpdating.mic ? t('Saving microphone') : micOn ? t('Mute microphone') : t('Unmute microphone')
   const cameraButtonTitle = cameraCanRetry
     ? t('Start camera')
-    : audienceMode ? t('Owner approval required') : screenSharing ? t('Stop screen share before changing camera') : mediaUpdating.camera ? t('Saving camera') : cameraOn ? t('Turn camera off') : t('Turn camera on')
+    : audienceMode ? (stageRequestPending ? t('Waiting for room owner approval') : !stageRequestsEnabled ? t('Stage requests are closed') : t('Request camera access')) : screenSharing ? t('Stop screen share before changing camera') : mediaUpdating.camera ? t('Saving camera') : cameraOn ? t('Turn camera off') : t('Turn camera on')
   const guardFindings = chatMessages
     .filter((message) => message.message_type === 'text')
     .map((message) => {
@@ -4453,6 +4478,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     .slice(-5)
   const aiGuardActive = isAiGuardEnabled(room)
   const roomTitle = room?.name || `Room #${roomId}`
+  const roomMeta = getRoomMeta(room?.room_type)
   const roomOwnerId = room?.owner_id || user?.id || 0
   const roomOwnerName = room?.owner_name || user?.name || roomTitle
   const roomOwnerAvatar = avatarForUser({
@@ -4497,6 +4523,13 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     manage: t('Host Controls'),
     screen: t('Screen share'),
   }[activeToolPanel] || t('Room menu')
+  const stageStateLabel = !joined
+    ? (joining ? t('Entering room') : t('Audience-first entry'))
+    : audienceMode
+      ? stageRequestPending ? t('Stage request pending') : t('Audience - watching and listening')
+      : rtcMode === 'video'
+        ? `${micOn ? t('Mic on') : t('Mic off')} - ${cameraOn ? t('Camera on') : t('Camera off')}`
+        : micOn ? t('Mic on') : t('Mic off')
   const visibleTileCount = (localStageStream || remoteTiles.length ? 1 : 0) + remoteTiles.length
   const hasVisibleStageTiles = visibleTileCount > 0
   const stageTileHeight = stageTileHeightForFrame(stageFrameSize, visibleTileCount)
@@ -4508,6 +4541,70 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   } : undefined
   const stageStreamsClassName = `buzzcast-live-stage-streams layout-grid ${stageTileCountClass(visibleTileCount)}${stageFrameSize ? ' is-resized' : ''}${hasVisibleStageTiles ? '' : ' is-empty'}`
   const roomSummaryClassName = hasVisibleStageTiles ? 'buzzcast-room-summary' : 'buzzcast-room-summary is-stage-empty'
+  const configuredSeatCount = Number(room?.max_mic_count ?? room?.maxMicCount ?? 0)
+  const defaultSeatCount = defaultSeatsForRoomType(room?.room_type)
+  const liveStageSeatCount = Math.trunc(clampNumber(
+    Number.isFinite(configuredSeatCount) && configuredSeatCount > 0 ? configuredSeatCount : defaultSeatCount,
+    Math.min(4, maxSeatsForRoomType(room?.room_type)),
+    Math.min(8, maxSeatsForRoomType(room?.room_type))
+  ))
+  const roomMemberCount = Math.max(
+    remotePeerCount + (joined ? 1 : 0),
+    Number(room?.active_participants || room?.activeParticipants || room?.participant_count || room?.participantCount || 0),
+    1
+  )
+  const stageSeatOccupants = [
+    ...(joined && canPublishStageMedia ? [{
+      id: `local-${user?.id || 'user'}`,
+      name: user?.name || t('You'),
+      avatarUrl: user?.avatar_url || '',
+      muted: !micOn,
+    }] : []),
+    ...remoteTiles
+      .filter(({ mediaState }) => mediaState?.canPublish !== false)
+      .map(({ socketId, mediaState }) => ({
+        id: socketId,
+        name: mediaState.userName || t('Remote User'),
+        avatarUrl: mediaState.avatarUrl || '',
+        muted: mediaState.micOn === false,
+      })),
+  ]
+
+  if (!stageSeatOccupants.length) {
+    stageSeatOccupants.push({
+      id: `host-${roomOwnerId || roomId}`,
+      name: roomOwnerName,
+      avatarUrl: roomOwnerAvatar,
+      muted: false,
+    })
+  }
+
+  const liveStageSeats = Array.from({ length: liveStageSeatCount }, (_, index) => ({
+    number: index + 1,
+    occupant: stageSeatOccupants[index] || null,
+  }))
+  const stagePrimaryAction = !joined
+    ? joinRoom
+    : audienceMode
+      ? canCancelStageRequest ? cancelStageJoinRequest : stageRequestPending ? null : stageRequestsEnabled ? requestStageJoin : null
+      : toggleMic
+  const stagePrimaryDisabled = joining || stageRequestSending || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
+  const stagePrimaryLabel = !joined
+    ? t('Come on mic and chat together~')
+    : audienceMode
+      ? stageRequestPending ? (canCancelStageRequest ? t('Cancel stage request') : t('Waiting for owner approval')) : stageRequestsEnabled ? t('Request mic access') : t('Stage closed')
+      : micOn ? t('Mic is live') : t('Come on mic and chat together~')
+  const voiceAction = !joined
+    ? joinRoom
+    : audienceMode
+      ? canCancelStageRequest ? cancelStageJoinRequest : stageRequestPending ? null : stageRequestsEnabled ? requestStageJoin : null
+      : () => toggleToolPanel('audio')
+  const voiceActionDisabled = joining || stageRequestSending || !voiceAction || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
+  const voiceActionLabel = audienceMode
+    ? stageRequestPending ? (canCancelStageRequest ? t('Cancel') : t('Waiting')) : stageRequestsEnabled ? t('Request') : t('Closed')
+    : t('Voice')
+  const roomGuideText = room?.description?.trim()
+    || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
   latestRtcQualityRef.current = buildRtcQualityPayload({ rtcHealth, remotePeerCount, peerStates, peerStats })
 
   return (
@@ -4561,6 +4658,46 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               <strong>{joinEffect.name} joined</strong>
             </div>
           )}
+            <section className="buzzcast-web-room-chrome" aria-label={t('Live room overview')}>
+              <header className="buzzcast-web-live-head">
+                <span className="buzzcast-web-room-avatar image-avatar">
+                  <img src={roomOwnerAvatar} alt="" loading="lazy" />
+                </span>
+                <span className="buzzcast-web-room-title">
+                  <strong title={roomTitle}>{roomTitle}</strong>
+                  <small>ID:{room?.id || roomId} - {formatCompactCount(roomMemberCount)}</small>
+                </span>
+                <span className={joined ? 'buzzcast-web-room-live is-live' : 'buzzcast-web-room-live'}>
+                  {joined ? t('LIVE') : joining ? t('ENTERING') : t('READY')}
+                </span>
+              </header>
+
+              <div className="buzzcast-web-room-badges" aria-label={t('Room labels')}>
+                <span>{roomMeta.short}</span>
+                <span>{roomOwnerName}</span>
+                <span className={audienceMode ? 'buzzcast-web-stage-state audience' : 'buzzcast-web-stage-state'}>{stageStateLabel}</span>
+              </div>
+
+              <div className="buzzcast-web-live-actions" aria-label={t('Room actions')}>
+                <button type="button" className="room-action-refresh" onClick={refreshLiveRoomChrome} disabled={controlsLoading}>
+                  <span className="buzzcast-web-action-icon refresh" aria-hidden="true"></span>
+                  <span>{t('Refresh')}</span>
+                </button>
+                <button type="button" className="room-action-voice" onClick={voiceAction || undefined} disabled={voiceActionDisabled}>
+                  <span className="buzzcast-web-action-icon voice" aria-hidden="true"></span>
+                  <span>{voiceActionLabel}</span>
+                </button>
+                <button type="button" className="room-action-chat" onClick={openChatTool}>
+                  <span className="buzzcast-web-action-icon chat" aria-hidden="true"></span>
+                  <span>{t('Chat')}</span>
+                </button>
+                <button type="button" className="room-action-leave" onClick={joined ? () => leaveRoom() : handleBack}>
+                  <span className="buzzcast-web-action-icon power" aria-hidden="true"></span>
+                  <span>{joined ? t('Leave') : t('Back')}</span>
+                </button>
+              </div>
+            </section>
+
             <div className={roomSummaryClassName} aria-label={t('Room summary')}>
               <span className="buzzcast-room-summary-avatar image-avatar">
                 <img src={roomOwnerAvatar} alt="" loading="lazy" />
@@ -4647,6 +4784,43 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </>
               ) : null}
             </div>
+
+            <div className="buzzcast-web-seat-grid" aria-label={t('Mic seats')}>
+              {liveStageSeats.map(({ number, occupant }) => (
+                <button
+                  key={number}
+                  type="button"
+                  className={occupant ? (occupant.muted ? 'occupied muted' : 'occupied') : 'locked'}
+                  onClick={stagePrimaryAction || undefined}
+                  disabled={stagePrimaryDisabled || !stagePrimaryAction}
+                  aria-label={occupant ? `${occupant.name} ${t('mic seat')} ${number}` : `${t('Locked mic seat')} ${number}`}
+                >
+                  <span>
+                    <img
+                      className={occupant ? 'buzzcast-seat-mic-icon' : 'buzzcast-seat-lock-art'}
+                      src={occupant ? liveRoomAssets.seatMic : liveRoomAssets.seatLock}
+                      alt=""
+                      loading="lazy"
+                    />
+                    <small>{number}</small>
+                  </span>
+                  <b>{occupant?.name || t('Locked')}</b>
+                </button>
+              ))}
+            </div>
+
+            <div className="buzzcast-web-stage-guide-row">
+              <p>{roomGuideText}</p>
+              <button type="button" onClick={() => toggleToolPanel('manage')} aria-label={t('Room event')}>
+                <img src={roomAssets.stageMoods} alt="" loading="lazy" />
+                <span aria-hidden="true"><i></i><i></i><i></i></span>
+              </button>
+            </div>
+
+            <button type="button" className="buzzcast-web-mic-line" onClick={stagePrimaryAction || undefined} disabled={stagePrimaryDisabled || !stagePrimaryAction}>
+              <span>{stagePrimaryLabel}</span>
+              <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
+            </button>
 
             {showPasswordRecovery && (
               <div className="buzzcast-password-popover">
@@ -5047,21 +5221,21 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                 </>
               )}
               <button
-                className={`media-control-button icon-only media-toggle-mic ${micOn ? 'active' : 'muted'}${mediaUpdating.mic ? ' syncing' : ''}`}
+                className={`media-control-button icon-only media-toggle-mic ${micControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.mic ? ' syncing' : ''}`}
                 onClick={toggleMic}
                 disabled={micButtonDisabled}
                 aria-label={micButtonTitle}
-                aria-pressed={micOn}
+                aria-pressed={micControlActive}
                 title={micButtonTitle}
               >
                 <span className="control-glyph mic"></span>
               </button>
               <button
-                className={`media-control-button icon-only media-toggle-camera ${cameraOn ? 'active' : 'muted'}${mediaUpdating.camera ? ' syncing' : ''}`}
+                className={`media-control-button icon-only media-toggle-camera ${cameraControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.camera ? ' syncing' : ''}`}
                 onClick={toggleCamera}
                 disabled={cameraButtonDisabled}
                 aria-label={cameraButtonTitle}
-                aria-pressed={cameraOn}
+                aria-pressed={cameraControlActive}
                 title={cameraButtonTitle}
               >
                 <span className="control-glyph camera"></span>

@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import adminAvatar from '../../assets/admin_avatar.jpg'
+import imageUploadComposerIcon from '../../assets/image_upload.svg'
+import messageComposerIcon from '../../assets/message.svg'
+import seatSvg from '../../assets/seat_svg.png'
+import sendComposerAvatar from '../../assets/send_avatar.svg'
+import speakerComposerIcon from '../../assets/speaker.svg'
 import { actionAvatarAssets, assetImage2Assets, avatarForIndex, avatarForUser, brandAssets, coverForDemoTone, coverForRoomType, liveRoomAssets, roomAssets } from '../../assets/rtc/catalog'
+import we4MoreIcon from '../../assets/we4humanity_svg_icons/more.svg'
+import we4PlaylistIcon from '../../assets/we4humanity_svg_icons/playlist.svg'
+import we4PowerIcon from '../../assets/we4humanity_svg_icons/power.svg'
+import we4RefreshIcon from '../../assets/we4humanity_svg_icons/refresh.svg'
+import we4ShareIcon from '../../assets/we4humanity_svg_icons/share.svg'
+import we4VoiceIcon from '../../assets/we4humanity_svg_icons/voice.svg'
 import { ProfilePanel } from '../profile/ProfilePanel'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest, saveUser, updateAccountSecurity } from '../../services/api'
@@ -230,6 +242,40 @@ function directMessagePreview(message, currentUser) {
   return compactText(`${prefix}${normalized.body || 'Message'}`)
 }
 
+function formatMobileChatDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function mobileRowsFromDirectMessages(messages) {
+  const rows = []
+  let lastDate = ''
+
+  messages.forEach((message) => {
+    const label = formatMobileChatDate(message.createdAt || message.created_at)
+    if (label && label !== lastDate) {
+      rows.push({ id: `date-${message.id || label}`, type: 'date', label })
+      lastDate = label
+    }
+
+    rows.push({
+      id: message.id || `message-${rows.length}`,
+      body: message.body || directMessageBody(message),
+      mine: Boolean(message.mine),
+      messageType: message.message_type || message.messageType || 'text',
+      mediaUrl: message.media_url || '',
+    })
+  })
+
+  return rows
+}
+
 function contactFromDirectMessage(message, peer, currentUser) {
   const peerId = Number(peer?.id || directMessagePeerId(message, currentUser) || 0)
   if (!peerId) return null
@@ -351,12 +397,15 @@ function cardCover(card, fallback = 0) {
 function roomOwnerAvatar(room, fallbackIndex = 0) {
   const ownerId = room?.owner_id || room?.ownerId || 0
   const ownerName = room?.owner_name || room?.ownerName || room?.name || 'Room host'
+  const ownerAvatarUrl = room?.owner_avatar_url || room?.ownerAvatarUrl || ''
+  if (!ownerAvatarUrl) return adminAvatar
+
   return avatarForUser({
     id: ownerId,
     user_id: ownerId,
     name: ownerName,
     full_name: ownerName,
-    avatar_url: room?.owner_avatar_url || room?.ownerAvatarUrl || '',
+    avatar_url: ownerAvatarUrl,
   }, ownerId || room?.id || fallbackIndex)
 }
 
@@ -419,6 +468,7 @@ function roomToFeedCard(room, index) {
     createdAt: room.created_at || room.updated_at || '',
     roomType: room.room_type,
     privacy: room.privacy_type,
+    max_mic_count: room.max_mic_count,
     tags,
     avatarIndex: Number(room.id) || index,
     avatarUrl: roomOwnerAvatar(room, index),
@@ -679,6 +729,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [showMobileRoomLock, setShowMobileRoomLock] = useState(false)
   const [showMobileRoomSettings, setShowMobileRoomSettings] = useState(false)
   const [showMobileMembers, setShowMobileMembers] = useState(false)
+  const [showMobileMessageInbox, setShowMobileMessageInbox] = useState(false)
+  const [mobileActiveMessageChat, setMobileActiveMessageChat] = useState(null)
+  const [mobileLocalChatMessages, setMobileLocalChatMessages] = useState({})
   const [showRankings, setShowRankings] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showDownloadQr, setShowDownloadQr] = useState(false)
@@ -730,6 +783,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [dmAudioDraft, setDmAudioDraft] = useState(null)
   const [dmRecording, setDmRecording] = useState(false)
   const [dmRecordingMs, setDmRecordingMs] = useState(0)
+  const [liveVoiceRecording, setLiveVoiceRecording] = useState(false)
+  const [liveVoiceRecordingMs, setLiveVoiceRecordingMs] = useState(0)
   const [deletingDmMessageIds, setDeletingDmMessageIds] = useState({})
   const [dmDeleteTarget, setDmDeleteTarget] = useState(null)
   const [dmDeleteForEveryone, setDmDeleteForEveryone] = useState(false)
@@ -760,12 +815,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const dmRecordingChunksRef = useRef([])
   const dmRecordingStartedAtRef = useRef(0)
   const dmRecordingTimerRef = useRef(null)
+  const liveVoiceRecorderRef = useRef(null)
+  const liveVoiceRecordingStreamRef = useRef(null)
+  const liveVoiceRecordingChunksRef = useRef([])
+  const liveVoiceRecordingStartedAtRef = useRef(0)
+  const liveVoiceRecordingTimerRef = useRef(null)
+  const liveVoiceRecordingTargetRef = useRef(null)
+  const livePhotoInputRef = useRef(null)
   const roomListRequestRef = useRef(0)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
   const profileInitials = initialsFromName(displayName)
   const profileAvatar = avatarForUser(user, displayId)
+  const ownerAvatarImage = user?.avatar_url || user?.avatarUrl ? profileAvatar : adminAvatar
   const backAvatar = actionAvatarAssets.back
   const rankingAvatar = actionAvatarAssets.ranking
   const showAdminDashboard = canUseAdminDashboard(user) === true
@@ -787,10 +850,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return {
         ...card,
         host: room.owner_name || displayName,
-        avatarUrl: profileAvatar,
+        avatarUrl: ownerAvatarImage,
       }
     })
-  }, [createdRoom, displayName, profileAvatar, rooms, user?.id])
+  }, [createdRoom, displayName, ownerAvatarImage, rooms, user?.id])
   const ownRoomCard = useMemo(() => {
     const ownLiveRoom = roomCards.find((card) => Number(card.room?.owner_id) === Number(user?.id))
     if (ownLiveRoom) {
@@ -798,7 +861,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ...ownLiveRoom,
         title: ownLiveRoom.title || displayName,
         host: ownLiveRoom.host || displayName,
-        avatarUrl: profileAvatar,
+        avatarUrl: ownerAvatarImage,
         isOwnRoom: true,
       }
     }
@@ -808,7 +871,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         ...roomToFeedCard(createdRoom, 0),
         title: createdRoom.name || displayName,
         host: createdRoom.owner_name || displayName,
-        avatarUrl: profileAvatar,
+        avatarUrl: ownerAvatarImage,
         isOwnRoom: true,
       }
     }
@@ -824,11 +887,12 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       country: settingsDraft.region || user?.current_residence || 'United States',
       roomType: 'video',
       privacy: 'public',
+      max_mic_count: Number(roomForm.max_mic_count || defaultSeatsForRoomType('video')),
       avatarIndex: displayId,
-      avatarUrl: profileAvatar,
+      avatarUrl: ownerAvatarImage,
       isOwnRoom: true,
     }
-  }, [createdRoom, displayId, displayName, profileAvatar, roomCards, settingsDraft.region, user?.current_residence, user?.id])
+  }, [createdRoom, displayId, displayName, ownerAvatarImage, roomCards, roomForm.max_mic_count, settingsDraft.region, user?.current_residence, user?.id])
   const visibleCards = useMemo(() => {
     const cards = roomCards
       .filter((card) => cardMatchesRoomFilters(card, filter, privacyFilter))
@@ -1167,6 +1231,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowMobileRoomLock(false)
     setShowMobileRoomSettings(false)
     setShowMobileMembers(false)
+    setShowMobileMessageInbox(false)
+    setMobileActiveMessageChat(null)
+    if (liveVoiceRecording) cancelLiveVoiceRecording()
   }
 
   function openMobileRoomOrCreate(card) {
@@ -1197,6 +1264,16 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
     showMobileActionToast('Select a live room first.')
     return false
+  }
+
+  function handleMobileMediaJoin(card, rtcMode = 'audio') {
+    if (!card?.room) return handleMobileJoinCard(card, { rtcMode })
+    if (!requireAuth('Log in to join live rooms.', 'login')) return false
+
+    const normalizedMode = normalizeRtcMode(rtcMode, card.room)
+    showMobileActionToast(normalizedMode === 'video' ? 'Entering video room...' : 'Entering voice room...')
+
+    return handleMobileJoinCard(card, { rtcMode: normalizedMode })
   }
 
   async function shareMobileRoom(card) {
@@ -1347,6 +1424,32 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowMessages(true)
   }
 
+  function openMobileRoomMessageInbox() {
+    if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
+    setShowMobileRoomProfile(false)
+    setShowMobileRoomTools(false)
+    setShowMobileRoomLock(false)
+    setShowMobileMembers(false)
+    setMobileActiveMessageChat(null)
+    setShowMobileMessageInbox(true)
+    setDmStatus('')
+    loadDirectMessageContacts({ quiet: true })
+  }
+
+  function openMobileMessageChat(item) {
+    if (!item) return
+    setShowMobileMessageInbox(false)
+    setMobileActiveMessageChat(item)
+    setDmInput('')
+    setDmStatus('')
+
+    if (item.thread?.peerId) {
+      setActiveThread(item.thread.id)
+      setReadThreadIds((previous) => previous.includes(item.thread.id) ? previous : [...previous, item.thread.id])
+      loadDirectMessageConversation(item.thread, { quiet: true })
+    }
+  }
+
   async function loadDirectMessageContacts({ quiet = false } = {}) {
     if (!user) return
 
@@ -1452,16 +1555,20 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     return Boolean(message?.id && message.mine)
   }
 
-  function requestDmDelete(message) {
-    if (!message?.id || !activeThreadData?.peerId) return
+  function requestDmDeleteForThread(message, thread) {
+    if (!message?.id || !thread?.peerId || !thread?.id) return
 
     setDmDeleteTarget({
       message,
-      peerId: activeThreadData.peerId,
-      threadId: activeThreadData.id,
+      peerId: thread.peerId,
+      threadId: thread.id,
     })
     setDmDeleteForEveryone(canDeleteDmMessageForEveryone(message))
     setDmStatus('')
+  }
+
+  function requestDmDelete(message) {
+    requestDmDeleteForThread(message, activeThreadData)
   }
 
   function closeDmDeletePrompt() {
@@ -1681,8 +1788,148 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function toggleDmAudioRecording() {
-    if (dmRecording) cancelDmAudioRecording()
+    if (dmRecording) stopDmAudioRecording()
     else startDmAudioRecording()
+  }
+
+  function stopLiveVoiceRecordingTracks() {
+    liveVoiceRecordingStreamRef.current?.getTracks?.().forEach((track) => {
+      try { track.stop() } catch {}
+    })
+    liveVoiceRecordingStreamRef.current = null
+  }
+
+  function clearLiveVoiceRecordingTimer() {
+    if (typeof window !== 'undefined') window.clearInterval(liveVoiceRecordingTimerRef.current)
+    liveVoiceRecordingTimerRef.current = null
+  }
+
+  function appendLiveVoiceMessage(dataUrl, durationMs, target) {
+    const voiceMessage = {
+      id: `voice-${Date.now()}`,
+      body: `Voice message ${formatDmDuration(durationMs)}`,
+      mine: true,
+      author: displayName,
+      role: 'Member',
+      badges: ['Voice'],
+      avatarUrl: profileAvatar,
+      messageType: 'voice',
+      mediaUrl: dataUrl,
+      durationMs,
+    }
+
+    if (target?.type === 'mobile-chat' && target.chatKey) {
+      setMobileLocalChatMessages((previous) => ({
+        ...previous,
+        [target.chatKey]: [
+          ...(previous[target.chatKey] || []),
+          voiceMessage,
+        ],
+      }))
+      return
+    }
+
+    setLiveChatMessages((previous) => [...previous, voiceMessage].slice(-12))
+  }
+
+  async function startLiveVoiceRecording(target = { type: 'room' }) {
+    if (liveVoiceRecording) return
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      showMobileActionToast('Voice recording is not supported.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: dmRecordingAudioConstraints,
+        video: false,
+      })
+      const recorder = createDmVoiceRecorder(stream)
+      liveVoiceRecordingTargetRef.current = target
+      liveVoiceRecordingChunksRef.current = []
+      liveVoiceRecordingStreamRef.current = stream
+      liveVoiceRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) liveVoiceRecordingChunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = async () => {
+        const recordingTarget = liveVoiceRecordingTargetRef.current
+        clearLiveVoiceRecordingTimer()
+        setLiveVoiceRecording(false)
+        stopLiveVoiceRecordingTracks()
+
+        try {
+          const blob = new Blob(liveVoiceRecordingChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          const durationMs = Date.now() - liveVoiceRecordingStartedAtRef.current
+          liveVoiceRecordingChunksRef.current = []
+          if (!blob.size) {
+            showMobileActionToast('No voice audio was captured.')
+            return
+          }
+          if (blob.size > maxDmAudioBytes) {
+            showMobileActionToast('Voice message is too large.')
+            return
+          }
+
+          appendLiveVoiceMessage(await fileToDataUrl(blob), durationMs, recordingTarget)
+          showMobileActionToast('Voice message ready')
+        } catch (error) {
+          showMobileActionToast(error.message || 'Voice message could not be prepared.')
+        } finally {
+          liveVoiceRecorderRef.current = null
+          liveVoiceRecordingTargetRef.current = null
+        }
+      }
+
+      liveVoiceRecordingStartedAtRef.current = Date.now()
+      setLiveVoiceRecordingMs(0)
+      setLiveVoiceRecording(true)
+      recorder.start(250)
+      liveVoiceRecordingTimerRef.current = window.setInterval(() => {
+        setLiveVoiceRecordingMs(Date.now() - liveVoiceRecordingStartedAtRef.current)
+      }, 250)
+      showMobileActionToast('Recording voice...')
+    } catch (error) {
+      clearLiveVoiceRecordingTimer()
+      setLiveVoiceRecording(false)
+      stopLiveVoiceRecordingTracks()
+      showMobileActionToast(`Recording failed: ${error.message}`)
+    }
+  }
+
+  function stopLiveVoiceRecording() {
+    if (!liveVoiceRecording || !liveVoiceRecorderRef.current) return
+    try {
+      liveVoiceRecorderRef.current.stop()
+    } catch (error) {
+      showMobileActionToast(error.message)
+      clearLiveVoiceRecordingTimer()
+      setLiveVoiceRecording(false)
+      stopLiveVoiceRecordingTracks()
+    }
+  }
+
+  function cancelLiveVoiceRecording() {
+    const recorder = liveVoiceRecorderRef.current
+    if (recorder) {
+      try {
+        recorder.onstop = null
+        if (recorder.state !== 'inactive') recorder.stop()
+      } catch {}
+    }
+    liveVoiceRecorderRef.current = null
+    liveVoiceRecordingChunksRef.current = []
+    liveVoiceRecordingTargetRef.current = null
+    clearLiveVoiceRecordingTimer()
+    setLiveVoiceRecording(false)
+    stopLiveVoiceRecordingTracks()
+  }
+
+  function toggleLiveVoiceRecording(target = { type: 'room' }) {
+    if (liveVoiceRecording) stopLiveVoiceRecording()
+    else startLiveVoiceRecording(target)
   }
 
   function toggleMessagesDrawer() {
@@ -1948,9 +2195,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowSearchPanel(false)
 
     if (item.room) {
-      setActiveSection('live')
-      setPreviewCard(null)
-      joinRoomFromCard(item.room)
+      const searchCard = item.card || roomToFeedCard(item.room, cardAvatarIndex(item))
+      openCard(searchCard, { previewOnly: isMobileViewport() })
       return
     } else if (item.card) {
       openCard(item.card)
@@ -2332,10 +2578,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     })
   }
 
-  function openCard(card) {
+  function openCard(card, options = {}) {
     rememberRecentRoom(card)
 
-    if (card.room) {
+    if (card.room && !options.previewOnly && !isMobileViewport()) {
       joinRoomFromCard(card.room)
       return
     }
@@ -2357,10 +2603,35 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
     setLiveChatMessages((previous) => [
       ...previous,
-      { id: `live-${Date.now()}`, body, author: displayName, badges: ['Lv.37'] },
+      { id: `live-${Date.now()}`, body, author: displayName, role: 'Member', badges: ['Lv.37'], avatarUrl: profileAvatar },
     ].slice(-12))
     setDmInput('')
     showMobileActionToast('Comment sent')
+  }
+
+  function handleLiveRoomPhotoSelected(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      showMobileActionToast('Choose an image file.')
+      return
+    }
+
+    setLiveChatMessages((previous) => [
+      ...previous,
+      {
+        id: `live-image-${Date.now()}`,
+        body: file.name || 'Photo',
+        author: displayName,
+        role: 'Member',
+        badges: ['Image'],
+        avatarUrl: profileAvatar,
+        messageType: 'image',
+      },
+    ].slice(-12))
+    showMobileActionToast('Image added to chat')
   }
 
   async function sendDmMessage(event) {
@@ -2412,6 +2683,32 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     } finally {
       setSendingDm(false)
     }
+  }
+
+  async function sendMobileMessageChat(event) {
+    event.preventDefault()
+    if (!mobileActiveMessageChat) return
+
+    if (mobileActiveMessageChat.thread?.peerId) {
+      await sendDmMessage(event)
+      return
+    }
+
+    const body = dmInput.trim()
+    if (!body) return
+    const chatKey = mobileActiveMessageChat.rowKey || mobileActiveMessageChat.id
+    setMobileLocalChatMessages((previous) => ({
+      ...previous,
+      [chatKey]: [
+        ...(previous[chatKey] || []),
+        {
+          id: `local-${chatKey}-${Date.now()}`,
+          body,
+          mine: true,
+        },
+      ],
+    }))
+    setDmInput('')
   }
 
   function handleDmComposerKeyDown(event) {
@@ -3140,9 +3437,10 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const previewCover = cardCover(card)
     const previewAvatar = avatarForIndex(cardAvatarIndex(card))
     const roomAvatar = card.avatarUrl || previewAvatar
-    const commentAvatar = card.avatarUrl || avatarForIndex(cardAvatarIndex(card) + 2)
+    const profileIconAvatar = adminAvatar
     const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
     const isVideoRoom = roomAllowsCamera(card.room?.room_type || card.roomType)
+    const canManageMobileRoom = userOwnsRoom(card.room)
     const blockedCount = Math.max(0, Math.round(Number(card.viewers || 0) / 25))
     const summaryRoomId = card.room?.id || card.id
     const roomIdLabel = card.room?.id || 50741761
@@ -3154,7 +3452,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       name: card.host || 'Room owner',
       detail: ownerId ? `Host - ${card.country || 'Global'}` : 'Host',
       role: 'Owner',
-      avatarUrl: roomAvatar,
+      avatarUrl: profileIconAvatar,
       avatarIndex: cardAvatarIndex(card),
     }
     const participantMembers = previewParticipants
@@ -3182,9 +3480,70 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       ? 'Accept follow'
       : 'Follow host'
     const canProfileFollowHost = Boolean(roomOwnerIdFromCard(card) && profileFollowStatus !== 'self')
+    const seatRoomType = card.room?.room_type || card.roomType
+    const configuredSeatCount = Number(card.room?.max_mic_count ?? card.max_mic_count ?? card.maxMicCount ?? card.maxSeats)
+    const fallbackSeatCount = defaultSeatsForRoomType(seatRoomType)
+    const mobileSeatCount = Math.max(
+      1,
+      Math.min(
+        maxSeatsForRoomType(seatRoomType),
+        Number.isFinite(configuredSeatCount) && configuredSeatCount > 0 ? Math.trunc(configuredSeatCount) : fallbackSeatCount
+      )
+    )
+    const explicitSpeakerCount = Math.max(0, Number(card.speakerCount ?? card.room?.active_speakers ?? 0))
+    const occupiedSeatCount = Math.min(
+      mobileSeatCount,
+      Math.max(
+        card.room ? 0 : 1,
+        explicitSpeakerCount,
+        previewParticipants.length,
+        Math.min(previewUserCount, mobileSeatCount)
+      )
+    )
+    const stageMembers = [ownerMember, ...participantMembers]
+    const mobileSeats = Array.from({ length: mobileSeatCount }, (_, index) => {
+      const member = stageMembers[index] || {
+        id: `seat-${index + 1}`,
+        name: index === 0 ? card.host || 'Room owner' : `User #${index + 1}`,
+        role: index === 0 ? 'Owner' : 'Speaker',
+        avatarUrl: index === 0 ? profileIconAvatar : '',
+        avatarIndex: cardAvatarIndex(card) + index + 1,
+      }
+      return {
+        number: index + 1,
+        occupied: index < occupiedSeatCount,
+        member,
+      }
+    })
     const mobileComments = liveChatMessages
-    const mobileSeats = Array.from({ length: isVideoRoom ? 12 : 8 }, (_, index) => index + 1)
     const mobileLockDigits = mobileRoomLockCode.padEnd(4, ' ').slice(0, 4).split('')
+    const mobileInboxRows = [
+      ...messageThreads.slice(0, 8).map((thread) => ({
+        ...thread,
+        id: `thread-${thread.id}`,
+        rowKey: thread.id,
+        title: thread.name,
+        preview: thread.previewText,
+        icon: '',
+        tone: 'dm',
+        avatarUrl: thread.avatarUrl,
+        thread,
+      })),
+    ]
+    const activeMobileChatKey = mobileActiveMessageChat?.rowKey || mobileActiveMessageChat?.id || ''
+    const activeMobileChatThread = mobileActiveMessageChat?.thread || null
+    const activeMobileChatMessages = activeMobileChatThread
+      ? mobileRowsFromDirectMessages(dmMessages[activeMobileChatThread.id] || [])
+      : activeMobileChatKey ? (mobileLocalChatMessages[activeMobileChatKey] || []) : []
+    const activeMobileChatName = activeMobileChatThread?.name
+      || mobileActiveMessageChat?.chatTitle
+      || mobileActiveMessageChat?.title
+      || 'Direct message'
+    const activeMobileChatAvatar = activeMobileChatThread?.avatarUrl
+      || mobileActiveMessageChat?.avatarUrl
+      || avatarForIndex(cardAvatarIndex(card) + 9)
+    const activeMobileChatPeerId = activeMobileChatThread?.peerId || ''
+    const activeMobileChatCanFollow = !activeMobileChatThread || activeMobileChatThread.relationshipLabel !== 'Following'
 
     return (
       <section className="buzzcast-room-preview">
@@ -3194,15 +3553,21 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
               <img src={backAvatar} alt="" loading="lazy" />
             </button>
             <button type="button" className="buzzcast-mobile-profile-avatar-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
-              <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
+              <span className="image-avatar"><img src={profileIconAvatar} alt="" loading="lazy" /></span>
             </button>
             <button type="button" className="buzzcast-mobile-title-button" onClick={() => setShowMobileRoomProfile(true)} aria-label="Open room profile">
               <strong>{card.title}</strong>
               <small>ID:{roomIdLabel} - {memberCount}</small>
             </button>
-            <button type="button" onClick={() => shareMobileRoom(card)} aria-label="Share">↗</button>
-            <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="More room tools">...</button>
-            <button type="button" onClick={openLiveSection} aria-label="Leave room">⏻</button>
+            <button type="button" onClick={() => shareMobileRoom(card)} aria-label="Share">
+              <img className="buzzcast-we4-header-icon" src={we4ShareIcon} alt="" loading="lazy" />
+            </button>
+            <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="More room actions" aria-expanded={showMobileRoomTools}>
+              <img className="buzzcast-we4-header-icon" src={we4MoreIcon} alt="" loading="lazy" />
+            </button>
+            <button type="button" onClick={openLiveSection} aria-label="Leave room">
+              <img className="buzzcast-we4-header-icon" src={we4PowerIcon} alt="" loading="lazy" />
+            </button>
           </header>
 
           <div className="buzzcast-mobile-room-badges">
@@ -3221,60 +3586,340 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
 
           <div className="buzzcast-mobile-live-actions">
-            <button type="button" onClick={refreshMobileRooms}>Refresh</button>
-            <button type="button" onClick={() => handleMobileJoinCard(card, { rtcMode: 'audio' })}>Voice</button>
-            <button type="button" onClick={() => showMobileActionToast('Playlist opens after joining the room.')}>Playlist</button>
-            <button type="button" onClick={() => setShowMobileRoomTools(true)}>Tools</button>
+            <button type="button" className="room-action-refresh" onClick={refreshMobileRooms}>
+              <img className="buzzcast-we4-action-icon" src={we4RefreshIcon} alt="" loading="lazy" />
+              <span>Refresh</span>
+            </button>
+            <button type="button" className="room-action-voice" onClick={() => handleMobileMediaJoin(card, 'audio')}>
+              <img className="buzzcast-we4-action-icon" src={we4VoiceIcon} alt="" loading="lazy" />
+              <span>Voice</span>
+            </button>
+            <button type="button" className="room-action-playlist" onClick={() => showMobileActionToast('Play List opens after joining the room.')}>
+              <img className="buzzcast-we4-action-icon" src={we4PlaylistIcon} alt="" loading="lazy" />
+              <span>Play List</span>
+            </button>
+            <button type="button" className="room-action-leave" onClick={openLiveSection} aria-label="Leave room">
+              <img className="buzzcast-we4-action-icon" src={we4PowerIcon} alt="" loading="lazy" />
+            </button>
           </div>
 
-          <section className="buzzcast-mobile-stage-card buzzcast-mobile-preview-summary" aria-label="Room summary">
-            <span className="buzzcast-mobile-stage-avatar buzzcast-mobile-preview-initial" aria-hidden="true">
-              <b>T</b>
-            </span>
-            <div>
-              <strong>{card.title}</strong>
-              <span className="buzzcast-mobile-stage-room-id">Room ID: {summaryRoomId}</span>
+          <section className="buzzcast-mobile-video-card buzzcast-mobile-topic-video" aria-label="Room topic video">
+            <div className="buzzcast-mobile-video-copy">
+              <span className="buzzcast-mobile-video-avatar image-avatar">
+                <img src={roomAvatar} alt="" loading="lazy" />
+              </span>
+              <span>
+                <strong>{card.description ? compactText(card.description, 32) : 'AADAT (ROCK VERSION)'}</strong>
+                <small>{card.host} - Topic</small>
+              </span>
+            </div>
+            <div className="buzzcast-mobile-video-frame">
+              <img src={previewCover} alt="" loading="eager" decoding="async" fetchPriority="high" />
+              <button type="button" onClick={() => handleMobileMediaJoin(card, isVideoRoom ? 'video' : 'audio')} aria-label="Play room media">
+                <span></span>
+              </button>
+            </div>
+            <div className="buzzcast-mobile-video-progress" aria-hidden="true">
+              <span>00:03:35</span>
+              <i></i>
+              <span>00:03:35</span>
             </div>
           </section>
 
           <div className="buzzcast-mobile-seat-grid">
             {mobileSeats.map((seat) => (
               <button
-                key={seat}
+                key={seat.number}
                 type="button"
-                className={seat === 1 ? 'active' : ''}
-                onClick={() => seat === 1 ? handleMobileJoinCard(card, { rtcMode: 'audio' }) : setShowMobileRoomLock(true)}
+                className={seat.occupied ? 'active' : 'locked'}
+                onClick={() => seat.occupied ? handleMobileMediaJoin(card, 'audio') : showMobileActionToast('This mic seat is locked.')}
+                aria-label={seat.occupied ? `${seat.member.name} mic seat ${seat.number}` : `Locked mic seat ${seat.number}`}
               >
-                <span><img src={seat === 1 ? liveRoomAssets.seatMic : liveRoomAssets.seatLock} alt="" loading="lazy" /></span>
-                <small>No.{seat}</small>
+                <span>
+                  <img
+                    className={seat.occupied ? 'buzzcast-seat-mic-icon' : 'buzzcast-seat-lock-art'}
+                    src={seat.occupied ? liveRoomAssets.seatMic : seatSvg}
+                    alt=""
+                    loading="lazy"
+                  />
+                  <small>{seat.number}</small>
+                </span>
               </button>
             ))}
           </div>
           <div className="buzzcast-mobile-pk-badge">PK</div>
 
-          <button type="button" className="buzzcast-mobile-mic-line" onClick={() => handleMobileJoinCard(card, { rtcMode: 'audio' })}>
-            <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
-            <span>Come on mic and chat together~</span>
-          </button>
-
-          <div className="buzzcast-mobile-live-comments">
-            {mobileComments.map((message) => (
-              <article key={message.id}>
-                <span className="image-avatar"><img src={commentAvatar} alt="" loading="lazy" /></span>
-                <div>
-                  <strong><i>Owner</i> {card.host}</strong>
-                  <small>{message.badges.map((badge) => <b key={badge}>{badge}</b>)}</small>
-                  <p>{message.body}</p>
-                </div>
-              </article>
-            ))}
+          <div className="buzzcast-mobile-live-guide-row">
+            <p className="buzzcast-mobile-live-guide">
+              Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.
+            </p>
+            <button type="button" className="buzzcast-mobile-guide-promo" onClick={() => showMobileActionToast('Room event opens after joining.')} aria-label="Room event">
+              <img src={roomAssets.stageMoods} alt="" loading="lazy" />
+              <span aria-hidden="true"><i></i><i></i><i></i></span>
+            </button>
           </div>
 
+          <button type="button" className="buzzcast-mobile-mic-line" onClick={() => handleMobileMediaJoin(card, isVideoRoom ? 'video' : 'audio')}>
+            <span>Come on mic and chat together~</span>
+            <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
+          </button>
+
+          {mobileComments.length ? (
+            <div className="buzzcast-mobile-live-comments">
+              {mobileComments.map((message, index) => {
+              const messageAuthor = message.author || message.sender_name || card.host || 'Room user'
+              const messageRole = message.role || (messageAuthor === card.host ? 'Owner' : 'Member')
+              const messageBadges = Array.isArray(message.badges) && message.badges.length ? message.badges : ['Lv.37']
+              const messageAvatar = message.avatarUrl || avatarForUser({ name: messageAuthor, avatar_url: message.avatar_url || '' }, cardAvatarIndex(card) + index + 4)
+
+              return (
+              <article key={message.id}>
+                <span className="image-avatar"><img src={messageAvatar} alt="" loading="lazy" /></span>
+                <div>
+                  <strong><i>{messageRole}</i>{messageAuthor}</strong>
+                  <small>{messageBadges.map((badge) => <b key={badge}>{badge}</b>)}</small>
+                  <p>
+                    {message.messageType === 'image'
+                      ? `Image: ${message.body}`
+                      : message.messageType === 'voice' && message.mediaUrl
+                        ? <audio controls src={message.mediaUrl}></audio>
+                        : message.body}
+                  </p>
+                </div>
+              </article>
+              )
+              })}
+            </div>
+          ) : null}
+
           <form className="buzzcast-mobile-live-composer" onSubmit={sendLiveRoomMessage}>
-            <button type="button" onClick={() => showMobileActionToast('Voice message ready')} aria-label="Voice"><img src={liveRoomAssets.composerMic} alt="" loading="lazy" /></button>
-            <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
-            <button type="submit" aria-label="Send"><img src={liveRoomAssets.send} alt="" loading="lazy" /></button>
+            <button
+              type="button"
+              className={liveVoiceRecording ? 'buzzcast-live-composer-speaker recording' : 'buzzcast-live-composer-speaker'}
+              onClick={() => toggleLiveVoiceRecording({ type: 'room' })}
+              aria-label={liveVoiceRecording ? `Stop voice recording ${formatDmDuration(liveVoiceRecordingMs)}` : 'Start voice recording'}
+            >
+              <img src={speakerComposerIcon} alt="" loading="lazy" />
+            </button>
+            <label className="buzzcast-live-composer-message-field">
+              <img src={messageComposerIcon} alt="" loading="lazy" />
+              <input value={dmInput} onChange={(event) => setDmInput(event.target.value)} placeholder="Say hi..." />
+            </label>
+            <button type="button" className="buzzcast-live-composer-image" onClick={() => livePhotoInputRef.current?.click()} aria-label="Upload image">
+              <img src={imageUploadComposerIcon} alt="" loading="lazy" />
+            </button>
+            <button type="button" className="buzzcast-live-composer-inbox" onClick={openMobileRoomMessageInbox} aria-label="Open message inbox">
+              <img src={messageComposerIcon} alt="" loading="lazy" />
+              {unreadThreadCount ? <em>{unreadThreadCount > 99 ? '99+' : unreadThreadCount}</em> : null}
+            </button>
+            <button type="submit" className="buzzcast-live-composer-send" aria-label="Send">
+              <img src={sendComposerAvatar} alt="" loading="lazy" />
+            </button>
+            <input ref={livePhotoInputRef} type="file" accept="image/*" onChange={handleLiveRoomPhotoSelected} aria-label="Upload room chat image" />
           </form>
+
+          {showMobileMessageInbox ? (
+            <section className="buzzcast-mobile-message-inbox" role="dialog" aria-modal="true" aria-label="Message inbox">
+              <header>
+                <button type="button" className="buzzcast-avatar-back-button" onClick={() => setShowMobileMessageInbox(false)} aria-label="Back to room">
+                  <img src={backAvatar} alt="" loading="lazy" />
+                </button>
+                <strong>Messages</strong>
+                <button type="button" onClick={() => loadDirectMessageContacts()} aria-label="Refresh messages">
+                  <img src={we4RefreshIcon} alt="" loading="lazy" />
+                </button>
+              </header>
+              <div className="buzzcast-mobile-message-inbox-list">
+                {mobileInboxRows.map((item) => (
+                  <button
+                    key={item.rowKey || item.id}
+                    type="button"
+                    className={`buzzcast-mobile-message-row ${item.tone || 'system'}`}
+                    onClick={() => openMobileMessageChat(item)}
+                  >
+                    <span className="buzzcast-mobile-message-icon">
+                      {item.avatarUrl ? <img src={item.avatarUrl} alt="" loading="lazy" /> : <b>{item.icon}</b>}
+                    </span>
+                    <span className="buzzcast-mobile-message-copy">
+                      <strong>{item.title}</strong>
+                      <small>{item.preview}</small>
+                    </span>
+                    <span className="buzzcast-mobile-message-meta">
+                      {item.time ? <time>{item.time}</time> : null}
+                      {item.unread ? <em>{item.unread > 99 ? '99' : item.unread}</em> : null}
+                    </span>
+                  </button>
+                ))}
+                {loadingDmContacts ? (
+                  <div className="buzzcast-mobile-message-loading"><LoadingMovie label="Loading messages" inline /></div>
+                ) : null}
+                {!loadingDmContacts && !mobileInboxRows.length ? (
+                  <div className="buzzcast-mobile-message-empty">
+                    <strong>No inbox messages yet</strong>
+                    <small>Real conversations will appear here after you message room hosts or followers.</small>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {mobileActiveMessageChat ? (
+            <section className="buzzcast-mobile-chat-screen" role="dialog" aria-modal="true" aria-label={`${activeMobileChatName} chat`}>
+              <header className="buzzcast-mobile-chat-header">
+                <button
+                  type="button"
+                  className="buzzcast-mobile-chat-back"
+                  onClick={() => {
+                    setMobileActiveMessageChat(null)
+                    setShowMobileMessageInbox(true)
+                    setDmInput('')
+                    clearDmMediaDrafts()
+                  }}
+                  aria-label="Back to messages"
+                >
+                  <img src={backAvatar} alt="" loading="lazy" />
+                </button>
+                <span className="buzzcast-mobile-chat-peer-avatar image-avatar">
+                  <img src={activeMobileChatAvatar} alt="" loading="lazy" />
+                </span>
+                <strong>{activeMobileChatName}</strong>
+                <button
+                  type="button"
+                  className="buzzcast-mobile-chat-follow"
+                  onClick={() => showMobileActionToast(activeMobileChatCanFollow ? 'Follow request sent' : 'Already following')}
+                >
+                  {activeMobileChatCanFollow ? 'Follow' : 'Following'}
+                </button>
+                <button type="button" className="buzzcast-mobile-chat-more" onClick={() => showMobileActionToast(activeMobileChatPeerId ? `User ID: ${activeMobileChatPeerId}` : 'Chat options')} aria-label="Chat options">•••</button>
+              </header>
+
+              <div className="buzzcast-mobile-chat-body">
+                {loadingDmConversation && activeMobileChatThread ? <LoadingMovie label="Loading conversation" compact /> : null}
+                {activeMobileChatMessages.length ? activeMobileChatMessages.map((message) => {
+                  if (message.type === 'date') {
+                    return <time key={message.id} className="buzzcast-mobile-chat-date">{message.label}</time>
+                  }
+
+                  const bubbleBody = message.messageType === 'image' && message.mediaUrl
+                    ? <img className="buzzcast-mobile-chat-photo" src={message.mediaUrl} alt="" loading="lazy" />
+                    : message.messageType === 'voice' && message.mediaUrl
+                      ? <audio controls src={message.mediaUrl}></audio>
+                      : <span>{message.body}</span>
+
+                  const canOpenDelete = Boolean(activeMobileChatThread && message.id)
+                  const openDeleteFromMobileRow = (event) => {
+                    if (!canOpenDelete || event.target?.closest?.('audio')) return
+                    requestDmDeleteForThread(message, activeMobileChatThread)
+                  }
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={canOpenDelete ? (message.mine ? 'buzzcast-mobile-chat-row mine can-delete' : 'buzzcast-mobile-chat-row can-delete') : (message.mine ? 'buzzcast-mobile-chat-row mine' : 'buzzcast-mobile-chat-row')}
+                      role={canOpenDelete ? 'button' : undefined}
+                      tabIndex={canOpenDelete ? 0 : undefined}
+                      onClick={openDeleteFromMobileRow}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          openDeleteFromMobileRow(event)
+                        }
+                      }}
+                    >
+                      {!message.mine ? (
+                        <span className="buzzcast-mobile-chat-avatar image-avatar"><img src={activeMobileChatAvatar} alt="" loading="lazy" /></span>
+                      ) : null}
+                      <p>{bubbleBody}</p>
+                      {message.mine ? (
+                        <span className="buzzcast-mobile-chat-avatar image-avatar"><img src={profileIconAvatar} alt="" loading="lazy" /></span>
+                      ) : null}
+                    </div>
+                  )
+                }) : (
+                  <div className="buzzcast-mobile-chat-empty">No messages in this chat yet.</div>
+                )}
+                {dmPhotoDraft && activeMobileChatThread ? (
+                  <div className="buzzcast-mobile-chat-draft">
+                    <img src={dmPhotoDraft.dataUrl} alt="" />
+                    <span>{dmPhotoDraft.name || 'Photo ready'}</span>
+                    <button type="button" onClick={() => setDmPhotoDraft(null)} aria-label="Remove photo">x</button>
+                  </div>
+                ) : null}
+                {dmAudioDraft && activeMobileChatThread ? (
+                  <div className="buzzcast-mobile-chat-draft audio">
+                    <span>{formatDmDuration(dmAudioDraft.durationMs)} voice note ready</span>
+                    <button type="button" onClick={() => setDmAudioDraft(null)} aria-label="Remove voice note">x</button>
+                  </div>
+                ) : null}
+                {dmStatus && activeMobileChatThread ? <div className="buzzcast-mobile-chat-status">{dmStatus}</div> : null}
+              </div>
+
+              <form className="buzzcast-mobile-chat-composer" onSubmit={sendMobileMessageChat}>
+                {activeMobileChatThread ? (
+                  <input
+                    ref={dmPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={stageDmPhotoDraft}
+                    aria-label="Upload chat image"
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  className={(activeMobileChatThread ? dmRecording : liveVoiceRecording) ? 'speaker recording' : 'speaker'}
+                  onClick={() => activeMobileChatThread ? toggleDmAudioRecording() : toggleLiveVoiceRecording({ type: 'mobile-chat', chatKey: activeMobileChatKey })}
+                  aria-label={(activeMobileChatThread ? dmRecording : liveVoiceRecording) ? 'Stop voice recording' : 'Start voice recording'}
+                >
+                  <img src={speakerComposerIcon} alt="" loading="lazy" />
+                </button>
+                <input
+                  value={dmInput}
+                  onChange={(event) => setDmInput(event.target.value)}
+                  placeholder="Type a message..."
+                />
+                <button
+                  type="button"
+                  className="image"
+                  onClick={() => activeMobileChatThread ? dmPhotoInputRef.current?.click() : showMobileActionToast('Image upload ready')}
+                  aria-label="Upload image"
+                >
+                  <img src={imageUploadComposerIcon} alt="" loading="lazy" />
+                </button>
+                <button type="submit" className="send" aria-label="Send message" disabled={sendingDm}>
+                  <img src={sendComposerAvatar} alt="" loading="lazy" />
+                </button>
+              </form>
+
+              {dmDeleteTarget ? (
+                <div className="chat-delete-backdrop mobile-delete-backdrop" onMouseDown={closeDmDeletePrompt}>
+                  <section className="chat-delete-modal mobile-delete-modal" role="dialog" aria-modal="true" aria-labelledby="buzzcast-mobile-dm-delete-title" onMouseDown={(event) => event.stopPropagation()}>
+                    <h3 id="buzzcast-mobile-dm-delete-title">Delete message</h3>
+                    <p>Choose how this message should be removed from the inbox.</p>
+                    <label className={canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? 'chat-delete-option' : 'chat-delete-option disabled'}>
+                      <input
+                        type="checkbox"
+                        checked={dmDeleteForEveryone && canDeleteDmMessageForEveryone(dmDeleteTarget.message)}
+                        disabled={!canDeleteDmMessageForEveryone(dmDeleteTarget.message) || Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}
+                        onChange={(event) => setDmDeleteForEveryone(event.target.checked)}
+                      />
+                      <span>{canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? 'Delete for everyone in this chat' : 'Delete only from my inbox'}</span>
+                    </label>
+                    {canDeleteDmMessageForEveryone(dmDeleteTarget.message) ? (
+                      <small className="chat-delete-hint">
+                        {dmDeleteForEveryone ? 'Everyone will lose this message.' : 'Only your inbox will hide this message.'}
+                      </small>
+                    ) : null}
+                    <footer>
+                      <button type="button" className="secondary-button" onClick={closeDmDeletePrompt} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}>CANCEL</button>
+                      <button type="button" className="danger-button" onClick={confirmDmDelete} disabled={Boolean(deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)])}>
+                        {deletingDmMessageIds[directMessageActionKey(dmDeleteTarget.message)] ? 'DELETING...' : 'DELETE'}
+                      </button>
+                    </footer>
+                  </section>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {mobileToast ? (
             <div className="buzzcast-mobile-toast" role="status">{mobileToast}</div>
@@ -3327,7 +3972,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                   <span></span>
                   <small>Settings</small>
                 </button>
-                <span className="buzzcast-mobile-room-profile-avatar image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
+                <span className="buzzcast-mobile-room-profile-avatar image-avatar"><img src={profileIconAvatar} alt="" loading="lazy" /></span>
                 <strong className="buzzcast-mobile-room-profile-name">{card.title}</strong>
                 <span className="buzzcast-mobile-room-profile-id">ID:{roomIdLabel}</span>
                 <div className="buzzcast-mobile-room-profile-stats" aria-label="Room stats">
@@ -3353,69 +3998,145 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ) : null}
 
           {showMobileRoomTools ? (
-            <div className="buzzcast-mobile-room-tools-backdrop" role="dialog" aria-modal="true" aria-label="Room tools">
+            <div
+              className="buzzcast-mobile-room-tools-backdrop"
+              role="dialog"
+              aria-modal="true"
+              aria-label="More room actions"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setShowMobileRoomTools(false)
+              }}
+            >
               <section className="buzzcast-mobile-room-tools-sheet">
-                <button
-                  type="button"
-                  onClick={() => updateMobileRoomControls(card, { max_mic_count: mobileSeats.length }, `${mobileSeats.length} mic seats enabled.`)}
-                >
-                  <i className="mic"></i>
-                  <span>Number of Mic</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateMobileRoomControls(card, { privacy_type: 'public' }, 'Room unlocked.')}
-                >
-                  <i className="unlock"></i>
-                  <span>Unlock</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMobileRoomTools(false)
-                    setShowMobileRoomLock(true)
-                  }}
-                >
-                  <i className="password"></i>
-                  <span>Password</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateMobileRoomControls(card, { theme: nextThemeValue(card.room?.theme || roomForm.theme) }, 'Room theme updated.')}
-                >
-                  <i className="theme"></i>
-                  <span>Theme</span>
-                </button>
-                <button type="button" onClick={() => shareMobileRoom(card)}>
-                  <i className="share"></i>
-                  <span>Share</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMobileRoomTools(false)
-                    setShowMobileRoomSettings(true)
-                  }}
-                >
-                  <i className="admin"></i>
-                  <span>Admin</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLiveChatMessages([])
-                    setShowMobileRoomTools(false)
-                    showMobileActionToast('Comments cleared on this device.')
-                  }}
-                >
-                  <i className="clear"></i>
-                  <span>Clear comments history</span>
-                </button>
-                <button type="button" onClick={() => { setShowMobileRoomTools(false); openRankings() }}>
-                  <i className="action-avatar"><img src={rankingAvatar} alt="" loading="lazy" /></i>
-                  <span>Gather</span>
-                </button>
-                <button type="button" className="cancel" onClick={() => setShowMobileRoomTools(false)}>Cancel</button>
+                <header>
+                  <span>More</span>
+                  <strong>Room actions</strong>
+                  <button type="button" onClick={() => setShowMobileRoomTools(false)} aria-label="Close room actions">x</button>
+                </header>
+
+                <div className="buzzcast-mobile-room-tools-group">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileRoomTools(false)
+                      shareMobileRoom(card)
+                    }}
+                  >
+                    <i><img src={we4ShareIcon} alt="" loading="lazy" /></i>
+                    <span><strong>Share</strong><small>Send this room link</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileRoomTools(false)
+                      setShowMobileMembers(true)
+                    }}
+                  >
+                    <i className="members"></i>
+                    <span><strong>Members</strong><small>View people in this room</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileRoomTools(false)
+                      openMobileRoomMessageInbox()
+                    }}
+                  >
+                    <i><img src={messageComposerIcon} alt="" loading="lazy" /></i>
+                    <span><strong>Messages</strong><small>Open message inbox</small></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileRoomTools(false)
+                      refreshMobileRooms()
+                    }}
+                  >
+                    <i><img src={we4RefreshIcon} alt="" loading="lazy" /></i>
+                    <span><strong>Refresh</strong><small>Reload room details</small></span>
+                  </button>
+                </div>
+
+                {canManageMobileRoom ? (
+                  <div className="buzzcast-mobile-room-tools-group owner">
+                    <button
+                      type="button"
+                      onClick={() => updateMobileRoomControls(card, { max_mic_count: mobileSeats.length }, `${mobileSeats.length} mic seats enabled.`)}
+                    >
+                      <i className="mic"></i>
+                      <span><strong>Number of Mic</strong><small>Use {mobileSeats.length} visible seats</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateMobileRoomControls(card, { privacy_type: 'public' }, 'Room unlocked.')}
+                    >
+                      <i className="unlock"></i>
+                      <span><strong>Unlock</strong><small>Make room public</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileRoomTools(false)
+                        setShowMobileRoomLock(true)
+                      }}
+                    >
+                      <i className="password"></i>
+                      <span><strong>Password</strong><small>Lock with a 4 digit code</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateMobileRoomControls(card, { theme: nextThemeValue(card.room?.theme || roomForm.theme) }, 'Room theme updated.')}
+                    >
+                      <i className="theme"></i>
+                      <span><strong>Theme</strong><small>Switch room theme</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileRoomTools(false)
+                        setShowMobileRoomSettings(true)
+                      }}
+                    >
+                      <i className="admin"></i>
+                      <span><strong>Admin</strong><small>Open owner settings</small></span>
+                    </button>
+                  </div>
+                ) : card?.isOwnRoom ? (
+                  <div className="buzzcast-mobile-room-tools-group owner">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileRoomTools(false)
+                        openHostPanel('Create a live room first, then mobile tools can update it.')
+                      }}
+                    >
+                      <i className="admin"></i>
+                      <span><strong>Create room</strong><small>Start your room before editing tools</small></span>
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="buzzcast-mobile-room-tools-group">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLiveChatMessages([])
+                      setShowMobileRoomTools(false)
+                      showMobileActionToast('Comments cleared on this device.')
+                    }}
+                  >
+                    <i className="clear"></i>
+                    <span><strong>Clear comments</strong><small>Only clears this device</small></span>
+                  </button>
+                  <button type="button" onClick={() => { setShowMobileRoomTools(false); openRankings() }}>
+                    <i className="action-avatar"><img src={rankingAvatar} alt="" loading="lazy" /></i>
+                    <span><strong>Gather</strong><small>Open room rankings</small></span>
+                  </button>
+                  <button type="button" onClick={() => { setShowMobileRoomTools(false); openLiveSection() }}>
+                    <i><img src={we4PowerIcon} alt="" loading="lazy" /></i>
+                    <span><strong>Leave</strong><small>Go back to room list</small></span>
+                  </button>
+                </div>
               </section>
             </div>
           ) : null}
@@ -3466,7 +4187,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             >
               <span>Profile</span>
               <span className="buzzcast-mobile-room-value with-avatar">
-                <i className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></i>
+                <i className="image-avatar"><img src={profileIconAvatar} alt="" loading="lazy" /></i>
                 <b>›</b>
               </span>
             </button>
@@ -3514,7 +4235,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             </button>
           </div>
           <div className="buzzcast-mobile-room-live">
-            <span className="image-avatar"><img src={roomAvatar} alt="" loading="lazy" /></span>
+            <span className="image-avatar"><img src={profileIconAvatar} alt="" loading="lazy" /></span>
             <strong>LIVE</strong>
           </div>
           <div className="buzzcast-mobile-room-follow">
@@ -3544,7 +4265,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <>
               <div className="buzzcast-room-summary buzzcast-preview-room-summary" aria-label="Room summary">
                 <span className="buzzcast-room-summary-avatar buzzcast-preview-room-initial" aria-hidden="true">
-                  <b>T</b>
+                  <img src={roomAvatar} alt="" loading="lazy" />
                 </span>
                 <strong title={card.title}>{card.title}</strong>
                 <span>Room ID: {summaryRoomId}</span>
@@ -3686,6 +4407,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (user) return
     if (activeSection === 'me' || activeSection === 'settings') setActiveSection('live')
     setShowMessages(false)
+    setShowMobileMessageInbox(false)
+    setMobileActiveMessageChat(null)
     setShowRankings(false)
     setShowHostPanel(false)
     setDmContacts([])
@@ -3695,6 +4418,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setDmDeleteForEveryone(false)
     setDmImagePreview(null)
     clearDmMediaDrafts()
+    if (liveVoiceRecording) cancelLiveVoiceRecording()
   }, [activeSection, user])
 
   useEffect(() => {

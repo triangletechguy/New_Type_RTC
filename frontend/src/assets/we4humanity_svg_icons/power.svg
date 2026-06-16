@@ -1,0 +1,6 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Power icon</title>
+  <desc id="desc">Classic power button icon matching the white UI style.</desc>
+  <path d="M12 3.75V12" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <path d="M7.15 6.85C5.82 8.05 5 9.8 5 11.75C5 15.62 8.13 18.75 12 18.75C15.87 18.75 19 15.62 19 11.75C19 9.8 18.18 8.05 16.85 6.85" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

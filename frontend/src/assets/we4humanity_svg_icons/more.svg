@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">More icon</title>
+  <desc id="desc">Three horizontal dots icon matching the white UI style.</desc>
+  <circle cx="6.5" cy="12" r="1.7" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="1.7" fill="#FFFFFF"/>
+  <circle cx="17.5" cy="12" r="1.7" fill="#FFFFFF"/>
+</svg>

@@ -488,8 +488,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
   const visibleMessages = messages.filter((message) => isVisibleRoomMessage(message, blockedSenderIds))
   const aiGuardActive = isAiGuardEnabled(room)
   const giftEnabled = room?.gift_enabled !== false
-  const giftTotalCoins = Number(giftSummary?.total_coins || 0)
-  const topGiftSender = Array.isArray(giftSummary?.top_senders) ? giftSummary.top_senders[0] : null
   const typingText = typingNames.length
     ? `${typingNames.slice(0, 2).join(', ')} ${t(typingNames.length > 1 ? 'are typing...' : 'is typing...')}`
     : realtimeConnected ? t('No one is typing') : t('Typing status starts after RTC connects')
@@ -1755,22 +1753,6 @@ export function ChatPanel({ roomId, signalingRoom, socket, user, room, localStre
       </div>
 
       <div className="chat-mode-panel" hidden={chatMode !== 'comments'} data-chat-mode="comments">
-      {giftEnabled ? (
-        <div className="chat-gift-summary" aria-label={t('Gift total')}>
-          <span className="chat-emoji-glyph" aria-hidden="true">🎁</span>
-          <div>
-            <strong>{formatGiftCoins(giftTotalCoins, t)}</strong>
-            <small>
-              {giftSummary?.gift_count
-                ? t('{count} gifts', { count: Number(giftSummary.gift_count || 0).toLocaleString() })
-                : t('No gifts yet')}
-            </small>
-          </div>
-          {topGiftSender ? (
-            <em>{t('Top supporter: {name}', { name: topGiftSender.sender_name || `User #${topGiftSender.sender_id}` })}</em>
-          ) : null}
-        </div>
-      ) : null}
       <div className="messages" ref={messagesRef} role="log" aria-label={t('Room chat messages')}>
         {loading ? (
           <LoadingMovie label={t('Loading chat')} compact />
