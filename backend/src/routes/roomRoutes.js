@@ -2904,7 +2904,14 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
           ? null
           : await latestStageRequestForUser(connection, room.id, req.user.id, ['pending'])
 
-        return { alreadyJoined: true, session, participant: participants[0], rtcMode: joinOptions.rtc_mode, stageRequest }
+        return {
+          alreadyJoined: true,
+          session,
+          participant: participants[0],
+          rtcMode: joinOptions.rtc_mode,
+          stageRole: effectiveSessionRole,
+          stageRequest,
+        }
       }
 
       const canPublishOnJoin = canPublishRoomMedia(defaultSessionRole)
@@ -2969,10 +2976,17 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
         ? null
         : await latestStageRequestForUser(connection, room.id, req.user.id, ['pending'])
 
-      return { alreadyJoined: false, session, participant: participants[0], rtcMode: joinOptions.rtc_mode, stageRequest }
+      return {
+        alreadyJoined: false,
+        session,
+        participant: participants[0],
+        rtcMode: joinOptions.rtc_mode,
+        stageRole: defaultSessionRole,
+        stageRequest,
+      }
     })
 
-    const joinedRole = normalizeRoomRole(result.participant.role_in_room || 'audience', 'audience')
+    const joinedRole = normalizeRoomRole(result.stageRole || result.participant.role_in_room || 'audience', 'audience')
     const joinedCapabilities = roomRoleCapabilities(joinedRole)
 
     return res.json({
@@ -3079,13 +3093,20 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       await connection.execute(
         `
         UPDATE rtc_session_participants
-        SET mic_enabled = ?,
+        SET role_in_room = ?,
+            mic_enabled = ?,
             camera_enabled = ?,
             screen_shared = ?,
             updated_at = NOW()
         WHERE id = ?
         `,
-        [micEnabled ? 1 : 0, cameraEnabled ? 1 : 0, screenShared ? 1 : 0, participant.id]
+        [
+          effectiveParticipantRole,
+          micEnabled ? 1 : 0,
+          cameraEnabled ? 1 : 0,
+          screenShared ? 1 : 0,
+          participant.id,
+        ]
       )
 
       const mediaChanges = []
@@ -3120,10 +3141,10 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
         [participant.id]
       )
 
-      return { participant: updatedParticipants[0], mediaChanges }
+      return { participant: updatedParticipants[0], stageRole: effectiveParticipantRole, mediaChanges }
     })
 
-    const mediaRole = normalizeRoomRole(result.participant.role_in_room || 'audience', 'audience')
+    const mediaRole = normalizeRoomRole(result.stageRole || result.participant.role_in_room || 'audience', 'audience')
     const mediaCapabilities = roomRoleCapabilities(mediaRole)
 
     return res.json({

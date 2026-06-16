@@ -4606,6 +4606,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomGuideText = room?.description?.trim()
     || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
   const joinerLayoutActive = audienceMode
+  const chatPresentation = 'default'
   const liveShellClassName = `buzzcast-shell buzzcast-live-shell ${joinerLayoutActive ? 'buzzcast-live-joiner-shell' : 'buzzcast-live-owner-shell'}`
   const ownerRemoteTile = remoteTiles.find(({ mediaState }) => Number(mediaState?.userId || 0) === Number(roomOwnerId || 0))
     || remoteTiles.find(({ mediaState }) => String(mediaState?.stageRole || '').toLowerCase() === 'owner')
@@ -4775,6 +4776,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                     rtcMode={ownerVideoRtcMode}
                     connectionState={ownerRemoteTile?.peerState || (joined ? 'waiting' : 'idle')}
                     showMediaState
+                    followStatus={followStatusForPeer(ownerVideoMediaState.userId || roomOwnerId)}
+                    onFollowAction={Number(ownerVideoMediaState.userId || roomOwnerId || 0) && Number(ownerVideoMediaState.userId || roomOwnerId || 0) !== Number(user?.id || 0)
+                      ? () => handlePeerFollowAction({
+                        id: Number(ownerVideoMediaState.userId || roomOwnerId),
+                        name: ownerVideoMediaState.userName || roomOwnerName,
+                        avatar_url: ownerVideoMediaState.avatarUrl || roomOwnerAvatar,
+                        gender: ownerVideoMediaState.gender || '',
+                      })
+                      : undefined}
                     language={language}
                   />
                 </div>
@@ -5378,7 +5388,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             inboxPeerRequest={inboxPeerRequest}
             followRefreshKey={followRefreshKey}
             language={language}
-            presentation={joinerLayoutActive ? 'joiner' : 'default'}
+            presentation={chatPresentation}
             participantPreview={joinerChatParticipants}
             guideText={roomGuideText}
             onParticipantAction={handlePeerFollowAction}

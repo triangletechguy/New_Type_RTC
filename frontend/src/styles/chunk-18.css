@@ -9518,22 +9518,14 @@
     min-height: calc(100vh - var(--topbar-height, 74px)) !important;
     display: grid !important;
     place-items: center !important;
-    padding: 76px 22px 24px !important;
+    padding: 22px !important;
     background:
       radial-gradient(circle at 50% 8%, rgba(82, 180, 255, .18), transparent 30%),
       linear-gradient(180deg, #10111d 0%, #080914 100%) !important;
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-web-room-chrome {
-    top: 12px !important;
-    left: 18px !important;
-    right: 18px !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    opacity: .96 !important;
-  }
-
-  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-web-live-actions {
-    grid-template-columns: repeat(2, minmax(82px, 1fr)) !important;
+    display: none !important;
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-room-summary,
@@ -9551,51 +9543,14 @@
     z-index: 14 !important;
     width: min(100%, 920px) !important;
     display: grid !important;
-    grid-template-rows: auto minmax(0, 1fr) !important;
-    gap: 12px !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    gap: 0 !important;
     align-self: stretch !important;
-    min-height: min(720px, calc(100vh - 140px)) !important;
+    min-height: min(760px, calc(100vh - 118px)) !important;
   }
 
   html body .buzzcast-joiner-owner-stage > header {
-    min-height: 54px !important;
-    display: grid !important;
-    grid-template-columns: 44px minmax(0, 1fr) !important;
-    align-items: center !important;
-    gap: 10px !important;
-    padding: 8px 10px !important;
-    border: 1px solid rgba(136, 154, 255, .16) !important;
-    border-radius: 12px !important;
-    background: rgba(34, 34, 50, .78) !important;
-    color: #fff !important;
-    box-shadow: 0 12px 26px rgba(0, 0, 0, .22) !important;
-  }
-
-  html body .buzzcast-joiner-owner-stage > header .image-avatar,
-  html body .buzzcast-joiner-owner-stage > header .image-avatar img {
-    width: 40px !important;
-    height: 40px !important;
-    border-radius: 50% !important;
-  }
-
-  html body .buzzcast-joiner-owner-stage > header strong,
-  html body .buzzcast-joiner-owner-stage > header small {
-    display: block !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  html body .buzzcast-joiner-owner-stage > header strong {
-    font-size: 17px !important;
-    font-weight: 1000 !important;
-  }
-
-  html body .buzzcast-joiner-owner-stage > header small {
-    color: #89eaff !important;
-    font-size: 12px !important;
-    font-weight: 900 !important;
+    display: none !important;
   }
 
   html body .buzzcast-joiner-owner-video-frame {
@@ -9611,7 +9566,7 @@
   html body .buzzcast-joiner-owner-video-frame .video-tile {
     width: 100% !important;
     height: 100% !important;
-    min-height: clamp(420px, calc(100vh - 220px), 760px) !important;
+    min-height: clamp(460px, calc(100vh - 140px), 820px) !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: #090a12 !important;
@@ -9623,6 +9578,16 @@
     height: 100% !important;
     min-height: inherit !important;
     object-fit: cover !important;
+  }
+
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-badge,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-follow-button,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-caption,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-audio-button,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .media-state-strip,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .tile-state-text,
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-placeholder > span {
+    display: none !important;
   }
 
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-live-side {
