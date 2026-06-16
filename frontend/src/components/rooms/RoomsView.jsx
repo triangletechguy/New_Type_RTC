@@ -3562,7 +3562,18 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
             <button type="button" onClick={() => shareMobileRoom(card)} aria-label="Share">
               <img className="buzzcast-we4-header-icon" src={we4ShareIcon} alt="" loading="lazy" />
             </button>
-            <button type="button" onClick={() => setShowMobileRoomTools(true)} aria-label="More room actions" aria-expanded={showMobileRoomTools}>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                setShowMobileRoomProfile(false)
+                setShowMobileRoomLock(false)
+                setShowMobileRoomTools((isOpen) => !isOpen)
+              }}
+              aria-label={showMobileRoomTools ? 'Close room actions' : 'More room actions'}
+              aria-expanded={showMobileRoomTools}
+              aria-haspopup="menu"
+            >
               <img className="buzzcast-we4-header-icon" src={we4MoreIcon} alt="" loading="lazy" />
             </button>
             <button type="button" onClick={openLiveSection} aria-label="Leave room">
@@ -4007,7 +4018,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 if (event.target === event.currentTarget) setShowMobileRoomTools(false)
               }}
             >
-              <section className="buzzcast-mobile-room-tools-sheet">
+              <section className="buzzcast-mobile-room-tools-sheet" role="menu">
                 <header>
                   <span>More</span>
                   <strong>Room actions</strong>
