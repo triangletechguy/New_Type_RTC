@@ -91,9 +91,8 @@ function canPublishStageRole(role) {
 
 function stageAccessFromParticipant(participant = {}) {
   const role = roomRoleName(participant.role_in_room || participant.session_role_in_room || 'audience')
-  const canPublish = participant.stage_access?.can_publish
-    ?? participant.capabilities?.can_publish_media
-    ?? canPublishStageRole(role)
+  const canPublish = canPublishStageRole(role)
+    || Boolean(participant.stage_access?.can_publish ?? participant.capabilities?.can_publish_media)
 
   return {
     role,
@@ -105,10 +104,15 @@ function stageAccessFromParticipant(participant = {}) {
 
 function stageAccessFromRtc(joinData = {}) {
   const access = joinData.rtc?.stage_access
-  const role = roomRoleName(access?.role || joinData.participant?.role_in_room || 'audience')
-  const canPublish = access?.can_publish
-    ?? joinData.rtc?.role_capabilities?.can_publish_media
-    ?? canPublishStageRole(role)
+  const rtcUserId = Number(joinData.rtc?.user_id || joinData.participant?.user_id || 0)
+  const roomOwnerId = Number(joinData.room?.owner_id || 0)
+  const role = roomRoleName(
+    roomOwnerId && rtcUserId && roomOwnerId === rtcUserId
+      ? 'owner'
+      : access?.role || joinData.participant?.role_in_room || 'audience'
+  )
+  const canPublish = canPublishStageRole(role)
+    || Boolean(access?.can_publish ?? joinData.rtc?.role_capabilities?.can_publish_media)
 
   return {
     role,
@@ -571,6 +575,19 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   function updateJoined(nextJoined) {
     joinedRef.current = Boolean(nextJoined)
     setJoinedState(Boolean(nextJoined))
+  }
+
+  function currentUserOwnsRoom(targetRoom = room) {
+    const ownerId = Number(targetRoom?.owner_id || targetRoom?.ownerId || 0)
+    return ownerId > 0 && ownerId === Number(user?.id || 0)
+  }
+
+  function currentStageRole(access = stageAccessRef.current, targetRoom = room) {
+    return currentUserOwnsRoom(targetRoom) ? 'owner' : access?.role || 'audience'
+  }
+
+  function canPublishCurrentStage(access = stageAccessRef.current, targetRoom = room) {
+    return Boolean(access?.canPublish || currentUserOwnsRoom(targetRoom))
   }
 
   const remoteTiles = useMemo(() => {
@@ -1983,9 +2000,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   async function publishMediaState(nextMicOn, nextCameraOn, options = {}) {
     const currentRtcMode = rtcModeRef.current
-    const canPublishCurrentStage = Boolean(stageAccessRef.current?.canPublish)
-    const allowedMicOn = canPublishCurrentStage && Boolean(nextMicOn)
-    const allowedCameraOn = canPublishCurrentStage && canSignalCameraEnabled(nextCameraOn, currentRtcMode)
+    const stageCanPublish = canPublishCurrentStage()
+    const allowedMicOn = stageCanPublish && Boolean(nextMicOn)
+    const allowedCameraOn = stageCanPublish && canSignalCameraEnabled(nextCameraOn, currentRtcMode)
     if (!joinedRef.current || !activeRoomIdRef.current) return { micOn: allowedMicOn, cameraOn: allowedCameraOn }
 
     const includesScreenState = Object.prototype.hasOwnProperty.call(options, 'screenShared')
@@ -1994,12 +2011,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       body: JSON.stringify({
         mic_enabled: allowedMicOn,
         camera_enabled: allowedCameraOn,
-        ...(includesScreenState ? { screen_shared: canPublishCurrentStage && Boolean(options.screenShared) } : {}),
+        ...(includesScreenState ? { screen_shared: stageCanPublish && Boolean(options.screenShared) } : {}),
       }),
     })
 
     const nextStageAccess = data.rtc?.stage_access ? stageAccessFromRtc(data) : stageAccessRef.current
-    const serverCanPublish = Boolean(nextStageAccess?.canPublish)
+    const serverCanPublish = canPublishCurrentStage(nextStageAccess)
     const serverMicOn = serverCanPublish && Boolean(data.rtc?.mic_enabled)
     const serverCameraOn = serverCanPublish && canSignalCameraEnabled(data.rtc?.camera_enabled, currentRtcMode)
     micOnRef.current = serverMicOn
@@ -2015,8 +2032,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     if (socketRef.current && signalingRoomRef.current) {
       await emitMediaState(socketRef.current, {
         roomId: signalingRoomRef.current,
-        stageRole: stageAccessRef.current?.role || 'audience',
-        canPublish: Boolean(stageAccessRef.current?.canPublish),
+        stageRole: currentStageRole(),
+        canPublish: canPublishCurrentStage(),
         rtcMode: currentRtcMode,
         micEnabled: serverMicOn,
         cameraEnabled: serverCameraOn,
@@ -2189,9 +2206,9 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     screenShared = screenShareTrackRef.current?.readyState === 'live',
   } = {}) {
     const normalizedMode = normalizeRtcMode(payloadRtcMode, room)
-    const canPublishCurrentStage = Boolean(stageAccessRef.current?.canPublish)
-    const allowedMicEnabled = canPublishCurrentStage && Boolean(micEnabled)
-    const allowedCameraEnabled = canPublishCurrentStage && canSignalCameraEnabled(cameraEnabled, normalizedMode)
+    const stageCanPublish = canPublishCurrentStage()
+    const allowedMicEnabled = stageCanPublish && Boolean(micEnabled)
+    const allowedCameraEnabled = stageCanPublish && canSignalCameraEnabled(cameraEnabled, normalizedMode)
 
     return {
       roomId: payloadRoomId,
@@ -2200,12 +2217,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       userName: user?.name || 'User',
       userGender: user?.gender || '',
       userAvatarUrl: user?.avatar_url || '',
-      stageRole: stageAccessRef.current?.role || 'audience',
-      canPublish: canPublishCurrentStage,
+      stageRole: currentStageRole(),
+      canPublish: stageCanPublish,
       rtcMode: normalizedMode,
       micEnabled: allowedMicEnabled,
       cameraEnabled: allowedCameraEnabled,
-      screenShared: canPublishCurrentStage && Boolean(screenShared),
+      screenShared: stageCanPublish && Boolean(screenShared),
     }
   }
 
@@ -2405,7 +2422,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return
     }
 
-    if (stageAccessRef.current?.canPublish) {
+    if (canPublishCurrentStage()) {
       setStatus('You already have permission to join the stage.')
       return
     }
@@ -2474,7 +2491,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   async function activateApprovedStageMedia(intent = pendingStageIntentRef.current) {
-    if (!joinedRef.current || !stageAccessRef.current?.canPublish) return
+    if (!joinedRef.current || !canPublishCurrentStage()) return
 
     const targetMic = intent?.mic !== false
     const targetCamera = rtcModeRef.current === 'video' && intent?.camera !== false
@@ -2956,7 +2973,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return
     }
 
-    if (!stageAccessRef.current?.canPublish) {
+    if (!canPublishCurrentStage()) {
       setStatus('Ask the room owner before sharing your screen.')
       setActiveToolPanel('screen')
       return
@@ -4021,7 +4038,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function toggleMic() {
     if (mediaUpdating.mic) return
     if (!joinedRef.current) return
-    if (!stageAccessRef.current?.canPublish) {
+    if (!canPublishCurrentStage()) {
       requestStageJoin()
       return
     }
@@ -4124,7 +4141,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   async function toggleCamera() {
     if (rtcMode === 'audio' || mediaUpdating.camera) return
     if (!joinedRef.current) return
-    if (!stageAccessRef.current?.canPublish) {
+    if (!canPublishCurrentStage()) {
       requestStageJoin()
       return
     }
@@ -4449,7 +4466,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
 
   const localAudioAvailable = hasLiveTrack(localStream, 'audio')
   const localVideoAvailable = hasLiveTrack(localStream, 'video')
-  const canPublishStageMedia = Boolean(stageAccess.canPublish)
+  const canPublishStageMedia = canPublishCurrentStage(stageAccess)
   const audienceMode = joined && !canPublishStageMedia
   const stageRequestsEnabled = stageAccess.requestsEnabled !== false && room?.stage_requests_enabled !== false
   const stageRequestPending = stageRequestStatus === 'pending'
@@ -4812,7 +4829,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                       userId={user?.id}
                       gender={user?.gender}
                       avatarUrl={user?.avatar_url}
-                      badge={screenSharing ? 'screen' : mediaMode}
+                      badge={screenSharing ? 'screen' : canPublishStageMedia ? currentStageRole(stageAccess) : mediaMode}
                       micOn={micOn}
                       cameraOn={cameraOn}
                       rtcMode={rtcMode}
