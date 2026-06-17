@@ -25,7 +25,7 @@ const roomTypeMeta = {
 export const liveRoomTypes = ['solo_live', 'pk_live']
 export const videoRoomTypes = ['video', 'one_to_one_video', 'group_video']
 export const musicRoomTypes = ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio']
-export const videoCapableRoomTypes = Object.keys(roomTypeLabels)
+export const videoCapableRoomTypes = [...videoRoomTypes, ...liveRoomTypes]
 
 export const roomFilterOptions = [
   { value: 'all', label: 'All types' },

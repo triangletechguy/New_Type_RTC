@@ -377,6 +377,7 @@ export class CameraFilterPipeline {
     this.frameDurations = []
     this.performanceStage = 0
     this.lastPerformanceChangeAt = 0
+    this.lastFrameErrorAt = 0
     this.stopped = false
   }
 
@@ -443,12 +444,22 @@ export class CameraFilterPipeline {
     return this.outputTrack
   }
 
+  requestOutputFrame() {
+    try {
+      this.outputTrack?.requestFrame?.()
+    } catch {
+      // requestFrame is best-effort and not available in every browser.
+    }
+  }
+
   setFilter(filterId) {
     this.filterId = normalizeVideoFilterId(filterId)
+    this.requestOutputFrame()
   }
 
   setBeautySettings(settings) {
     this.beautySettings = normalizeBeautySettings(settings)
+    this.requestOutputFrame()
   }
 
   setBackgroundEffect(effectId) {
@@ -459,10 +470,12 @@ export class CameraFilterPipeline {
       this.hasSegmentationMask = false
       this.lastPerformanceChangeAt = nowMs()
     }
+    this.requestOutputFrame()
   }
 
   setBackgroundBlurAmount(value) {
     this.backgroundBlurAmount = normalizeBackgroundBlurAmount(value)
+    this.requestOutputFrame()
   }
 
   notifyPerformanceChange(payload) {
@@ -820,45 +833,56 @@ export class CameraFilterPipeline {
   drawFrame = () => {
     if (this.stopped) return
 
-    const frameStartedAt = nowMs()
+    try {
+      const frameStartedAt = nowMs()
 
-    const context = this.context
-    const canvas = this.canvas
-    const video = this.video
+      const context = this.context
+      const canvas = this.canvas
+      const video = this.video
 
-    if (context && canvas && video && video.readyState >= 2) {
-      const filter = getVideoFilter(this.filterId)
-      const beautySettings = normalizeBeautySettings(this.beautySettings)
-      const canvasFilter = buildBeautyCanvasFilter(filter, beautySettings)
-      const sharpen = settingRatio(beautySettings, 'sharpen')
-      const lighting = settingRatio(beautySettings, 'lighting')
-      const backgroundActive = isBackgroundEffectActive(this.backgroundEffect)
-      const mirrored = Boolean(beautySettings.mirror)
-      const width = canvas.width
-      const height = canvas.height
+      if (context && canvas && video && video.readyState >= 2) {
+        const filter = getVideoFilter(this.filterId)
+        const beautySettings = normalizeBeautySettings(this.beautySettings)
+        const canvasFilter = buildBeautyCanvasFilter(filter, beautySettings)
+        const sharpen = settingRatio(beautySettings, 'sharpen')
+        const lighting = settingRatio(beautySettings, 'lighting')
+        const backgroundActive = isBackgroundEffectActive(this.backgroundEffect)
+        const mirrored = Boolean(beautySettings.mirror)
+        const width = canvas.width
+        const height = canvas.height
 
-      if (backgroundActive && this.scratchContext && this.scratchCanvas) {
-        this.updateSegmentationMask(video)
-        this.drawProcessedFrame(this.scratchContext, video, width, height, filter, beautySettings, canvasFilter)
+        if (backgroundActive && this.scratchContext && this.scratchCanvas) {
+          this.updateSegmentationMask(video)
+          this.drawProcessedFrame(this.scratchContext, video, width, height, filter, beautySettings, canvasFilter)
 
-        const masked = this.applyForegroundMask(width, height, mirrored)
-        if (masked) {
-          this.drawBackgroundLayer(context, video, width, height, mirrored)
-          context.drawImage(this.scratchCanvas, 0, 0)
+          const masked = this.applyForegroundMask(width, height, mirrored)
+          if (masked) {
+            this.drawBackgroundLayer(context, video, width, height, mirrored)
+            context.drawImage(this.scratchCanvas, 0, 0)
+          } else {
+            context.clearRect(0, 0, width, height)
+            context.drawImage(this.scratchCanvas, 0, 0)
+          }
         } else {
-          context.clearRect(0, 0, width, height)
-          context.drawImage(this.scratchCanvas, 0, 0)
+          this.drawProcessedFrame(context, video, width, height, filter, beautySettings, canvasFilter)
         }
-      } else {
-        this.drawProcessedFrame(context, video, width, height, filter, beautySettings, canvasFilter)
-      }
 
-      this.applySoftLighting(context, width, height, lighting)
-      this.applySharpen(context, video, width, height, sharpen, mirrored)
-      this.recordFramePerformance(frameStartedAt, backgroundActive)
+        this.applySoftLighting(context, width, height, lighting)
+        this.applySharpen(context, video, width, height, sharpen, mirrored)
+        this.outputTrack?.requestFrame?.()
+        this.recordFramePerformance(frameStartedAt, backgroundActive)
+      }
+    } catch (error) {
+      const now = nowMs()
+      if (now - this.lastFrameErrorAt > 1000) {
+        this.lastFrameErrorAt = now
+        console.error('[video-filter] Frame render failed; continuing filter loop', error)
+      }
     }
 
-    this.frameHandle = nextAnimationFrame(this.drawFrame, this.frameIntervalMs)
+    if (!this.stopped) {
+      this.frameHandle = nextAnimationFrame(this.drawFrame, this.frameIntervalMs)
+    }
   }
 
   stop({ stopSource = false } = {}) {

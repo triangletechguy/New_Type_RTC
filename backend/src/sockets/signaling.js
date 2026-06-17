@@ -33,22 +33,40 @@ function registerSignaling(io) {
   async function fetchParticipantStageAccess(databaseRoomId, userId) {
     if (!databaseRoomId || !userId) return null
 
-    const participants = await query(
+    const accessRows = await query(
       `
-      SELECT role_in_room
-      FROM rtc_session_participants
-      WHERE room_id = :roomId
-      AND user_id = :userId
-      AND left_at IS NULL
-      ORDER BY id DESC
+      SELECT
+        r.owner_id,
+        p.role_in_room AS participant_role,
+        (
+          SELECT rr.role
+          FROM room_roles rr
+          WHERE rr.room_id = r.id
+          AND rr.user_id = :userId
+          ORDER BY FIELD(rr.role, 'owner', 'admin', 'moderator'), rr.created_at ASC
+          LIMIT 1
+        ) AS assigned_role
+      FROM rooms r
+      LEFT JOIN rtc_session_participants p
+        ON p.room_id = r.id
+        AND p.user_id = :userId
+        AND p.left_at IS NULL
+      WHERE r.id = :roomId
+      ORDER BY p.id DESC
       LIMIT 1
       `,
       { roomId: databaseRoomId, userId }
     )
 
-    if (!participants.length) return { stageRole: 'audience', canPublish: false }
+    if (!accessRows.length) return { stageRole: 'audience', canPublish: false }
 
-    const stageRole = normalizeRoomRole(participants[0].role_in_room || 'audience', 'audience')
+    const access = accessRows[0]
+    const stageRole = normalizeRoomRole(
+      Number(access.owner_id) === Number(userId)
+        ? 'owner'
+        : access.assigned_role || access.participant_role || 'audience',
+      'audience'
+    )
     return {
       stageRole,
       canPublish: canPublishRoomMedia(stageRole),
@@ -137,6 +155,13 @@ function registerSignaling(io) {
     return `user:${Number(userId || 0)}`
   }
 
+  function roomChatRoom(databaseRoomId) {
+    const normalizedRoomId = Number(databaseRoomId || 0)
+    return Number.isInteger(normalizedRoomId) && normalizedRoomId > 0
+      ? `room-chat:${normalizedRoomId}`
+      : ''
+  }
+
   function cancelPendingPresenceClose(databaseRoomId, userId) {
     if (!databaseRoomId || !userId) return
 
@@ -206,7 +231,7 @@ function registerSignaling(io) {
   async function fetchAuthorizedDeletedChatMessage(messageId, userId) {
     const messages = await query(
       `
-      SELECT id, sender_id, is_deleted, is_unsent
+      SELECT id, room_id, sender_id, is_deleted, is_unsent
       FROM chat_messages
       WHERE id = :messageId
       AND (
@@ -293,6 +318,8 @@ function registerSignaling(io) {
       const duplicateSocket = io.sockets.sockets.get(socketId)
       if (duplicateSocket) {
         duplicateSocket.leave(roomKey)
+        const duplicateChatRoom = roomChatRoom(roomUser.databaseRoomId || parseDatabaseRoomId(roomKey))
+        if (duplicateChatRoom) duplicateSocket.leave(duplicateChatRoom)
         duplicateSocket.emit('room-session-replaced', { roomId: roomKey })
       }
     }
@@ -315,6 +342,10 @@ function registerSignaling(io) {
           userId: user.userId,
           userName: user.userName,
         })
+
+        socket.leave(roomId)
+        const chatRoomKey = roomChatRoom(databaseRoomId)
+        if (chatRoomKey) socket.leave(chatRoomKey)
 
         if (reason === 'leave-room' && !userStillPresent) {
           closePresenceNow(databaseRoomId, user, 'leave', reason)
@@ -396,6 +427,8 @@ function registerSignaling(io) {
         })
 
         socket.join(roomKey)
+        const chatRoomKey = roomChatRoom(resolvedDatabaseRoomId)
+        if (chatRoomKey) socket.join(chatRoomKey)
         if (userId) socket.join(userSocketRoom(userId))
         cancelPendingPresenceClose(resolvedDatabaseRoomId, userId)
         if (resolvedDatabaseRoomId && userId) {
@@ -729,7 +762,11 @@ function registerSignaling(io) {
           return
         }
 
-        socket.to(String(roomId)).emit('chat-message', { message: savedMessage, socketId: socket.id })
+        io.to(String(roomId)).emit('chat-message', {
+          message: savedMessage,
+          room_id: Number(savedMessage.room_id || 0) || undefined,
+          socketId: socket.id,
+        })
 
         if (typeof acknowledge === 'function') {
           acknowledge({ ok: true })
@@ -762,8 +799,9 @@ function registerSignaling(io) {
           return
         }
 
-        socket.to(String(roomId)).emit('chat-message-unsent', {
+        io.to(String(roomId)).emit('chat-message-unsent', {
           messageId,
+          room_id: Number(deletedMessage.room_id || 0) || undefined,
           socketId: socket.id,
         })
 
@@ -798,8 +836,9 @@ function registerSignaling(io) {
           return
         }
 
-        socket.to(String(roomId)).emit('chat-message-deleted', {
+        io.to(String(roomId)).emit('chat-message-deleted', {
           messageId,
+          room_id: Number(deletedMessage.room_id || 0) || undefined,
           socketId: socket.id,
         })
 
@@ -834,8 +873,9 @@ function registerSignaling(io) {
           return
         }
 
-        socket.to(String(roomId)).emit('chat-message-edited', {
+        io.to(String(roomId)).emit('chat-message-edited', {
           message: updatedMessage,
+          room_id: Number(updatedMessage.room_id || 0) || undefined,
           socketId: socket.id,
         })
 

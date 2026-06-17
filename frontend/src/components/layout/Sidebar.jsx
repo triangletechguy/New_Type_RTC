@@ -12,10 +12,10 @@ export function Sidebar({ user, currentView, onView, onLogout, language = 'Engli
     <aside className="sidebar glass-card">
       <div className="logo-row">
         <div className="logo-mark image-mark">
-          <img src={brandAssets.appIconSmall} alt="BuzzCast" decoding="async" />
+          <img src={brandAssets.appIconSmall} alt="TalkEachOther" decoding="async" />
         </div>
         <div>
-          <strong>BuzzCast</strong>
+          <strong>TalkEachOther</strong>
           <span>{t('Live social rooms')}</span>
         </div>
       </div>

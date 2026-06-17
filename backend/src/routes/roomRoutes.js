@@ -50,6 +50,7 @@ const sortOptions = {
   name: 'r.name ASC, r.id DESC',
   active: 'active_participants DESC, r.created_at DESC, r.id DESC',
 }
+const videoRoomTypes = new Set([...roomTypeGroups.video, ...roomTypeGroups.live])
 
 function firstQueryValue(value) {
   return Array.isArray(value) ? value[0] : value
@@ -373,7 +374,7 @@ async function ensureRoomFollowSchema() {
 }
 
 function roomSupportsVideo(roomType) {
-  return validRoomTypes.has(roomType)
+  return videoRoomTypes.has(roomType)
 }
 
 function isOneToOneRoom(roomType) {
@@ -3047,7 +3048,11 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
     const room = rooms[0]
 
     const result = await transaction(async (connection) => {
-      const [participants] = await connection.execute(
+      const roomRole = Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+      const canPublishForRoom = canPublishRoomMedia(roomRole)
+      let [participants] = await connection.execute(
         `
         SELECT *
         FROM rtc_session_participants
@@ -3062,17 +3067,89 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       )
 
       if (!participants.length) {
-        throw createHttpError(409, 'Join the room before changing mic or camera state.')
+        if (!canPublishForRoom) {
+          throw createHttpError(409, 'Join the room before changing mic or camera state.')
+        }
+
+        const [activeSessions] = await connection.execute(
+          `
+          SELECT *
+          FROM rtc_sessions
+          WHERE room_id = ?
+          AND status = 'active'
+          ORDER BY id DESC
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [room.id]
+        )
+
+        let session = activeSessions[0]
+
+        if (!session) {
+          const signalingRoom = `webrtc_tenant_${room.tenant_id}_room_${room.id}`
+          const [insertSession] = await connection.execute(
+            `
+            INSERT INTO rtc_sessions (
+              tenant_id, room_id, rtc_provider, signaling_room, session_type,
+              started_by, started_at, status, total_duration_seconds,
+              total_participant_minutes, created_at, updated_at
+            )
+            VALUES (?, ?, 'native_webrtc', ?, ?, ?, NOW(), 'active', 0, 0, NOW(), NOW())
+            `,
+            [room.tenant_id, room.id, signalingRoom, room.room_type, req.user.id]
+          )
+
+          const [newSessions] = await connection.execute(`SELECT * FROM rtc_sessions WHERE id = ? LIMIT 1`, [insertSession.insertId])
+          session = newSessions[0]
+        }
+
+        const [insertParticipant] = await connection.execute(
+          `
+          INSERT INTO rtc_session_participants (
+            session_id, room_id, user_id, peer_uid, role_in_room, joined_at,
+            duration_seconds, mic_enabled, camera_enabled, screen_shared,
+            connection_status, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, NOW(), 0, 0, 0, 0, 'connected', NOW(), NOW())
+          `,
+          [
+            session.id,
+            room.id,
+            req.user.id,
+            req.user.id,
+            roomRole,
+          ]
+        )
+
+        await connection.execute(
+          `
+          INSERT INTO rtc_events (tenant_id, room_id, session_id, user_id, event_type, event_data, created_at)
+          VALUES (?, ?, ?, ?, 'join', ?, NOW())
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            session.id,
+            req.user.id,
+            JSON.stringify({
+              room_type: room.room_type,
+              rtc_provider: 'native_webrtc',
+              restored_for_media_state: true,
+              role_in_room: roomRole,
+            }),
+          ]
+        )
+
+        const [createdParticipants] = await connection.execute(`SELECT * FROM rtc_session_participants WHERE id = ? LIMIT 1`, [insertParticipant.insertId])
+        participants = createdParticipants
       }
 
       const participant = participants[0]
       const currentMicEnabled = Boolean(Number(participant.mic_enabled))
       const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
       const currentScreenShared = Boolean(Number(participant.screen_shared))
-      const roomRole = Number(room.owner_id) === Number(req.user.id)
-        ? 'owner'
-        : await getRoomRole(connection, room.id, req.user.id)
-      const effectiveParticipantRole = canPublishRoomMedia(roomRole)
+      const effectiveParticipantRole = canPublishForRoom
         ? roomRole
         : participant.role_in_room || 'audience'
       const micEnabled = parseBoolean(req.body?.mic_enabled, currentMicEnabled)

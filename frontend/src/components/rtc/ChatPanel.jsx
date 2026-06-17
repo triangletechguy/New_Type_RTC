@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import messageComposerIcon from '../../assets/message.svg'
 import { avatarForUser, liveRoomAssets } from '../../assets/rtc/catalog'
 import { LoadingMovie } from '../common/LoadingMovie'
 import { apiRequest } from '../../services/api'
@@ -238,6 +239,23 @@ function messageIdValue(message) {
   return Number.isFinite(id) ? id : 0
 }
 
+function positiveIdValue(value) {
+  const id = Number(value || 0)
+  return Number.isFinite(id) && id > 0 ? id : 0
+}
+
+function messageBelongsToRoom(message, roomId) {
+  const messageRoomId = positiveIdValue(message?.room_id)
+  const currentRoomId = positiveIdValue(roomId)
+  return !messageRoomId || !currentRoomId || messageRoomId === currentRoomId
+}
+
+function eventBelongsToRoom(payloadRoomId, roomId) {
+  const incomingRoomId = positiveIdValue(payloadRoomId)
+  const currentRoomId = positiveIdValue(roomId)
+  return !incomingRoomId || !currentRoomId || incomingRoomId === currentRoomId
+}
+
 function latestMessageId(messages = []) {
   return messages.reduce((latest, message) => Math.max(latest, messageIdValue(message)), 0)
 }
@@ -466,6 +484,7 @@ export function ChatPanel({
   const [chatEnabled, setChatEnabled] = useState(room?.chat_enabled !== false)
   const [giftSummary, setGiftSummary] = useState(null)
   const [typingUsers, setTypingUsers] = useState({})
+  const [socketConnected, setSocketConnected] = useState(Boolean(socket?.connected))
   const [emojiPickerTarget, setEmojiPickerTarget] = useState('')
   const [emojiQuery, setEmojiQuery] = useState('')
   const [reactionPickerTarget, setReactionPickerTarget] = useState('')
@@ -492,7 +511,7 @@ export function ChatPanel({
   const t = (key, replacements = {}) => translateApp(language, key, replacements)
   const joinerPresentation = presentation === 'joiner'
 
-  const realtimeConnected = Boolean(socket?.connected && signalingRoom)
+  const realtimeConnected = Boolean(socketConnected && signalingRoom)
   const typingNames = Object.values(typingUsers)
     .filter(Boolean)
     .filter((typingUser) => typingUser.id !== user?.id)
@@ -631,13 +650,15 @@ export function ChatPanel({
 
   function appendMessage(message) {
     if (!message?.id) return
+    if (!messageBelongsToRoom(message, roomId)) return
     if (!isVisibleRoomMessage(message, blockedSenderIds)) return
 
     setMessages((previous) => {
-      if (previous.some((item) => item.id === message.id)) {
-        return previous.map((item) => (item.id === message.id ? { ...item, ...message } : item))
-      }
-      return [...previous, message]
+      const nextMessages = previous.some((item) => item.id === message.id)
+        ? previous.map((item) => (item.id === message.id ? { ...item, ...message } : item))
+        : [...previous, message]
+
+      return sortMessagesById(nextMessages)
     })
   }
 
@@ -655,7 +676,11 @@ export function ChatPanel({
 
   function mergeRoomMessages(incomingMessages) {
     const incoming = Array.isArray(incomingMessages)
-      ? incomingMessages.filter((message) => message?.id && isVisibleRoomMessage(message, blockedSenderIds))
+      ? incomingMessages.filter((message) => (
+        message?.id
+        && messageBelongsToRoom(message, roomId)
+        && isVisibleRoomMessage(message, blockedSenderIds)
+      ))
       : []
 
     if (!incoming.length) return
@@ -676,6 +701,7 @@ export function ChatPanel({
 
   function replaceMessage(updatedMessage) {
     if (!updatedMessage?.id) return
+    if (!messageBelongsToRoom(updatedMessage, roomId)) return
     setMessages((previous) => previous.map((message) => (
       message.id === updatedMessage.id ? { ...message, ...updatedMessage } : message
     )))
@@ -732,7 +758,7 @@ export function ChatPanel({
 
   async function syncMissedRoomMessages({ full = false } = {}) {
     if (!roomId) return
-    const shouldFullRefresh = full || !(socket?.connected && signalingRoom)
+    const shouldFullRefresh = full || !(socketConnected && signalingRoom)
 
     await loadMessages({
       afterId: shouldFullRefresh ? 0 : latestRoomMessageIdRef.current,
@@ -1652,21 +1678,38 @@ export function ChatPanel({
   }, [sending])
 
   useEffect(() => {
+    setSocketConnected(Boolean(socket?.connected))
     if (!socket) return undefined
     const syncAfterReconnect = () => {
       syncMissedRoomMessages({ full: true }).catch((error) => setStatus(`Chat sync failed: ${error.message}`))
     }
-    const handleMessage = ({ message, gift_summary: incomingGiftSummary } = {}) => {
+    const handleConnect = () => {
+      setSocketConnected(true)
+      syncAfterReconnect()
+    }
+    const handleDisconnect = () => {
+      setSocketConnected(false)
+    }
+    const handleMessage = ({ message, room_id: payloadRoomId, gift_summary: incomingGiftSummary } = {}) => {
+      if (!eventBelongsToRoom(payloadRoomId, roomId)) return
       appendMessage(message)
       if (incomingGiftSummary) setGiftSummary(incomingGiftSummary)
     }
-    const handleMessageEdited = ({ message }) => replaceMessage(message)
-    const handleMessageReaction = (update = {}) => applyRoomReactionUpdate(update)
-    const handleMessageDeleted = ({ messageId }) => {
+    const handleMessageEdited = ({ message, room_id: payloadRoomId } = {}) => {
+      if (!eventBelongsToRoom(payloadRoomId, roomId)) return
+      replaceMessage(message)
+    }
+    const handleMessageReaction = (update = {}) => {
+      if (!eventBelongsToRoom(update.room_id, roomId)) return
+      applyRoomReactionUpdate(update)
+    }
+    const handleMessageDeleted = ({ messageId, room_id: payloadRoomId } = {}) => {
+      if (!eventBelongsToRoom(payloadRoomId, roomId)) return
       if (!messageId) return
       removeMessage(messageId)
     }
-    const handleMessageUnsent = ({ messageId, message }) => {
+    const handleMessageUnsent = ({ messageId, message, room_id: payloadRoomId } = {}) => {
+      if (!eventBelongsToRoom(payloadRoomId, roomId)) return
       if (!messageId) return
       if (message?.is_deleted || message?.is_unsent || !message) removeMessage(messageId)
     }
@@ -1712,7 +1755,8 @@ export function ChatPanel({
       loadInboxThreads({ quiet: true })
     }
 
-    socket.on('connect', syncAfterReconnect)
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
     socket.on('chat-message', handleMessage)
     socket.on('chat-message-edited', handleMessageEdited)
     socket.on('chat-message-reaction', handleMessageReaction)
@@ -1727,7 +1771,8 @@ export function ChatPanel({
     socket.io?.on('reconnect', syncAfterReconnect)
 
     return () => {
-      socket.off('connect', syncAfterReconnect)
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
       socket.off('chat-message', handleMessage)
       socket.off('chat-message-edited', handleMessageEdited)
       socket.off('chat-message-reaction', handleMessageReaction)
@@ -1741,7 +1786,7 @@ export function ChatPanel({
       socket.off('typing-stop', handleTypingStop)
       socket.io?.off('reconnect', syncAfterReconnect)
     }
-  }, [socket, roomId, user?.id, blockedSenderIds, inboxTarget?.id])
+  }, [socket, roomId, signalingRoom, user?.id, blockedSenderIds, inboxTarget?.id])
 
   useEffect(() => {
     if (!emojiPickerTarget && !reactionPickerTarget) return undefined
@@ -1799,11 +1844,13 @@ export function ChatPanel({
             </div>
             <button
               type="button"
-              className={chatMode === 'inbox' ? 'is-open' : ''}
+              className={chatMode === 'inbox' ? 'joiner-message-toggle is-open' : 'joiner-message-toggle'}
               onClick={chatMode === 'inbox' ? showRoomComments : showPersonalInbox}
               aria-label={chatMode === 'inbox' ? t('Room chat') : t('Inbox')}
             >
-              <span aria-hidden="true">›</span>
+              <span className="joiner-message-toggle-icon" aria-hidden="true">
+                <img src={messageComposerIcon} alt="" loading="lazy" />
+              </span>
             </button>
           </div>
           {chatMode === 'comments' ? (
