@@ -45,7 +45,6 @@ import {
 import {
   faqAnswers,
   faqTopics,
-  exploreFilters,
   feedTabs,
   feedbackCategories,
   feedbackTypes,
@@ -63,7 +62,7 @@ import {
 
 const defaultFeedTab = feedTabs.find((item) => item.value === 'live') || { filter: 'all', sort: 'active' }
 const accessFilterValues = new Set(privacyFilterOptions.map((option) => option.value))
-const appDownloadName = 'TalkEachOther'
+const appDownloadName = 'BuzzCast'
 const appDownloadUrl = 'https://funint.online'
 const appDownloadQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=176x176&margin=1&data=${encodeURIComponent(appDownloadUrl)}`
 const maxDmPhotoBytes = 5 * 1024 * 1024
@@ -421,44 +420,23 @@ function liveUserCount(card) {
   return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
 }
 
-function liveUserAvatarItems(card, maxVisible = 5) {
-  const room = card?.room || {}
-  const ownerId = room.owner_id || room.ownerId || 0
-  const ownerName = room.owner_name || room.ownerName || card?.host || card?.title || 'Room host'
-  const ownerAvatarUrl = room.owner_avatar_url || room.ownerAvatarUrl || card?.avatarUrl || ''
+function liveUserAvatarItems(card, maxVisible = 3) {
+  const count = liveUserCount(card)
   const previews = activeParticipantPreviews(card)
-  const items = [{
-    key: `${card?.id || 'room'}-owner-${ownerId || 'host'}`,
-    name: ownerName,
-    src: avatarForUser({
-      id: ownerId,
-      user_id: ownerId,
-      name: ownerName,
-      full_name: ownerName,
-      avatar_url: ownerAvatarUrl,
-    }, ownerId || cardAvatarIndex(card)),
-    fallback: !ownerAvatarUrl,
-    owner: true,
-  }]
+  const visibleCount = Math.min(count, maxVisible)
 
-  previews.forEach((participant, offset) => {
-    if (items.length >= maxVisible) return
-
-    const participantId = Number(participant.user_id || participant.userId || 0)
-    if (ownerId && participantId === Number(ownerId)) return
-
-    const name = participant.name || participant.user_name || `User ${offset + 1}`
+  return Array.from({ length: visibleCount }, (_, offset) => {
+    const participant = previews[offset] || {}
+    const name = participant.name || participant.user_name || (offset === 0 ? card?.host : '') || `User ${offset + 1}`
     const avatarUrl = participant.avatar_url || participant.avatarUrl || ''
-    items.push({
+
+    return {
       key: `${card?.id || 'room'}-${participant.user_id || participant.userId || offset}`,
       name,
       src: avatarForUser({ ...participant, name, avatar_url: avatarUrl }, participant.user_id || participant.userId || offset),
       fallback: !avatarUrl,
-      owner: false,
-    })
+    }
   })
-
-  return items
 }
 
 function roomToFeedCard(room, index) {
@@ -503,25 +481,6 @@ function upsertRoomById(roomList, nextRoom) {
     nextRoom,
     ...roomList.filter((room) => Number(room.id) !== Number(nextRoom.id)),
   ]
-}
-
-function roomOwnedByCurrentUser(room, user) {
-  if (!room || !user?.id) return room
-
-  const currentUserId = Number(user.id)
-  if (!currentUserId) return room
-
-  const ownerId = Number(room.owner_id || room.ownerId || 0)
-  if (ownerId === currentUserId) return room
-  if (ownerId > 0) return room
-
-  return {
-    ...room,
-    owner_id: currentUserId,
-    ownerId: currentUserId,
-    owner_name: room.owner_name || user.name || user.display_name || user.email || 'You',
-    owner_avatar_url: room.owner_avatar_url || user.avatar_url || '',
-  }
 }
 
 function createRoomErrorMessage(error) {
@@ -638,15 +597,32 @@ function FeedCard({
   card,
   featured,
   onOpen,
+  onDelete,
+  canDelete = false,
+  deleting = false,
+  followStatus = '',
+  onHostFollow,
+  followBusy = false,
 }) {
   const cover = cardCover(card)
   const userCount = liveUserCount(card)
   const avatarItems = liveUserAvatarItems(card)
   const extraAvatarCount = Math.max(0, userCount - avatarItems.length)
-  const meta = getRoomMeta(card.room?.room_type || card.roomType)
-  const privacy = normalizeAccessFilter(card.room?.privacy_type || card.privacy || 'public')
+  const roomMeta = getRoomMeta(card.room?.room_type || card.roomType)
+  const privacy = card.room?.privacy_type || card.privacy || 'public'
   const accessLabel = privacy === 'password' ? 'Key room' : privacy === 'private' ? 'Private' : 'Public'
-  const cardTags = (card.tags || getRoomTags(card.room || {})).slice(0, 2)
+  const speakerCount = Math.max(0, Number(card.speakerCount ?? card.room?.active_speakers ?? 0))
+  const regionLabel = card.region || card.country || 'Global'
+  const cardTags = (card.tags || getRoomTags(card.room || {})).slice(0, 3)
+  const followLabel = followBusy
+    ? '...'
+    : followStatus === 'following'
+    ? 'Message'
+    : followStatus === 'requested'
+    ? 'Requested'
+    : followStatus === 'incoming'
+    ? 'Accept'
+    : 'Follow'
   const imageLoading = featured ? 'eager' : 'lazy'
   const imagePriority = featured ? 'high' : 'low'
 
@@ -655,27 +631,32 @@ function FeedCard({
       <button type="button" className="buzzcast-card-button" onClick={() => onOpen(card)}>
         <div className={`buzzcast-media media-${card.tone || 'aurora'}`}>
           <img className="buzzcast-media-image" src={cover} alt="" loading={imageLoading} decoding="async" fetchPriority={imagePriority} />
-          <span className="buzzcast-viewers" aria-label={`${compactNumber(userCount)} users`}>{compactNumber(userCount)}</span>
-          <span className="buzzcast-room-avatar-row" aria-label={`${compactNumber(userCount)} users`}>
-            {avatarItems.map((avatar) => (
-              <i
-                key={avatar.key}
-                className={`${avatar.owner ? 'owner' : 'joiner'}${avatar.fallback ? ' fallback' : ''}`}
-                title={avatar.name}
-              >
-                <img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" />
-              </i>
-            ))}
-            {extraAvatarCount > 0 ? <i className="more">+{compactNumber(extraAvatarCount)}</i> : null}
-          </span>
+          {card.badge ? <span className="buzzcast-card-badge">{card.badge}</span> : null}
+          {card.sensitive ? <span className="buzzcast-sensitive-dot"></span> : null}
+          <span className="buzzcast-viewers">{compactNumber(userCount)}</span>
+          {avatarItems.length ? (
+            <span className="buzzcast-seat-dots" aria-label={`${userCount} live user${userCount === 1 ? '' : 's'}`}>
+              {avatarItems.map((avatar) => (
+                <i key={avatar.key} className={avatar.fallback ? 'buzzcast-initial-avatar-dot' : ''} title={avatar.name}>
+                  <img src={avatar.src} alt="" loading="lazy" decoding="async" fetchPriority="low" />
+                </i>
+              ))}
+              {extraAvatarCount > 0 ? <i className="buzzcast-seat-more">+{compactNumber(extraAvatarCount)}</i> : null}
+            </span>
+          ) : null}
         </div>
         <div className="buzzcast-card-copy">
           <strong>{card.title}</strong>
-          <span className="buzzcast-card-host">{card.host || 'Room host'}</span>
+          <span>{card.host}</span>
           <small className="buzzcast-card-meta">
-            <b>{meta.short || meta.label}</b>
-            <em>{accessLabel}</em>
+            <b>{roomMeta.label}</b>
+            <em>{privacy === 'public' ? `${compactNumber(userCount)} watching` : accessLabel}</em>
           </small>
+          <span className="buzzcast-card-detail-row">
+            <i>{accessLabel}</i>
+            <i>{compactNumber(speakerCount)} on stage</i>
+            <i>{regionLabel}</i>
+          </span>
           {cardTags.length ? (
             <span className="buzzcast-card-tags">
               {cardTags.map((tag) => <i key={tag}>{tag}</i>)}
@@ -686,6 +667,34 @@ function FeedCard({
           <i></i>{compactNumber(userCount)}
         </span>
       </button>
+      {canDelete ? (
+        <button
+          type="button"
+          className="buzzcast-room-delete-button"
+          onClick={() => onDelete?.(card.room)}
+          disabled={deleting}
+          aria-label={`Delete ${card.title}`}
+          title="Delete room"
+        >
+          <span aria-hidden="true">{deleting ? '...' : 'x'}</span>
+          <small>{deleting ? 'Deleting' : 'Delete'}</small>
+        </button>
+      ) : null}
+      {onHostFollow ? (
+        <button
+          type="button"
+          className={`buzzcast-host-follow-button ${followStatus || 'idle'}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onHostFollow(card)
+          }}
+          disabled={followBusy || followStatus === 'requested'}
+          aria-label={`${followLabel} ${card.host}`}
+          title={followStatus === 'requested' ? 'Follow request sent' : `${followLabel} ${card.host}`}
+        >
+          {followLabel}
+        </button>
+      ) : null}
     </article>
   )
 }
@@ -784,7 +793,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const [liveChatMessages, setLiveChatMessages] = useState([])
   const [mobileToast, setMobileToast] = useState('')
   const [recentRoomIds, setRecentRoomIds] = useState(savedRecentRoomIds)
-  const [followedRooms, setFollowedRooms] = useState([])
   const [readThreadIds, setReadThreadIds] = useState([])
   const [activeRanking, setActiveRanking] = useState('rooms')
   const [previewCard, setPreviewCard] = useState(null)
@@ -815,7 +823,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const liveVoiceRecordingTargetRef = useRef(null)
   const livePhotoInputRef = useRef(null)
   const roomListRequestRef = useRef(0)
-  const followedRoomRequestRef = useRef(0)
 
   const displayName = user?.name || user?.email?.split('@')[0] || 'Guest'
   const displayId = user?.id || 0
@@ -833,7 +840,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   const roomLaunchTitle = createdRoom ? 'Created Room' : roomLaunchPending ? 'Preparing Room' : 'Quick Join'
   const roomLaunchButtonLabel = roomLaunchPending ? 'Preparing Room...' : openingRoom ? 'Opening...' : 'Open Room'
   const t = (key, replacements = {}) => translateApp(settingsDraft.language || 'English', key, replacements)
-  const isEventFeed = activeFeed === 'events'
 
   const roomCards = useMemo(() => {
     const cardRooms = createdRoom?.id ? upsertRoomById(rooms, createdRoom) : rooms
@@ -903,30 +909,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (rememberedCards.length) return rememberedCards.slice(0, 24)
     return visibleCards.filter((card) => card.id !== ownRoomCard.id).slice(0, 24)
   }, [ownRoomCard.id, recentRoomIds, visibleCards])
-  const followedRoomCards = useMemo(() => {
-    const followingIds = new Set(roomFollowRelations.followingIds.map((id) => Number(id)).filter(Boolean))
-    const byId = new Map()
-
-    followedRooms.forEach((room, index) => {
-      if (!room?.id) return
-      byId.set(String(room.id), {
-        ...roomToFeedCard({ ...room, owner_followed: true }, index),
-        following: true,
-      })
-    })
-
-    roomCards.forEach((card) => {
-      const ownerId = roomOwnerIdFromCard(card)
-      const isFollowed = ownerId && ownerId !== Number(user?.id || 0) && (card.following || followingIds.has(ownerId))
-      if (!isFollowed) return
-      byId.set(String(card.room?.id || card.id), {
-        ...card,
-        following: true,
-      })
-    })
-
-    return sortCardsForView(Array.from(byId.values()), 'active').slice(0, 24)
-  }, [followedRooms, roomCards, roomFollowRelations.followingIds, user?.id])
   const searchTerm = search.trim().toLowerCase()
   const roomSearchResults = useMemo(() => {
     const includesTerm = (value) => String(value || '').toLowerCase().includes(searchTerm)
@@ -1000,7 +982,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       .filter(Boolean)
   }, [dmContacts, dmMessages, messageSearch, readThreadIds, user])
   const messageThreads = directMessageThreads
-  const activeThreadData = activeThread ? messageThreads.find((thread) => thread.id === activeThread) || null : null
+  const activeThreadData = messageThreads.find((thread) => thread.id === activeThread) || messageThreads[0] || null
   const activeThreadMessages = activeThreadData ? (dmMessages[activeThreadData.id] || []) : []
   const canSendDm = Boolean(
     activeThreadData?.peerId
@@ -1128,41 +1110,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     }
   }
 
-  async function loadFollowedRooms({ quiet = false } = {}) {
-    if (!user?.id) {
-      setFollowedRooms([])
-      return false
-    }
-
-    const requestId = followedRoomRequestRef.current + 1
-    followedRoomRequestRef.current = requestId
-    const isLatestFollowedRoomRequest = () => followedRoomRequestRef.current === requestId
-
-    try {
-      const data = await apiRequest(buildRoomsPath({
-        page: 1,
-        search: '',
-        filter: 'all',
-        privacy: 'all',
-        sort: 'active',
-        feed: 'following',
-        region: settingsDraft.region || user?.current_residence || '',
-      }))
-
-      if (!isLatestFollowedRoomRequest()) return false
-      setFollowedRooms(data.rooms?.data || [])
-      return true
-    } catch (error) {
-      if (!isLatestFollowedRoomRequest()) return false
-      setFollowedRooms([])
-      if (!quiet) {
-        setStatus(`Followed rooms failed: ${error.message}`)
-        showMobileActionToast(error.message)
-      }
-      return false
-    }
-  }
-
   function openHostDirectMessage(peer) {
     if (!peer?.id || !requireAuth('Log in to message this host.', 'login')) return
 
@@ -1224,7 +1171,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         setStatus(`You are now following ${peer.name}.`)
         showMobileActionToast('Follow accepted')
         loadDirectMessageContacts({ quiet: true })
-        loadFollowedRooms({ quiet: true })
         if (activeFeed === 'following') loadRooms({ page: 1, feedValue: 'following', quiet: true, preserveStatus: true })
         return
       }
@@ -1238,7 +1184,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         }))
         setStatus(`You are already following ${peer.name}.`)
         showMobileActionToast('Following')
-        loadFollowedRooms({ quiet: true })
         openHostDirectMessage(peer)
         return
       }
@@ -1470,19 +1415,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setShowHostPanel(true)
   }
 
-  function openMessagesDrawer({ resetThread = true } = {}) {
+  function openMessagesDrawer() {
     if (!requireAuth('Log in to open messages and chat with people.', 'login')) return
     setShowRankings(false)
-    if (resetThread) {
-      setActiveThread('')
-      setDmStatus('')
-      setDmInput('')
-      setDmDeleteTarget(null)
-      setDmDeleteForEveryone(false)
-      setDmImagePreview(null)
-      clearDmMediaDrafts()
-      if (dmRecording) cancelDmAudioRecording()
-    }
     if (activeThread) {
       setReadThreadIds((previous) => previous.includes(activeThread) ? previous : [...previous, activeThread])
     }
@@ -2271,18 +2206,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   function runSearch() {
     setActiveSection('live')
     setShowSearchPanel(true)
-    if (typeof window !== 'undefined') {
-      const trimmedSearch = search.trim()
-      const nextState = {
-        ...(window.history.state || {}),
-        view: 'rooms',
-        activeRoom: null,
-        buzzcastSection: 'live',
-        searchKey: trimmedSearch,
-      }
-      const nextPath = trimmedSearch ? `/search?key=${encodeURIComponent(trimmedSearch)}` : '/'
-      window.history.pushState(nextState, '', nextPath)
-    }
     loadRooms({
       page: 1,
       searchValue: search,
@@ -2351,26 +2274,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     setRoomMeta((previous) => ({ ...previous, page: 1 }))
   }
 
-  function openEventsFeed() {
-    const nextFeed = isEventFeed ? 'live' : 'events'
-    setActiveSection('live')
-    setPreviewCard(null)
-    setShowMessages(false)
-    setActiveFeed(nextFeed)
-    setMobileRoomGroup('recently')
-    setFilter('all')
-    setPrivacyFilter('all')
-    setSort('active')
-    setRoomMeta((previous) => ({ ...previous, page: 1 }))
-    setStatus(nextFeed === 'events' ? 'Showing event rooms' : 'Showing live rooms')
-  }
-
-  function applyExploreFilter(option) {
-    setFilter(option.filter || 'all')
-    setSort(option.value === 'new_host' ? 'newest' : 'active')
-    setRoomMeta((previous) => ({ ...previous, page: 1 }))
-  }
-
   function showAllLiveRooms() {
     setActiveSection('live')
     setPreviewCard(null)
@@ -2419,7 +2322,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     const requestId = roomListRequestRef.current + 1
     roomListRequestRef.current = requestId
     const isLatestRoomRequest = () => roomListRequestRef.current === requestId
-    const requestFeedValue = feedValue === 'events' ? 'live' : feedValue
 
     setLoadingRooms(true)
     const path = buildRoomsPath({
@@ -2428,7 +2330,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       filter: filterValue,
       privacy: privacyValue,
       sort: sortValue,
-      feed: requestFeedValue,
+      feed: feedValue,
       region: regionValue,
     })
 
@@ -2511,7 +2413,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         method: 'POST',
         body: JSON.stringify(payload),
       })
-      const nextRoom = roomOwnedByCurrentUser(data.room, user)
+      const nextRoom = data.room
       if (!nextRoom?.id) throw new Error('Room was created, but the backend did not return a room ID.')
 
       const nextRoomId = String(nextRoom.id)
@@ -2899,10 +2801,9 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }
 
   function renderLiveFeed() {
-    const featuredFollowCard = followedRoomCards[0] || (activeFeed === 'following' ? visibleCards[0] : null)
-    const featuredMobileCard = featuredFollowCard || ownRoomCard
+    const featuredMobileCard = activeFeed === 'following' ? visibleCards[0] : ownRoomCard
     const featuredMobileTitle = featuredMobileCard?.isOwnRoom && featuredMobileCard.title === displayName ? '☢️We 4 Humanity☢️' : featuredMobileCard?.title
-    const featuredMobileRibbon = featuredFollowCard ? 'Follow' : 'Mine'
+    const featuredMobileRibbon = activeFeed === 'following' ? 'Follow' : 'Mine'
     const mobileRoomListCards = recentRoomCards.length ? recentRoomCards : visibleCards
 
     return (
@@ -2990,37 +2891,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           ))}
         </nav>
 
-        <div className="buzzcast-feed-strip">
-          <div className="buzzcast-quick-filters" aria-label="Explore filters">
-            {exploreFilters.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={
-                  option.value === 'new_host'
-                    ? filter === 'all' && sort === 'newest' ? 'active' : ''
-                    : option.value === 'all'
-                    ? filter === 'all' && sort !== 'newest' ? 'active' : ''
-                    : filter === option.filter ? 'active' : ''
-                }
-                onClick={() => applyExploreFilter(option)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className={isEventFeed ? 'buzzcast-event-button active' : 'buzzcast-event-button'}
-            onClick={openEventsFeed}
-            aria-label={isEventFeed ? 'Show explore rooms' : 'Show event rooms'}
-            title={isEventFeed ? 'Show explore rooms' : 'Show event rooms'}
-          >
-            <span aria-hidden="true">★</span>
-            <b>Events</b>
-          </button>
-        </div>
-
         <div className="buzzcast-match-banner">
           <button type="button" className="buzzcast-create-room-button" onClick={() => openHostPanel()} aria-label="Create room">
             <span className="buzzcast-create-room-plus" aria-hidden="true">+</span>
@@ -3030,7 +2900,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
 
         <div className="buzzcast-feed-controls">
           <span>
-            {search.trim() ? `Search: ${search.trim()} - ` : ''}{isEventFeed ? 'Events - ' : ''}{roomMeta.total} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
+            {roomMeta.total} rooms - {loadingRooms ? <LoadingMovie label="Refreshing rooms" inline /> : status}
           </span>
           <div>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Room type filter">
@@ -3061,7 +2931,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </div>
         ) : (
           <>
-            <div className={`buzzcast-card-grid desktop-feed-grid ${activeFeed === 'party' ? 'party-grid' : ''} ${isEventFeed ? 'event-grid' : ''}`}>
+            <div className={`buzzcast-card-grid desktop-feed-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
               {visibleCards.map((card, index) => {
                 const followStatus = roomHostFollowStatus(card)
                 const canFollowHost = Boolean(roomOwnerIdFromCard(card) && followStatus !== 'self')
@@ -3081,7 +2951,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
                 )
               })}
             </div>
-            <div className={`buzzcast-card-grid mobile-recent-grid ${activeFeed === 'party' ? 'party-grid' : ''} ${isEventFeed ? 'event-grid' : ''}`}>
+            <div className={`buzzcast-card-grid mobile-recent-grid ${activeFeed === 'party' ? 'party-grid' : ''}`}>
               {mobileRoomListCards.map((card, index) => {
                 const followStatus = roomHostFollowStatus(card)
                 const canFollowHost = Boolean(roomOwnerIdFromCard(card) && followStatus !== 'self')
@@ -4453,13 +4323,11 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
     if (!user?.id) {
       setRoomFollowRelations({ followingIds: [], outgoing: [], incoming: [] })
       setRoomFollowActionIds({})
-      setFollowedRooms([])
       return
     }
 
     loadRoomFollowRelations({ quiet: true })
-    loadFollowedRooms({ quiet: true })
-  }, [user?.id, settingsDraft.region, user?.current_residence])
+  }, [user?.id])
 
   useEffect(() => {
     const normalizedLanguage = normalizeSettingsLanguage(language)
@@ -4505,8 +4373,8 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       return
     }
 
-    if (activeThread && !messageThreads.some((thread) => thread.id === activeThread)) {
-      setActiveThread('')
+    if (!activeThread || !messageThreads.some((thread) => thread.id === activeThread)) {
+      setActiveThread(messageThreads[0].id)
     }
   }, [activeThread, messageThreads])
 
@@ -4590,7 +4458,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
   }, [])
 
   return (
-    <div className={`buzzcast-shell section-${activeSection} feed-${activeFeed}`}>
+    <div className={`buzzcast-shell section-${activeSection}`}>
       <AppIconSprite />
       <header className="buzzcast-topbar">
         <BuzzLogo t={t} />
@@ -4647,25 +4515,6 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
           </button>
         </div>
       </header>
-      <div className="buzzcast-mobile-top-actions" aria-label="Quick actions">
-        <button type="button" className="mp4-mobile-action trophy" onClick={openRankings} aria-label="Rankings">
-          <SvgIcon id="icon-rankingIcon" />
-        </button>
-        <button type="button" className="mp4-mobile-action message" onClick={openMobileMessageSection} aria-label="Messages">
-          <SvgIcon id="icon-messageTopbarIcon" />
-          {unreadThreadCount ? <em>{unreadThreadCount > 99 ? '99+' : unreadThreadCount}</em> : null}
-        </button>
-        <button type="button" className="mp4-mobile-action gems" onClick={() => showMobileActionToast('Coins and gifts open after joining a room.')} aria-label="Coins">
-          <span className="mp4-gem-shape" aria-hidden="true"></span>
-          <b>0</b>
-        </button>
-        <button type="button" className="mp4-mobile-action create" onClick={() => openHostPanel()} aria-label="Create room">
-          <span aria-hidden="true">+</span>
-        </button>
-        <button type="button" className="mp4-mobile-profile-action" onClick={openProfileSection} aria-label="Profile">
-          <span className="image-avatar"><img src={profileAvatar} alt="" loading="lazy" /></span>
-        </button>
-      </div>
 
       <aside className="buzzcast-left-rail">
         <button
@@ -4771,50 +4620,39 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
       {showMessages ? (
         <section className={activeThreadData ? 'buzzcast-messages-drawer has-active-thread' : 'buzzcast-messages-drawer no-active-thread'}>
           <aside>
-            <div className="buzzcast-message-search-row">
-              <span className="buzzcast-message-active-tab" aria-hidden="true">
-                <SvgIcon id="icon-messageTopbarIcon" />
-              </span>
-              <label className="buzzcast-message-search-field">
-                <span className="sr-only">Search messages</span>
-                <input
-                  value={messageSearch}
-                  onChange={(event) => setMessageSearch(event.target.value)}
-                  placeholder="Search"
-                  aria-label="Search messages"
-                />
-              </label>
-              <button type="button" className="buzzcast-message-clear" onClick={() => setMessageSearch('')} aria-label="Clear message search"></button>
-            </div>
-            <div className="buzzcast-message-thread-list">
-              {loadingDmContacts ? <div className="buzzcast-empty-state compact"><LoadingMovie label="Loading messages" inline /></div> : null}
-              {messageThreads.map((thread) => (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className={activeThread === thread.id ? 'active' : ''}
-                  onClick={() => {
-                    setActiveThread(thread.id)
-                    setReadThreadIds((previous) => previous.includes(thread.id) ? previous : [...previous, thread.id])
-                    setDmStatus('')
-                    setDmInput('')
-                    setDmDeleteTarget(null)
-                    setDmDeleteForEveryone(false)
-                    setDmImagePreview(null)
-                    clearDmMediaDrafts()
-                    if (dmRecording) cancelDmAudioRecording()
-                  }}
-                >
-                  <i className="image-avatar"><img src={thread.avatarUrl} alt={thread.name} loading="lazy" /></i>
-                  <span><strong>{thread.name}</strong><small>{thread.previewText}</small></span>
-                  <time>{thread.time}</time>
-                  {thread.unread ? <em>{thread.unread}</em> : null}
-                </button>
-              ))}
-              {!loadingDmContacts && !messageThreads.length ? (
-                <div className="buzzcast-empty-state compact">No private messages yet.</div>
-              ) : null}
-            </div>
+            <input
+              value={messageSearch}
+              onChange={(event) => setMessageSearch(event.target.value)}
+              placeholder="Search messages"
+              aria-label="Search messages"
+            />
+            {loadingDmContacts ? <div className="buzzcast-empty-state compact"><LoadingMovie label="Loading messages" inline /></div> : null}
+            {messageThreads.map((thread) => (
+              <button
+                key={thread.id}
+                type="button"
+                className={activeThread === thread.id ? 'active' : ''}
+                onClick={() => {
+                  setActiveThread(thread.id)
+                  setReadThreadIds((previous) => previous.includes(thread.id) ? previous : [...previous, thread.id])
+                  setDmStatus('')
+                  setDmInput('')
+                  setDmDeleteTarget(null)
+                  setDmDeleteForEveryone(false)
+                  setDmImagePreview(null)
+                  clearDmMediaDrafts()
+                  if (dmRecording) cancelDmAudioRecording()
+                }}
+              >
+                <i className="image-avatar"><img src={thread.avatarUrl} alt={thread.name} loading="lazy" /></i>
+                <span><strong>{thread.name}</strong><small>{thread.relationshipLabel} - {thread.previewText}</small></span>
+                <time>{thread.time}</time>
+                {thread.unread ? <em>{thread.unread}</em> : null}
+              </button>
+            ))}
+            {!loadingDmContacts && !messageThreads.length ? (
+              <div className="buzzcast-empty-state compact">No private messages yet.</div>
+            ) : null}
           </aside>
           <main>
             {activeThreadData ? (

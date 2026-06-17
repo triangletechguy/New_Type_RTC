@@ -651,31 +651,23 @@ function deterministicSignalingRoom(room) {
   return `webrtc_tenant_${room.tenant_id}_room_${room.id}`
 }
 
-function roomChatChannel(roomId) {
-  const normalizedRoomId = Number(roomId || 0)
-  return Number.isInteger(normalizedRoomId) && normalizedRoomId > 0
-    ? `room-chat:${normalizedRoomId}`
-    : ''
-}
-
 async function emitRoomRealtime(req, room, eventName, payload = {}) {
   const io = req.app?.get('io')
   if (!io || !room?.id || !eventName) return false
 
   const channels = new Set(await findActiveSignalingRooms(room.id))
   const fallbackChannel = deterministicSignalingRoom(room)
-  const chatChannel = roomChatChannel(room.id)
   if (fallbackChannel) channels.add(fallbackChannel)
-  if (chatChannel) channels.add(chatChannel)
   if (!channels.size) return false
 
   const realtimePayload = {
-    room_id: Number(room.id),
     ...payload,
     source: 'http',
   }
 
-  io.to(Array.from(channels).map(String)).emit(eventName, realtimePayload)
+  channels.forEach((channel) => {
+    io.to(String(channel)).emit(eventName, realtimePayload)
+  })
 
   return true
 }

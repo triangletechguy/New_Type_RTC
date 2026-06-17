@@ -1,15 +1,15 @@
 export const feedTabs = [
+  { value: 'live', label: 'Live', filter: 'all', sort: 'active' },
   { value: 'following', label: 'Following', mobileLabel: 'Follow', filter: 'all', sort: 'active' },
-  { value: 'live', label: 'Explore', mobileLabel: 'Live', filter: 'all', sort: 'active' },
-  { value: 'party', label: 'Party', filter: 'music', sort: 'active' },
   { value: 'nearby', label: 'Nearby', filter: 'all', sort: 'active' },
-  { value: 'new', label: 'Latest', mobileLabel: 'Latest', filter: 'all', sort: 'newest' },
-  { value: 'global', label: 'Global', filter: 'all', sort: 'active' },
+  { value: 'party', label: 'Party', filter: 'music', sort: 'active' },
+  { value: 'pk', label: 'PK', filter: 'pk', sort: 'active' },
+  { value: 'new', label: 'New', filter: 'all', sort: 'newest' },
 ]
 
 export const exploreFilters = [
   { value: 'all', label: 'All', filter: 'all' },
-  { value: 'new_host', label: 'New Host', filter: 'all' },
+  { value: 'new_host', label: 'New Host', filter: 'live' },
   { value: 'games', label: 'Games', filter: 'video' },
   { value: 'pk', label: 'PK', filter: 'pk' },
 ]
@@ -524,7 +524,7 @@ export const appCopy = {
   Guest: 'Guest',
   'Your session expired. Log in again to continue.': 'Your session expired. Log in again to continue.',
   'Log in to open creator tools.': 'Log in to open creator tools.',
-  'Developer docs are available to TalkEachOther admins.': 'Developer docs are available to TalkEachOther admins.',
+  'Developer docs are available to BuzzCast admins.': 'Developer docs are available to BuzzCast admins.',
   'Log in or sign up to continue.': 'Log in or sign up to continue.',
   'Log in or sign up to open your profile.': 'Log in or sign up to open your profile.',
   'Live social rooms': 'Live social rooms',

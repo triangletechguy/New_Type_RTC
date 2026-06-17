@@ -225,7 +225,7 @@ export default function App() {
     }
     if (nextView === 'admin' && !canAccessAdminDashboard) return
     if (nextView === 'sdk' && !canAccessAdminDashboard) {
-      requireAuth('Developer docs are available to TalkEachOther admins.', 'login')
+      requireAuth('Developer docs are available to BuzzCast admins.', 'login')
       return
     }
     setActiveRoom(null)
