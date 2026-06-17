@@ -2054,12 +2054,18 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
-  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer') {
+  async function beginPeerNegotiation(remoteSocketId, rtcClient, label = 'peer', options = {}) {
     if (!remoteSocketId || !rtcClient) return
 
+    const force = Boolean(options.force)
     rtcClient.createPeerConnection(remoteSocketId)
     reconcileAudioWatchdog(remoteSocketId)
     reconcileVideoWatchdog(remoteSocketId)
+
+    if (force) {
+      negotiatedPeersRef.current.delete(remoteSocketId)
+      resetPeerNegotiationRetry(remoteSocketId)
+    }
 
     if (negotiatedPeersRef.current.has(remoteSocketId)) return
 
@@ -3754,6 +3760,17 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
           scheduleNegotiationRetry(payload.socketId, rtcClient, 'Peer')
           reconcileAudioWatchdog(payload.socketId)
         }
+
+        const expectsVideo = remoteVideoExpectedFromState(nextMediaState)
+        const expectsAudio = nextMediaState.micOn === true
+        const missingExpectedVideo = expectsVideo && !peerHasInboundVideo(payload.socketId)
+        const missingExpectedAudio = expectsAudio && !peerHasInboundAudio(payload.socketId)
+
+        if (missingExpectedVideo || missingExpectedAudio) {
+          beginPeerNegotiation(payload.socketId, rtcClient, 'Peer media update', { force: true }).catch((error) => {
+            setStatus(`Peer media refresh failed: ${error.message}`)
+          })
+        }
       })
       socket.on('room-session-replaced', () => {
         if (socketRef.current !== socket) return
@@ -4682,6 +4699,92 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const ownerVideoCameraOn = ownerVideoMediaState.screenShared === true
     || ownerVideoMediaState.cameraOn === true
     || (!ownerRemoteTile ? false : ownerVideoRtcMode !== 'audio' && ownerVideoMediaState.cameraOn !== false)
+  const ownerVideoExpected = ownerVideoMediaState.screenShared === true || ownerVideoMediaState.cameraOn === true
+  const ownerAudioExpected = ownerVideoMediaState.micOn === true
+  const ownerLiveVideoPresent = hasLiveTrack(ownerRemoteTile?.stream, 'video')
+  const ownerLiveAudioPresent = hasLiveTrack(ownerRemoteTile?.stream, 'audio')
+    || (ownerRemoteTile?.socketId && rtcRef.current?.hasLiveInboundTrack?.(ownerRemoteTile.socketId, 'audio'))
+
+  useEffect(() => {
+    if (!joined || !joinerLayoutActive || !roomOwnerId) return undefined
+
+    let cancelled = false
+    let timer = null
+    let attempts = 0
+
+    function currentOwnerTile() {
+      const socketIds = new Set([
+        ...Object.keys(peerMediaStatesRef.current || {}),
+        ...Object.keys(peerStatesRef.current || {}),
+        ...Object.keys(remoteStreamsRef.current || {}),
+      ])
+
+      for (const socketId of socketIds) {
+        const mediaState = peerMediaStatesRef.current?.[socketId] || {}
+        if (Number(mediaState.userId || 0) !== Number(roomOwnerId || 0)) continue
+
+        return {
+          socketId,
+          mediaState,
+          stream: remoteStreamsRef.current?.[socketId] || null,
+        }
+      }
+
+      return null
+    }
+
+    function ownerMediaNeedsRecovery() {
+      const tile = currentOwnerTile()
+      if (!tile) return true
+
+      const expectsVideo = tile.mediaState.screenShared === true || tile.mediaState.cameraOn === true
+      const expectsAudio = tile.mediaState.micOn === true
+      const hasVideo = hasLiveTrack(tile.stream, 'video')
+      const hasAudio = hasLiveTrack(tile.stream, 'audio') || rtcRef.current?.hasLiveInboundTrack?.(tile.socketId, 'audio')
+
+      return (expectsVideo && !hasVideo) || (expectsAudio && !hasAudio)
+    }
+
+    async function recoverOwnerMedia() {
+      if (cancelled || !joinedRef.current || !ownerMediaNeedsRecovery()) return
+
+      attempts += 1
+      const rtcClient = rtcRef.current
+      if (!rtcClient) return
+
+      await refreshSignalingPeers(rtcClient, 'owner media recovery', { quiet: true }).catch(() => {})
+
+      const tile = currentOwnerTile()
+      if (tile?.socketId) {
+        await beginPeerNegotiation(tile.socketId, rtcClient, 'Owner media recovery', { force: true }).catch((error) => {
+          setStatus(`Owner media recovery failed: ${error.message}`)
+        })
+      }
+
+      if (!cancelled && attempts < 6 && ownerMediaNeedsRecovery()) {
+        timer = window.setTimeout(recoverOwnerMedia, attempts < 2 ? 1500 : 4000)
+      }
+    }
+
+    timer = window.setTimeout(recoverOwnerMedia, 1200)
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [
+    joined,
+    joinerLayoutActive,
+    roomOwnerId,
+    ownerRemoteTile?.socketId,
+    ownerVideoMediaState.micOn,
+    ownerVideoMediaState.cameraOn,
+    ownerVideoMediaState.screenShared,
+    ownerVideoExpected,
+    ownerAudioExpected,
+    ownerLiveVideoPresent,
+    ownerLiveAudioPresent,
+  ])
+
   const joinerChatParticipantMap = new Map()
   const addJoinerChatParticipant = (participant) => {
     const id = String(participant.id || participant.name || joinerChatParticipantMap.size)

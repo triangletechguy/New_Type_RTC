@@ -33,22 +33,29 @@ function registerSignaling(io) {
   async function fetchParticipantStageAccess(databaseRoomId, userId) {
     if (!databaseRoomId || !userId) return null
 
-    const participants = await query(
+    const rows = await query(
       `
-      SELECT role_in_room
-      FROM rtc_session_participants
-      WHERE room_id = :roomId
-      AND user_id = :userId
-      AND left_at IS NULL
-      ORDER BY id DESC
+      SELECT
+        r.owner_id,
+        p.role_in_room
+      FROM rooms r
+      LEFT JOIN rtc_session_participants p
+        ON p.room_id = r.id
+        AND p.user_id = :userId
+        AND p.left_at IS NULL
+      WHERE r.id = :roomId
+      ORDER BY p.id DESC
       LIMIT 1
       `,
       { roomId: databaseRoomId, userId }
     )
 
-    if (!participants.length) return { stageRole: 'audience', canPublish: false }
+    if (!rows.length) return { stageRole: 'audience', canPublish: false }
+    if (Number(rows[0].owner_id || 0) === Number(userId || 0)) {
+      return { stageRole: 'owner', canPublish: true }
+    }
 
-    const stageRole = normalizeRoomRole(participants[0].role_in_room || 'audience', 'audience')
+    const stageRole = normalizeRoomRole(rows[0].role_in_room || 'audience', 'audience')
     return {
       stageRole,
       canPublish: canPublishRoomMedia(stageRole),

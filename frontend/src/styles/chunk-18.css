@@ -9637,6 +9637,10 @@
     display: none !important;
   }
 
+  html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-joiner-owner-video-frame .video-audio-button {
+    display: inline-flex !important;
+  }
+
   html body .buzzcast-live-shell.buzzcast-live-joiner-shell .buzzcast-live-side {
     min-width: 380px !important;
     padding: 10px 0 0 !important;
