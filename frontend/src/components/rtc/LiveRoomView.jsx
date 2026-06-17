@@ -79,7 +79,7 @@ const ROOM_ROLE_RANK = {
   admin: 2,
   owner: 3,
 }
-const STAGE_PUBLISH_ROLES = new Set(['owner', 'admin', 'moderator', 'speaker'])
+const STAGE_PUBLISH_ROLES = new Set(['owner'])
 
 function createReceiveOnlyStream() {
   return typeof MediaStream === 'function' ? new MediaStream() : null
@@ -106,13 +106,16 @@ function stageAccessFromRtc(joinData = {}) {
   const access = joinData.rtc?.stage_access
   const rtcUserId = Number(joinData.rtc?.user_id || joinData.participant?.user_id || 0)
   const roomOwnerId = Number(joinData.room?.owner_id || 0)
+  const isRoomOwner = roomOwnerId > 0 && rtcUserId > 0 && roomOwnerId === rtcUserId
   const role = roomRoleName(
-    roomOwnerId && rtcUserId && roomOwnerId === rtcUserId
+    isRoomOwner
       ? 'owner'
       : access?.role || joinData.participant?.role_in_room || 'audience'
   )
-  const canPublish = canPublishStageRole(role)
+  const canPublish = isRoomOwner && (
+    canPublishStageRole(role)
     || Boolean(access?.can_publish ?? joinData.rtc?.role_capabilities?.can_publish_media)
+  )
 
   return {
     role,
@@ -587,7 +590,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function canPublishCurrentStage(access = stageAccessRef.current, targetRoom = room) {
-    return Boolean(access?.canPublish || canPublishStageRole(access?.role) || currentUserOwnsRoom(targetRoom))
+    return currentUserOwnsRoom(targetRoom)
   }
 
   const remoteTiles = useMemo(() => {
@@ -4486,11 +4489,16 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const localAudioAvailable = hasLiveTrack(localStream, 'audio')
   const localVideoAvailable = hasLiveTrack(localStream, 'video')
   const canPublishStageMedia = canPublishCurrentStage(stageAccess)
+  const currentUserId = Number(user?.id || 0)
+  const explicitRoomOwnerId = Number(room?.owner_id || 0)
+  const isCurrentUserRoomOwner = explicitRoomOwnerId > 0 && explicitRoomOwnerId === currentUserId
+  const viewerOnlyMode = joined && !isCurrentUserRoomOwner
   const audienceMode = joined && !canPublishStageMedia
   const stageRequestsEnabled = stageAccess.requestsEnabled !== false && room?.stage_requests_enabled !== false
   const stageRequestPending = stageRequestStatus === 'pending'
   const canCancelStageRequest = stageRequestPending && Number(ownStageRequest?.id || 0) > 0
   const localStageStream = localStream && (canPublishStageMedia || localAudioAvailable || localVideoAvailable) ? localStream : null
+  const showLocalStageTile = Boolean(localStageStream && isCurrentUserRoomOwner)
   const micCanRetry = joined && canPublishStageMedia && !micOn && !localAudioAvailable
   const cameraCanRetry = joined && canPublishStageMedia && rtcMode === 'video' && !cameraOn && !localVideoAvailable
   const micControlActive = joined && canPublishStageMedia && micOn
@@ -4548,9 +4556,6 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const roomOpsParticipants = Array.isArray(roomControls?.participants) ? roomControls.participants : []
   const activeRoomBans = Array.isArray(roomControls?.active_bans) ? roomControls.active_bans : []
   const ownerCanApproveStage = Boolean(roomControls?.can_approve_stage ?? roomControls?.capabilities?.can_approve_stage ?? roomControls?.role === 'owner')
-  const currentUserId = Number(user?.id || 0)
-  const explicitRoomOwnerId = Number(room?.owner_id || 0)
-  const isCurrentUserRoomOwner = explicitRoomOwnerId > 0 && explicitRoomOwnerId === currentUserId
   const visibleStageRequests = stageRequests.filter((request) => Number(request.userId || 0) !== currentUserId)
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)
@@ -4568,7 +4573,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       : rtcMode === 'video'
         ? `${micOn ? t('Mic on') : t('Mic off')} - ${cameraOn ? t('Camera on') : t('Camera off')}`
         : micOn ? t('Mic on') : t('Mic off')
-  const visibleTileCount = (localStageStream || remoteTiles.length ? 1 : 0) + remoteTiles.length
+  const visibleTileCount = (showLocalStageTile ? 1 : 0) + remoteTiles.length
   const hasVisibleStageTiles = visibleTileCount > 0
   const stageTileHeight = stageTileHeightForFrame(stageFrameSize, visibleTileCount)
   const stageFrameStyle = stageFrameSize ? {
@@ -4592,7 +4597,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     1
   )
   const stageSeatOccupants = [
-    ...(joined && canPublishStageMedia ? [{
+    ...(joined && isCurrentUserRoomOwner && canPublishStageMedia ? [{
       id: `local-${user?.id || 'user'}`,
       name: user?.name || t('You'),
       avatarUrl: user?.avatar_url || '',
@@ -4623,33 +4628,39 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }))
   const stagePrimaryAction = !joined
     ? joinRoom
+    : viewerOnlyMode
+      ? null
     : audienceMode
       ? canCancelStageRequest ? cancelStageJoinRequest : stageRequestPending ? null : stageRequestsEnabled ? requestStageJoin : null
       : toggleMic
-  const stagePrimaryDisabled = joining || stageRequestSending || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
+  const stagePrimaryDisabled = viewerOnlyMode || joining || stageRequestSending || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
   const stagePrimaryLabel = !joined
     ? t('Come on mic and chat together~')
+    : viewerOnlyMode
+      ? t('Watching and listening')
     : audienceMode
       ? stageRequestPending ? (canCancelStageRequest ? t('Cancel stage request') : t('Waiting for owner approval')) : stageRequestsEnabled ? t('Request mic access') : t('Stage closed')
       : micOn ? t('Mic is live') : t('Come on mic and chat together~')
   const voiceAction = !joined
     ? joinRoom
+    : viewerOnlyMode
+      ? null
     : audienceMode
       ? canCancelStageRequest ? cancelStageJoinRequest : stageRequestPending ? null : stageRequestsEnabled ? requestStageJoin : null
       : () => toggleToolPanel('audio')
-  const voiceActionDisabled = joining || stageRequestSending || !voiceAction || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
-  const voiceActionLabel = audienceMode
+  const voiceActionDisabled = viewerOnlyMode || joining || stageRequestSending || !voiceAction || (audienceMode && !stageRequestsEnabled && !canCancelStageRequest)
+  const voiceActionLabel = viewerOnlyMode
+    ? t('Listen')
+    : audienceMode
     ? stageRequestPending ? (canCancelStageRequest ? t('Cancel') : t('Waiting')) : stageRequestsEnabled ? t('Request') : t('Closed')
     : t('Voice')
   const roomGuideText = room?.description?.trim()
     || t('Please respect each other and chat in friendly manner. Abuse, sexual and violent contents are not allowed. All violators will be banned.')
-  const joinerLayoutActive = audienceMode || Boolean(room && !isCurrentUserRoomOwner && !canPublishStageMedia)
+  const joinerLayoutActive = Boolean(room && joined && !isCurrentUserRoomOwner)
   const chatPresentation = joinerLayoutActive ? 'joiner' : 'default'
   const liveShellClassName = `buzzcast-shell buzzcast-live-shell ${joinerLayoutActive ? 'buzzcast-live-joiner-shell' : 'buzzcast-live-owner-shell'}`
   const ownerRemoteTile = remoteTiles.find(({ mediaState }) => Number(mediaState?.userId || 0) === Number(roomOwnerId || 0))
-    || remoteTiles.find(({ mediaState }) => String(mediaState?.stageRole || '').toLowerCase() === 'owner')
-    || remoteTiles.find(({ mediaState }) => mediaState?.canPublish !== false)
-    || remoteTiles[0]
+    || (!roomOwnerId ? remoteTiles.find(({ mediaState }) => String(mediaState?.stageRole || '').toLowerCase() === 'owner') : null)
     || null
   const ownerVideoMediaState = ownerRemoteTile?.mediaState || {}
   const ownerVideoRtcMode = ownerVideoMediaState.rtcMode || defaultRtcModeForRoom(room) || 'video'
@@ -4775,10 +4786,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   <span className="buzzcast-web-action-icon refresh" aria-hidden="true"></span>
                   <span>{t('Refresh')}</span>
                 </button>
-                <button type="button" className="room-action-voice" onClick={voiceAction || undefined} disabled={voiceActionDisabled}>
-                  <span className="buzzcast-web-action-icon voice" aria-hidden="true"></span>
-                  <span>{voiceActionLabel}</span>
-                </button>
+                {!viewerOnlyMode ? (
+                  <button type="button" className="room-action-voice" onClick={voiceAction || undefined} disabled={voiceActionDisabled}>
+                    <span className="buzzcast-web-action-icon voice" aria-hidden="true"></span>
+                    <span>{voiceActionLabel}</span>
+                  </button>
+                ) : null}
                 <button type="button" className="room-action-chat" onClick={openChatTool}>
                   <span className="buzzcast-web-action-icon chat" aria-hidden="true"></span>
                   <span>{t('Chat')}</span>
@@ -4840,7 +4853,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
             <div ref={stageStreamsRef} className={stageStreamsClassName} style={stageFrameStyle} data-tile-count={visibleTileCount}>
               {hasVisibleStageTiles ? (
                 <>
-                  {localStageStream ? (
+                  {showLocalStageTile ? (
                     <VideoTile
                       stream={localStageStream}
                       muted
@@ -4916,42 +4929,46 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               ) : null}
             </div>
 
-            <div className="buzzcast-web-seat-grid" aria-label={t('Mic seats')}>
-              {liveStageSeats.map(({ number, occupant }) => (
-                <button
-                  key={number}
-                  type="button"
-                  className={occupant ? (occupant.muted ? 'occupied muted' : 'occupied') : 'locked'}
-                  onClick={stagePrimaryAction || undefined}
-                  disabled={stagePrimaryDisabled || !stagePrimaryAction}
-                  aria-label={occupant ? `${occupant.name} ${t('mic seat')} ${number}` : `${t('Locked mic seat')} ${number}`}
-                >
-                  <span>
-                    <img
-                      className={occupant ? 'buzzcast-seat-mic-icon' : 'buzzcast-seat-lock-art'}
-                      src={occupant ? liveRoomAssets.seatMic : liveRoomAssets.seatLock}
-                      alt=""
-                      loading="lazy"
-                    />
-                    <small>{number}</small>
-                  </span>
-                  <b>{occupant?.name || t('Locked')}</b>
+            {!viewerOnlyMode ? (
+              <>
+                <div className="buzzcast-web-seat-grid" aria-label={t('Mic seats')}>
+                  {liveStageSeats.map(({ number, occupant }) => (
+                    <button
+                      key={number}
+                      type="button"
+                      className={occupant ? (occupant.muted ? 'occupied muted' : 'occupied') : 'locked'}
+                      onClick={stagePrimaryAction || undefined}
+                      disabled={stagePrimaryDisabled || !stagePrimaryAction}
+                      aria-label={occupant ? `${occupant.name} ${t('mic seat')} ${number}` : `${t('Locked mic seat')} ${number}`}
+                    >
+                      <span>
+                        <img
+                          className={occupant ? 'buzzcast-seat-mic-icon' : 'buzzcast-seat-lock-art'}
+                          src={occupant ? liveRoomAssets.seatMic : liveRoomAssets.seatLock}
+                          alt=""
+                          loading="lazy"
+                        />
+                        <small>{number}</small>
+                      </span>
+                      <b>{occupant?.name || t('Locked')}</b>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="buzzcast-web-stage-guide-row">
+                  <p>{roomGuideText}</p>
+                  <button type="button" onClick={() => toggleToolPanel('manage')} aria-label={t('Room event')}>
+                    <img src={roomAssets.stageMoods} alt="" loading="lazy" />
+                    <span aria-hidden="true"><i></i><i></i><i></i></span>
+                  </button>
+                </div>
+
+                <button type="button" className="buzzcast-web-mic-line" onClick={stagePrimaryAction || undefined} disabled={stagePrimaryDisabled || !stagePrimaryAction}>
+                  <span>{stagePrimaryLabel}</span>
+                  <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
                 </button>
-              ))}
-            </div>
-
-            <div className="buzzcast-web-stage-guide-row">
-              <p>{roomGuideText}</p>
-              <button type="button" onClick={() => toggleToolPanel('manage')} aria-label={t('Room event')}>
-                <img src={roomAssets.stageMoods} alt="" loading="lazy" />
-                <span aria-hidden="true"><i></i><i></i><i></i></span>
-              </button>
-            </div>
-
-            <button type="button" className="buzzcast-web-mic-line" onClick={stagePrimaryAction || undefined} disabled={stagePrimaryDisabled || !stagePrimaryAction}>
-              <span>{stagePrimaryLabel}</span>
-              <img src={liveRoomAssets.seatMic} alt="" loading="lazy" />
-            </button>
+              </>
+            ) : null}
 
             {showPasswordRecovery && (
               <div className="buzzcast-password-popover">
@@ -4966,7 +4983,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               </div>
             )}
 
-            {activeToolPanel ? (
+            {activeToolPanel && !viewerOnlyMode ? (
               <div className={activeToolPanel === 'manage' ? 'live-tool-panel buzzcast-floating-tool room-ops-tool' : 'live-tool-panel buzzcast-floating-tool'}>
                 <header>
                   <strong>{activeToolTitle}</strong>
@@ -5323,10 +5340,14 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
               </div>
             ) : null}
 
-            <div className="buzzcast-room-controls">
+            <div className={viewerOnlyMode ? 'buzzcast-room-controls viewer-only' : 'buzzcast-room-controls'}>
               {!joined ? (
                 <button className="primary-button buzzcast-connect-button" onClick={connectAttempted ? () => leaveRoom() : joinRoom} disabled={joining}>
                   {joining ? t('Entering...') : connectAttempted ? t('Leave') : t('Enter Room')}
+                </button>
+              ) : viewerOnlyMode ? (
+                <button className="primary-button buzzcast-connect-button" onClick={() => leaveRoom()}>
+                  {t('Leave')}
                 </button>
               ) : (
                 <>
@@ -5351,63 +5372,67 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
                   ) : null}
                 </>
               )}
-              <button
-                className={`media-control-button icon-only media-toggle-mic ${micControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.mic ? ' syncing' : ''}`}
-                onClick={toggleMic}
-                disabled={micButtonDisabled}
-                aria-label={micButtonTitle}
-                aria-pressed={micControlActive}
-                title={micButtonTitle}
-              >
-                <span className="control-glyph mic"></span>
-              </button>
-              <button
-                className={`media-control-button icon-only media-toggle-camera ${cameraControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.camera ? ' syncing' : ''}`}
-                onClick={toggleCamera}
-                disabled={cameraButtonDisabled}
-                aria-label={cameraButtonTitle}
-                aria-pressed={cameraControlActive}
-                title={cameraButtonTitle}
-              >
-                <span className="control-glyph camera"></span>
-              </button>
-              <button
-                className={`media-control-button effect-text-button utility audio-effects-button${activeToolPanel === 'audio' ? ' active' : ''}${audioEffectsActive ? ' has-effect' : ''}`}
-                onClick={() => toggleToolPanel('audio')}
-                aria-label={activeToolPanel === 'audio' ? t('Close voice effects') : t('Open voice effects')}
-                aria-pressed={activeToolPanel === 'audio'}
-                title={t('Voice effects')}
-              >
-                <span className="control-glyph effects"></span>
-                <span>{t('Voice')}</span>
-              </button>
-              <button
-                className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
-                onClick={() => toggleToolPanel('filters')}
-                disabled={filterButtonDisabled}
-                aria-label={activeToolPanel === 'filters' ? t('Close filters') : t('Open filters')}
-                aria-pressed={activeToolPanel === 'filters'}
-                title={t('Filters')}
-              >
-                <span className="control-glyph beauty"></span>
-                <span>{t('Filter')}</span>
-              </button>
-              <button
-                className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
-                onClick={toggleScreenShare}
-                disabled={!joined || joining || mediaUpdating.screen || !canPublishStageMedia}
-                aria-label={screenSharing ? t('Stop screen share') : t('Screen share')}
-                aria-pressed={screenSharing}
-                title={audienceMode ? t('Owner approval required') : screenSharing ? t('Stop screen share') : t('Screen share')}
-              >
-                <span className="control-glyph screen"></span>
-              </button>
-              <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label={t('Safety')} title={t('Safety')}>
-                <span className="control-glyph guard"></span>
-              </button>
-              <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Host Controls')} title={t('Host Controls')}>
-                <span className="control-glyph ops"></span>
-              </button>
+              {!viewerOnlyMode ? (
+                <>
+                  <button
+                    className={`media-control-button icon-only media-toggle-mic ${micControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.mic ? ' syncing' : ''}`}
+                    onClick={toggleMic}
+                    disabled={micButtonDisabled}
+                    aria-label={micButtonTitle}
+                    aria-pressed={micControlActive}
+                    title={micButtonTitle}
+                  >
+                    <span className="control-glyph mic"></span>
+                  </button>
+                  <button
+                    className={`media-control-button icon-only media-toggle-camera ${cameraControlActive ? 'active' : 'muted'}${audienceMode ? ' locked' : ''}${mediaUpdating.camera ? ' syncing' : ''}`}
+                    onClick={toggleCamera}
+                    disabled={cameraButtonDisabled}
+                    aria-label={cameraButtonTitle}
+                    aria-pressed={cameraControlActive}
+                    title={cameraButtonTitle}
+                  >
+                    <span className="control-glyph camera"></span>
+                  </button>
+                  <button
+                    className={`media-control-button effect-text-button utility audio-effects-button${activeToolPanel === 'audio' ? ' active' : ''}${audioEffectsActive ? ' has-effect' : ''}`}
+                    onClick={() => toggleToolPanel('audio')}
+                    aria-label={activeToolPanel === 'audio' ? t('Close voice effects') : t('Open voice effects')}
+                    aria-pressed={activeToolPanel === 'audio'}
+                    title={t('Voice effects')}
+                  >
+                    <span className="control-glyph effects"></span>
+                    <span>{t('Voice')}</span>
+                  </button>
+                  <button
+                    className={activeToolPanel === 'filters' || cameraEffectsActive ? 'media-control-button effect-text-button utility active' : 'media-control-button effect-text-button utility'}
+                    onClick={() => toggleToolPanel('filters')}
+                    disabled={filterButtonDisabled}
+                    aria-label={activeToolPanel === 'filters' ? t('Close filters') : t('Open filters')}
+                    aria-pressed={activeToolPanel === 'filters'}
+                    title={t('Filters')}
+                  >
+                    <span className="control-glyph beauty"></span>
+                    <span>{t('Filter')}</span>
+                  </button>
+                  <button
+                    className={screenSharing ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'}
+                    onClick={toggleScreenShare}
+                    disabled={!joined || joining || mediaUpdating.screen || !canPublishStageMedia}
+                    aria-label={screenSharing ? t('Stop screen share') : t('Screen share')}
+                    aria-pressed={screenSharing}
+                    title={audienceMode ? t('Owner approval required') : screenSharing ? t('Stop screen share') : t('Screen share')}
+                  >
+                    <span className="control-glyph screen"></span>
+                  </button>
+                  <button className={activeToolPanel === 'guard' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={() => toggleToolPanel('guard')} aria-label={t('Safety')} title={t('Safety')}>
+                    <span className="control-glyph guard"></span>
+                  </button>
+                  <button className={activeToolPanel === 'manage' ? 'media-control-button icon-only utility active' : 'media-control-button icon-only utility'} onClick={openManageTool} aria-label={t('Host Controls')} title={t('Host Controls')}>
+                    <span className="control-glyph ops"></span>
+                  </button>
+                </>
+              ) : null}
             </div>
 
           </div>

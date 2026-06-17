@@ -8,7 +8,7 @@ const ROOM_ROLE_RANK = Object.freeze({
 })
 
 const ROOM_MANAGER_ROLES = new Set(['owner', 'admin', 'moderator'])
-const ROOM_PUBLISHER_ROLES = new Set(['owner', 'admin', 'moderator', 'speaker'])
+const ROOM_PUBLISHER_ROLES = new Set(['owner'])
 const ROOM_SETTINGS_ROLES = new Set(['owner', 'admin'])
 const ASSIGNABLE_ROOM_ROLES = new Set(['admin', 'moderator'])
 const STAGE_DECISION_ROLES = new Set(['owner'])

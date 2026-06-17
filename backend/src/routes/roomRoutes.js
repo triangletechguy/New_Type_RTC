@@ -2093,9 +2093,7 @@ async function applyModerationAction({ roomId, targetUserId, action, actor, body
     if (!targetUsers.length) throw createHttpError(404, 'Target user not found.')
 
     const targetUser = targetUsers[0]
-    const actorRole = userHasRole(actor, 'super_admin')
-      ? 'owner'
-      : Number(room.owner_id) === Number(actor.id)
+    const actorRole = Number(room.owner_id) === Number(actor.id)
       ? 'owner'
       : await getRoomRole(connection, room.id, actor.id)
     const targetRole = await getRoomRole(connection, room.id, targetUserId)
@@ -2527,9 +2525,7 @@ async function applyStagePermission({ roomId, targetUserId, requestId = null, ac
       throw createHttpError(403, 'You can only manage rooms in your tenant.')
     }
 
-    const actorRole = userHasRole(actor, 'super_admin')
-      ? 'owner'
-      : Number(room.owner_id) === Number(actor.id)
+    const actorRole = Number(room.owner_id) === Number(actor.id)
       ? 'owner'
       : await getRoomRole(connection, room.id, actor.id)
 
