@@ -597,7 +597,7 @@ export class NativeRtcClient {
     const transceiver = this.findTransceiverForKind(peerConnection, mediaKind)
 
     if (transceiver?.sender) {
-      this.setTransceiverDirection(transceiver, track || mediaKind === 'audio' ? 'sendrecv' : 'recvonly')
+      this.setTransceiverDirection(transceiver, (track || mediaKind === 'audio') ? 'sendrecv' : 'recvonly')
       await transceiver.sender.replaceTrack(track || null)
       if (track) await this.tuneSenderForTrack(transceiver.sender, track)
       return transceiver.sender

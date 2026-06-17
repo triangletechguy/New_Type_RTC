@@ -4043,43 +4043,54 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return
     }
 
-    const next = !micOn
-    const previous = micOn
-    const currentlyJoined = joinedRef.current
+    const previousMicOn = micOnRef.current
+    const previousCameraOn = cameraOnRef.current
+    const nextMicOn = !previousMicOn
 
-    micOnRef.current = next
-    desiredMicOnRef.current = next
-    setMicOn(next)
-    applyLocalMediaState(next, cameraOn)
+    micOnRef.current = nextMicOn
+    desiredMicOnRef.current = nextMicOn
+    setMicOn(nextMicOn)
+    applyLocalMediaState(nextMicOn, previousCameraOn)
     setMediaUpdating((state) => ({ ...state, mic: true }))
-    setStatus(next ? 'Starting microphone...' : 'Microphone muted')
+    setStatus(nextMicOn ? 'Starting microphone...' : 'Microphone muted')
 
     try {
-      if (currentlyJoined && next && !hasLiveLocalTrack('audio')) {
+      if (nextMicOn && !hasLiveLocalTrack('audio')) {
         setStatus('Requesting microphone permission...')
-        await attachNewLocalTrack('audio', { publish: true, enabled: true })
-        applyLocalMediaState(next, cameraOn)
+        await attachNewLocalTrack('audio', { publish: false, enabled: true })
+        applyLocalMediaState(true, cameraOnRef.current)
       }
 
-      if (currentlyJoined && next && isVoiceEffectActive(voiceEffectRef.current)) {
+      if (nextMicOn && isVoiceEffectActive(voiceEffectRef.current)) {
         await syncAudioEffectTrack({ effectId: voiceEffectRef.current })
-        applyLocalMediaState(next, cameraOn)
+        applyLocalMediaState(true, cameraOnRef.current)
       }
 
-      if (!currentlyJoined) return
+      const actualMicOn = nextMicOn && hasLiveLocalTrack('audio')
+      if (nextMicOn && !actualMicOn) throw new Error('No live microphone track is available.')
 
-      const synced = await publishMediaState(next, cameraOn)
+      micOnRef.current = actualMicOn
+      desiredMicOnRef.current = actualMicOn
+      setMicOn(actualMicOn)
+      applyLocalMediaState(actualMicOn, cameraOnRef.current)
+
+      const synced = await publishMediaState(actualMicOn, cameraOnRef.current)
       micOnRef.current = synced.micOn
       cameraOnRef.current = synced.cameraOn
+      desiredMicOnRef.current = synced.micOn
+      desiredCameraOnRef.current = synced.cameraOn
       setMicOn(synced.micOn)
       setCameraOn(synced.cameraOn)
       applyLocalMediaState(synced.micOn, synced.cameraOn)
       setStatus(synced.micOn ? 'Microphone is live' : 'Microphone muted')
     } catch (error) {
-      micOnRef.current = previous
-      desiredMicOnRef.current = previous
-      setMicOn(previous)
-      applyLocalMediaState(previous, cameraOn)
+      micOnRef.current = previousMicOn
+      cameraOnRef.current = previousCameraOn
+      desiredMicOnRef.current = previousMicOn
+      desiredCameraOnRef.current = previousCameraOn
+      setMicOn(previousMicOn)
+      setCameraOn(previousCameraOn)
+      applyLocalMediaState(previousMicOn, previousCameraOn)
       setStatus(`Mic update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, mic: false }))
@@ -4146,58 +4157,66 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return
     }
 
-    const next = !cameraOn
-    const previous = cameraOn
-    const currentlyJoined = joinedRef.current
-    let attachedFreshTrack = false
+    const previousMicOn = micOnRef.current
+    const previousCameraOn = cameraOnRef.current
+    const nextCameraOn = !previousCameraOn
 
-    cameraOnRef.current = next
-    desiredCameraOnRef.current = next
-    setCameraOn(next)
-    applyLocalMediaState(micOn, next)
+    cameraOnRef.current = nextCameraOn
+    desiredCameraOnRef.current = nextCameraOn
+    setCameraOn(nextCameraOn)
+    applyLocalMediaState(previousMicOn, nextCameraOn)
     setMediaUpdating((state) => ({ ...state, camera: true }))
-    setStatus(next ? 'Starting camera...' : 'Camera paused')
+    setStatus(nextCameraOn ? 'Starting camera...' : 'Camera paused')
 
     try {
-      if (currentlyJoined && next && !hasLiveLocalCameraTrack()) {
+      if (nextCameraOn && !hasLiveLocalCameraTrack()) {
         setStatus('Requesting camera permission...')
-        await attachNewLocalTrack('video', { publish: true, enabled: true })
-        attachedFreshTrack = true
-        applyLocalMediaState(micOn, next)
+        await attachNewLocalTrack('video', { publish: false, enabled: true })
+        applyLocalMediaState(micOnRef.current, true)
       }
 
-      if (!currentlyJoined) return
+      const actualCameraOn = nextCameraOn && hasLiveLocalCameraTrack()
 
-      if (next) {
-        if (!attachedFreshTrack) await publishCurrentCameraTrack()
-        if (!hasLiveLocalCameraTrack()) throw new Error('No live camera track is available.')
+      if (nextCameraOn) {
+        if (!actualCameraOn) throw new Error('No live camera track is available.')
+        await publishCurrentCameraTrack()
       } else {
         await unpublishCameraTrack()
       }
 
-      const synced = await publishMediaState(micOn, next)
+      cameraOnRef.current = actualCameraOn
+      desiredCameraOnRef.current = actualCameraOn
+      setCameraOn(actualCameraOn)
+      applyLocalMediaState(micOnRef.current, actualCameraOn)
+
+      const synced = await publishMediaState(micOnRef.current, actualCameraOn)
       micOnRef.current = synced.micOn
       cameraOnRef.current = synced.cameraOn
+      desiredMicOnRef.current = synced.micOn
+      desiredCameraOnRef.current = synced.cameraOn
       setMicOn(synced.micOn)
       setCameraOn(synced.cameraOn)
       applyLocalMediaState(synced.micOn, synced.cameraOn)
       setStatus(synced.cameraOn ? 'Camera is live' : 'Camera paused')
     } catch (error) {
-      if (currentlyJoined && previous && !screenShareTrackRef.current) {
+      if (previousCameraOn && !screenShareTrackRef.current) {
         await publishCurrentCameraTrack().catch(() => {
           const track = currentCameraTrack()
           if (isPublishableCameraTrack(track)) replaceCameraTrackInLocalStream(track)
         })
-      } else if (currentlyJoined && !previous && !screenShareTrackRef.current) {
+      } else if (!previousCameraOn && !screenShareTrackRef.current) {
         await unpublishCameraTrack().catch(() => {
           replaceCameraTrackInLocalStream(null)
         })
       }
 
-      cameraOnRef.current = previous
-      desiredCameraOnRef.current = previous
-      setCameraOn(previous)
-      applyLocalMediaState(micOn, previous)
+      micOnRef.current = previousMicOn
+      cameraOnRef.current = previousCameraOn
+      desiredMicOnRef.current = previousMicOn
+      desiredCameraOnRef.current = previousCameraOn
+      setMicOn(previousMicOn)
+      setCameraOn(previousCameraOn)
+      applyLocalMediaState(previousMicOn, previousCameraOn)
       setStatus(`Camera update failed: ${error.message}`)
     } finally {
       setMediaUpdating((state) => ({ ...state, camera: false }))
