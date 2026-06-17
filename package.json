@@ -19,6 +19,7 @@
     "backend:check": "npm --prefix backend run check",
     "frontend:check": "npm --prefix frontend run check",
     "check": "npm --prefix backend run check && npm --prefix frontend run check",
+    "deploy:update": "bash scripts/deploy-update.sh",
     "health": "node scripts/health.js",
     "rtc:readiness": "npm --prefix backend run rtc:readiness",
     "e2e": "npm --prefix backend run e2e"
