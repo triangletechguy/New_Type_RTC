@@ -601,11 +601,16 @@ async function canDeleteMessageForEveryone(message, user) {
 
   const roles = await query(
     `
-    SELECT role
+    SELECT rooms.id
+    FROM rooms
+    WHERE rooms.id = :roomId
+    AND rooms.owner_id = :userId
+    UNION
+    SELECT room_roles.room_id AS id
     FROM room_roles
-    WHERE room_id = :roomId
-    AND user_id = :userId
-    AND role IN ('owner', 'admin', 'moderator')
+    WHERE room_roles.room_id = :roomId
+    AND room_roles.user_id = :userId
+    AND room_roles.role IN ('admin', 'moderator')
     LIMIT 1
     `,
     { roomId: message.room_id, userId: user.id }

@@ -907,7 +907,8 @@ async function getRoomRole(connection, roomId, userId) {
     FROM room_roles
     WHERE room_id = ?
     AND user_id = ?
-    ORDER BY FIELD(role, 'owner', 'admin', 'moderator')
+    AND role IN ('admin', 'moderator')
+    ORDER BY FIELD(role, 'admin', 'moderator')
     LIMIT 1
     `,
     [roomId, userId]
@@ -956,6 +957,7 @@ async function canAccessPrivateRoom(roomId, userId, ownerId) {
     FROM room_roles
     WHERE room_id = :roomId
     AND user_id = :userId
+    AND role <> 'owner'
     LIMIT 1
     `,
     { roomId, userId }
@@ -1026,7 +1028,6 @@ async function getRoomControls(connection, room, userId, options = {}) {
         room_id,
         user_id,
         CASE
-          WHEN SUM(role = 'owner') > 0 THEN 'owner'
           WHEN SUM(role = 'admin') > 0 THEN 'admin'
           WHEN SUM(role = 'moderator') > 0 THEN 'moderator'
           ELSE NULL
@@ -1051,9 +1052,10 @@ async function getRoomControls(connection, room, userId, options = {}) {
     FROM room_roles rr
     LEFT JOIN users u ON u.id = rr.user_id
     WHERE rr.room_id = ?
+    AND (rr.role <> 'owner' OR rr.user_id = ?)
     ORDER BY FIELD(rr.role, 'owner', 'admin', 'moderator'), rr.created_at ASC
     `,
-    [room.id]
+    [room.id, room.owner_id]
   )
   const [assignableUsers] = await connection.execute(
     `
@@ -1347,6 +1349,15 @@ router.post('/', authMiddleware, async (req, res, next) => {
           data.screen_share_enabled ? 1 : 0,
           data.ai_security_enabled ? 1 : 0,
         ]
+      )
+
+      await connection.execute(
+        `
+        DELETE FROM room_roles
+        WHERE room_id = ?
+        AND role = 'owner'
+        `,
+        [insertResult.insertId]
       )
 
       await connection.execute(
@@ -2858,17 +2869,16 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
         [session.id, req.user.id]
       )
 
-      const currentRoomRole = userHasRole(req.user, 'super_admin')
-        ? 'owner'
-        : Number(room.owner_id) === Number(req.user.id)
+      const currentRoomRole = Number(room.owner_id) === Number(req.user.id)
         ? 'owner'
         : await getRoomRole(connection, room.id, req.user.id)
       const defaultSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : 'audience'
       await expireStageRequests(connection, room.id)
 
       if (activeParticipants.length) {
-        const existingSessionRole = activeParticipants[0].role_in_room || defaultSessionRole
-        const effectiveSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : existingSessionRole
+        const existingSessionRole = normalizeRoomRole(activeParticipants[0].role_in_room || defaultSessionRole, 'audience')
+        const reusableSessionRole = roleCanBeMovedByStagePermission(existingSessionRole) ? existingSessionRole : 'audience'
+        const effectiveSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : reusableSessionRole
         const canPublishOnJoin = canPublishRoomMedia(effectiveSessionRole)
         const joinOptions = {
           rtc_mode: requestedJoinOptions.rtc_mode,
@@ -3071,14 +3081,14 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       const currentMicEnabled = Boolean(Number(participant.mic_enabled))
       const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
       const currentScreenShared = Boolean(Number(participant.screen_shared))
-      const roomRole = userHasRole(req.user, 'super_admin')
-        ? 'owner'
-        : Number(room.owner_id) === Number(req.user.id)
+      const roomRole = Number(room.owner_id) === Number(req.user.id)
         ? 'owner'
         : await getRoomRole(connection, room.id, req.user.id)
       const effectiveParticipantRole = canPublishRoomMedia(roomRole)
         ? roomRole
-        : participant.role_in_room || 'audience'
+        : roleCanBeMovedByStagePermission(participant.role_in_room)
+        ? normalizeRoomRole(participant.role_in_room, 'audience')
+        : 'audience'
       const micEnabled = parseBoolean(req.body?.mic_enabled, currentMicEnabled)
       const cameraEnabled = roomSupportsVideo(room.room_type)
         ? parseBoolean(req.body?.camera_enabled, currentCameraEnabled)

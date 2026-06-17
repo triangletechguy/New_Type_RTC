@@ -582,21 +582,12 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     return ownerId > 0 && ownerId === Number(user?.id || 0)
   }
 
-  function currentUserIsPlatformAdmin() {
-    const roles = Array.isArray(user?.roles) ? user.roles : []
-    return roles.includes('super_admin') || user?.is_super_admin === true || user?.isSuperAdmin === true
-  }
-
-  function currentUserCanHostRoom(targetRoom = room) {
-    return currentUserOwnsRoom(targetRoom) || currentUserIsPlatformAdmin()
-  }
-
   function currentStageRole(access = stageAccessRef.current, targetRoom = room) {
-    return currentUserCanHostRoom(targetRoom) ? 'owner' : access?.role || 'audience'
+    return currentUserOwnsRoom(targetRoom) ? 'owner' : access?.role || 'audience'
   }
 
   function canPublishCurrentStage(access = stageAccessRef.current, targetRoom = room) {
-    return Boolean(access?.canPublish || canPublishStageRole(access?.role) || currentUserCanHostRoom(targetRoom))
+    return Boolean(access?.canPublish || canPublishStageRole(access?.role) || currentUserOwnsRoom(targetRoom))
   }
 
   const remoteTiles = useMemo(() => {
@@ -4558,7 +4549,8 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   const activeRoomBans = Array.isArray(roomControls?.active_bans) ? roomControls.active_bans : []
   const ownerCanApproveStage = Boolean(roomControls?.can_approve_stage ?? roomControls?.capabilities?.can_approve_stage ?? roomControls?.role === 'owner')
   const currentUserId = Number(user?.id || 0)
-  const isCurrentUserRoomOwner = currentUserCanHostRoom(room)
+  const explicitRoomOwnerId = Number(room?.owner_id || 0)
+  const isCurrentUserRoomOwner = explicitRoomOwnerId > 0 && explicitRoomOwnerId === currentUserId
   const visibleStageRequests = stageRequests.filter((request) => Number(request.userId || 0) !== currentUserId)
   const roomOpsOnlySelf = roomOpsParticipants.length > 0
     && roomOpsParticipants.every((participant) => Number(participant.user_id || 0) === currentUserId)

@@ -2151,6 +2151,15 @@ router.post('/rooms', async (req, res, next) => {
 
       await connection.execute(
         `
+        DELETE FROM room_roles
+        WHERE room_id = ?
+        AND role = 'owner'
+        `,
+        [insertResult.insertId]
+      )
+
+      await connection.execute(
+        `
         INSERT INTO room_roles (room_id, user_id, role, created_at)
         VALUES (?, ?, 'owner', NOW())
         `,

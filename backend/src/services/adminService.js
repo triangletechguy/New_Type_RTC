@@ -1676,6 +1676,15 @@ async function createAdminRoom(user, payload) {
 
     await connection.execute(
       `
+      DELETE FROM room_roles
+      WHERE room_id = ?
+      AND role = 'owner'
+      `,
+      [insertResult.insertId]
+    )
+
+    await connection.execute(
+      `
       INSERT INTO room_roles (room_id, user_id, role, created_at)
       VALUES (?, ?, 'owner', NOW())
       `,
@@ -1799,7 +1808,7 @@ async function getScopedRoomIds(adminId, tenantId = null) {
     LEFT JOIN room_roles rr
       ON rr.room_id = r.id
       AND rr.user_id = :adminId
-      AND rr.role IN ('owner', 'admin', 'moderator')
+      AND rr.role IN ('admin', 'moderator')
     WHERE (r.owner_id = :adminId OR rr.user_id IS NOT NULL)
     ${tenantClause}
     ORDER BY r.updated_at DESC, r.id DESC
