@@ -587,7 +587,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function canPublishCurrentStage(access = stageAccessRef.current, targetRoom = room) {
-    return Boolean(access?.canPublish || currentUserOwnsRoom(targetRoom))
+    return Boolean(access?.canPublish || canPublishStageRole(access?.role) || currentUserOwnsRoom(targetRoom))
   }
 
   const remoteTiles = useMemo(() => {
