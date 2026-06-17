@@ -2858,7 +2858,9 @@ router.post('/:id/join', authMiddleware, async (req, res, next) => {
         [session.id, req.user.id]
       )
 
-      const currentRoomRole = Number(room.owner_id) === Number(req.user.id)
+      const currentRoomRole = userHasRole(req.user, 'super_admin')
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
         ? 'owner'
         : await getRoomRole(connection, room.id, req.user.id)
       const defaultSessionRole = canPublishRoomMedia(currentRoomRole) ? currentRoomRole : 'audience'
@@ -3069,7 +3071,9 @@ router.post('/:id/media-state', authMiddleware, async (req, res, next) => {
       const currentMicEnabled = Boolean(Number(participant.mic_enabled))
       const currentCameraEnabled = Boolean(Number(participant.camera_enabled))
       const currentScreenShared = Boolean(Number(participant.screen_shared))
-      const roomRole = Number(room.owner_id) === Number(req.user.id)
+      const roomRole = userHasRole(req.user, 'super_admin')
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
         ? 'owner'
         : await getRoomRole(connection, room.id, req.user.id)
       const effectiveParticipantRole = canPublishRoomMedia(roomRole)
