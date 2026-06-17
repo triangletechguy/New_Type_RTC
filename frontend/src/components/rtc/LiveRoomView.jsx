@@ -112,10 +112,8 @@ function stageAccessFromRtc(joinData = {}) {
       ? 'owner'
       : access?.role || joinData.participant?.role_in_room || 'audience'
   )
-  const canPublish = isRoomOwner && (
-    canPublishStageRole(role)
-    || Boolean(access?.can_publish ?? joinData.rtc?.role_capabilities?.can_publish_media)
-  )
+  const serverCanPublish = Boolean(access?.can_publish ?? joinData.rtc?.role_capabilities?.can_publish_media)
+  const canPublish = isRoomOwner || (role === 'owner' && serverCanPublish)
 
   return {
     role,
@@ -590,7 +588,7 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
   }
 
   function canPublishCurrentStage(access = stageAccessRef.current, targetRoom = room) {
-    return currentUserOwnsRoom(targetRoom)
+    return currentUserOwnsRoom(targetRoom) || (access?.role === 'owner' && access?.canPublish === true)
   }
 
   const remoteTiles = useMemo(() => {
@@ -2044,6 +2042,15 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       }).catch((error) => setStatus(`Media state saved, signaling sync failed: ${error.message}`))
     }
 
+    if (serverCanPublish && rtcRef.current && signalingRoomRef.current) {
+      await refreshSignalingPeers(rtcRef.current, 'owner media update', { quiet: true }).catch((error) => {
+        setStatus(`Media is live, peer refresh warning: ${error.message}`)
+      })
+      await rtcRef.current.renegotiateAll?.().catch((error) => {
+        setStatus(`Media is live, renegotiation warning: ${error.message}`)
+      })
+    }
+
     return { micOn: serverMicOn, cameraOn: serverCameraOn }
   }
 
@@ -2165,9 +2172,10 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
     })
   }
 
-  async function refreshSignalingPeers(rtcClient = rtcRef.current, reason = 'peer refresh') {
+  async function refreshSignalingPeers(rtcClient = rtcRef.current, reason = 'peer refresh', options = {}) {
     const socket = socketRef.current
     if (!socket?.connected || !joinedRef.current || !signalingRoomRef.current || !rtcClient) return []
+    const quiet = Boolean(options.quiet)
 
     const response = await requestSignalingPeers(socket, { roomId: signalingRoomRef.current })
     if (response.socketId) localSocketIdRef.current = response.socketId
@@ -2194,9 +2202,11 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       peerMediaStatesRef.current = {}
     }
 
-    setStatus(peers.length
-      ? `Refreshed ${peers.length} peer${peers.length === 1 ? '' : 's'} after ${reason}`
-      : `No active peers after ${reason}`)
+    if (!quiet) {
+      setStatus(peers.length
+        ? `Refreshed ${peers.length} peer${peers.length === 1 ? '' : 's'} after ${reason}`
+        : `No active peers after ${reason}`)
+    }
 
     return peers
   }
@@ -3334,35 +3344,40 @@ export function LiveRoomView({ roomId, roomPassword = '', initialRoom = null, in
       return next
     })
 
-    if (hasInboundAudioTrack(remoteStream)) {
+    const hasAudioTrack = hasInboundAudioTrack(remoteStream)
+    const hasVideoTrack = hasInboundVideoTrack(remoteStream)
+
+    if (hasAudioTrack) {
       resetPeerAudioWatchdog(remoteSocketId)
       clearReconnectingPeerState(remoteSocketId)
     } else {
       reconcileAudioWatchdog(remoteSocketId)
     }
 
-    const hasVideoTrack = hasInboundVideoTrack(remoteStream)
     if (hasVideoTrack) {
       resetPeerVideoWatchdog(remoteSocketId)
       setPeerStateValue(remoteSocketId, 'connected')
-      setPeerMediaStates((previous) => {
-        const current = previous[remoteSocketId] || {}
-        const cameraWasExplicitlyOff = current.cameraOn === false && current.screenShared !== true
-        const next = {
-          ...previous,
-          [remoteSocketId]: {
-            ...current,
-            cameraOn: cameraWasExplicitlyOff ? false : true,
-            rtcMode: cameraWasExplicitlyOff ? (current.rtcMode || 'video') : 'video',
-          },
-        }
-        peerMediaStatesRef.current = next
-        return next
-      })
     } else {
       setPeerStates((previous) => {
         const next = { ...previous, [remoteSocketId]: previous[remoteSocketId] || 'connected' }
         peerStatesRef.current = next
+        return next
+      })
+    }
+
+    if (hasAudioTrack || hasVideoTrack) {
+      setPeerMediaStates((previous) => {
+        const current = previous[remoteSocketId] || {}
+        const next = {
+          ...previous,
+          [remoteSocketId]: {
+            ...current,
+            micOn: hasAudioTrack ? true : current.micOn,
+            cameraOn: hasVideoTrack ? true : current.cameraOn,
+            rtcMode: hasVideoTrack ? 'video' : (current.rtcMode || 'video'),
+          },
+        }
+        peerMediaStatesRef.current = next
         return next
       })
     }
