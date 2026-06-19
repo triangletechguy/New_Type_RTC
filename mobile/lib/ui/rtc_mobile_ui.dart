@@ -1505,42 +1505,236 @@ class RtcMiniBadge extends StatelessWidget {
   }
 }
 
-class RtcRewardButton extends StatelessWidget {
-  const RtcRewardButton({super.key, required this.onPressed, this.label});
+class RtcInlineNotice extends StatelessWidget {
+  const RtcInlineNotice({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.detail,
+    this.state = RtcStatusState.idle,
+    this.dark = false,
+    this.action,
+  });
 
-  final VoidCallback onPressed;
-  final String? label;
+  final IconData icon;
+  final String title;
+  final String? detail;
+  final RtcStatusState state;
+  final bool dark;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label ?? 'Reward',
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onPressed,
-          child: Container(
-            width: 54,
-            height: 54,
+    final color = switch (state) {
+      RtcStatusState.good => RtcPalette.mint,
+      RtcStatusState.warning => RtcPalette.amber,
+      RtcStatusState.error => RtcPalette.red,
+      RtcStatusState.idle => dark ? RtcPalette.soft : RtcPalette.lobbySoft,
+    };
+    final background = dark
+        ? RtcPalette.stagePanelSoft
+        : const Color(0xFFF8FAFC);
+    final textColor = dark ? RtcPalette.text : RtcPalette.lobbyInk;
+    final detailColor = dark ? RtcPalette.muted : RtcPalette.lobbySoft;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: color.withValues(alpha: 0.26)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [RtcPalette.lobbyGold, RtcPalette.hot],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Color.fromRGBO(255, 201, 40, 0.3),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
+                if (detail != null && detail!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: detailColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
               ],
             ),
-            child: const Icon(Icons.card_giftcard, color: Colors.white),
           ),
-        ),
+          if (action != null) ...[const SizedBox(width: 10), action!],
+        ],
+      ),
+    );
+  }
+}
+
+class RtcCompactActionButton extends StatelessWidget {
+  const RtcCompactActionButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.destructive = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? RtcPalette.red : RtcPalette.lobbyTealDark;
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: color,
+      side: BorderSide(color: color.withValues(alpha: 0.3)),
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+    );
+
+    final buttonIcon = icon;
+    if (buttonIcon == null) {
+      return OutlinedButton(
+        onPressed: onPressed,
+        style: style,
+        child: Text(label),
+      );
+    }
+
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(buttonIcon, size: 14),
+      label: Text(label),
+      style: style,
+    );
+  }
+}
+
+class RtcParticipantTile extends StatelessWidget {
+  const RtcParticipantTile({
+    super.key,
+    required this.label,
+    required this.detail,
+    this.image,
+    this.asset,
+    this.busy = false,
+    this.locked = false,
+    this.dark = false,
+    this.actions = const [],
+  });
+
+  final String label;
+  final String detail;
+  final ImageProvider? image;
+  final String? asset;
+  final bool busy;
+  final bool locked;
+  final bool dark;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = dark
+        ? RtcPalette.stagePanelSoft
+        : const Color(0xFFF8FAFC);
+    final border = dark ? RtcPalette.stageLine : RtcPalette.lobbyLine;
+    final titleColor = dark ? RtcPalette.text : RtcPalette.lobbyInk;
+    final detailColor = dark ? RtcPalette.muted : RtcPalette.lobbySoft;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              RtcAvatarToken(
+                label: label,
+                image: image,
+                asset: asset,
+                size: 34,
+                borderRadius: RtcRadius.pill,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: titleColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: detailColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (busy)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (locked)
+                Icon(Icons.lock_outline_rounded, color: detailColor, size: 18),
+            ],
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: actions),
+          ],
+        ],
       ),
     );
   }
@@ -1766,7 +1960,6 @@ class RtcChatComposer extends StatelessWidget {
     required this.onSend,
     this.hintText = 'Say hi...',
     this.onAttach,
-    this.onGift,
     this.enabled = true,
   });
 
@@ -1774,7 +1967,6 @@ class RtcChatComposer extends StatelessWidget {
   final VoidCallback onSend;
   final String hintText;
   final VoidCallback? onAttach;
-  final VoidCallback? onGift;
   final bool enabled;
 
   @override
@@ -1823,14 +2015,6 @@ class RtcChatComposer extends StatelessWidget {
                     borderSide: const BorderSide(color: RtcPalette.chatPurple),
                   ),
                 ),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Gift',
-              onPressed: enabled ? onGift : null,
-              icon: const Icon(
-                Icons.card_giftcard,
-                color: RtcPalette.lobbyGold,
               ),
             ),
             IconButton(

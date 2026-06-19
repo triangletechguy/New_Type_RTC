@@ -31,9 +31,8 @@ Reference paths:
 
 - `/` opens the room lobby/feed.
 - `/room/:id` opens the live room for an authenticated user.
-- `/admin` opens the admin dashboard for users with `client_admin` or
+- `/admin` opens the service dashboard for users with `client_admin` or
   `super_admin`.
-- `/sdk` opens SDK docs and samples.
 - Auth and profile are modal overlays on top of the active view.
 
 Flutter parity target:
@@ -56,11 +55,10 @@ Use these web files as the source of truth while rebuilding native screens:
 - Live chat/direct messages: `frontend/src/components/rtc/ChatPanel.jsx`
 - RTC connection indicator: `frontend/src/components/rtc/RtcConnectionIndicator.jsx`
 - Profile: `frontend/src/components/profile/ProfilePanel.jsx`
-- Admin dashboard: `frontend/src/components/admin/AdminView.jsx`
+- Service dashboard: `frontend/src/components/admin/AdminView.jsx`
 - Admin UI helpers/static data:
   `frontend/src/components/admin/adminUiBits.jsx`,
   `frontend/src/components/admin/adminStaticData.js`
-- SDK docs: `frontend/src/components/sdk/SdkView.jsx`
 
 ## Design Reference
 
@@ -102,7 +100,7 @@ Flutter parity target:
 
 - Recreate these tokens in Dart theme/widgets.
 - Keep the mobile UI dense and app-like, not a web landing page.
-- Match the room feed, live room, chat, profile, admin, and SDK visual states.
+- Match the room feed, live room, chat, profile, and admin visual states.
 
 ## Asset Reference
 
@@ -193,15 +191,6 @@ Admin endpoints used by web screens:
 - `DELETE /admin/rooms/:id`
 - `DELETE /admin/admins/:id`
 
-Client SDK reference endpoints shown by the web SDK docs:
-
-- `GET /api/client/me`
-- `POST /api/client/users/sync`
-- `POST /api/client/rooms`
-- `PATCH /api/client/rooms/:id`
-- `POST /api/client/rtc/token`
-- `POST /api/client/rtc/session/start`
-- `POST /api/client/rtc/session/end`
 
 Flutter parity target:
 

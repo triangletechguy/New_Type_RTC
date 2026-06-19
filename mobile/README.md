@@ -10,6 +10,9 @@ step-by-step parity plan.
 The default mobile entry point opens the native Flutter shell. The mobile app
 does not include a WebView frontend wrapper.
 
+For client-company mobile integration, see [SDK_INTEGRATION.md](SDK_INTEGRATION.md)
+and the reusable SDK wrapper at `lib/sdk/rtc_enterprise_client_sdk.dart`.
+
 ## Run Locally
 
 From the `mobile` directory:

@@ -11,7 +11,13 @@ const FEATURE_LABELS = {
   solo_video_live: 'solo live rooms',
   video_filter_beauty: 'video filters and beauty effects',
   message_chat: 'chat and media',
+  picture_message: 'picture messages',
+  premium_reactions: 'premium emoji reactions',
+  audio_player: 'audio playlist player',
+  youtube_player: 'YouTube player',
   room_roles: 'room role management',
+  mic_layout_picker: 'mic layout picker',
+  mic_seat_locks: 'mic seat locks',
   private_room_password: 'private/password rooms',
   screen_share: 'screen sharing',
   ai_security_audio: 'AI audio guard',
@@ -50,12 +56,8 @@ function parseJsonArray(value) {
 
 function roomSupportsVideo(roomType) {
   return [
-    'audio',
-    'youtube_audio',
-    'one_to_one_audio',
     'video',
     'one_to_one_video',
-    'group_audio',
     'group_video',
     'solo_live',
     'pk_live',

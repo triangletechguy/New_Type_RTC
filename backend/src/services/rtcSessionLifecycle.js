@@ -4,6 +4,14 @@ function usageTypeFromRoomType(roomType) {
   return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType) ? 'audio' : 'video'
 }
 
+function isPermanentAudioRoom(roomType) {
+  return ['audio', 'youtube_audio', 'one_to_one_audio', 'group_audio'].includes(roomType)
+}
+
+function isTemporaryVideoRoom(roomType) {
+  return !isPermanentAudioRoom(roomType)
+}
+
 async function closeParticipantSession(connection, room, participant, userId) {
   if (participant.left_at) {
     return {
@@ -11,6 +19,8 @@ async function closeParticipantSession(connection, room, participant, userId) {
       billableMinutes: Number((Number(participant.duration_seconds || 0) / 60).toFixed(2)),
       usageLogId: null,
       alreadyClosed: true,
+      roomEnded: false,
+      roomStatus: room.status,
     }
   }
 
@@ -90,6 +100,8 @@ async function closeParticipantSession(connection, room, participant, userId) {
 
   const activeCount = Number(activeCountRows[0]?.active_count || 0)
   const totalParticipantMinutes = Number((Number(totalRows[0]?.total_seconds || 0) / 60).toFixed(2))
+  let roomEnded = false
+  let roomStatus = room.status
 
   if (activeCount === 0) {
     await connection.execute(
@@ -104,6 +116,21 @@ async function closeParticipantSession(connection, room, participant, userId) {
       `,
       [totalParticipantMinutes, participant.session_id]
     )
+
+    if (isTemporaryVideoRoom(room.room_type)) {
+      const [roomUpdate] = await connection.execute(
+        `
+        UPDATE rooms
+        SET status = 'ended',
+            updated_at = NOW()
+        WHERE id = ?
+        AND status = 'active'
+        `,
+        [room.id]
+      )
+      roomEnded = roomUpdate.affectedRows > 0
+      roomStatus = 'ended'
+    }
   } else {
     await connection.execute(
       `
@@ -121,10 +148,12 @@ async function closeParticipantSession(connection, room, participant, userId) {
     billableMinutes,
     usageLogId: usageInsert.insertId,
     alreadyClosed: false,
+    roomEnded,
+    roomStatus,
   }
 }
 
-async function closeActiveParticipantForUser({ roomId, userId, eventType = 'disconnect', reason = 'socket_disconnect' }) {
+async function closeActiveParticipantForUser({ roomId, userId, eventType = 'connection_lost', reason = 'socket_disconnect' }) {
   const numericRoomId = Number(roomId || 0)
   const numericUserId = Number(userId || 0)
   if (!numericRoomId || !numericUserId) return { closed: false, reason: 'missing_scope' }
@@ -180,6 +209,8 @@ async function closeActiveParticipantForUser({ roomId, userId, eventType = 'disc
           usage_log_id: leaveResult.usageLogId,
           rtc_provider: 'native_webrtc',
           reason,
+          room_ended: leaveResult.roomEnded,
+          room_status: leaveResult.roomStatus,
         }),
       ]
     )
@@ -190,6 +221,8 @@ async function closeActiveParticipantForUser({ roomId, userId, eventType = 'disc
       durationSeconds: leaveResult.durationSeconds,
       billableMinutes: leaveResult.billableMinutes,
       usageLogId: leaveResult.usageLogId,
+      roomEnded: leaveResult.roomEnded,
+      roomStatus: leaveResult.roomStatus,
     }
   })
 }
@@ -241,5 +274,7 @@ async function touchActiveParticipant({ roomId, userId, micEnabled, cameraEnable
 module.exports = {
   closeActiveParticipantForUser,
   closeParticipantSession,
+  isPermanentAudioRoom,
+  isTemporaryVideoRoom,
   touchActiveParticipant,
 }

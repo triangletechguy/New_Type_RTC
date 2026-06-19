@@ -24,7 +24,6 @@ void main() {
         AppRoutes.liveRoom,
         AppRoutes.profile,
         AppRoutes.admin,
-        AppRoutes.sdk,
         AppRoutes.settings,
         AppRoutes.error,
       ]),
@@ -35,13 +34,13 @@ void main() {
   test('admin role gate matches web roles', () {
     const superAdmin = AppUser(
       id: 1,
-      name: 'Super Admin',
+      name: 'Platform Service Admin',
       email: 'admin@gmail.com',
       roles: ['super_admin'],
     );
     const clientAdmin = AppUser(
       id: 2,
-      name: 'Client Admin',
+      name: 'Company Service Admin',
       email: 'client@example.com',
       roles: ['client_admin'],
     );
@@ -125,6 +124,18 @@ void main() {
                 label: 'Host',
                 state: RtcSeatState.speaking,
               ),
+              const RtcInlineNotice(
+                icon: Icons.info_outline,
+                title: 'No active participants yet.',
+                detail: 'People will appear here after they join.',
+              ),
+              RtcParticipantTile(
+                label: 'Remote Viewer',
+                detail: 'Audience · mic on',
+                actions: [
+                  RtcCompactActionButton(label: 'Mute', onPressed: () {}),
+                ],
+              ),
               RtcChatComposer(controller: chatController, onSend: () {}),
             ],
           ),
@@ -137,8 +148,23 @@ void main() {
     expect(find.text('LIVE'), findsOneWidget);
     expect(find.text('No.1'), findsNothing);
     expect(find.text('Host'), findsOneWidget);
+    expect(find.text('No active participants yet.'), findsOneWidget);
+    expect(find.text('Remote Viewer'), findsOneWidget);
+    expect(find.text('Mute'), findsOneWidget);
     expect(find.text('Message'), findsOneWidget);
     expect(find.byType(RtcChatComposer), findsOneWidget);
+  });
+
+  test('asset helper resolves bundled and remote image providers', () {
+    expect(
+      RtcAssets.imageProviderFromValue(RtcAssets.videoRoom),
+      isA<AssetImage>(),
+    );
+    expect(
+      RtcAssets.imageProviderFromValue('https://example.com/avatar.png'),
+      isA<NetworkImage>(),
+    );
+    expect(RtcAssets.imageProviderFromValue(''), isNull);
   });
 
   test('rtc web assets are registered in the Flutter bundle', () async {

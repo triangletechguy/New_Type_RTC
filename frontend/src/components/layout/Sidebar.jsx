@@ -4,7 +4,6 @@ import { translateApp } from '../rooms/roomsStaticData'
 
 export function Sidebar({ user, currentView, onView, onLogout, language = 'English' }) {
   const showAdminDashboard = canUseAdminDashboard(user) === true
-  const showDeveloperDocs = showAdminDashboard
   const avatar = avatarForUser(user, user?.id || 0)
   const t = (key, replacements = {}) => translateApp(language, key, replacements)
 
@@ -22,10 +21,7 @@ export function Sidebar({ user, currentView, onView, onLogout, language = 'Engli
 
       <button className={currentView === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => onView('rooms')}>{t('Live Rooms')}</button>
       {showAdminDashboard ? (
-        <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>{t('Admin Dashboard')}</button>
-      ) : null}
-      {showDeveloperDocs ? (
-        <button className={currentView === 'sdk' ? 'nav-item active' : 'nav-item'} onClick={() => onView('sdk')}>{t('Developer Docs')}</button>
+        <button className={currentView === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => onView('admin')}>{t('Service Dashboard')}</button>
       ) : null}
 
       <div className="sidebar-user">

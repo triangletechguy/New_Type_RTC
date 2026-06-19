@@ -1,0 +1,114 @@
+{
+  "name": "rtc-enterprise-client-api-phase5",
+  "version": "0.1.0",
+  "basePath": "/api",
+  "apiKeyHeader": "x-rtc-api-key",
+  "endpoints": [
+    {
+      "id": "me",
+      "method": "GET",
+      "path": "/client/me",
+      "requiredResponseKeys": ["tenant", "app", "billing", "auth"]
+    },
+    {
+      "id": "syncExternalUser",
+      "method": "POST",
+      "path": "/client/users/sync",
+      "requiredBodyKeys": ["external_user_id", "name", "email", "status", "metadata"],
+      "requiredResponseKeys": ["external_user", "user_id"]
+    },
+    {
+      "id": "getExternalUser",
+      "method": "GET",
+      "path": "/client/users/company-user-123",
+      "requiredResponseKeys": ["external_user"]
+    },
+    {
+      "id": "listRooms",
+      "method": "GET",
+      "path": "/client/rooms",
+      "query": {
+        "status": "active",
+        "privacy_type": "all",
+        "room_type": "all",
+        "q": "",
+        "page": "1",
+        "per_page": "24"
+      },
+      "requiredResponseKeys": ["rooms", "pagination"]
+    },
+    {
+      "id": "createRoom",
+      "method": "POST",
+      "path": "/client/rooms",
+      "requiredBodyKeys": [
+        "external_user_id",
+        "name",
+        "room_type",
+        "privacy_type",
+        "max_mic_count",
+        "chat_enabled",
+        "screen_share_enabled"
+      ],
+      "requiredResponseKeys": ["room"]
+    },
+    {
+      "id": "getRoom",
+      "method": "GET",
+      "path": "/client/rooms/101",
+      "requiredResponseKeys": ["room"]
+    },
+    {
+      "id": "updateRoom",
+      "method": "PATCH",
+      "path": "/client/rooms/101",
+      "requiredBodyKeys": ["name", "chat_enabled"],
+      "requiredResponseKeys": ["room"]
+    },
+    {
+      "id": "updateRoomStatus",
+      "method": "PATCH",
+      "path": "/client/rooms/101/status",
+      "requiredBodyKeys": ["status"],
+      "requiredResponseKeys": ["room"]
+    },
+    {
+      "id": "disableRoom",
+      "method": "POST",
+      "path": "/client/rooms/101/disable",
+      "requiredResponseKeys": ["room"]
+    },
+    {
+      "id": "endRoom",
+      "method": "DELETE",
+      "path": "/client/rooms/101",
+      "requiredResponseKeys": ["room_id"]
+    },
+    {
+      "id": "issueRtcToken",
+      "method": "POST",
+      "path": "/client/rtc/token",
+      "requiredBodyKeys": ["external_user_id", "room_id", "role", "permissions", "rtc_mode"],
+      "requiredResponseKeys": ["rtc_token", "agora_rtc_token", "token_type", "expires_in", "expires_at", "room", "external_user", "grants"]
+    },
+    {
+      "id": "startSession",
+      "method": "POST",
+      "path": "/client/rtc/session/start",
+      "requiredBodyKeys": ["external_user_id", "room_id", "role", "rtc_mode", "mic_enabled", "camera_enabled", "screen_shared"],
+      "requiredResponseKeys": ["session_id", "participant_id", "session", "participant", "room", "external_user"]
+    },
+    {
+      "id": "endSession",
+      "method": "POST",
+      "path": "/client/rtc/session/end",
+      "requiredBodyKeys": ["external_user_id", "room_id", "session_id", "role", "rtc_mode", "mic_enabled", "camera_enabled", "screen_shared"],
+      "requiredResponseKeys": ["session_id", "duration_seconds", "billable_minutes", "room_minutes"]
+    }
+  ],
+  "assertions": [
+    "RtcRoomRole.ROOM_ADMIN serializes to backend room role value admin.",
+    "leaveRoom calls endSession with handle.session.sessionId.",
+    "rtc_token remains a platform token and does not replace agora_rtc_token."
+  ]
+}

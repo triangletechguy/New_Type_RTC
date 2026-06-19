@@ -45,6 +45,8 @@ class PeerSignalError {
 class SignalingService {
   io.Socket? _socket;
   String? _activeSignalingRoom;
+  int? _localUserId;
+  String? _localSocketId;
   List<Map<String, dynamic>> _currentPeers = const [];
 
   final _events = StreamController<String>.broadcast();
@@ -56,6 +58,7 @@ class SignalingService {
   final _sessionReplaced = StreamController<String>.broadcast();
   final _roomMessages = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMessageDeleted = StreamController<int>.broadcast();
+  final _roomHistoryCleared = StreamController<int>.broadcast();
   final _moderationActions = StreamController<Map<String, dynamic>>.broadcast();
   final _roomControlsUpdates =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -74,6 +77,7 @@ class SignalingService {
   Stream<String> get sessionReplaced => _sessionReplaced.stream;
   Stream<Map<String, dynamic>> get roomMessages => _roomMessages.stream;
   Stream<int> get roomMessageDeleted => _roomMessageDeleted.stream;
+  Stream<int> get roomHistoryCleared => _roomHistoryCleared.stream;
   Stream<Map<String, dynamic>> get moderationActions =>
       _moderationActions.stream;
   Stream<Map<String, dynamic>> get roomControlsUpdates =>
@@ -85,10 +89,11 @@ class SignalingService {
   Stream<Map<String, dynamic>> get stagePermissionUpdates =>
       _stagePermissionUpdates.stream;
 
-  String? get socketId => _socket?.id;
+  String? get socketId => _socket?.id ?? _localSocketId;
 
   Future<void> connect() async {
     if (_socket?.connected ?? false) return;
+    _socket?.dispose();
 
     final socket = io.io(
       AppConfig.signalingUrl,
@@ -105,6 +110,7 @@ class SignalingService {
     final connected = Completer<void>();
 
     socket.onConnect((_) {
+      _localSocketId = socket.id;
       _events.add('Connected as ${socket.id}');
       if (!connected.isCompleted) connected.complete();
     });
@@ -138,6 +144,7 @@ class SignalingService {
     socket.on('chat-message', _handleChatMessagePayload);
     socket.on('chat-message-unsent', _handleChatMessageDeletedPayload);
     socket.on('chat-message-deleted', _handleChatMessageDeletedPayload);
+    socket.on('chat-history-cleared', _handleChatHistoryClearedPayload);
     socket.on('moderation-action', _handleModerationActionPayload);
     socket.on('room-controls-updated', _handleRoomControlsUpdatedPayload);
     socket.on('room-roles-updated', _handleRoomControlsUpdatedPayload);
@@ -193,6 +200,8 @@ class SignalingService {
           final data = Map<String, dynamic>.from(response);
           if (data['ok'] == true) {
             _activeSignalingRoom = signalingRoom;
+            _localUserId = user.id;
+            _localSocketId = socket.id;
             _handlePeersPayload('Joined room', data);
             completer.complete(data);
           } else {
@@ -326,6 +335,38 @@ class SignalingService {
     return completer.future.timeout(const Duration(seconds: 8));
   }
 
+  Future<Map<String, dynamic>> emitChatMessageDeleted({
+    required int messageId,
+  }) async {
+    final signalingRoom = _activeSignalingRoom;
+    final socket = _socket;
+    if (socket == null || !socket.connected || signalingRoom == null) {
+      throw StateError('Signaling socket is not connected.');
+    }
+
+    final completer = Completer<Map<String, dynamic>>();
+    socket.emitWithAck(
+      'chat-message-deleted',
+      {'roomId': signalingRoom, 'messageId': messageId},
+      ack: (response) {
+        if (response is Map) {
+          final data = Map<String, dynamic>.from(response);
+          if (data['ok'] == true) {
+            completer.complete(data);
+          } else {
+            completer.completeError(
+              data['message']?.toString() ?? 'Chat delete broadcast failed.',
+            );
+          }
+          return;
+        }
+        completer.completeError('Unexpected signaling response.');
+      },
+    );
+
+    return completer.future.timeout(const Duration(seconds: 5));
+  }
+
   Future<List<Map<String, dynamic>>> requestPeers() async {
     final socket = _socket;
     final signalingRoom = _activeSignalingRoom;
@@ -359,8 +400,15 @@ class SignalingService {
   }
 
   void leaveRoom() {
-    _socket?.emit('leave-room');
+    final signalingRoom = _activeSignalingRoom;
+    if (signalingRoom == null) {
+      _socket?.emit('leave-room');
+    } else {
+      _socket?.emit('leave-room', {'roomId': signalingRoom});
+    }
     _activeSignalingRoom = null;
+    _localUserId = null;
+    _localSocketId = null;
     _setPeers(const []);
   }
 
@@ -377,6 +425,7 @@ class SignalingService {
     _sessionReplaced.close();
     _roomMessages.close();
     _roomMessageDeleted.close();
+    _roomHistoryCleared.close();
     _moderationActions.close();
     _roomControlsUpdates.close();
     _stageJoinRequests.close();
@@ -496,6 +545,17 @@ class SignalingService {
     _events.add('Chat message removed: $messageId');
   }
 
+  void _handleChatHistoryClearedPayload(Object? payload) {
+    final data = _payloadMap(payload);
+    final roomId = _intValue(data?['roomId'] ?? data?['room_id']);
+    if (roomId == null) {
+      _events.add('Received invalid chat history clear event.');
+      return;
+    }
+    _roomHistoryCleared.add(roomId);
+    _events.add('Chat history cleared.');
+  }
+
   void _handleModerationActionPayload(Object? payload) {
     final data = _payloadMap(payload);
     if (data == null) {
@@ -593,31 +653,38 @@ class SignalingService {
   }
 
   List<Map<String, dynamic>> _peersFromPayload(Map<String, dynamic> data) {
-    final users = data['users'];
+    final users = data['users'] ?? data['peers'] ?? data['participants'];
     return users is List
-        ? users
-              .whereType<Map>()
-              .map((user) => Map<String, dynamic>.from(user))
-              .toList()
+        ? normalizeSignalingPeers(
+            users,
+            localUserId: _localUserId,
+            localSocketId: socketId,
+          )
         : <Map<String, dynamic>>[];
   }
 
   void _setPeers(List<Map<String, dynamic>> peers) {
+    if (_peers.isClosed) return;
     _currentPeers = peers;
     _peers.add(List.unmodifiable(peers));
   }
 
   void _upsertPeer(Object? payload) {
-    if (payload is! Map) return;
-    final peer = Map<String, dynamic>.from(payload);
-    final socketId = peer['socketId']?.toString();
-    final userId = peer['userId']?.toString();
+    final peers = normalizeSignalingPeers(
+      [payload],
+      localUserId: _localUserId,
+      localSocketId: socketId,
+    );
+    if (peers.isEmpty) return;
+    final peer = peers.single;
+    final nextSocketId = _peerSocketId(peer);
+    final nextUserId = _peerUserId(peer);
     final next = [..._currentPeers];
     final index = next.indexWhere((current) {
-      final currentSocketId = current['socketId']?.toString();
-      final currentUserId = current['userId']?.toString();
-      return (socketId != null && socketId == currentSocketId) ||
-          (userId != null && userId == currentUserId);
+      final currentSocketId = _peerSocketId(current);
+      final currentUserId = _peerUserId(current);
+      return (nextSocketId != null && nextSocketId == currentSocketId) ||
+          (nextUserId != null && nextUserId == currentUserId);
     });
     if (index >= 0) {
       next[index] = {...next[index], ...peer};
@@ -630,11 +697,11 @@ class SignalingService {
   void _removePeer(Object? payload) {
     if (payload is! Map) return;
     final peer = Map<String, dynamic>.from(payload);
-    final socketId = peer['socketId']?.toString();
-    final userId = peer['userId']?.toString();
+    final socketId = _peerSocketId(peer);
+    final userId = _peerUserId(peer);
     final next = _currentPeers.where((current) {
-      final currentSocketId = current['socketId']?.toString();
-      final currentUserId = current['userId']?.toString();
+      final currentSocketId = _peerSocketId(current);
+      final currentUserId = _peerUserId(current);
       if (socketId != null && socketId == currentSocketId) return false;
       if (userId != null && userId == currentUserId) return false;
       return true;
@@ -645,13 +712,108 @@ class SignalingService {
   String _peerName(Object? payload) {
     if (payload is Map) {
       return (payload['userName'] ??
+              payload['user_name'] ??
+              payload['name'] ??
               payload['userId'] ??
+              payload['user_id'] ??
               payload['socketId'] ??
+              payload['socket_id'] ??
               'peer')
           .toString();
     }
     return 'peer';
   }
+}
+
+List<Map<String, dynamic>> normalizeSignalingPeers(
+  Iterable<Object?> peers, {
+  int? localUserId,
+  String? localSocketId,
+}) {
+  final normalizedPeers = <Map<String, dynamic>>[];
+  final localSocket = _cleanString(localSocketId);
+
+  for (final rawPeer in peers) {
+    if (rawPeer is! Map) continue;
+    final raw = Map<String, dynamic>.from(rawPeer);
+    final socketId = _peerSocketId(raw);
+    final userId = _peerUserId(raw);
+
+    if (socketId == null && userId == null) continue;
+    if (localSocket != null && socketId == localSocket) continue;
+    if (localUserId != null && userId == localUserId) continue;
+
+    final peer = <String, dynamic>{...raw};
+    if (socketId != null) peer['socketId'] = socketId;
+    if (userId != null) peer['userId'] = userId;
+    _putString(
+      peer,
+      'userName',
+      raw['userName'] ?? raw['user_name'] ?? raw['name'],
+    );
+    _putString(peer, 'rtcMode', raw['rtcMode'] ?? raw['rtc_mode']);
+    _putBool(peer, 'micEnabled', raw['micEnabled'] ?? raw['mic_enabled']);
+    _putBool(
+      peer,
+      'cameraEnabled',
+      raw['cameraEnabled'] ?? raw['camera_enabled'],
+    );
+    _putBool(peer, 'screenShared', raw['screenShared'] ?? raw['screen_shared']);
+    _putString(
+      peer,
+      'stageRole',
+      raw['stageRole'] ?? raw['stage_role'] ?? raw['role_in_room'],
+    );
+    _putBool(peer, 'canPublish', raw['canPublish'] ?? raw['can_publish']);
+
+    final index = normalizedPeers.indexWhere((current) {
+      final currentSocketId = _peerSocketId(current);
+      final currentUserId = _peerUserId(current);
+      return (socketId != null && socketId == currentSocketId) ||
+          (userId != null && userId == currentUserId);
+    });
+
+    if (index >= 0) {
+      normalizedPeers[index] = {...normalizedPeers[index], ...peer};
+    } else {
+      normalizedPeers.add(peer);
+    }
+  }
+
+  return List.unmodifiable(normalizedPeers);
+}
+
+String? _peerSocketId(Map<dynamic, dynamic> peer) {
+  return _cleanString(peer['socketId'] ?? peer['socket_id']);
+}
+
+int? _peerUserId(Map<dynamic, dynamic> peer) {
+  return _intValue(peer['userId'] ?? peer['user_id']);
+}
+
+void _putString(Map<String, dynamic> peer, String key, Object? value) {
+  final text = _cleanString(value);
+  if (text != null) peer[key] = text;
+}
+
+void _putBool(Map<String, dynamic> peer, String key, Object? value) {
+  final parsed = _boolValue(value);
+  if (parsed != null) peer[key] = parsed;
+}
+
+String? _cleanString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
+}
+
+bool? _boolValue(Object? value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final text = value?.toString().trim().toLowerCase();
+  if (text == null || text.isEmpty) return null;
+  if (text == 'true' || text == '1' || text == 'yes') return true;
+  if (text == 'false' || text == '0' || text == 'no') return false;
+  return null;
 }
 
 int? _intValue(Object? value) {

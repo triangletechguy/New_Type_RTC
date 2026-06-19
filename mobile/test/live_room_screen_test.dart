@@ -60,47 +60,87 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.joinPasswords.single, '2468');
-    expect(media.permissionRequests.single, isTrue);
+    expect(media.permissionRequests.single, isFalse);
+    expect(api.joinCameraIntents.single, isFalse);
+    expect(signaling.joinedMediaStates.single['video'], isFalse);
     expect(signaling.joinedRooms.single, 'tenant-1-room-77');
     expect(peers.attachedSignaling, isTrue);
-    expect(peers.localStreamVideos, contains(isTrue));
+    expect(peers.localStreamVideos, contains(isFalse));
     expect(
       peers.syncedPeerSocketIds.any(
         (socketIds) => socketIds.length == 1 && socketIds.single == 'remote-1',
       ),
       isTrue,
     );
-    expect(find.text('Leave'), findsWidgets);
+    expect(find.byTooltip('Leave room'), findsWidgets);
     expect(find.text('Remote Viewer'), findsWidgets);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Mic on'));
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Mic on').first);
+    await tester.ensureVisible(find.byTooltip('Turn microphone off'));
+    await tester.tap(find.byTooltip('Turn microphone off').first);
     await tester.pumpAndSettle();
 
     expect(api.mediaStates.single['micEnabled'], isFalse);
     expect(signaling.mediaStates.single['micEnabled'], isFalse);
-    expect(find.widgetWithText(OutlinedButton, 'Mic off'), findsWidgets);
+    expect(find.byTooltip('Turn microphone on'), findsWidgets);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Chat'));
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Chat'));
+    await tester.ensureVisible(find.byTooltip('Open room menu'));
+    await tester.tap(find.byTooltip('Open room menu'));
     await tester.pumpAndSettle();
 
-    expect(api.messageLoadCalls, greaterThanOrEqualTo(1));
-    expect(find.text('Seeded hello'), findsWidgets);
+    expect(find.text('Number of Mic'), findsOneWidget);
+    expect(find.text('Gather followers'), findsOneWidget);
 
-    await tester.enterText(_textFieldByHint('Message this room'), 'Hi mobile');
-    await tester.tap(find.byTooltip('Send'));
+    await tester.tap(find.text('Number of Mic'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose number of mic'), findsOneWidget);
+    expect(find.text('4 people'), findsOneWidget);
+    expect(find.text('8 people'), findsOneWidget);
+    expect(find.text('15 people'), findsOneWidget);
+
+    await tester.tap(find.text('15 people'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use'));
+    await tester.pumpAndSettle();
+
+    expect(api.controlUpdateCalls.single['maxMicCount'], 15);
+    expect(find.text('No.15'), findsOneWidget);
+
+    await tester.ensureVisible(find.byTooltip('Open room menu'));
+    await tester.tap(find.byTooltip('Open room menu'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip('Open live chat'));
+    await tester.tap(find.byTooltip('Open live chat'));
+    await tester.pumpAndSettle();
+
+    expect(_textFieldByHint('Type a message...'), findsOneWidget);
+
+    await tester.enterText(_textFieldByHint('Type a message...'), 'Hi mobile');
+    await tester.tap(find.text('Send'));
     await tester.pumpAndSettle();
 
     expect(api.sentMessages.single['message_body'], 'Hi mobile');
     expect(signaling.broadcastMessages.single['id'], 501);
     expect(find.text('Hi mobile'), findsWidgets);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Host'));
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Host'));
+    await tester.ensureVisible(find.byTooltip('Room menu'));
+    await tester.tap(find.byTooltip('Room menu'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Number of Mic'), findsOneWidget);
+    expect(find.text('Unlock'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Gather followers'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
     expect(api.controlsLoadCalls, greaterThanOrEqualTo(1));
+
+    await tester.tap(find.text('Admin'));
+    await tester.pumpAndSettle();
+
     expect(find.text('Remote Viewer'), findsWidgets);
 
     final muteButton = find.widgetWithText(OutlinedButton, 'Mute').first;
@@ -112,8 +152,11 @@ void main() {
     expect(api.moderationCalls.single['userId'], 101);
     expect(api.moderationCalls.single['action'], 'mute_mic');
 
-    await tester.ensureVisible(find.text('Leave'));
-    await tester.tap(find.text('Leave'));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 900));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip('Leave room'));
+    await tester.tap(find.byTooltip('Leave room').first);
     await tester.pumpAndSettle();
 
     expect(api.leaveCalls, 1);
@@ -156,14 +199,14 @@ void main() {
     expect(signaling.joinedMediaStates.single['micEnabled'], isFalse);
     expect(signaling.joinedMediaStates.single['cameraEnabled'], isFalse);
     expect(find.text('Audience · watching and listening'), findsOneWidget);
-    expect(find.text('Request'), findsWidgets);
+    expect(find.byTooltip('Request mic'), findsWidgets);
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Request'));
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Request').first);
+    await tester.ensureVisible(find.byTooltip('Request mic'));
+    await tester.tap(find.byTooltip('Request mic').first);
     await tester.pumpAndSettle();
 
     expect(api.stageRequests.single['roomId'], 88);
-    expect(find.text('Cancel'), findsWidgets);
+    expect(find.byTooltip('Cancel mic request'), findsWidgets);
 
     signaling.emitStagePermission({
       'targetUserId': _audienceUser.id,
@@ -184,8 +227,121 @@ void main() {
 
     expect(api.mediaStates.single['micEnabled'], isTrue);
     expect(signaling.mediaStates.single['micEnabled'], isTrue);
-    expect(find.text('Mic on'), findsWidgets);
+    expect(find.byTooltip('Turn microphone off'), findsWidgets);
     expect(find.text('Audience · watching and listening'), findsNothing);
+  });
+
+  testWidgets('youtube room connects and switches music tab choices', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: LiveRoomScreen(
+          api: _FakeLiveApi(),
+          user: _user,
+          room: _publicRoom,
+          mediaService: _FakeMediaService(),
+          peerCoordinator: _FakePeerCoordinator(),
+          signalingService: _FakeSignalingService(),
+          enableLocalPreview: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.widgetWithText(ElevatedButton, 'Connect YouTube').first,
+    );
+    await tester.tap(
+      find.widgetWithText(ElevatedButton, 'Connect YouTube').first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enable YouTube Music and video picks for this room.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Connect YouTube').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Music room-ready tracks'), findsOneWidget);
+    expect(find.text('Live Music Room Mix'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('youtube-tab-video')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Room video picks'), findsOneWidget);
+    expect(find.text('Popular 90s Hit Playlist'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('youtube-tab-music')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Music room-ready tracks'), findsOneWidget);
+
+    await tester.tap(find.text('Bengali'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bengali Chill Music Set'), findsOneWidget);
+
+    await tester.tap(find.text('All'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Live Music Room Mix').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open YouTube'), findsOneWidget);
+    expect(find.text('Live Music Room Mix'), findsWidgets);
+  });
+
+  testWidgets('publisher microphone permission denial blocks backend join', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = _FakeLiveApi();
+    final media = _FakeMediaService(
+      permissionError: const RtcMediaPermissionException(
+        'Microphone permission is required to join the room.',
+      ),
+    );
+    final signaling = _FakeSignalingService();
+    final peers = _FakePeerCoordinator();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: LiveRoomScreen(
+          api: api,
+          user: _user,
+          room: _ownerVideoRoom,
+          mediaService: media,
+          peerCoordinator: peers,
+          signalingService: signaling,
+          enableLocalPreview: false,
+          autoConnect: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(media.permissionRequests.single, isFalse);
+    expect(api.joinMicIntents, isEmpty);
+    expect(api.joinCameraIntents, isEmpty);
+    expect(signaling.joinedRooms, isEmpty);
+    expect(peers.localStreamVideos, isEmpty);
+    expect(
+      find.text('Microphone permission is required to join the room.'),
+      findsWidgets,
+    );
   });
 }
 
@@ -238,6 +394,27 @@ final _passwordRoom = Room.fromJson({
   'status': 'active',
 });
 
+final _ownerVideoRoom = Room.fromJson({
+  'id': 79,
+  'tenant_id': 1,
+  'tenant_name': 'RTC Enterprise',
+  'owner_id': 99,
+  'owner_name': 'Taylor Tester',
+  'owner_region': 'United States',
+  'name': 'Owner Video Room',
+  'description': 'A publisher permission room.',
+  'room_type': 'group_video',
+  'privacy_type': 'public',
+  'is_password_protected': false,
+  'max_mic_count': 4,
+  'active_participants': 0,
+  'chat_enabled': true,
+  'gift_enabled': false,
+  'screen_share_enabled': true,
+  'ai_security_enabled': false,
+  'status': 'active',
+});
+
 final _publicRoom = Room.fromJson({
   'id': 88,
   'tenant_id': 1,
@@ -274,7 +451,9 @@ class _FakeLiveApi extends ApiClient {
   final List<Map<String, Object>> stageResponses = [];
   final List<Map<String, Object>> mediaStates = [];
   final List<Map<String, Object>> sentMessages = [];
+  final List<int> deletedMessageIds = [];
   final List<Map<String, Object>> moderationCalls = [];
+  final List<Map<String, Object>> controlUpdateCalls = [];
   int messageLoadCalls = 0;
   int controlsLoadCalls = 0;
   int leaveCalls = 0;
@@ -451,9 +630,55 @@ class _FakeLiveApi extends ApiClient {
   }
 
   @override
+  Future<Map<String, dynamic>> deleteRoomMessage(
+    int messageId, {
+    bool forEveryone = true,
+  }) async {
+    deletedMessageIds.add(messageId);
+    return {
+      'message': 'Message deleted successfully.',
+      'message_id': messageId,
+      'room_id': 77,
+      'deleted_for_everyone': forEveryone,
+      'realtime_broadcasted': false,
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> roomControls(int roomId) async {
     controlsLoadCalls += 1;
     return _controls();
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateRoomControls(
+    int roomId, {
+    int? maxMicCount,
+    String? privacyType,
+    String? password,
+    String? theme,
+    bool? chatEnabled,
+    bool? screenShareEnabled,
+    bool? aiSecurityEnabled,
+    bool? stageRequestsEnabled,
+  }) async {
+    final update = <String, Object>{'roomId': roomId};
+    if (maxMicCount != null) update['maxMicCount'] = maxMicCount;
+    if (privacyType != null) update['privacyType'] = privacyType;
+    if (password != null) update['password'] = password;
+    if (theme != null) update['theme'] = theme;
+    if (chatEnabled != null) update['chatEnabled'] = chatEnabled;
+    if (screenShareEnabled != null) {
+      update['screenShareEnabled'] = screenShareEnabled;
+    }
+    if (aiSecurityEnabled != null) {
+      update['aiSecurityEnabled'] = aiSecurityEnabled;
+    }
+    if (stageRequestsEnabled != null) {
+      update['stageRequestsEnabled'] = stageRequestsEnabled;
+    }
+    controlUpdateCalls.add(update);
+    return _controls(maxMicCount: maxMicCount ?? 4);
   }
 
   @override
@@ -483,6 +708,7 @@ class _FakeLiveApi extends ApiClient {
 
   Map<String, dynamic> _controls({
     bool remoteMicOn = true,
+    int maxMicCount = 4,
     List<Map<String, dynamic>> stageRequests = const [],
   }) {
     return {
@@ -491,7 +717,18 @@ class _FakeLiveApi extends ApiClient {
       'can_update_settings': true,
       'can_assign_roles': true,
       'can_approve_stage': true,
-      'room': {'id': 77, 'owner_id': _user.id},
+      'room': {
+        'id': 77,
+        'owner_id': _user.id,
+        'max_mic_count': maxMicCount,
+        'privacy_type': 'password',
+        'theme': 'neon',
+      },
+      'package': {
+        'plan_name': 'Test Package',
+        'max_mic_count': 15,
+        'allowed_mic_counts': [4, 8, 12, 15],
+      },
       'stage_requests': stageRequests,
       'participants': [
         {
@@ -522,11 +759,16 @@ class _FakeLiveApi extends ApiClient {
 }
 
 class _FakeMediaService extends RtcMediaService {
+  _FakeMediaService({this.permissionError});
+
+  final Object? permissionError;
   final List<bool> permissionRequests = [];
 
   @override
   Future<void> requestPermissions({required bool video}) async {
     permissionRequests.add(video);
+    final error = permissionError;
+    if (error != null) throw error;
   }
 }
 
@@ -587,6 +829,7 @@ class _FakeSignalingService extends SignalingService {
   final List<Map<String, Object>> joinedMediaStates = [];
   final List<Map<String, Object>> mediaStates = [];
   final List<Map<String, dynamic>> broadcastMessages = [];
+  final List<int> deletedMessageIds = [];
   bool left = false;
 
   @override
@@ -663,6 +906,14 @@ class _FakeSignalingService extends SignalingService {
     required Map<String, dynamic> message,
   }) async {
     broadcastMessages.add(message);
+    return {'ok': true};
+  }
+
+  @override
+  Future<Map<String, dynamic>> emitChatMessageDeleted({
+    required int messageId,
+  }) async {
+    deletedMessageIds.add(messageId);
     return {'ok': true};
   }
 

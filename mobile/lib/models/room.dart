@@ -71,7 +71,6 @@ class Room {
   List<String> get featureTags {
     final tags = <String>[];
     if (chatEnabled) tags.add('Chat');
-    if (giftEnabled) tags.add('Gifts');
     if (screenShareEnabled) tags.add('Share');
     if (aiSecurityEnabled) tags.add('Guard');
     return tags.isEmpty ? const ['Live'] : tags;

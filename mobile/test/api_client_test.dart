@@ -147,7 +147,7 @@ void main() {
           'tenant_id': 1,
           'tenant_name': 'RTC Enterprise',
           'owner_id': 1,
-          'owner_name': 'TalkEachOther Admin',
+          'owner_name': 'TalkEachOther Platform Service Admin',
           'name': body['name'],
           'description': body['description'],
           'profile_image': body['profile_image'],
@@ -185,7 +185,8 @@ void main() {
     expect(room.privacyType, 'password');
     expect(room.maxMicCount, 2);
     expect(room.theme, 'midnight');
-    expect(room.featureTags, containsAll(['Chat', 'Gifts', 'Share', 'Guard']));
+    expect(room.featureTags, containsAll(['Chat', 'Share', 'Guard']));
+    expect(room.featureTags, isNot(contains('Gifts')));
   });
 
   test(
@@ -333,6 +334,17 @@ void main() {
         });
       }
 
+      if (options.uri.path.endsWith('/messages/11') &&
+          options.method == 'DELETE') {
+        expect(body['for_everyone'], isTrue);
+        return _MockResponse.ok({
+          'message': 'Message deleted successfully.',
+          'message_id': 11,
+          'deleted_for_everyone': true,
+          'realtime_broadcasted': false,
+        });
+      }
+
       throw StateError('Unexpected request ${options.method} ${options.uri}');
     });
     final client = _client(adapter, store);
@@ -345,14 +357,17 @@ void main() {
       messageType: 'gift',
       mediaUrl: 'applause',
     );
+    final deleted = await client.deleteRoomMessage(11);
 
     expect(messages.single['message_body'], 'Welcome');
     expect(text['chat_message']['id'], 11);
     expect(gift['chat_message']['id'], 12);
+    expect(deleted['message_id'], 11);
     expect(seen, [
       'GET /api/rooms/7/messages',
       'POST /api/rooms/7/messages',
       'POST /api/rooms/7/messages',
+      'DELETE /api/messages/11',
     ]);
   });
 
@@ -589,7 +604,7 @@ void main() {
       if (options.uri.path.endsWith('/admin/client-apps')) {
         expect(options.method, 'POST');
         expect(body['tenant_id'], 3);
-        expect(body['name'], 'Flutter SDK App');
+        expect(body['name'], 'Flutter Client App');
         expect(body['allowed_origins'], 'https://client.test');
         expect(body['status'], 'active');
         return _MockResponse.ok({
@@ -665,7 +680,7 @@ void main() {
     await client.adminCompanyDetail(3);
     await client.adminUpdateCompanyStatus(3, 'suspended');
     await client.adminCreateClientApp(
-      name: 'Flutter SDK App',
+      name: 'Flutter Client App',
       tenantId: 3,
       allowedOrigins: 'https://client.test',
     );
@@ -724,7 +739,7 @@ Map<String, dynamic> _userJson({String email = 'admin@gmail.com'}) {
   return {
     'id': 1,
     'tenant_id': 1,
-    'name': 'TalkEachOther Admin',
+    'name': 'TalkEachOther Platform Service Admin',
     'email': email,
     'phone': '',
     'avatar_url': '',

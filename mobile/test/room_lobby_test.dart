@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rtc_enterprise_mobile/models/app_user.dart';
 import 'package:rtc_enterprise_mobile/models/room.dart';
+import 'package:rtc_enterprise_mobile/navigation/app_routes.dart';
 import 'package:rtc_enterprise_mobile/screens/room_list_screen.dart';
 import 'package:rtc_enterprise_mobile/services/api_client.dart';
 
@@ -161,6 +162,41 @@ void main() {
     expect(find.text('Room 10'), findsWidgets);
   });
 
+  testWidgets('featured hero room opens the live room route', (tester) async {
+    final api = _FakeRoomApi([
+      _room(
+        id: 1,
+        name: 'Popular Video Room',
+        ownerName: 'Alex Host',
+        roomType: 'group_video',
+        privacyType: 'public',
+        activeParticipants: 24,
+      ),
+    ]);
+    LiveRoomRouteArgs? openedArgs;
+
+    await _pumpLobby(
+      tester,
+      api,
+      onGenerateRoute: (settings) {
+        if (settings.name == AppRoutes.liveRoom) {
+          openedArgs = settings.arguments as LiveRoomRouteArgs;
+          return MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Opened live room')),
+          );
+        }
+        return null;
+      },
+    );
+
+    await tester.tap(find.text('Popular Video Room').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Opened live room'), findsOneWidget);
+    expect(openedArgs?.room.id, 1);
+    expect(openedArgs?.autoConnect, isTrue);
+  });
+
   testWidgets('bottom navigation opens the requested mobile tabs', (
     tester,
   ) async {
@@ -253,9 +289,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Midnight').last);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.widgetWithText(SwitchListTile, 'Gifts'));
-    await tester.tap(find.widgetWithText(SwitchListTile, 'Gifts'));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(
       find.widgetWithText(SwitchListTile, 'Screen share'),
     );
@@ -281,7 +314,7 @@ void main() {
     expect(api.createCalls.single['maxMicCount'], 2);
     expect(api.createCalls.single['theme'], 'midnight');
     expect(api.createCalls.single['chatEnabled'], isTrue);
-    expect(api.createCalls.single['giftEnabled'], isTrue);
+    expect(api.createCalls.single['giftEnabled'], isFalse);
     expect(api.createCalls.single['screenShareEnabled'], isTrue);
     expect(api.createCalls.single['aiSecurityEnabled'], isTrue);
     expect(find.text('Ready to open'), findsOneWidget);
@@ -294,11 +327,12 @@ Future<void> _pumpLobby(
   _FakeRoomApi api, {
   VoidCallback? onOpenProfile,
   VoidCallback? onOpenSettings,
-  VoidCallback? onOpenSdk,
+  Route<dynamic>? Function(RouteSettings)? onGenerateRoute,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData.dark(useMaterial3: true),
+      onGenerateRoute: onGenerateRoute,
       home: RoomListScreen(
         api: api,
         user: const AppUser(
@@ -309,7 +343,6 @@ Future<void> _pumpLobby(
         onLoggedOut: () async {},
         onOpenProfile: onOpenProfile,
         onOpenSettings: onOpenSettings,
-        onOpenSdk: onOpenSdk,
       ),
     ),
   );

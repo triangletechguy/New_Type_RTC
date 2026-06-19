@@ -828,7 +828,7 @@
   .admin-account-grid,
   .enterprise-flow-grid,
   .client-app-card dl,
-  .sdk-created-credentials dl,
+  .app-access-created-credentials dl,
   .default-limit-grid,
   .company-created-summary dl {
     grid-template-columns: 1fr;

@@ -19,7 +19,6 @@ const AdminView = lazy(() => import('./components/admin/AdminView'))
 const LiveRoomView = lazy(() => import('./components/rtc/LiveRoomView').then((module) => ({ default: module.LiveRoomView })))
 const ProfileModal = lazy(() => import('./components/profile/ProfilePanel').then((module) => ({ default: module.ProfileModal })))
 const RoomsView = lazy(() => import('./components/rooms/RoomsView').then((module) => ({ default: module.RoomsView })))
-const SdkView = lazy(() => import('./components/sdk/SdkView'))
 
 function ViewFallback({ label, language = 'English' }) {
   const translatedLabel = translateApp(language, label)
@@ -44,7 +43,6 @@ function roomRoutePath(roomId) {
 function appPathForRoute(route) {
   if (route?.activeRoom?.id) return roomRoutePath(route.activeRoom.id)
   if (route?.view === 'admin') return '/admin'
-  if (route?.view === 'sdk') return '/sdk'
   return '/'
 }
 
@@ -78,7 +76,6 @@ function routeFromLocation(currentUser) {
   }
 
   if (window.location.pathname === '/admin') return { view: 'admin', activeRoom: null }
-  if (window.location.pathname === '/sdk') return { view: 'sdk', activeRoom: null }
   return { view: 'rooms', activeRoom: null }
 }
 
@@ -224,10 +221,6 @@ export default function App() {
       return
     }
     if (nextView === 'admin' && !canAccessAdminDashboard) return
-    if (nextView === 'sdk' && !canAccessAdminDashboard) {
-      requireAuth('Developer docs are available to BuzzCast admins.', 'login')
-      return
-    }
     setActiveRoom(null)
     setView(nextView)
     setBrowserRoute({ view: nextView, activeRoom: null })
@@ -293,7 +286,7 @@ export default function App() {
   }
 
   const canAccessAdminDashboard = canUseAdminDashboard(user)
-  const safeView = ['admin', 'sdk'].includes(view) && !canAccessAdminDashboard ? 'rooms' : view
+  const safeView = view === 'admin' && !canAccessAdminDashboard ? 'rooms' : view
 
   if (safeView === 'rooms') {
     return (
@@ -333,13 +326,8 @@ export default function App() {
         <Sidebar user={user} currentView={safeView} language={language} onView={changeView} onLogout={logout} />
         <section className="content-shell">
           {safeView === 'admin' && canAccessAdminDashboard && (
-            <Suspense fallback={<ViewFallback label="Admin dashboard" language={language} />}>
+            <Suspense fallback={<ViewFallback label="Service dashboard" language={language} />}>
               <AdminView onView={changeView} onOpenRoom={openRoom} user={user} language={language} onProfile={openProfile} />
-            </Suspense>
-          )}
-          {safeView === 'sdk' && (
-            <Suspense fallback={<ViewFallback label="SDK samples" language={language} />}>
-              <SdkView language={language} />
             </Suspense>
           )}
         </section>

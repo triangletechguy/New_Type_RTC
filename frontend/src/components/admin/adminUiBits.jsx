@@ -3,7 +3,7 @@ import { adminAssets } from '../../assets/rtc/catalog'
 
 export function DashboardTabs({ tabs, activeTab, onChange }) {
   return (
-    <nav className="admin-dashboard-tabs glass-card" aria-label="Admin dashboard sections">
+    <nav className="admin-dashboard-tabs glass-card" aria-label="Service dashboard sections">
       {tabs.map((tab) => (
         <button
           type="button"
@@ -47,21 +47,5 @@ export function AdminCopyButton({ value, label = 'Copy' }) {
     <button type="button" className="admin-copy-button" onClick={copy}>
       {copied ? 'Copied' : label}
     </button>
-  )
-}
-
-export function ApiSnippetCard({ eyebrow, title, detail, code }) {
-  return (
-    <article className="api-snippet-card">
-      <div className="api-snippet-head">
-        <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <strong>{title}</strong>
-          {detail ? <small>{detail}</small> : null}
-        </div>
-        <AdminCopyButton value={code} />
-      </div>
-      <pre>{code}</pre>
-    </article>
   )
 }

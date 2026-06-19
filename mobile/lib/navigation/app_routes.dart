@@ -13,7 +13,6 @@ class AppRoutes {
   static const liveRoom = '/room';
   static const profile = '/profile';
   static const admin = '/admin';
-  static const sdk = '/sdk';
   static const settings = '/settings';
   static const error = '/error';
 
@@ -24,7 +23,6 @@ class AppRoutes {
     liveRoom,
     profile,
     admin,
-    sdk,
     settings,
     error,
   ];
@@ -76,10 +74,4 @@ class AdminRouteArgs {
 
   final ApiClient api;
   final AppUser user;
-}
-
-class SdkRouteArgs {
-  const SdkRouteArgs({required this.api});
-
-  final ApiClient api;
 }

@@ -2,7 +2,11 @@ const express = require('express')
 const bcrypt = require('bcryptjs')
 const { query, transaction } = require('../config/db')
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth')
-const { closeParticipantSession } = require('../services/rtcSessionLifecycle')
+const {
+  closeParticipantSession,
+  isPermanentAudioRoom,
+  isTemporaryVideoRoom,
+} = require('../services/rtcSessionLifecycle')
 const {
   ASSIGNABLE_ROOM_ROLES,
   canApproveStageRequests,
@@ -35,6 +39,7 @@ let roomFollowSchemaPromise = null
 let roomFeatureSchemaPromise = null
 let roomStageRequestSchemaPromise = null
 let roomCreationSchemaPromise = null
+let roomSeatSchemaPromise = null
 const roomTypeGroups = {
   all: null,
   live: ['solo_live', 'pk_live'],
@@ -172,6 +177,33 @@ async function ensureRoomStageRequestSchema() {
   return roomStageRequestSchemaPromise
 }
 
+async function ensureRoomSeatSchema() {
+  if (!roomSeatSchemaPromise) {
+    roomSeatSchemaPromise = query(`
+      CREATE TABLE IF NOT EXISTS room_seats (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        tenant_id BIGINT UNSIGNED NOT NULL,
+        room_id BIGINT UNSIGNED NOT NULL,
+        seat_number INT NOT NULL,
+        locked TINYINT(1) DEFAULT 0,
+        locked_by BIGINT UNSIGNED NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_room_seat_number (room_id, seat_number),
+        INDEX idx_room_seats_room_locked (room_id, locked),
+        CONSTRAINT fk_room_seats_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_seats_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+        CONSTRAINT fk_room_seats_locked_by FOREIGN KEY (locked_by) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `).catch((error) => {
+      roomSeatSchemaPromise = null
+      throw error
+    })
+  }
+
+  return roomSeatSchemaPromise
+}
+
 function boundedNumber(value, min, max, fallback = 0, precision = 2) {
   const number = Number(value)
   if (!Number.isFinite(number)) return fallback
@@ -233,6 +265,19 @@ function parseRoomTags(value) {
   }
 
   return []
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value
+  if (Buffer.isBuffer(value)) return parseJsonArray(value.toString('utf8'))
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 function cleanCountMap(value, maxKeys = 16) {
@@ -948,6 +993,56 @@ async function stageSeatCount(connection, sessionId, excludeUserId = null) {
   return Number(rows[0]?.active_count || 0)
 }
 
+function normalizeSeatNumber(value) {
+  const seatNumber = parseInteger(value, null)
+  if (!seatNumber || seatNumber < 1 || seatNumber > MAX_ROOM_SEATS) return null
+  return seatNumber
+}
+
+async function fetchRoomSeats(connection, room) {
+  await ensureRoomSeatSchema()
+  const maxSeats = Math.max(1, Math.min(MAX_ROOM_SEATS, Number(room.max_mic_count || 1)))
+  const [rows] = await connection.execute(
+    `
+    SELECT seat_number, locked, locked_by, updated_at
+    FROM room_seats
+    WHERE room_id = ?
+    AND seat_number BETWEEN 1 AND ?
+    ORDER BY seat_number ASC
+    `,
+    [room.id, maxSeats]
+  )
+  const rowBySeat = new Map(rows.map((row) => [Number(row.seat_number), row]))
+
+  return Array.from({ length: maxSeats }, (_, index) => {
+    const seatNumber = index + 1
+    const row = rowBySeat.get(seatNumber)
+
+    return {
+      seat_number: seatNumber,
+      locked: Boolean(Number(row?.locked || 0)),
+      locked_by: row?.locked_by || null,
+      updated_at: row?.updated_at || null,
+    }
+  })
+}
+
+async function roomSeatSummary(connection, room) {
+  const seats = await fetchRoomSeats(connection, room)
+  const lockedCount = seats.filter((seat) => seat.locked).length
+  return {
+    seats,
+    locked_count: lockedCount,
+    unlocked_count: seats.length - lockedCount,
+    total_count: seats.length,
+  }
+}
+
+async function unlockedStageSeatCapacity(connection, room) {
+  const summary = await roomSeatSummary(connection, room)
+  return Math.max(0, summary.unlocked_count)
+}
+
 async function canAccessPrivateRoom(roomId, userId, ownerId) {
   if (ownerId === userId) return true
 
@@ -1002,8 +1097,10 @@ function parseBanOptions(payload = {}) {
 
 async function getRoomControls(connection, room, userId, options = {}) {
   await ensureRoomStageRequestSchema()
+  await ensureRoomSeatSchema()
   const isOwner = Number(room.owner_id) === Number(userId)
   const role = options.roleOverride || (isOwner ? 'owner' : await getRoomRole(connection, room.id, userId))
+  const seatSummary = await roomSeatSummary(connection, room)
   const [participants] = await connection.execute(
     `
     SELECT
@@ -1077,6 +1174,7 @@ async function getRoomControls(connection, room, userId, options = {}) {
   const activeBans = capabilities.can_manage
     ? await fetchActiveRoomBans(connection, room.id)
     : []
+  const packageControls = await roomPackageControls(connection, room, roles)
 
   return {
     role,
@@ -1087,6 +1185,13 @@ async function getRoomControls(connection, room, userId, options = {}) {
     can_assign_roles: capabilities.can_assign_roles,
     can_approve_stage: capabilities.can_approve_stage,
     room: serializeRoom(room),
+    package: packageControls,
+    seats: seatSummary.seats,
+    seat_summary: {
+      locked_count: seatSummary.locked_count,
+      unlocked_count: seatSummary.unlocked_count,
+      total_count: seatSummary.total_count,
+    },
     roles: roles.map((roomRole) => ({
       id: roomRole.id,
       room_id: roomRole.room_id,
@@ -1585,6 +1690,10 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
         if (!maxMicCount || maxMicCount < 1 || maxMicCount > MAX_ROOM_SEATS) {
           throw createHttpError(422, `Max mic count must be between 1 and ${MAX_ROOM_SEATS}.`)
         }
+        const packageControls = await roomPackageControls(connection, room, [])
+        if (maxMicCount > packageControls.max_mic_count) {
+          throw createHttpError(422, `${packageControls.plan_name} allows up to ${packageControls.max_mic_count} mic seat${packageControls.max_mic_count === 1 ? '' : 's'} for this room.`)
+        }
         updates.push('max_mic_count = ?')
         values.push(maxMicCount)
       }
@@ -1634,10 +1743,136 @@ router.patch('/:id/controls', authMiddleware, async (req, res, next) => {
   }
 })
 
-async function roomRoleLimit(connection, tenantId) {
+async function updateRoomSeatsEndpoint(req, res, next, seatNumber = null) {
+  try {
+    await ensureRoomCreationSchema()
+    await ensureRoomSeatSchema()
+    const roomId = parseInteger(req.params.id, null)
+    const locked = parseBoolean(req.body?.locked, true)
+
+    if (!roomId || roomId < 1) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const result = await transaction(async (connection) => {
+      const isPlatformAdmin = userHasRole(req.user, 'super_admin')
+      const [rooms] = await connection.execute(
+        `
+        SELECT *
+        FROM rooms
+        WHERE id = ?
+        ${isPlatformAdmin ? '' : 'AND tenant_id = ?'}
+        LIMIT 1
+        `,
+        isPlatformAdmin ? [roomId] : [roomId, req.user.tenant_id]
+      )
+
+      if (!rooms.length) throw createHttpError(404, 'Room not found.')
+
+      const room = rooms[0]
+      const actorRole = isPlatformAdmin
+        ? 'owner'
+        : Number(room.owner_id) === Number(req.user.id)
+        ? 'owner'
+        : await getRoomRole(connection, room.id, req.user.id)
+
+      if (!canUpdateRoomSettings(actorRole)) {
+        throw createHttpError(403, 'Only the room owner or room admin can lock mic seats.')
+      }
+
+      const maxSeats = Math.max(1, Math.min(MAX_ROOM_SEATS, Number(room.max_mic_count || 1)))
+      const targetSeats = seatNumber === null
+        ? Array.from({ length: maxSeats }, (_, index) => index + 1)
+        : [normalizeSeatNumber(seatNumber)]
+
+      if (targetSeats.some((seat) => !seat || seat > maxSeats)) {
+        throw createHttpError(422, `Seat number must be between 1 and ${maxSeats}.`)
+      }
+
+      for (const targetSeat of targetSeats) {
+        await connection.execute(
+          `
+          INSERT INTO room_seats (
+            tenant_id, room_id, seat_number, locked, locked_by, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+          ON DUPLICATE KEY UPDATE
+            locked = VALUES(locked),
+            locked_by = VALUES(locked_by),
+            updated_at = NOW()
+          `,
+          [
+            room.tenant_id,
+            room.id,
+            targetSeat,
+            locked ? 1 : 0,
+            locked ? req.user.id : null,
+          ]
+        )
+      }
+
+      return getRoomControls(connection, room, req.user.id, { roleOverride: actorRole })
+    })
+
+    try {
+      await emitRoomRealtime(req, result.room, 'room-controls-updated', {
+        controls: result,
+        updatedByUserId: req.user.id,
+      })
+    } catch (broadcastError) {
+      console.error('[rooms] seat controls realtime broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: locked ? 'Mic seat locked.' : 'Mic seat unlocked.',
+      controls: result,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/seats/lock-all', authMiddleware, (req, res, next) => updateRoomSeatsEndpoint(req, res, next, null))
+router.patch('/:id/seats/:seatNumber', authMiddleware, (req, res, next) => {
+  updateRoomSeatsEndpoint(req, res, next, req.params.seatNumber)
+})
+
+function micLayoutOptions(room, packageMaxMicCount) {
+  const maxMicCount = Math.max(1, Math.min(MAX_ROOM_SEATS, Number(packageMaxMicCount || MAX_ROOM_SEATS)))
+  const presets = isOneToOneRoom(room.room_type) ? [1, 2] : [8, 12, 15, 20]
+  const current = Number(room.max_mic_count || 0)
+  const options = new Set(presets.filter((count) => count >= 1 && count <= maxMicCount))
+
+  if (current >= 1 && current <= maxMicCount) options.add(current)
+  if (!options.size) options.add(maxMicCount)
+
+  return Array.from(options).sort((a, b) => a - b)
+}
+
+function packageFeatureFlags(features) {
+  const enabled = new Set(features)
+  return {
+    room_roles: enabled.has('room_roles'),
+    mic_layout_picker: enabled.has('mic_layout_picker'),
+    mic_seat_locks: enabled.has('mic_seat_locks'),
+    premium_reactions: enabled.has('premium_reactions'),
+    picture_message: enabled.has('picture_message'),
+    youtube_player: enabled.has('youtube_audio_room') || enabled.has('youtube_player'),
+    audio_player: enabled.has('audio_player') || enabled.has('youtube_audio_room'),
+    room_theme: enabled.has('room_theme'),
+    room_share: enabled.has('room_share'),
+    comment_cleanup: enabled.has('comment_reply'),
+  }
+}
+
+async function roomPackageControls(connection, room, roles = []) {
   const [plans] = await connection.execute(
     `
-    SELECT sp.max_room_admins
+    SELECT
+      sp.id,
+      sp.code,
+      sp.name,
+      sp.max_room_admins,
+      sp.max_participants_per_room,
+      sp.included_features
     FROM tenant_plan_assignments tpa
     INNER JOIN service_plans sp ON sp.id = tpa.plan_id
     WHERE tpa.tenant_id = ?
@@ -1645,10 +1880,35 @@ async function roomRoleLimit(connection, tenantId) {
     ORDER BY tpa.id DESC
     LIMIT 1
     `,
-    [tenantId]
+    [room.tenant_id]
   )
 
-  return Number(plans[0]?.max_room_admins || 0)
+  const plan = plans[0] || null
+  const features = parseJsonArray(plan?.included_features).map((feature) => String(feature))
+  const maxAdmins = Number(plan?.max_room_admins || 0)
+  const planMaxMicCount = Number(plan?.max_participants_per_room || 0)
+  const maxMicCount = Math.max(1, Math.min(MAX_ROOM_SEATS, planMaxMicCount || MAX_ROOM_SEATS))
+  const assignedRoomAdmins = roles.filter((roomRole) => ['admin', 'moderator'].includes(roomRole.role)).length
+
+  return {
+    plan_id: plan?.id || null,
+    plan_code: plan?.code || null,
+    plan_name: plan?.name || 'Custom RTC package',
+    max_room_admins: maxAdmins,
+    assigned_room_admins: assignedRoomAdmins,
+    remaining_room_admin_slots: maxAdmins > 0 ? Math.max(0, maxAdmins - assignedRoomAdmins) : null,
+    max_mic_count: maxMicCount,
+    allowed_mic_counts: micLayoutOptions(room, maxMicCount),
+    room_lifecycle: isPermanentAudioRoom(room.room_type) ? 'permanent' : 'temporary',
+    dismisses_when_empty: isTemporaryVideoRoom(room.room_type),
+    features,
+    feature_flags: packageFeatureFlags(features),
+  }
+}
+
+async function roomRoleLimit(connection, tenantId) {
+  const packageControls = await roomPackageControls(connection, { tenant_id: tenantId, room_type: 'audio', max_mic_count: 1 }, [])
+  return Number(packageControls.max_room_admins || 0)
 }
 
 async function updateRoomRoleEndpoint(req, res, next, removeRole = false) {
@@ -2596,8 +2856,11 @@ async function applyStagePermission({ roomId, targetUserId, requestId = null, ac
     const nextRole = normalizedAction === 'approve' ? 'speaker' : 'audience'
     if (normalizedAction === 'approve') {
       const activeStageSeats = await stageSeatCount(connection, participant.session_id, targetUserId)
-      const maxParticipants = Math.max(1, Number(room.max_mic_count || 1))
-      if (activeStageSeats >= maxParticipants) {
+      const availableStageSeats = await unlockedStageSeatCapacity(connection, room)
+      if (availableStageSeats < 1) {
+        throw createHttpError(409, 'All mic seats are locked. Unlock a seat before approving another speaker.')
+      }
+      if (activeStageSeats >= availableStageSeats) {
         throw createHttpError(409, 'The room stage is full. Free a mic seat before approving another speaker.')
       }
     }
@@ -3348,6 +3611,8 @@ router.post('/:id/leave', authMiddleware, async (req, res, next) => {
               usage_log_id: leaveResult.usageLogId,
               rtc_provider: 'native_webrtc',
               leave_only: true,
+              room_ended: leaveResult.roomEnded,
+              room_status: leaveResult.roomStatus,
             }),
           ]
         )
@@ -3359,8 +3624,8 @@ router.post('/:id/leave', authMiddleware, async (req, res, next) => {
           billable_minutes: leaveResult.billableMinutes,
           usage_log_id: leaveResult.usageLogId,
           usage_logged: Boolean(leaveResult.usageLogId),
-          room_ended: false,
-          room_status: room.status,
+          room_ended: leaveResult.roomEnded,
+          room_status: leaveResult.roomStatus,
         }
       }
 

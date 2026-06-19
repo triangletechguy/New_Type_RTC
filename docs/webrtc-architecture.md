@@ -1,6 +1,6 @@
 # WebRTC Architecture
 
-This project is an organized browser-based RTC platform. It is not a Flutter SDK and it is not a random static UI. The product is a web RTC app with a backend API, signaling server, database, and TURN relay configuration.
+This project is an organized browser-based RTC platform. It is not a random static UI. The product is a web RTC app with a backend API, signaling server, database, and TURN relay configuration.
 
 ## What The Client Gets
 
@@ -28,7 +28,7 @@ User browser
   |    - rooms
   |    - join/leave sessions
   |    - chat
-  |    - admin/client company management
+  |    - service admin/client company management
   |
   +--> Socket.IO: /socket.io
   |    - join signaling room

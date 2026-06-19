@@ -715,15 +715,11 @@
   .purchase-status-grid,
   .purchase-plan-grid,
   .purchase-request-form,
-  .sdk-access-form,
+  .app-access-form,
   .client-api-summary,
   .client-api-flow-grid,
   .api-snippet-grid,
   .api-contract-grid,
-  .sdk-roadmap-grid,
-  .sdk-route-map,
-  .sdk-reliability-grid,
-  .sdk-token-grid,
   .company-profile-grid,
   .admin-room-create-form,
   .simple-health-grid,
@@ -775,17 +771,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sdk-flow-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .sdk-sample-layout,
-  .sdk-playground-grid,
-  .sdk-reference-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .sdk-origin-field {
+  .app-access-origin-field {
     grid-column: auto;
   }
 
@@ -993,7 +979,7 @@
   .usage-period-row,
   .client-app-card dl,
   .company-created-summary dl,
-  .sdk-created-credentials dl,
+  .app-access-created-credentials dl,
   .plan-request-row,
   .usage-log-row {
     grid-template-columns: 1fr;
@@ -1011,27 +997,8 @@
     align-items: stretch;
   }
 
-  .sdk-card-header,
-  .sdk-install-row,
-  .sdk-method-row,
-  .sdk-roadmap-grid article {
-    grid-template-columns: 1fr;
-  }
-
-  .sdk-card-header {
-    flex-direction: column;
-  }
-
   .monitor-header-state {
     justify-items: start;
-  }
-
-  .sdk-tab-row,
-  .sdk-flow-grid,
-  .sdk-form-grid,
-  .sdk-stage-row,
-  .sdk-live-summary {
-    grid-template-columns: 1fr 1fr;
   }
 
   .monitor-media {

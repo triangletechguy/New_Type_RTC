@@ -199,6 +199,13 @@ class RtcAssets {
     return AssetImage(coverForRoomType(room.roomType, room.privacyType, index));
   }
 
+  static ImageProvider? imageProviderFromValue(String value) {
+    final trimmed = value.trim();
+    if (_isRemoteImage(trimmed)) return NetworkImage(trimmed);
+    if (trimmed.startsWith('assets/')) return AssetImage(trimmed);
+    return null;
+  }
+
   static bool _isRemoteImage(String value) {
     return value.startsWith('http://') || value.startsWith('https://');
   }

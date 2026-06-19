@@ -28,19 +28,6 @@ export function formatPercent(value) {
   return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
 }
 
-export function clientApiBaseUrl() {
-  if (typeof window === 'undefined') return 'https://your-domain.com/api/client'
-
-  const { hostname, port, protocol, origin } = window.location
-  const localDevHost = hostname === 'localhost' || hostname === '127.0.0.1'
-
-  if (localDevHost && ['5173', '5174', '4173'].includes(port)) {
-    return `${protocol}//${hostname}:8000/api/client`
-  }
-
-  return `${origin}/api/client`
-}
-
 export function groupedFeatures(features) {
   return (features || []).reduce((groups, feature) => {
     const group = feature.group || 'Features'
@@ -108,65 +95,29 @@ export const COMPANY_STATUS_OPTIONS = ['active', 'pending', 'suspended', 'cancel
 export const BILLING_TYPE_OPTIONS = ['monthly', 'prepaid', 'custom', 'enterprise']
 export const PLAN_STATUS_OPTIONS = ['active', 'inactive']
 export const FEATURE_CATALOG = [
-  { key: 'normal_audio_room', group: 'Audio SDK', label: 'Normal audio room SDK' },
-  { key: 'youtube_audio_room', group: 'Audio SDK', label: 'YouTube audio room SDK' },
-  { key: 'noise_cancellation', group: 'Audio SDK', label: 'Noise cancellation control' },
-  { key: 'voice_changer', group: 'Audio SDK', label: 'Voice changer' },
-  { key: 'one_to_one_voice_calling', group: 'Audio SDK', label: 'One-to-one voice calling' },
-  { key: 'ai_security_audio', group: 'Audio SDK', label: 'AI audio security' },
-  { key: 'group_voice_chat', group: 'Audio SDK', label: 'Group voice chat' },
-  { key: 'normal_video_group_chat', group: 'Video SDK', label: 'Normal video group chat' },
-  { key: 'live_video_pk', group: 'Video SDK', label: 'Live video PK' },
-  { key: 'ai_security_video', group: 'Video SDK', label: 'AI video security' },
-  { key: 'one_to_one_video_calling', group: 'Video SDK', label: 'One-to-one video calling with beauty' },
-  { key: 'solo_video_live', group: 'Video SDK', label: 'Solo video live' },
-  { key: 'screen_share', group: 'Video SDK', label: 'Screen share' },
-  { key: 'video_filter_beauty', group: 'Video SDK', label: 'Filters, stickers, face detect, beauty' },
+  { key: 'normal_audio_room', group: 'Audio Features', label: 'Normal audio room' },
+  { key: 'youtube_audio_room', group: 'Audio Features', label: 'YouTube audio room' },
+  { key: 'noise_cancellation', group: 'Audio Features', label: 'Noise cancellation control' },
+  { key: 'voice_changer', group: 'Audio Features', label: 'Voice changer' },
+  { key: 'one_to_one_voice_calling', group: 'Audio Features', label: 'One-to-one voice calling' },
+  { key: 'ai_security_audio', group: 'Audio Features', label: 'AI audio security' },
+  { key: 'group_voice_chat', group: 'Audio Features', label: 'Group voice chat' },
+  { key: 'normal_video_group_chat', group: 'Video Features', label: 'Normal video group chat' },
+  { key: 'live_video_pk', group: 'Video Features', label: 'Live video PK' },
+  { key: 'ai_security_video', group: 'Video Features', label: 'AI video security' },
+  { key: 'one_to_one_video_calling', group: 'Video Features', label: 'One-to-one video calling with beauty' },
+  { key: 'solo_video_live', group: 'Video Features', label: 'Solo video live' },
+  { key: 'screen_share', group: 'Video Features', label: 'Screen share' },
+  { key: 'video_filter_beauty', group: 'Video Features', label: 'Filters, stickers, face detect, beauty' },
   { key: 'message_chat', group: 'Common', label: 'Messages, replies, and media' },
-  { key: 'room_roles', group: 'Common', label: 'Room owner, admin, moderator limits' },
+  { key: 'room_roles', group: 'Common', label: 'Room owner, room admin, moderator limits' },
   { key: 'private_room_password', group: 'Common', label: 'Private and password rooms' },
   { key: 'room_theme', group: 'Common', label: 'Room theme and profile settings' },
   { key: 'room_share', group: 'Common', label: 'Room share and room like' },
   { key: 'comment_reply', group: 'Common', label: 'Comment replies and cleanup' },
-  { key: 'company_billing', group: 'Admin Panel', label: 'Company-wise billing by used minutes' },
-  { key: 'rtc_connection_indicator', group: 'Admin Panel', label: 'RTC connection indicator' },
-  { key: 'admin_panel_analytics', group: 'Admin Panel', label: 'Live monitoring and analytics' },
-]
-
-export const CLIENT_API_TOKEN_CLAIMS = [
-  ['tenant_id', 'Prevents cross-company access.'],
-  ['app_id', 'Connects usage and room access to the correct client app.'],
-  ['external_user_id', 'Maps the RTC session back to the client company user without charging that user.'],
-  ['room_id', 'Limits the token to one room/channel.'],
-  ['room_type / rtc_profile', 'Maps the room to communication/live profile, web mode, and media type.'],
-  ['role', 'Controls audience, publisher, moderator, admin, or owner behavior.'],
-  ['permissions', 'Controls join, media publish, screen share, chat, mute, and kick.'],
-  ['billing_payer / billing_scope / user_pays', 'Marks the client company as payer while invited users spend package minutes.'],
-  ['exp / iat', 'Keeps tokens short-lived; 15 minutes is the default target.'],
-]
-
-export const CLIENT_API_ERROR_CODES = [
-  ['invalid_api_key', 'API key is missing, invalid, revoked, or malformed.'],
-  ['company_suspended', 'Tenant company is suspended, so token and room APIs should fail.'],
-  ['app_suspended', 'The specific client app is suspended.'],
-  ['origin_not_allowed', 'The web origin is not in the app allowed origins list.'],
-  ['room_disabled', 'The requested room exists but is disabled.'],
-  ['room_not_found', 'The room does not exist inside this tenant/app scope.'],
-  ['user_not_synced', 'The external user must be synced before token generation.'],
-  ['permission_denied', 'Requested role or permissions are not allowed.'],
-  ['room_capacity_reached', 'The room has reached its configured participant capacity.'],
-]
-
-export const CLIENT_API_WEBHOOK_EVENTS = [
-  'room.started',
-  'room.ended',
-  'room.disabled',
-  'participant.joined',
-  'participant.left',
-  'participant.reconnected',
-  'usage.updated',
-  'billing.usage_warning',
-  'billing.invoice_ready',
+  { key: 'company_billing', group: 'Service Console', label: 'Company-wise billing by used minutes' },
+  { key: 'rtc_connection_indicator', group: 'Service Console', label: 'RTC connection indicator' },
+  { key: 'admin_panel_analytics', group: 'Service Console', label: 'Live monitoring and analytics' },
 ]
 
 export function buildDashboardTabs(mode) {
@@ -175,7 +126,7 @@ export function buildDashboardTabs(mode) {
       { key: 'command', label: 'Command' },
       { key: 'companies', label: 'Companies' },
       { key: 'packages', label: 'Packages' },
-      { key: 'sdk', label: 'Integration' },
+      { key: 'access', label: 'App Access' },
       { key: 'usage', label: 'Billing' },
       { key: 'rooms', label: 'Rooms' },
       { key: 'health', label: 'Status' },
@@ -187,7 +138,7 @@ export function buildDashboardTabs(mode) {
       { key: 'company_overview', label: 'Overview' },
       { key: 'users', label: 'Users' },
       { key: 'rooms', label: 'RTC API' },
-      { key: 'sdk', label: 'Integration' },
+      { key: 'access', label: 'App Access' },
       { key: 'usage', label: 'Billing' },
       { key: 'packages', label: 'Package' },
       { key: 'company', label: 'Settings' },
@@ -199,7 +150,7 @@ export function buildDashboardTabs(mode) {
     { key: 'command', label: 'Command' },
     { key: 'purchase', label: 'Package' },
     { key: 'users', label: 'Users' },
-    { key: 'sdk', label: 'Integration' },
+    { key: 'access', label: 'App Access' },
     { key: 'rooms', label: 'RTC API' },
     { key: 'usage', label: 'Billing' },
     { key: 'company', label: 'Company' },

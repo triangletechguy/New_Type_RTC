@@ -1,0 +1,48 @@
+name: Android RTC SDK
+
+on:
+  push:
+    paths:
+      - ".github/workflows/android-rtc-sdk.yml"
+      - "new_mobileRTC/**"
+      - "mobile/sdk_reference/**"
+  pull_request:
+    paths:
+      - ".github/workflows/android-rtc-sdk.yml"
+      - "new_mobileRTC/**"
+      - "mobile/sdk_reference/**"
+
+jobs:
+  build-package-sdk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify reference frames and SDK phases
+        run: |
+          bash mobile/sdk_reference/scripts/verify_100_frame_set.sh
+          bash mobile/sdk_reference/scripts/verify_phase1_scope.sh
+          bash mobile/sdk_reference/scripts/verify_phase2_android_sdk_foundation.sh
+          bash mobile/sdk_reference/scripts/verify_phase3_media_reliability.sh
+          bash mobile/sdk_reference/scripts/verify_phase4_sdk_build_package.sh
+          bash mobile/sdk_reference/scripts/verify_phase5_contract_integration_tests.sh
+
+      - name: Build Android SDK
+        run: bash new_mobileRTC/agora-manager/scripts/build_rtc_enterprise_android_sdk.sh
+
+      - name: Package Android SDK
+        run: bash new_mobileRTC/agora-manager/scripts/package_rtc_enterprise_android_sdk.sh
+
+      - name: Upload SDK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtc-enterprise-android-sdk
+          path: new_mobileRTC/agora-manager/dist/

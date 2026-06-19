@@ -236,7 +236,7 @@ class ApiClient {
     String status = 'active',
   }) async {
     final payload = <String, Object?>{
-      'name': name.trim().isEmpty ? 'Native SDK App' : name.trim(),
+      'name': name.trim().isEmpty ? 'Native Client App' : name.trim(),
       'allowed_origins': allowedOrigins.trim(),
       'status': status,
     };
@@ -251,7 +251,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> adminRotateClientAppCredentials(
     int appId, {
-    String reason = 'Rotated from Flutter admin',
+    String reason = 'Rotated from Flutter service console',
   }) async {
     final response = await dio.post<Map<String, dynamic>>(
       '/admin/client-apps/$appId/rotate-credentials',
@@ -338,7 +338,7 @@ class ApiClient {
     bool aiSecurityEnabled = false,
   }) async {
     final payload = <String, Object?>{
-      'name': name.trim().isEmpty ? 'Native admin room' : name.trim(),
+      'name': name.trim().isEmpty ? 'Native RTC room' : name.trim(),
       'description': description.trim(),
       'room_type': roomType,
       'privacy_type': privacyType,
@@ -620,6 +620,86 @@ class ApiClient {
     return controls is Map ? Map<String, dynamic>.from(controls) : {};
   }
 
+  Future<Map<String, dynamic>> updateRoomControls(
+    int roomId, {
+    int? maxMicCount,
+    String? privacyType,
+    String? password,
+    String? theme,
+    bool? chatEnabled,
+    bool? screenShareEnabled,
+    bool? aiSecurityEnabled,
+    bool? stageRequestsEnabled,
+  }) async {
+    final payload = <String, Object?>{};
+    if (maxMicCount != null) payload['max_mic_count'] = maxMicCount;
+    if (privacyType != null) payload['privacy_type'] = privacyType;
+    if (password != null) payload['password'] = password;
+    if (theme != null) payload['theme'] = theme;
+    if (chatEnabled != null) payload['chat_enabled'] = chatEnabled;
+    if (screenShareEnabled != null) {
+      payload['screen_share_enabled'] = screenShareEnabled;
+    }
+    if (aiSecurityEnabled != null) {
+      payload['ai_security_enabled'] = aiSecurityEnabled;
+    }
+    if (stageRequestsEnabled != null) {
+      payload['stage_requests_enabled'] = stageRequestsEnabled;
+    }
+    final response = await dio.patch<Map<String, dynamic>>(
+      '/rooms/$roomId/controls',
+      data: payload,
+    );
+    final controls = response.data?['controls'];
+    return controls is Map ? Map<String, dynamic>.from(controls) : {};
+  }
+
+  Future<Map<String, dynamic>> updateRoomSeat(
+    int roomId,
+    int seatNumber, {
+    required bool locked,
+  }) async {
+    final response = await dio.patch<Map<String, dynamic>>(
+      '/rooms/$roomId/seats/$seatNumber',
+      data: {'locked': locked},
+    );
+    final controls = response.data?['controls'];
+    return controls is Map ? Map<String, dynamic>.from(controls) : {};
+  }
+
+  Future<Map<String, dynamic>> updateAllRoomSeats(
+    int roomId, {
+    required bool locked,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/seats/lock-all',
+      data: {'locked': locked},
+    );
+    final controls = response.data?['controls'];
+    return controls is Map ? Map<String, dynamic>.from(controls) : {};
+  }
+
+  Future<Map<String, dynamic>> assignRoomRole(
+    int roomId,
+    int userId, {
+    required String role,
+  }) async {
+    final response = await dio.put<Map<String, dynamic>>(
+      '/rooms/$roomId/roles/$userId',
+      data: {'role': role},
+    );
+    final controls = response.data?['controls'];
+    return controls is Map ? Map<String, dynamic>.from(controls) : {};
+  }
+
+  Future<Map<String, dynamic>> removeRoomRole(int roomId, int userId) async {
+    final response = await dio.delete<Map<String, dynamic>>(
+      '/rooms/$roomId/roles/$userId',
+    );
+    final controls = response.data?['controls'];
+    return controls is Map ? Map<String, dynamic>.from(controls) : {};
+  }
+
   Future<Map<String, dynamic>> moderateRoomParticipant(
     int roomId,
     int userId, {
@@ -688,6 +768,25 @@ class ApiClient {
     final response = await dio.post<Map<String, dynamic>>(
       '/rooms/$roomId/messages',
       data: payload,
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> deleteRoomMessage(
+    int messageId, {
+    bool forEveryone = true,
+  }) async {
+    final response = await dio.delete<Map<String, dynamic>>(
+      '/messages/$messageId',
+      data: {'for_everyone': forEveryone},
+    );
+    return response.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> clearRoomMessages(int roomId) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/rooms/$roomId/messages/clear',
+      data: const <String, dynamic>{},
     );
     return response.data ?? {};
   }

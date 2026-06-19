@@ -1,7 +1,7 @@
 .rtc-command-kpis span,
 .purchase-status-grid span,
 .company-profile-grid span,
-.sdk-created-credentials dt,
+.app-access-created-credentials dt,
 .plan-request-row span {
   color: var(--muted);
   font-size: 12px;
@@ -52,7 +52,7 @@
 .rtc-action-card strong,
 .purchase-plan-card strong,
 .plan-request-row strong,
-.sdk-created-credentials strong {
+.app-access-created-credentials strong {
   color: #fff;
 }
 
@@ -103,7 +103,7 @@
 }
 
 .purchase-request-form button,
-.sdk-access-form button {
+.app-access-form button {
   min-height: 46px;
 }
 
@@ -153,21 +153,21 @@
   gap: 7px;
 }
 
-.sdk-access-form {
+.app-access-form {
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   align-items: end;
 }
 
-.sdk-origin-field {
+.app-access-origin-field {
   grid-column: 1 / -2;
 }
 
-.sdk-origin-field textarea {
+.app-access-origin-field textarea {
   min-height: 78px;
   resize: vertical;
 }
 
-.sdk-created-credentials {
+.app-access-created-credentials {
   display: grid;
   gap: 10px;
   margin-top: 12px;
@@ -177,14 +177,14 @@
   background: rgba(45, 212, 191, .08);
 }
 
-.sdk-created-credentials dl {
+.app-access-created-credentials dl {
   margin: 0;
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 8px 10px;
 }
 
-.sdk-created-credentials dd {
+.app-access-created-credentials dd {
   margin: 0;
   color: var(--soft);
   font-size: 12px;

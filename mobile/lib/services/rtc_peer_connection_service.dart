@@ -53,6 +53,7 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
 
   @override
   Future<void> attachSignaling(SignalingService signaling) async {
+    if (_disposed) return;
     if (identical(_signaling, signaling)) return;
     await _cancelSubscriptions();
     _signaling = signaling;
@@ -79,6 +80,7 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
     MediaStream? stream, {
     required bool video,
   }) async {
+    if (_disposed) return;
     _localStream = stream;
     _video = video;
     for (final peer in _peers.values) {
@@ -89,10 +91,12 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
 
   @override
   Future<void> syncPeers(List<Map<String, dynamic>> peers) async {
+    if (_disposed) return;
+    final localSocketId = _signaling?.socketId;
     final nextSocketIds = peers
-        .map((peer) => peer['socketId']?.toString())
+        .map(_peerSocketId)
         .whereType<String>()
-        .where((socketId) => socketId.isNotEmpty)
+        .where((socketId) => socketId.isNotEmpty && socketId != localSocketId)
         .toSet();
 
     final staleSocketIds = _peers.keys
@@ -318,7 +322,9 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
     } catch (_) {
       // Dispose should be best effort during room leave.
     }
-    _remoteStreams.add(RtcRemoteStream(socketId: socketId, stream: null));
+    if (!_remoteStreams.isClosed) {
+      _remoteStreams.add(RtcRemoteStream(socketId: socketId, stream: null));
+    }
     _emitPeerState(socketId, 'Closed');
   }
 
@@ -370,6 +376,11 @@ class RtcPeerConnectionService implements RtcPeerCoordinator {
     'mandatory': {'OfferToReceiveAudio': true, 'OfferToReceiveVideo': true},
     'optional': [],
   };
+}
+
+String? _peerSocketId(Map<String, dynamic> peer) {
+  final text = (peer['socketId'] ?? peer['socket_id'])?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
 }
 
 class _PeerConnectionHandle {

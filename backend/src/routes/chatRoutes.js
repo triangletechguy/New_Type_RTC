@@ -619,6 +619,29 @@ async function canDeleteMessageForEveryone(message, user) {
   return roles.length > 0
 }
 
+async function canManageRoomChat(roomId, user) {
+  if (userHasTenantModerationRole(user)) return true
+
+  const roles = await query(
+    `
+    SELECT rooms.id
+    FROM rooms
+    WHERE rooms.id = :roomId
+    AND rooms.owner_id = :userId
+    UNION
+    SELECT room_roles.room_id AS id
+    FROM room_roles
+    WHERE room_roles.room_id = :roomId
+    AND room_roles.user_id = :userId
+    AND room_roles.role IN ('admin', 'moderator')
+    LIMIT 1
+    `,
+    { roomId, userId: user.id }
+  )
+
+  return roles.length > 0
+}
+
 async function findRoomForChat(roomId) {
   const rooms = await query(
     `
@@ -1174,6 +1197,60 @@ router.post('/rooms/:id/messages', authMiddleware, async (req, res, next) => {
       message: 'Message sent successfully',
       chat_message: chatMessage,
       ...(giftSummary ? { gift_summary: giftSummary } : {}),
+      realtime_broadcasted: realtimeBroadcasted,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/rooms/:id/messages/clear', authMiddleware, async (req, res, next) => {
+  try {
+    await ensureChatSchema()
+
+    const roomId = parsePositiveInteger(req.params.id)
+    if (!roomId) return res.status(422).json({ message: 'Invalid room ID.' })
+
+    const room = await findRoomForChat(roomId)
+    if (!room || Number(room.tenant_id) !== Number(req.user.tenant_id)) {
+      return res.status(404).json({ message: 'Room not found.' })
+    }
+
+    if (!(await canManageRoomChat(room.id, req.user))) {
+      return res.status(403).json({ message: 'Only room managers can clear room comments.' })
+    }
+
+    const result = await query(
+      `
+      UPDATE chat_messages
+      SET is_deleted = 1,
+          is_unsent = 1,
+          message_body = NULL,
+          deleted_by = :deletedBy,
+          deleted_at = NOW(),
+          updated_at = NOW()
+      WHERE room_id = :roomId
+      AND tenant_id = :tenantId
+      AND is_deleted = 0
+      `,
+      { deletedBy: req.user.id, roomId: room.id, tenantId: req.user.tenant_id }
+    )
+
+    let realtimeBroadcasted = false
+    try {
+      realtimeBroadcasted = await emitRoomRealtime(req, room, 'chat-history-cleared', {
+        room_id: room.id,
+        clearedByUserId: req.user.id,
+        cleared_by_user_id: req.user.id,
+      })
+    } catch (broadcastError) {
+      console.error('[chat] realtime clear broadcast failed', broadcastError)
+    }
+
+    return res.json({
+      message: 'Room comments history cleared.',
+      room_id: room.id,
+      deleted_count: Number(result.affectedRows || 0),
       realtime_broadcasted: realtimeBroadcasted,
     })
   } catch (error) {

@@ -12,3 +12,9 @@ Thumbs.db
 .idea/
 Assets for RTC/
 *:Zone.Identifier*
+.codex_emulator_libs/
+mobile/.codex-android-libs/
+RTCapp-main/
+new_mobile_RTC.mp4
+mobile/sdk_reference/phase9_release/*.apk
+mobile/sdk_reference/phase9_release/*.aab

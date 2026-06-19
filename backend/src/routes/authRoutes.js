@@ -286,7 +286,7 @@ async function migrateLegacySuperadminEmail() {
         `
         UPDATE users
         SET email = :currentEmail,
-            name = 'TalkEachOther Super Admin',
+            name = 'TalkEachOther Platform Service Admin',
             gender = 'male',
             password_hash = :passwordHash,
             status = 'active',
@@ -328,7 +328,7 @@ async function migrateLegacySuperadminEmail() {
     await query(
       `
       UPDATE users
-      SET name = 'TalkEachOther Super Admin',
+      SET name = 'TalkEachOther Platform Service Admin',
           gender = 'male',
           password_hash = :passwordHash,
           status = 'active',
@@ -342,7 +342,7 @@ async function migrateLegacySuperadminEmail() {
   await query(
     `
     UPDATE users
-    SET name = 'TalkEachOther Super Admin',
+    SET name = 'TalkEachOther Platform Service Admin',
         gender = 'male',
         password_hash = :passwordHash,
         status = 'active',

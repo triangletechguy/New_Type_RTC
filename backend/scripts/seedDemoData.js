@@ -121,7 +121,7 @@ const planConfigs = [
   {
     code: 'enterprise',
     name: 'Enterprise RTC',
-    description: 'Full multi-app RTC service with AI security, SDK controls, client-company billing analytics, moderation history, and global monitoring.',
+    description: 'Full multi-app RTC service with AI security, app access controls, client-company billing analytics, moderation history, and global monitoring.',
     monthly_base_price: 1999,
     minute_rate: 0.006,
     monthly_minute_allowance: 500000,
@@ -291,7 +291,7 @@ async function migrateLegacySuperadminEmail(connection) {
       await connection.execute(
         `
         UPDATE users
-        SET name = 'TalkEachOther Super Admin',
+        SET name = 'TalkEachOther Platform Service Admin',
             email = ?,
             status = 'active',
             updated_at = NOW()
@@ -1064,7 +1064,7 @@ async function main() {
     const superadmin = await upsertUser(
       connection,
       {
-        name: 'TalkEachOther Super Admin',
+        name: 'TalkEachOther Platform Service Admin',
         email: superadminEmail,
         roles: ['end_user', 'client_admin', 'super_admin'],
         replaceRoles: true,
@@ -1075,7 +1075,7 @@ async function main() {
     const accentureAdmin = await upsertUser(
       connection,
       {
-        name: 'Accenture Admin',
+        name: 'Accenture Service Admin',
         email: 'admin@accenture.com',
         roles: ['end_user', 'client_admin'],
         replaceRoles: true,
@@ -1089,7 +1089,7 @@ async function main() {
     if (!includeDemoRooms) {
       await connection.commit()
       console.log('TalkEachOther production bootstrap completed.')
-      console.log(`Superadmin: ${superadminEmail} / ${adminPassword}`)
+      console.log(`Platform service admin: ${superadminEmail} / ${adminPassword}`)
       console.log('Demo rooms skipped and known seeded demo rooms removed.')
       console.log('Run npm run db:seed:demo only for local demonstrations.')
       return
@@ -1108,15 +1108,15 @@ async function main() {
       {
         key: 'stage',
         name: 'TalkEachOther Demo Stage',
-        description: 'A public group video room with active demo speakers, chat, moderation, and RTC state.',
-        room_type: 'group_video',
+        description: 'A permanent YouTube audio room with active demo speakers, chat, moderation, and RTC state.',
+        room_type: 'youtube_audio',
         privacy_type: 'public',
         max_mic_count: 8,
         theme: 'neon',
         chat_enabled: true,
         gift_enabled: false,
-        screen_share_enabled: true,
-        ai_security_enabled: true,
+        screen_share_enabled: false,
+        ai_security_enabled: false,
         status: 'active',
       },
       {
@@ -1186,7 +1186,7 @@ async function main() {
 
     const stageSessionId = await ensureSession(connection, rooms.stage, {
       signaling_room: `demo_stage_${tenantId}`,
-      session_type: 'group_video',
+      session_type: 'youtube_audio',
       started_by: users.host,
       started_at: dateMinutesAgo(44),
       ended_at: null,
@@ -1372,8 +1372,8 @@ async function main() {
     await connection.commit()
 
     console.log('TalkEachOther data seeded successfully.')
-    console.log(`Superadmin: ${superadminEmail} / ${adminPassword}`)
-    console.log(`Accenture admin: admin@accenture.com / ${adminPassword}`)
+    console.log(`Platform service admin: ${superadminEmail} / ${adminPassword}`)
+    console.log(`Accenture service admin: admin@accenture.com / ${adminPassword}`)
     console.log(`Rooms: ${Object.keys(rooms).length} rooms, room password ${passwordRoomPassword}`)
     console.log(`Active sessions: stage #${stageSessionId}, music #${musicSessionId}`)
     console.log(`Ended replay session: #${replaySessionId}, participant minutes ${Number(participantMinutesTotal.toFixed(2))}`)

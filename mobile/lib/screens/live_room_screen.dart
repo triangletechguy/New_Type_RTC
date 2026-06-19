@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_user.dart';
 import '../models/room.dart';
@@ -45,6 +49,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   final _localRenderer = RTCVideoRenderer();
   final _roomPassword = TextEditingController();
   final _chatComposer = TextEditingController();
+  final _quickChatFocus = FocusNode();
+  final _imagePicker = ImagePicker();
+  final _scrollController = ScrollController();
   final _events = <String>[];
   final _peers = <Map<String, dynamic>>[];
   final _chatMessages = <Map<String, dynamic>>[];
@@ -57,6 +64,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   StreamSubscription<RtcPeerStateSnapshot>? _peerStateSub;
   StreamSubscription<Map<String, dynamic>>? _roomMessageSub;
   StreamSubscription<int>? _roomMessageDeletedSub;
+  StreamSubscription<int>? _roomHistoryClearedSub;
   StreamSubscription<Map<String, dynamic>>? _moderationActionSub;
   StreamSubscription<Map<String, dynamic>>? _roomControlsUpdateSub;
   StreamSubscription<Map<String, dynamic>>? _stageJoinRequestSub;
@@ -74,20 +82,28 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   bool _chatLoading = false;
   bool _chatSending = false;
   bool _controlsLoading = false;
+  bool _quickChatOpen = false;
   bool _canPublishStage = false;
   bool _stageRequestsEnabled = true;
   bool _stageRequestSending = false;
+  double _roomAudioVolume = 0.72;
   String _rtcMode = 'audio';
-  String _connectStep = 'ready';
   String _status = 'Ready to join';
   String _stageRole = 'audience';
   String _stageRequestStatus = '';
   String? _activePanel;
+  bool _youTubeConnected = false;
+  bool _youTubeOpening = false;
+  String _youTubeTab = 'music';
+  String _youTubeFilter = 'All';
   Map<String, dynamic>? _roomControls;
   Map<String, dynamic>? _ownStageRequest;
+  _YouTubeChoice? _selectedYouTube;
   final _stageActionIds = <int>{};
 
   bool get _videoMode => _rtcMode == 'video' && widget.room.supportsVideo;
+  bool get _isRoomOwner =>
+      widget.room.ownerId != 0 && widget.room.ownerId == widget.user.id;
 
   @override
   void initState() {
@@ -96,16 +112,24 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _signaling = widget.signalingService ?? SignalingService();
     _peerCoordinator = widget.peerCoordinator ?? RtcPeerConnectionService();
     unawaited(_peerCoordinator.attachSignaling(_signaling));
-    _rtcMode = widget.room.supportsVideo ? 'video' : 'audio';
-    _cameraOn = widget.room.supportsVideo;
+    _rtcMode = 'audio';
+    _cameraOn = false;
     _eventSub = _signaling.events.listen(_addEvent);
     _peerSub = _signaling.peers.listen((peers) {
       if (!mounted) return;
+      final socketIds = peers.map(_peerSocketId).whereType<String>().toSet();
+      final staleRendererIds = _remoteRenderers.keys
+          .where((socketId) => !socketIds.contains(socketId))
+          .toList();
       setState(() {
         _peers
           ..clear()
           ..addAll(peers);
+        _peerStates.removeWhere((socketId, _) => !socketIds.contains(socketId));
       });
+      for (final socketId in staleRendererIds) {
+        unawaited(_removeRemoteRenderer(socketId));
+      }
       if (_joined) unawaited(_peerCoordinator.syncPeers(peers));
     });
     _remoteStreamSub = _peerCoordinator.remoteStreams.listen((event) {
@@ -121,12 +145,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     });
     _roomMessageSub = _signaling.roomMessages.listen(_upsertChatMessage);
     _roomMessageDeletedSub = _signaling.roomMessageDeleted.listen((messageId) {
-      if (!mounted) return;
-      setState(() {
-        _chatMessages.removeWhere(
-          (message) => _chatMessageId(message) == messageId,
-        );
-      });
+      _removeChatMessage(messageId);
+      _addEvent('Chat message removed.');
+    });
+    _roomHistoryClearedSub = _signaling.roomHistoryCleared.listen((roomId) {
+      if (roomId != widget.room.id || !mounted) return;
+      setState(() => _chatMessages.clear());
+      _addEvent('Chat history cleared.');
     });
     _moderationActionSub = _signaling.moderationActions.listen((action) {
       unawaited(_handleModerationAction(action));
@@ -167,6 +192,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _peerStateSub?.cancel();
     _roomMessageSub?.cancel();
     _roomMessageDeletedSub?.cancel();
+    _roomHistoryClearedSub?.cancel();
     _moderationActionSub?.cancel();
     _roomControlsUpdateSub?.cancel();
     _stageJoinRequestSub?.cancel();
@@ -174,6 +200,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _stagePermissionSub?.cancel();
     _roomPassword.dispose();
     _chatComposer.dispose();
+    _quickChatFocus.dispose();
+    _scrollController.dispose();
     _stopLocalMedia();
     _disposeRemoteRenderers();
     unawaited(_peerCoordinator.dispose());
@@ -203,7 +231,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
     setState(() {
       _joining = true;
-      _connectStep = 'backend';
       _status = 'Joining backend room...';
     });
 
@@ -211,6 +238,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       final video = widget.room.supportsVideo && _rtcMode == 'video';
       final requestedMic = _micOn;
       final requestedCamera = video && _cameraOn;
+      final shouldPreflightMedia =
+          _isRoomOwner && (requestedMic || requestedCamera);
+
+      if (shouldPreflightMedia) {
+        setState(() {
+          _status = requestedCamera
+              ? 'Checking microphone and camera permissions...'
+              : 'Checking microphone permission...';
+        });
+        await _media.requestPermissions(video: requestedCamera);
+      }
+
+      setState(() {
+        _status = 'Joining backend room...';
+      });
+
       final joinData = await widget.api.joinRoom(
         widget.room.id,
         video: video,
@@ -250,17 +293,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
       if (canPublishStage) {
         setState(() {
-          _connectStep = 'media';
           _status = 'Preparing approved stage media...';
         });
-        await _openLocalMedia(video: video);
+        await _openLocalMedia(
+          camera: serverCamera,
+          permissionsReady:
+              shouldPreflightMedia && (!serverCamera || requestedCamera),
+        );
       } else {
         _stopLocalMedia();
-        await _peerCoordinator.setLocalStream(null, video: video);
+        await _peerCoordinator.setLocalStream(null, video: false);
       }
 
       setState(() {
-        _connectStep = 'signaling';
         _status = 'Connecting live room...';
       });
       await _signaling.connect();
@@ -287,7 +332,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       if (!mounted) return;
       setState(() {
         _joined = true;
-        _connectStep = 'connected';
         _micOn = serverMic;
         _cameraOn = serverCamera;
         _screenSharing = false;
@@ -297,47 +341,47 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
             : 'Entered as audience. Ask the owner to join.';
       });
       _applyLocalMediaState();
-      await _peerCoordinator.setLocalStream(_localStream, video: video);
+      await _peerCoordinator.setLocalStream(_localStream, video: serverCamera);
       unawaited(_loadRoomMessages());
     } catch (error) {
-      setState(() {
-        _connectStep = 'ready';
-        _status = apiErrorMessage(error);
-      });
+      setState(() => _status = apiErrorMessage(error));
     } finally {
       if (mounted) setState(() => _joining = false);
     }
   }
 
-  Future<void> _openLocalMedia({required bool video}) async {
-    await _media.requestPermissions(video: video);
+  Future<void> _openLocalMedia({
+    required bool camera,
+    bool permissionsReady = false,
+  }) async {
+    if (!permissionsReady) await _media.requestPermissions(video: camera);
     if (!widget.enableLocalPreview) return;
 
     _stopLocalMedia();
-    final stream = await _media.openLocalMedia(video: video);
+    final stream = await _media.openLocalMedia(video: camera);
     _localStream = stream;
     _applyLocalMediaState();
-    await _peerCoordinator.setLocalStream(stream, video: video);
+    await _peerCoordinator.setLocalStream(stream, video: camera);
     if (_rendererReady) {
       _localRenderer.srcObject = stream;
     }
   }
 
-  Future<void> _ensureLocalStageMedia({required bool video}) async {
+  Future<void> _ensureLocalStageMedia({required bool camera}) async {
     if (!widget.enableLocalPreview) {
-      await _peerCoordinator.setLocalStream(_localStream, video: video);
+      await _peerCoordinator.setLocalStream(_localStream, video: camera);
       return;
     }
 
     final stream = _localStream;
     final hasAudio = stream?.getAudioTracks().isNotEmpty == true;
     final hasVideo = stream?.getVideoTracks().isNotEmpty == true;
-    if (hasAudio && (!video || hasVideo)) {
-      await _peerCoordinator.setLocalStream(stream, video: video);
+    if (hasAudio && (!camera || hasVideo)) {
+      await _peerCoordinator.setLocalStream(stream, video: camera);
       return;
     }
 
-    await _openLocalMedia(video: video);
+    await _openLocalMedia(camera: camera);
   }
 
   Future<void> _leave({bool popAfterLeave = false}) async {
@@ -363,7 +407,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       _disposeRemoteRenderers();
       setState(() {
         _joined = false;
-        _connectStep = 'ready';
         _peers.clear();
         _peerStates.clear();
         _screenSharing = false;
@@ -379,7 +422,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       if (!mounted) return;
       setState(() {
         _joined = false;
-        _connectStep = 'ready';
         _status = apiErrorMessage(error);
         _canPublishStage = false;
         _stageRole = 'audience';
@@ -400,15 +442,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     await _syncMediaState(micOn: !_micOn, cameraOn: _cameraOn);
   }
 
-  Future<void> _toggleCamera() async {
-    if (!_videoMode) return;
-    if (!_canPublishStage) {
-      await _requestStageJoin();
-      return;
-    }
-    await _syncMediaState(micOn: _micOn, cameraOn: !_cameraOn);
-  }
-
   Future<void> _syncMediaState({
     required bool micOn,
     required bool cameraOn,
@@ -417,9 +450,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     if (_mediaUpdating) return;
     final previousMic = _micOn;
     final previousCamera = _cameraOn;
+    final previousRtcMode = _rtcMode;
     final previousScreen = _screenSharing;
     final nextScreen = screenSharing ?? _screenSharing;
-    final wantsToPublish = micOn || (_videoMode && cameraOn) || nextScreen;
+    final nextRtcMode = widget.room.supportsVideo && cameraOn
+        ? 'video'
+        : 'audio';
+    final nextCameraOn = nextRtcMode == 'video' && cameraOn;
+    final wantsToPublish = micOn || nextCameraOn || nextScreen;
 
     if (wantsToPublish && !_canPublishStage) {
       await _requestStageJoin();
@@ -428,8 +466,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
     setState(() {
       _mediaUpdating = true;
+      _rtcMode = nextRtcMode;
       _micOn = micOn;
-      _cameraOn = _videoMode && cameraOn;
+      _cameraOn = nextCameraOn;
       _screenSharing = nextScreen;
       _status = 'Saving media state...';
     });
@@ -437,21 +476,24 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
 
     try {
       if (wantsToPublish) {
-        await _ensureLocalStageMedia(video: _videoMode);
+        await _ensureLocalStageMedia(camera: nextCameraOn);
       }
       if (_joined) {
         final data = await widget.api.updateRoomMediaState(
           widget.room.id,
           micEnabled: _micOn,
-          cameraEnabled: _videoMode && _cameraOn,
+          cameraEnabled: nextCameraOn,
           screenShared: _screenSharing,
         );
         final rtc = Map<String, dynamic>.from(data['rtc'] as Map? ?? {});
         final serverMic = rtc['mic_enabled'] != false;
-        final serverCamera = _videoMode && rtc['camera_enabled'] == true;
+        final serverCamera =
+            widget.room.supportsVideo && rtc['camera_enabled'] == true;
+        final serverRtcMode = serverCamera ? 'video' : 'audio';
         final serverScreen = rtc['screen_shared'] == true;
         final stageAccess = _stageAccessFromRtc(rtc);
         setState(() {
+          _rtcMode = serverRtcMode;
           _micOn = serverMic;
           _cameraOn = serverCamera;
           _screenSharing = serverScreen;
@@ -468,7 +510,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         _applyLocalMediaState();
         await _signaling
             .emitMediaState(
-              video: _videoMode,
+              video: serverRtcMode == 'video',
               micEnabled: serverMic,
               cameraEnabled: serverCamera,
               screenShared: serverScreen,
@@ -487,6 +529,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       });
     } catch (error) {
       setState(() {
+        _rtcMode = previousRtcMode;
         _micOn = previousMic;
         _cameraOn = previousCamera;
         _screenSharing = previousScreen;
@@ -618,7 +661,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
             : 'Room owner declined the stage request.';
       });
       _applyLocalMediaState();
-      await _peerCoordinator.setLocalStream(null, video: _videoMode);
+      await _peerCoordinator.setLocalStream(null, video: false);
       return;
     }
 
@@ -688,10 +731,124 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   }
 
   void _togglePanel(String panel) {
+    if (panel == 'quick-chat') {
+      _openQuickChat();
+      return;
+    }
     final opening = _activePanel != panel;
-    setState(() => _activePanel = opening ? panel : null);
-    if (opening && panel == 'chat') unawaited(_loadRoomMessages());
+    setState(() {
+      _activePanel = opening ? panel : null;
+      _quickChatOpen = false;
+    });
+    _quickChatFocus.unfocus();
+    if (opening && panel == 'chat' && _chatMessages.isEmpty) {
+      unawaited(_loadRoomMessages());
+    }
     if (opening && panel == 'ops') unawaited(_loadRoomControls(quiet: true));
+    if (opening) _scrollPanelIntoView();
+  }
+
+  Future<void> _showRoomMenuSheet() async {
+    if (_activePanel != null || _quickChatOpen) {
+      setState(() {
+        _activePanel = null;
+        _quickChatOpen = false;
+      });
+      _quickChatFocus.unfocus();
+    }
+
+    if (_roomControls == null && !_controlsLoading) {
+      unawaited(_loadRoomControls(quiet: true));
+    }
+
+    final action = await showModalBottomSheet<_RoomMenuAction>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: const Color.fromRGBO(0, 0, 0, 0.16),
+      builder: (context) => _RoomMenuActionSheet(
+        room: widget.room,
+        controls: _roomControls,
+        loading: _controlsLoading,
+      ),
+    );
+    if (!mounted || action == null) return;
+    await _handleRoomMenuAction(action);
+  }
+
+  Future<void> _handleRoomMenuAction(_RoomMenuAction action) async {
+    switch (action) {
+      case _RoomMenuAction.micCount:
+        await _changeRoomMicCount();
+        break;
+      case _RoomMenuAction.lock:
+        await _toggleRoomLock();
+        break;
+      case _RoomMenuAction.password:
+        await _changeRoomPassword();
+        break;
+      case _RoomMenuAction.theme:
+        await _changeRoomTheme();
+        break;
+      case _RoomMenuAction.share:
+        await _copyRoomInvite();
+        break;
+      case _RoomMenuAction.admin:
+        _togglePanel('ops');
+        break;
+      case _RoomMenuAction.clearComments:
+        await _clearRoomComments();
+        break;
+      case _RoomMenuAction.gatherFollowers:
+        await _copyRoomInvite(
+          statusMessage: 'Follower invite copied.',
+          eventMessage: 'Follower invite copied.',
+        );
+        break;
+    }
+  }
+
+  Future<void> _copyRoomInvite({
+    String statusMessage = 'Room invite copied.',
+    String eventMessage = 'Room invite copied.',
+  }) async {
+    final invite = [
+      widget.room.name,
+      if (widget.room.description.trim().isNotEmpty) widget.room.description,
+      'Room ID: ${widget.room.id}',
+    ].join('\n');
+    await Clipboard.setData(ClipboardData(text: invite));
+    if (!mounted) return;
+    setState(() => _status = statusMessage);
+    _addEvent(eventMessage);
+  }
+
+  void _openQuickChat() {
+    if (!widget.room.chatEnabled) {
+      setState(() => _status = 'Chat is disabled in this room.');
+      return;
+    }
+    setState(() {
+      _activePanel = null;
+      _quickChatOpen = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _quickChatFocus.requestFocus();
+      SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+    });
+  }
+
+  void _scrollPanelIntoView() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Future<void> _loadRoomControls({bool quiet = false}) async {
@@ -715,6 +872,283 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
           _status = 'Room controls failed: ${apiErrorMessage(error)}';
         }
       });
+    } finally {
+      if (mounted) setState(() => _controlsLoading = false);
+    }
+  }
+
+  Future<void> _saveRoomControls({
+    required String saving,
+    required String done,
+    required Future<Map<String, dynamic>> Function() request,
+  }) async {
+    if (_controlsLoading) return;
+    setState(() {
+      _controlsLoading = true;
+      _status = saving;
+    });
+
+    try {
+      final controls = await request();
+      if (!mounted) return;
+      setState(() {
+        _roomControls = controls;
+        _status = done;
+      });
+      _addEvent(done);
+    } catch (error) {
+      if (!mounted) return;
+      final message = apiErrorMessage(error);
+      setState(() => _status = message);
+      _addEvent(message);
+    } finally {
+      if (mounted) setState(() => _controlsLoading = false);
+    }
+  }
+
+  Future<void> _changeRoomMicCount() async {
+    final room = _mapValue(_roomControls?['room']);
+    final current =
+        _intValue(room?['max_mic_count']) ?? widget.room.maxMicCount;
+    final package = _mapValue(_roomControls?['package']);
+    final allowedCounts = _intList(package?['allowed_mic_counts']);
+    final maxPackageMic = _intValue(package?['max_mic_count']) ?? 20;
+    final planName = package?['plan_name']?.toString() ?? 'Current package';
+    final options = _micLayoutOptions(
+      allowedCounts: allowedCounts,
+      current: current,
+      maxPackageMic: maxPackageMic,
+    );
+    final nextValue = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) =>
+            _MicCountChooserScreen(current: current, options: options),
+      ),
+    );
+    if (nextValue == null) return;
+    if (nextValue < 1 || nextValue > maxPackageMic) {
+      setState(
+        () => _status = '$planName allows up to $maxPackageMic mic seats.',
+      );
+      return;
+    }
+
+    await _saveRoomControls(
+      saving: 'Saving mic seat count...',
+      done: 'Mic seat count updated.',
+      request: () =>
+          widget.api.updateRoomControls(widget.room.id, maxMicCount: nextValue),
+    );
+  }
+
+  Future<void> _toggleRoomLock() async {
+    final room = _mapValue(_roomControls?['room']);
+    final privacy =
+        room?['privacy_type']?.toString() ?? widget.room.privacyType;
+    if (privacy == 'password') {
+      await _saveRoomControls(
+        saving: 'Unlocking room...',
+        done: 'Room unlocked.',
+        request: () => widget.api.updateRoomControls(
+          widget.room.id,
+          privacyType: 'public',
+        ),
+      );
+      return;
+    }
+
+    await _changeRoomPassword();
+  }
+
+  Future<void> _changeRoomPassword() async {
+    final controller = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Password'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.visiblePassword,
+          decoration: const InputDecoration(labelText: 'Room password'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+    if (password == null) return;
+    if (password.length < 4) {
+      setState(() => _status = 'Room password must be at least 4 characters.');
+      return;
+    }
+
+    await _saveRoomControls(
+      saving: 'Saving room password...',
+      done: 'Room password updated.',
+      request: () => widget.api.updateRoomControls(
+        widget.room.id,
+        privacyType: 'password',
+        password: password,
+      ),
+    );
+  }
+
+  Future<void> _changeRoomTheme() async {
+    final theme = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Theme'),
+        children: [
+          for (final option in const ['neon', 'midnight', 'studio', 'mint'])
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(option),
+              child: Text(option),
+            ),
+        ],
+      ),
+    );
+    if (theme == null) return;
+
+    await _saveRoomControls(
+      saving: 'Saving room theme...',
+      done: 'Room theme updated.',
+      request: () =>
+          widget.api.updateRoomControls(widget.room.id, theme: theme),
+    );
+  }
+
+  Future<void> _toggleRoomSeat(Map<String, dynamic> seat) async {
+    final seatNumber = _intValue(seat['seat_number']);
+    if (seatNumber == null) return;
+    final locked = _signalBool(seat['locked']);
+    await _saveRoomControls(
+      saving: locked ? 'Unlocking mic seat...' : 'Locking mic seat...',
+      done: locked ? 'Mic seat unlocked.' : 'Mic seat locked.',
+      request: () => widget.api.updateRoomSeat(
+        widget.room.id,
+        seatNumber,
+        locked: !locked,
+      ),
+    );
+  }
+
+  Future<void> _toggleAllRoomSeats(bool locked) async {
+    await _saveRoomControls(
+      saving: locked
+          ? 'Locking all mic seats...'
+          : 'Unlocking all mic seats...',
+      done: locked ? 'All mic seats locked.' : 'All mic seats unlocked.',
+      request: () =>
+          widget.api.updateAllRoomSeats(widget.room.id, locked: locked),
+    );
+  }
+
+  Future<void> _assignRoomAdmin() async {
+    final users = _mapList(_roomControls?['assignable_users']);
+    final roles = _mapList(_roomControls?['roles']);
+    final assignedUserIds = roles
+        .map((role) => _intValue(role['user_id']))
+        .whereType<int>()
+        .toSet();
+    final availableUsers = users
+        .where((user) {
+          final userId = _intValue(user['id']);
+          return userId != null && !assignedUserIds.contains(userId);
+        })
+        .take(24)
+        .toList();
+    if (availableUsers.isEmpty) {
+      setState(() => _status = 'No users available to assign as room admin.');
+      return;
+    }
+
+    final selectedUser = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Admin'),
+        children: [
+          for (final user in availableUsers)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(user),
+              child: Text(
+                user['name']?.toString() ??
+                    user['email']?.toString() ??
+                    'User #${user['id']}',
+              ),
+            ),
+        ],
+      ),
+    );
+    final userId = _intValue(selectedUser?['id']);
+    if (userId == null) return;
+
+    await _saveRoomControls(
+      saving: 'Assigning room admin...',
+      done: 'Room admin assigned.',
+      request: () =>
+          widget.api.assignRoomRole(widget.room.id, userId, role: 'admin'),
+    );
+  }
+
+  Future<void> _removeRoomRole(Map<String, dynamic> role) async {
+    final userId = _intValue(role['user_id']);
+    if (userId == null) return;
+
+    await _saveRoomControls(
+      saving: 'Removing room admin...',
+      done: 'Room admin removed.',
+      request: () => widget.api.removeRoomRole(widget.room.id, userId),
+    );
+  }
+
+  Future<void> _clearRoomComments() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear comments history'),
+        content: const Text('This removes the visible room comments history.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || _controlsLoading) return;
+
+    setState(() {
+      _controlsLoading = true;
+      _status = 'Clearing room comments...';
+    });
+    try {
+      await widget.api.clearRoomMessages(widget.room.id);
+      if (!mounted) return;
+      setState(() {
+        _chatMessages.clear();
+        _status = 'Room comments history cleared.';
+      });
+      _addEvent('Room comments history cleared.');
+    } catch (error) {
+      if (!mounted) return;
+      final message = apiErrorMessage(error);
+      setState(() => _status = message);
+      _addEvent(message);
     } finally {
       if (mounted) setState(() => _controlsLoading = false);
     }
@@ -778,7 +1212,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     if (action == 'mute_mic') {
       setState(() {
         _micOn = false;
-        _status = 'A moderator muted your microphone';
+        _status = 'A room admin muted your microphone';
       });
       _applyLocalMediaState();
       return;
@@ -787,7 +1221,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     if (action == 'disable_camera') {
       setState(() {
         _cameraOn = false;
-        _status = 'A moderator paused your camera';
+        _status = 'A room admin paused your camera';
       });
       _applyLocalMediaState();
       return;
@@ -797,7 +1231,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       await _disconnectAfterModeration(
         action == 'ban'
             ? 'You were banned from this room.'
-            : 'A moderator removed you from the room.',
+            : 'A room admin removed you from the room.',
       );
     }
   }
@@ -810,7 +1244,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     _disposeRemoteRenderers();
     setState(() {
       _joined = false;
-      _connectStep = 'ready';
       _peers.clear();
       _peerStates.clear();
       _screenSharing = false;
@@ -833,7 +1266,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     } catch (error) {
       _addEvent('Chat load failed: ${apiErrorMessage(error)}');
     } finally {
-      if (mounted) setState(() => _chatLoading = false);
+      if (mounted) {
+        setState(() => _chatLoading = false);
+        if (_activePanel == 'chat') _scrollPanelIntoView();
+      }
     }
   }
 
@@ -851,17 +1287,147 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
     await _sendRoomMessage(body: body);
   }
 
-  Future<void> _sendGift(String giftId, String label) async {
+  Future<void> _sendReaction(String reaction) async {
     if (_chatSending) return;
-    if (!widget.room.giftEnabled) {
-      setState(() => _status = 'Gifts are disabled in this room.');
+    if (!widget.room.chatEnabled) {
+      setState(() => _status = 'Chat is disabled in this room.');
       return;
     }
     if (!_joined) {
-      setState(() => _status = 'Join the room before sending a gift.');
+      setState(() => _status = 'Join the room before sending a reaction.');
       return;
     }
-    await _sendRoomMessage(body: label, messageType: 'gift', mediaUrl: giftId);
+    await _sendRoomMessage(body: reaction);
+  }
+
+  Future<void> _sendPictureMessage() async {
+    if (_chatSending) return;
+    if (!widget.room.chatEnabled) {
+      setState(() => _status = 'Chat is disabled in this room.');
+      return;
+    }
+    if (!_joined) {
+      setState(() => _status = 'Join the room before sending a picture.');
+      return;
+    }
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 78,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (image == null) {
+      if (mounted) _quickChatFocus.requestFocus();
+      return;
+    }
+    final bytes = await image.readAsBytes();
+    if (bytes.length > 3.7 * 1024 * 1024) {
+      if (!mounted) return;
+      setState(() => _status = 'Photo must be smaller than 5 MB.');
+      _quickChatFocus.requestFocus();
+      return;
+    }
+    final mediaUrl =
+        'data:${_imageMimeType(image.name)};base64,${base64Encode(bytes)}';
+    await _sendRoomMessage(
+      body: 'Photo shared',
+      messageType: 'image',
+      mediaUrl: mediaUrl,
+    );
+  }
+
+  void _selectYouTubeVideo(_YouTubeChoice video) {
+    setState(() {
+      _youTubeConnected = true;
+      _youTubeTab = video.tab;
+      _selectedYouTube = video;
+      _status = video.tab == 'music'
+          ? 'Playing YouTube Music: ${video.title}'
+          : 'Playing YouTube video: ${video.title}';
+      _activePanel = null;
+    });
+  }
+
+  void _connectYouTube() {
+    setState(() {
+      _youTubeConnected = true;
+      _youTubeTab = 'music';
+      _youTubeFilter = 'All';
+      _status = 'YouTube connected. Music is ready for this room.';
+    });
+  }
+
+  void _changeYouTubeTab(String tab) {
+    setState(() {
+      _youTubeConnected = true;
+      _youTubeTab = tab;
+      _youTubeFilter = 'All';
+      _status = tab == 'music'
+          ? 'YouTube Music is ready.'
+          : 'YouTube video is ready.';
+    });
+  }
+
+  void _changeYouTubeFilter(String filter) {
+    setState(() {
+      _youTubeConnected = true;
+      _youTubeFilter = filter;
+    });
+  }
+
+  Future<void> _openYouTubeSearch() async {
+    final query = _youTubeTab == 'music'
+        ? 'YouTube Music live room mix'
+        : 'YouTube live room music video';
+    final uri = Uri.https('www.youtube.com', '/results', {
+      'search_query': query,
+    });
+    await _openYouTubeUri(
+      uri,
+      fallbackStatus: 'Could not open YouTube search.',
+    );
+  }
+
+  Future<void> _openSelectedYouTube() async {
+    final selected = _selectedYouTube;
+    if (selected == null) {
+      _togglePanel('youtube');
+      return;
+    }
+    await _openYouTubeChoice(selected);
+  }
+
+  Future<void> _openYouTubeChoice(_YouTubeChoice choice) async {
+    await _openYouTubeUri(
+      Uri.parse(choice.url),
+      successStatus: 'Opened ${choice.title} in YouTube.',
+      fallbackStatus: 'Could not open ${choice.title}.',
+    );
+  }
+
+  Future<void> _openYouTubeUri(
+    Uri uri, {
+    String successStatus = 'Opening YouTube...',
+    String fallbackStatus = 'Could not open YouTube.',
+  }) async {
+    setState(() {
+      _youTubeConnected = true;
+      _youTubeOpening = true;
+      _status = 'Opening YouTube...';
+    });
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) throw Exception('No app can open $uri');
+      if (mounted) setState(() => _status = successStatus);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _status = '$fallbackStatus Check YouTube or browser availability.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _youTubeOpening = false);
+    }
   }
 
   Future<void> _sendRoomMessage({
@@ -871,9 +1437,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   }) async {
     setState(() {
       _chatSending = true;
-      _status = messageType == 'gift'
-          ? 'Sending gift...'
-          : 'Sending message...';
+      _status = 'Sending message...';
     });
     try {
       final data = await widget.api.sendRoomMessage(
@@ -900,9 +1464,56 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       _chatComposer.clear();
       if (!mounted) return;
       setState(() {
-        _activePanel = 'chat';
-        _status = messageType == 'gift' ? 'Gift sent' : 'Message sent';
+        if (!_quickChatOpen) _activePanel = 'chat';
+        _status = 'Message sent';
       });
+      if (_quickChatOpen) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _quickChatFocus.requestFocus();
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = apiErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _chatSending = false);
+    }
+  }
+
+  Future<void> _deleteChatMessage(Map<String, dynamic> message) async {
+    final messageId = _chatMessageId(message);
+    if (messageId == null || _chatSending) return;
+    if (!_isOwnChatMessage(message, widget.user)) {
+      setState(() => _status = 'Only your own messages can be unsent.');
+      return;
+    }
+
+    setState(() {
+      _chatSending = true;
+      _status = 'Unsending message...';
+    });
+
+    try {
+      final data = await widget.api.deleteRoomMessage(messageId);
+      _removeChatMessage(messageId);
+      if (data['realtime_broadcasted'] != true) {
+        unawaited(
+          _signaling.emitChatMessageDeleted(messageId: messageId).catchError((
+            error,
+          ) {
+            _addEvent('Message unsent; realtime sync failed: $error');
+            return <String, dynamic>{};
+          }),
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _activePanel = 'chat';
+        _status = data['deleted_for_everyone'] == false
+            ? 'Message hidden from your chat.'
+            : 'Message unsent.';
+      });
+      _addEvent('Message unsent.');
     } catch (error) {
       if (!mounted) return;
       setState(() => _status = apiErrorMessage(error));
@@ -926,6 +1537,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
       if (_chatMessages.length > 80) {
         _chatMessages.removeRange(0, _chatMessages.length - 80);
       }
+    });
+  }
+
+  void _removeChatMessage(int messageId) {
+    if (!mounted) return;
+    setState(() {
+      _chatMessages.removeWhere(
+        (message) => _chatMessageId(message) == messageId,
+      );
     });
   }
 
@@ -1003,127 +1623,215 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
   Widget build(BuildContext context) {
     final statusState = _statusState();
     return PopScope(
-      canPop: !_joined && !_leaving,
+      canPop: !_joined && !_leaving && !_quickChatOpen && _activePanel == null,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _joined) _leave(popAfterLeave: true);
+        if (didPop) return;
+        if (_quickChatOpen) {
+          setState(() => _quickChatOpen = false);
+          _quickChatFocus.unfocus();
+          return;
+        }
+        if (_activePanel != null) {
+          setState(() => _activePanel = null);
+          return;
+        }
+        if (_joined) _leave(popAfterLeave: true);
       },
       child: RtcMobileFrame(
         backgroundColor: RtcPalette.stageBg,
         child: _LiveRoomBackdrop(
           child: SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 18),
+            child: Stack(
               children: [
-                _LiveTopBar(
-                  room: widget.room,
-                  user: widget.user,
-                  joined: _joined,
-                  rtcMode: _rtcMode,
-                  statusState: statusState,
-                  peerCount: _peers.length,
-                  onBack: () {
-                    if (_joined) {
-                      _leave(popAfterLeave: true);
-                    } else {
-                      Navigator.of(context).pop();
-                    }
-                  },
-                  onOpenAccess: widget.room.isLocked
-                      ? () => _togglePanel('access')
-                      : null,
-                  onOpenTools: () => _togglePanel('ops'),
-                ),
-                const SizedBox(height: 8),
-                _LiveStagePanel(
-                  room: widget.room,
-                  user: widget.user,
-                  localRenderer: _localRenderer,
-                  rendererReady: _rendererReady,
-                  peers: _peers,
-                  chatMessages: _chatMessages,
-                  remoteRenderers: _remoteRenderers,
-                  peerStates: _peerStates,
-                  joined: _joined,
-                  joining: _joining,
-                  leaving: _leaving,
-                  mediaUpdating: _mediaUpdating,
-                  micOn: _micOn,
-                  cameraOn: _cameraOn,
-                  screenSharing: _screenSharing,
-                  rtcMode: _rtcMode,
-                  canPublishStage: _canPublishStage,
-                  stageRequestStatus: _stageRequestStatus,
-                  stageRequestsEnabled: _stageRequestsEnabled,
-                  stageRequestSending: _stageRequestSending,
-                  connectStep: _connectStep,
-                  status: _status,
-                  onJoin: _joining || _joined ? null : _join,
-                  onLeave: _joined || _joining ? () => _leave() : null,
-                  onToggleMic:
-                      _joined && !_mediaUpdating && !_stageRequestSending
-                      ? _toggleMic
-                      : null,
-                  onToggleCamera:
-                      _joined &&
-                          _videoMode &&
-                          !_mediaUpdating &&
-                          !_stageRequestSending
-                      ? _toggleCamera
-                      : null,
-                  onRequestStage: _joined && !_canPublishStage
-                      ? _requestStageJoin
-                      : null,
-                  onCancelStageRequest: _joined && !_canPublishStage
-                      ? _cancelStageJoinRequest
-                      : null,
-                  onOpenTools: _togglePanel,
-                ),
-                if (_activePanel != null) ...[
-                  const SizedBox(height: 10),
-                  _LiveToolPanel(
-                    panel: _activePanel!,
-                    room: widget.room,
-                    joined: _joined,
-                    passwordController: _roomPassword,
-                    chatController: _chatComposer,
-                    chatMessages: _chatMessages,
-                    chatLoading: _chatLoading,
-                    chatSending: _chatSending,
-                    roomControls: _roomControls,
-                    controlsLoading: _controlsLoading,
-                    moderatingUserIds: _moderatingUserIds,
-                    screenSharing: _screenSharing,
-                    canPublishStage: _canPublishStage,
-                    stageActionIds: _stageActionIds,
-                    status: _status,
-                    onJoin: _joining || _joined ? null : _join,
-                    onSendChat: _sendChatMessage,
-                    onSendGift: widget.room.giftEnabled
-                        ? () => _sendGift('applause', 'Applause')
-                        : null,
-                    onLoadControls: () => _loadRoomControls(),
-                    onModerateParticipant: _moderateParticipant,
-                    onToggleScreenSharing:
-                        widget.room.screenShareEnabled &&
-                            _joined &&
-                            _canPublishStage &&
-                            !_mediaUpdating
-                        ? () => _syncMediaState(
-                            micOn: _micOn,
-                            cameraOn: _cameraOn,
-                            screenSharing: !_screenSharing,
-                          )
-                        : null,
-                    onApplyStagePermission: _applyStagePermission,
+                Positioned.fill(
+                  child: ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 76),
+                    children: [
+                      _LiveTopBar(
+                        room: widget.room,
+                        user: widget.user,
+                        joined: _joined,
+                        rtcMode: _rtcMode,
+                        statusState: statusState,
+                        peerCount: _peers.length,
+                        onBack: () {
+                          if (_joined) {
+                            _leave(popAfterLeave: true);
+                          } else {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        onOpenAccess: widget.room.isLocked
+                            ? () => _togglePanel('access')
+                            : null,
+                        onOpenTools: _showRoomMenuSheet,
+                      ),
+                      const SizedBox(height: 8),
+                      _LiveStatusRail(
+                        room: widget.room,
+                        joined: _joined,
+                        canPublishStage: _canPublishStage,
+                        micOn: _micOn,
+                        cameraOn: _cameraOn,
+                        screenSharing: _screenSharing,
+                        peerCount: _peers.length,
+                        chatCount: _chatMessages.length,
+                        stageRequestStatus: _stageRequestStatus,
+                        status: _status,
+                        onOpenTools: _togglePanel,
+                      ),
+                      const SizedBox(height: 8),
+                      _LiveStagePanel(
+                        room: widget.room,
+                        user: widget.user,
+                        roomControls: _roomControls,
+                        peers: _peers,
+                        chatMessages: _chatMessages,
+                        peerStates: _peerStates,
+                        selectedYouTube: _selectedYouTube,
+                        youTubeConnected: _youTubeConnected,
+                        youTubeOpening: _youTubeOpening,
+                        joined: _joined,
+                        joining: _joining,
+                        micOn: _micOn,
+                        cameraOn: _cameraOn,
+                        canPublishStage: _canPublishStage,
+                        stageRequestStatus: _stageRequestStatus,
+                        stageRequestsEnabled: _stageRequestsEnabled,
+                        stageRequestSending: _stageRequestSending,
+                        status: _status,
+                        onJoin: _joining || _joined ? null : _join,
+                        onToggleMic:
+                            _joined && !_mediaUpdating && !_stageRequestSending
+                            ? _toggleMic
+                            : null,
+                        onRequestStage: _joined && !_canPublishStage
+                            ? _requestStageJoin
+                            : null,
+                        onCancelStageRequest: _joined && !_canPublishStage
+                            ? _cancelStageJoinRequest
+                            : null,
+                        onSelectYouTube: () => _togglePanel('youtube'),
+                        onOpenYouTube: _openSelectedYouTube,
+                      ),
+                      if (_activePanel != null) ...[
+                        const SizedBox(height: 10),
+                        _LiveToolPanel(
+                          panel: _activePanel!,
+                          room: widget.room,
+                          user: widget.user,
+                          joined: _joined,
+                          passwordController: _roomPassword,
+                          chatController: _chatComposer,
+                          chatMessages: _chatMessages,
+                          chatLoading: _chatLoading,
+                          chatSending: _chatSending,
+                          audioVolume: _roomAudioVolume,
+                          roomControls: _roomControls,
+                          controlsLoading: _controlsLoading,
+                          moderatingUserIds: _moderatingUserIds,
+                          screenSharing: _screenSharing,
+                          canPublishStage: _canPublishStage,
+                          stageActionIds: _stageActionIds,
+                          status: _status,
+                          onJoin: _joining || _joined ? null : _join,
+                          onSendChat: _sendChatMessage,
+                          onSendReaction: _sendReaction,
+                          onSendPicture: _sendPictureMessage,
+                          onChangeAudioVolume: (value) =>
+                              setState(() => _roomAudioVolume = value),
+                          youtubeConnected: _youTubeConnected,
+                          youtubeOpening: _youTubeOpening,
+                          youtubeTab: _youTubeTab,
+                          youtubeFilter: _youTubeFilter,
+                          onConnectYouTube: _connectYouTube,
+                          onChangeYouTubeTab: _changeYouTubeTab,
+                          onChangeYouTubeFilter: _changeYouTubeFilter,
+                          onOpenYouTubeSearch: _openYouTubeSearch,
+                          onOpenYouTubeChoice: _openYouTubeChoice,
+                          onSelectYouTube: _selectYouTubeVideo,
+                          onDeleteChatMessage: _deleteChatMessage,
+                          onLoadControls: () => _loadRoomControls(),
+                          onChangeRoomMicCount: _changeRoomMicCount,
+                          onToggleRoomLock: _toggleRoomLock,
+                          onChangeRoomPassword: _changeRoomPassword,
+                          onChangeRoomTheme: _changeRoomTheme,
+                          onToggleRoomSeat: _toggleRoomSeat,
+                          onToggleAllRoomSeats: _toggleAllRoomSeats,
+                          onAssignRoomAdmin: _assignRoomAdmin,
+                          onRemoveRoomRole: _removeRoomRole,
+                          onClearRoomComments: _clearRoomComments,
+                          onModerateParticipant: _moderateParticipant,
+                          onToggleScreenSharing:
+                              widget.room.screenShareEnabled &&
+                                  _joined &&
+                                  _canPublishStage &&
+                                  !_mediaUpdating
+                              ? () => _syncMediaState(
+                                  micOn: _micOn,
+                                  cameraOn: _cameraOn,
+                                  screenSharing: !_screenSharing,
+                                )
+                              : null,
+                          onApplyStagePermission: _applyStagePermission,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-                const SizedBox(height: 10),
-                _RoomInfoPanel(
-                  room: widget.room,
-                  peers: _peers,
-                  joined: _joined,
-                  rtcMode: _rtcMode,
                 ),
+                if (!_quickChatOpen)
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 8,
+                    child: _LiveControlBar(
+                      joined: _joined,
+                      mediaUpdating: _mediaUpdating,
+                      micOn: _micOn,
+                      audioVolume: _roomAudioVolume,
+                      room: widget.room,
+                      canPublishStage: _canPublishStage,
+                      stageRequestStatus: _stageRequestStatus,
+                      stageRequestsEnabled: _stageRequestsEnabled,
+                      stageRequestSending: _stageRequestSending,
+                      onToggleMic:
+                          _joined && !_mediaUpdating && !_stageRequestSending
+                          ? _toggleMic
+                          : null,
+                      onRequestStage: _joined && !_canPublishStage
+                          ? _requestStageJoin
+                          : null,
+                      onCancelStageRequest: _joined && !_canPublishStage
+                          ? _cancelStageJoinRequest
+                          : null,
+                      onOpenTools: (panel) {
+                        if (panel == 'ops') {
+                          unawaited(_showRoomMenuSheet());
+                          return;
+                        }
+                        _togglePanel(panel);
+                      },
+                    ),
+                  ),
+                if (_quickChatOpen)
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    left: 8,
+                    right: 8,
+                    bottom: MediaQuery.viewInsetsOf(context).bottom + 8,
+                    child: _QuickChatComposer(
+                      room: widget.room,
+                      joined: _joined,
+                      controller: _chatComposer,
+                      focusNode: _quickChatFocus,
+                      sending: _chatSending,
+                      onSend: _sendChatMessage,
+                      onAttach: _sendPictureMessage,
+                      onOpenMenu: _showRoomMenuSheet,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1160,30 +1868,16 @@ class _LiveRoomBackdrop extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF18001F),
-            RtcPalette.stagePlum,
-            RtcPalette.stageWine,
-            RtcPalette.stageBg,
+            Color(0xFF220A3F),
+            Color(0xFF5822A0),
+            Color(0xFF36105F),
+            Color(0xFF180719),
           ],
           stops: [0, 0.32, 0.68, 1],
         ),
       ),
       child: Stack(
         children: [
-          const Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0, -1.05),
-                  radius: 0.82,
-                  colors: [
-                    Color.fromRGBO(255, 122, 69, 0.34),
-                    Color.fromRGBO(255, 122, 69, 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -1238,8 +1932,21 @@ class _LiveTopBar extends StatelessWidget {
       RtcStatusState.error => RtcPalette.red,
       RtcStatusState.idle => RtcPalette.soft,
     };
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 56),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF36110B), Color(0xFF8A2416)],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.22),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           _LiveCircleIconButton(
@@ -1247,14 +1954,14 @@ class _LiveTopBar extends StatelessWidget {
             icon: Icons.chevron_left_rounded,
             onPressed: onBack,
             transparent: true,
-            size: 36,
+            size: 34,
           ),
-          const SizedBox(width: 4),
-          InitialAvatar(user: user, size: 38),
+          const SizedBox(width: 5),
+          InitialAvatar(user: user, size: 40),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -1263,7 +1970,7 @@ class _LiveTopBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: RtcPalette.text,
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                     height: RtcTypography.tightHeight,
                   ),
@@ -1282,11 +1989,11 @@ class _LiveTopBar extends StatelessWidget {
                     const SizedBox(width: 5),
                     Flexible(
                       child: Text(
-                        '${joined ? 'Live' : 'Idle'} · ${_modeLabel(rtcMode)} · $liveCount',
+                        'ID:${room.id} · ${joined ? 'Live' : 'Ready'} · ${_modeLabel(rtcMode)} · $liveCount',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color.fromRGBO(255, 255, 255, 0.72),
+                          color: Color.fromRGBO(255, 255, 255, 0.76),
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                         ),
@@ -1302,14 +2009,28 @@ class _LiveTopBar extends StatelessWidget {
               tooltip: 'Room password',
               icon: Icons.lock_rounded,
               onPressed: onOpenAccess,
-              size: 34,
+              size: 32,
             ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
+          _LiveCircleIconButton(
+            tooltip: 'Share room',
+            icon: Icons.ios_share_rounded,
+            onPressed: onOpenTools,
+            size: 32,
+          ),
+          const SizedBox(width: 5),
           _LiveCircleIconButton(
             tooltip: 'Room menu',
             icon: Icons.more_horiz_rounded,
             onPressed: onOpenTools,
-            size: 34,
+            size: 32,
+          ),
+          const SizedBox(width: 5),
+          _LiveCircleIconButton(
+            tooltip: 'Leave room',
+            icon: Icons.power_settings_new_rounded,
+            onPressed: onBack,
+            size: 32,
           ),
         ],
       ),
@@ -1355,108 +2076,284 @@ class _LiveCircleIconButton extends StatelessWidget {
   }
 }
 
-class _LiveStagePanel extends StatelessWidget {
-  const _LiveStagePanel({
+class _LiveStatusRail extends StatelessWidget {
+  const _LiveStatusRail({
     required this.room,
-    required this.user,
-    required this.localRenderer,
-    required this.rendererReady,
-    required this.peers,
-    required this.chatMessages,
-    required this.remoteRenderers,
-    required this.peerStates,
     required this.joined,
-    required this.joining,
-    required this.leaving,
-    required this.mediaUpdating,
+    required this.canPublishStage,
     required this.micOn,
     required this.cameraOn,
     required this.screenSharing,
-    required this.rtcMode,
-    required this.canPublishStage,
+    required this.peerCount,
+    required this.chatCount,
     required this.stageRequestStatus,
-    required this.stageRequestsEnabled,
-    required this.stageRequestSending,
-    required this.connectStep,
     required this.status,
-    required this.onJoin,
-    required this.onLeave,
-    required this.onToggleMic,
-    required this.onToggleCamera,
-    required this.onRequestStage,
-    required this.onCancelStageRequest,
     required this.onOpenTools,
   });
 
   final Room room;
-  final AppUser user;
-  final RTCVideoRenderer localRenderer;
-  final bool rendererReady;
-  final List<Map<String, dynamic>> peers;
-  final List<Map<String, dynamic>> chatMessages;
-  final Map<String, RTCVideoRenderer> remoteRenderers;
-  final Map<String, String> peerStates;
   final bool joined;
-  final bool joining;
-  final bool leaving;
-  final bool mediaUpdating;
+  final bool canPublishStage;
   final bool micOn;
   final bool cameraOn;
   final bool screenSharing;
-  final String rtcMode;
+  final int peerCount;
+  final int chatCount;
+  final String stageRequestStatus;
+  final String status;
+  final ValueChanged<String> onOpenTools;
+
+  @override
+  Widget build(BuildContext context) {
+    final roleLabel = !joined
+        ? 'Not joined'
+        : canPublishStage
+        ? 'On stage'
+        : stageRequestStatus == 'pending'
+        ? 'Request pending'
+        : 'Audience';
+    final mediaLabel = !joined
+        ? 'Idle'
+        : canPublishStage
+        ? '${micOn ? 'Mic on' : 'Mic off'} · ${cameraOn ? 'Cam on' : 'Cam off'}'
+        : 'Receive-only';
+    final participantCount = peerCount + (joined ? 1 : 0);
+    final railStatus = room.isLocked && !joined
+        ? 'Locked room · access required'
+        : status;
+
+    final lowerStatus = railStatus.toLowerCase();
+    final showInlineError =
+        lowerStatus.contains('permission') ||
+        lowerStatus.contains('failed') ||
+        lowerStatus.contains('unreachable') ||
+        lowerStatus.contains('invalid');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 29,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _LiveMiniCommandChip(
+                icon: Icons.refresh_rounded,
+                label: 'Refresh',
+                detail: railStatus,
+                onTap: () => onOpenTools('chat'),
+              ),
+              _LiveMiniCommandChip(
+                icon: Icons.graphic_eq_rounded,
+                label: 'Voice',
+                detail: mediaLabel,
+                active: joined && (micOn || cameraOn),
+                onTap: () => onOpenTools('audio'),
+              ),
+              _LiveMiniCommandChip(
+                icon: Icons.playlist_play_rounded,
+                label: 'Play List',
+                detail: roleLabel,
+                onTap: () => onOpenTools(
+                  _supportsYouTubeRoom(room) ? 'youtube' : 'audio',
+                ),
+              ),
+              _LiveMiniCommandChip(
+                icon: Icons.groups_2_outlined,
+                label: '$participantCount',
+                detail: 'participants',
+                active: peerCount > 0,
+              ),
+              _LiveMiniCommandChip(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: room.chatEnabled ? '$chatCount chat' : 'Chat off',
+                detail: room.chatEnabled ? 'live chat' : 'disabled',
+                active: room.chatEnabled && chatCount > 0,
+                onTap: room.chatEnabled ? () => onOpenTools('chat') : null,
+              ),
+              if (screenSharing)
+                const _LiveMiniCommandChip(
+                  icon: Icons.screen_share_outlined,
+                  label: 'Sharing',
+                  detail: 'screen',
+                  active: true,
+                ),
+            ],
+          ),
+        ),
+        if (showInlineError) ...[
+          const SizedBox(height: 6),
+          Text(
+            railStatus,
+            style: const TextStyle(
+              color: RtcPalette.red,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _LiveMiniCommandChip extends StatelessWidget {
+  const _LiveMiniCommandChip({
+    required this.icon,
+    required this.label,
+    required this.detail,
+    this.active = false,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String detail;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: detail,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Material(
+          color: active
+              ? const Color.fromRGBO(255, 255, 255, 0.14)
+              : const Color.fromRGBO(0, 0, 0, 0.24),
+          borderRadius: BorderRadius.circular(5),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(5),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: const Color.fromRGBO(255, 255, 255, 0.14),
+                ),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 13,
+                    color: active ? RtcPalette.mint : Colors.white,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveStagePanel extends StatelessWidget {
+  const _LiveStagePanel({
+    required this.room,
+    required this.user,
+    required this.roomControls,
+    required this.peers,
+    required this.chatMessages,
+    required this.peerStates,
+    required this.selectedYouTube,
+    required this.youTubeConnected,
+    required this.youTubeOpening,
+    required this.joined,
+    required this.joining,
+    required this.micOn,
+    required this.cameraOn,
+    required this.canPublishStage,
+    required this.stageRequestStatus,
+    required this.stageRequestsEnabled,
+    required this.stageRequestSending,
+    required this.status,
+    required this.onJoin,
+    required this.onToggleMic,
+    required this.onRequestStage,
+    required this.onCancelStageRequest,
+    required this.onSelectYouTube,
+    required this.onOpenYouTube,
+  });
+
+  final Room room;
+  final AppUser user;
+  final Map<String, dynamic>? roomControls;
+  final List<Map<String, dynamic>> peers;
+  final List<Map<String, dynamic>> chatMessages;
+  final Map<String, String> peerStates;
+  final _YouTubeChoice? selectedYouTube;
+  final bool youTubeConnected;
+  final bool youTubeOpening;
+  final bool joined;
+  final bool joining;
+  final bool micOn;
+  final bool cameraOn;
   final bool canPublishStage;
   final String stageRequestStatus;
   final bool stageRequestsEnabled;
   final bool stageRequestSending;
-  final String connectStep;
   final String status;
   final VoidCallback? onJoin;
-  final VoidCallback? onLeave;
   final VoidCallback? onToggleMic;
-  final VoidCallback? onToggleCamera;
   final VoidCallback? onRequestStage;
   final VoidCallback? onCancelStageRequest;
-  final ValueChanged<String> onOpenTools;
+  final VoidCallback onSelectYouTube;
+  final VoidCallback onOpenYouTube;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _LiveVideoCard(
+        if (_supportsYouTubeRoom(room)) ...[
+          _LiveYouTubeStage(
+            video: selectedYouTube,
+            connected: youTubeConnected,
+            opening: youTubeOpening,
+            onSelect: onSelectYouTube,
+            onOpen: onOpenYouTube,
+          ),
+          const SizedBox(height: 10),
+        ],
+        _LiveVoiceRoomHeader(
           room: room,
           user: user,
-          localRenderer: localRenderer,
-          rendererReady: rendererReady,
+          peerCount: peers.length,
           joined: joined,
           joining: joining,
           micOn: micOn,
           cameraOn: cameraOn,
-          screenSharing: screenSharing,
-          rtcMode: rtcMode,
           canPublishStage: canPublishStage,
           onJoin: onJoin,
         ),
-        if (remoteRenderers.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          _RemoteVideoStrip(
-            peers: peers,
-            remoteRenderers: remoteRenderers,
-            peerStates: peerStates,
-          ),
-        ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         _StageSeatGrid(
           room: room,
           user: user,
+          roomControls: roomControls,
           peers: peers,
           peerStates: peerStates,
           joined: joined,
           micOn: micOn,
           canPublishStage: canPublishStage,
+          onJoin: onJoin,
+          onToggleMic: onToggleMic,
         ),
-        const SizedBox(height: 10),
-        _ConnectSteps(active: connectStep),
         const SizedBox(height: 10),
         _LiveGuideRow(
           room: room,
@@ -1481,302 +2378,347 @@ class _LiveStagePanel extends StatelessWidget {
           cameraOn: cameraOn,
           canPublishStage: canPublishStage,
         ),
-        const SizedBox(height: 12),
-        _LiveControlBar(
-          joined: joined,
-          joining: joining,
-          leaving: leaving,
-          mediaUpdating: mediaUpdating,
-          micOn: micOn,
-          cameraOn: cameraOn,
-          screenSharing: screenSharing,
-          room: room,
-          rtcMode: rtcMode,
-          canPublishStage: canPublishStage,
-          stageRequestStatus: stageRequestStatus,
-          stageRequestsEnabled: stageRequestsEnabled,
-          stageRequestSending: stageRequestSending,
-          onLeave: onLeave,
-          onToggleMic: onToggleMic,
-          onToggleCamera: onToggleCamera,
-          onRequestStage: onRequestStage,
-          onCancelStageRequest: onCancelStageRequest,
-          onOpenTools: onOpenTools,
-        ),
       ],
     );
   }
 }
 
-class _LiveVideoCard extends StatelessWidget {
-  const _LiveVideoCard({
-    required this.room,
-    required this.user,
-    required this.localRenderer,
-    required this.rendererReady,
-    required this.joined,
-    required this.joining,
-    required this.micOn,
-    required this.cameraOn,
-    required this.screenSharing,
-    required this.rtcMode,
-    required this.canPublishStage,
-    required this.onJoin,
+class _LiveYouTubeStage extends StatelessWidget {
+  const _LiveYouTubeStage({
+    required this.video,
+    required this.connected,
+    required this.opening,
+    required this.onSelect,
+    required this.onOpen,
   });
 
-  final Room room;
-  final AppUser user;
-  final RTCVideoRenderer localRenderer;
-  final bool rendererReady;
-  final bool joined;
-  final bool joining;
-  final bool micOn;
-  final bool cameraOn;
-  final bool screenSharing;
-  final String rtcMode;
-  final bool canPublishStage;
-  final VoidCallback? onJoin;
+  final _YouTubeChoice? video;
+  final bool connected;
+  final bool opening;
+  final VoidCallback onSelect;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final showRenderer =
-        joined && rendererReady && cameraOn && room.supportsVideo;
-    final useAdminAvatar = RtcAssets.shouldUseAdminAvatar(user);
-    return ClipRRect(
+    final selected = video;
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(8),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (showRenderer)
-              RTCVideoView(
-                localRenderer,
-                mirror: true,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-              )
-            else
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: RtcAssets.coverImageForRoom(room, 0),
-                    fit: BoxFit.cover,
-                    colorFilter: const ColorFilter.mode(
-                      Color.fromRGBO(0, 0, 0, 0.32),
-                      BlendMode.darken,
-                    ),
-                  ),
-                ),
-              ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.fromRGBO(0, 0, 0, 0.14),
-                    Color.fromRGBO(0, 0, 0, 0.08),
-                    Color.fromRGBO(0, 0, 0, 0.68),
-                  ],
-                ),
-              ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onSelect,
+        child: Container(
+          height: 140,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color.fromRGBO(255, 255, 255, 0.1)),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF321333), Color(0xFF130814)],
             ),
-            Positioned(
-              left: 12,
-              right: 12,
-              top: 12,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          room.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: RtcPalette.text,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            height: RtcTypography.tightHeight,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${room.roomTypeLabel} · ${room.displayHost}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color.fromRGBO(255, 255, 255, 0.66),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(0, 0, 0, 0.24),
+                blurRadius: 16,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (selected != null)
+                Image.asset(selected.asset, fit: BoxFit.cover)
+              else
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment(0, -0.25),
+                      radius: 0.92,
+                      colors: [
+                        Color.fromRGBO(255, 172, 78, 0.28),
+                        Color.fromRGBO(90, 22, 78, 0.48),
+                        Color.fromRGBO(9, 4, 20, 0.9),
                       ],
                     ),
                   ),
-                  _MiniMediaBadge(
-                    icon: micOn ? Icons.mic : Icons.mic_off,
-                    active: micOn,
-                  ),
-                  const SizedBox(width: 5),
-                  _MiniMediaBadge(
-                    icon: cameraOn ? Icons.videocam : Icons.videocam_off,
-                    active: cameraOn,
-                  ),
-                ],
-              ),
-            ),
-            if (!joined)
-              Center(
-                child: Material(
-                  color: const Color(0xFFE31B1B),
-                  borderRadius: BorderRadius.circular(13),
-                  elevation: 10,
-                  shadowColor: const Color.fromRGBO(0, 0, 0, 0.34),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(13),
-                    onTap: onJoin,
-                    child: SizedBox(
-                      width: 64,
-                      height: 50,
-                      child: joining
-                          ? const Center(
-                              child: SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  color: RtcPalette.text,
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.play_arrow_rounded,
-                              color: RtcPalette.text,
-                              size: 38,
-                            ),
-                    ),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color.fromRGBO(0, 0, 0, 0.18),
+                      Color.fromRGBO(0, 0, 0, 0.5),
+                    ],
                   ),
                 ),
               ),
-            Positioned(
-              left: 14,
-              right: 14,
-              bottom: 12,
-              child: Row(
-                children: [
-                  RtcAvatarToken(
-                    label: user.name,
-                    image: useAdminAvatar
-                        ? null
-                        : RtcAssets.avatarImageForUser(user),
-                    asset: useAdminAvatar
-                        ? RtcAssets.adminDashboardAvatar
-                        : null,
-                    size: 34,
-                    borderRadius: RtcRadius.pill,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
+              Center(
+                child: selected == null
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              connected
+                                  ? 'Choose YouTube music or video to play for this room'
+                                  : 'Connect YouTube to choose room music or video',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _YouTubeSelectButton(
+                            label: connected
+                                ? 'Select video/music'
+                                : 'Connect YouTube',
+                            onPressed: onSelect,
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: const BoxDecoration(
+                              color: Color.fromRGBO(255, 255, 255, 0.9),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.play_arrow_rounded,
+                              color: Color(0xFFFF1F1F),
+                              size: 34,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              selected.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                                height: 1.12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _YouTubeSelectButton(
+                                label: 'Change',
+                                onPressed: onSelect,
+                              ),
+                              _YouTubeSelectButton(
+                                label: opening ? 'Opening...' : 'Open YouTube',
+                                onPressed: opening ? null : onOpen,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+              ),
+              if (selected != null)
+                Positioned(
+                  left: 10,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.58),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
                     child: Text(
-                      screenSharing
-                          ? 'Screen share stage'
-                          : joined
-                          ? canPublishStage
-                                ? '${user.name} · ${cameraOn ? 'camera' : rtcMode}'
-                                : '${user.name} · audience'
-                          : 'Tap to join room',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      selected.duration,
                       style: const TextStyle(
-                        color: RtcPalette.text,
-                        fontSize: 12,
+                        color: Colors.white,
+                        fontSize: 10,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(RtcRadius.pill),
-                      child: const LinearProgressIndicator(
-                        value: 0.92,
-                        minHeight: 4,
-                        color: Color(0xFFFF160F),
-                        backgroundColor: Color.fromRGBO(255, 255, 255, 0.22),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _RemoteVideoStrip extends StatelessWidget {
-  const _RemoteVideoStrip({
-    required this.peers,
-    required this.remoteRenderers,
-    required this.peerStates,
-  });
+class _YouTubeSelectButton extends StatelessWidget {
+  const _YouTubeSelectButton({required this.label, required this.onPressed});
 
-  final List<Map<String, dynamic>> peers;
-  final Map<String, RTCVideoRenderer> remoteRenderers;
-  final Map<String, String> peerStates;
+  final String label;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final tiles = peers
-        .where((peer) {
-          final socketId = peer['socketId']?.toString();
-          return socketId != null && remoteRenderers.containsKey(socketId);
-        })
-        .map((peer) {
-          final socketId = peer['socketId']!.toString();
-          final peerRtcMode = peer['rtcMode']?.toString() ?? 'video';
-          final peerMicOn = _signalBool(peer['micEnabled'], true);
-          final peerCameraOn =
-              peerRtcMode != 'audio' &&
-              _signalBool(peer['cameraEnabled'], false);
-          final peerScreen = _signalBool(peer['screenShared'], false);
-          final label = _peerName(peer);
-          return SizedBox(
-            width: 154,
-            height: 128,
-            child: _ParticipantTile(
-              label: label,
-              detail:
-                  peerStates[socketId] ??
-                  (peerScreen
-                      ? 'Screen'
-                      : peerCameraOn
-                      ? 'Camera'
-                      : peerMicOn
-                      ? 'Mic'
-                      : 'Muted'),
-              initials: _initials(label),
-              icon: peerCameraOn || peerScreen ? Icons.videocam : Icons.person,
-              active: true,
-              micOn: peerMicOn,
-              cameraOn: peerCameraOn || peerScreen,
-              renderer: remoteRenderers[socketId],
-            ),
-          );
-        })
-        .toList();
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.smart_display_rounded, size: 17),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF3B1B22),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
+    );
+  }
+}
 
-    if (tiles.isEmpty) return const SizedBox.shrink();
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final tile in tiles) ...[tile, const SizedBox(width: 8)],
-        ],
+class _LiveVoiceRoomHeader extends StatelessWidget {
+  const _LiveVoiceRoomHeader({
+    required this.room,
+    required this.user,
+    required this.peerCount,
+    required this.joined,
+    required this.joining,
+    required this.micOn,
+    required this.cameraOn,
+    required this.canPublishStage,
+    required this.onJoin,
+  });
+
+  final Room room;
+  final AppUser user;
+  final int peerCount;
+  final bool joined;
+  final bool joining;
+  final bool micOn;
+  final bool cameraOn;
+  final bool canPublishStage;
+  final VoidCallback? onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    final groupCount = room.activeParticipants + peerCount + (joined ? 1 : 0);
+    final statusText = joined
+        ? canPublishStage
+              ? (micOn ? 'You can talk now' : 'Mic is muted')
+              : 'Listening. Tap a seat to talk'
+        : 'Join voice room to listen and chat';
+    return Row(
+      children: [
+        Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: const Color.fromRGBO(86, 53, 166, 0.72),
+            borderRadius: BorderRadius.circular(RtcRadius.pill),
+            border: Border.all(color: const Color.fromRGBO(255, 255, 255, 0.2)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                cameraOn ? Icons.videocam_off_rounded : Icons.group_rounded,
+                color: Colors.white,
+                size: 14,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Group $groupCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            statusText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color.fromRGBO(255, 255, 255, 0.72),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _VoiceAudienceAvatar(label: room.displayHost, active: true),
+        const SizedBox(width: 5),
+        _VoiceAudienceAvatar(label: user.name, active: joined),
+        const SizedBox(width: 5),
+        Material(
+          color: const Color.fromRGBO(255, 255, 255, 0.14),
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: joined || joining ? null : onJoin,
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: Icon(
+                joining ? Icons.hourglass_top_rounded : Icons.chevron_right,
+                color: Colors.white,
+                size: 19,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VoiceAudienceAvatar extends StatelessWidget {
+  const _VoiceAudienceAvatar({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active
+            ? const Color.fromRGBO(255, 255, 255, 0.92)
+            : const Color.fromRGBO(255, 255, 255, 0.22),
+        border: Border.all(color: const Color.fromRGBO(255, 255, 255, 0.24)),
+      ),
+      child: Text(
+        _initials(label),
+        style: TextStyle(
+          color: active ? const Color(0xFF40215F) : Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -1786,29 +2728,36 @@ class _StageSeatGrid extends StatelessWidget {
   const _StageSeatGrid({
     required this.room,
     required this.user,
+    required this.roomControls,
     required this.peers,
     required this.peerStates,
     required this.joined,
     required this.micOn,
     required this.canPublishStage,
+    required this.onJoin,
+    required this.onToggleMic,
   });
 
   final Room room;
   final AppUser user;
+  final Map<String, dynamic>? roomControls;
   final List<Map<String, dynamic>> peers;
   final Map<String, String> peerStates;
   final bool joined;
   final bool micOn;
   final bool canPublishStage;
+  final VoidCallback? onJoin;
+  final VoidCallback? onToggleMic;
 
   @override
   Widget build(BuildContext context) {
-    final visibleSeatCount = room.maxMicCount.clamp(4, 8).toInt();
+    final visibleSeatCount = _stageSeatCountFor(room, roomControls);
+    final lockedSeatNumbers = _lockedStageSeatNumbers(roomControls);
     final useAdminAvatar = RtcAssets.shouldUseAdminAvatar(user);
     final seats = <Widget>[];
     if (!joined || canPublishStage) {
       seats.add(
-        RtcStageSeat(
+        _ReferenceStageSeat(
           number: 1,
           label: joined ? user.name : room.displayHost,
           state: joined
@@ -1822,20 +2771,29 @@ class _StageSeatGrid extends StatelessWidget {
           asset: joined && useAdminAvatar
               ? RtcAssets.adminDashboardAvatar
               : null,
+          onTap: joined && canPublishStage ? onToggleMic : onJoin,
+        ),
+      );
+    } else {
+      seats.add(
+        _ReferenceStageSeat(
+          number: 1,
+          label: room.displayHost,
+          state: RtcSeatState.occupied,
         ),
       );
     }
 
     final stagePeers = peers
         .where(_peerCanPublish)
-        .take(visibleSeatCount - seats.length);
+        .take((visibleSeatCount - seats.length).clamp(0, visibleSeatCount));
     for (final peer in stagePeers) {
       final socketId = peer['socketId']?.toString();
       final label = _peerName(peer);
       final micEnabled = _signalBool(peer['micEnabled'], true);
       final stateLabel = socketId == null ? null : peerStates[socketId];
       seats.add(
-        RtcStageSeat(
+        _ReferenceStageSeat(
           number: seats.length + 1,
           label: label,
           state: !micEnabled
@@ -1848,23 +2806,165 @@ class _StageSeatGrid extends StatelessWidget {
     }
 
     while (seats.length < visibleSeatCount) {
+      final seatNumber = seats.length + 1;
+      final locked = lockedSeatNumbers.contains(seatNumber);
       seats.add(
-        RtcStageSeat(
-          number: seats.length + 1,
-          label: 'Open seat',
-          state: RtcSeatState.open,
+        _ReferenceStageSeat(
+          number: seatNumber,
+          label: locked ? 'Locked seat' : 'Open seat',
+          state: locked ? RtcSeatState.locked : RtcSeatState.open,
+          onTap: locked
+              ? null
+              : joined
+              ? onToggleMic
+              : onJoin,
         ),
       );
     }
 
     return GridView.count(
       crossAxisCount: 4,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 0.72,
+      mainAxisSpacing: 9,
+      crossAxisSpacing: 9,
+      childAspectRatio: 0.88,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       children: seats,
+    );
+  }
+}
+
+int _stageSeatCountFor(Room room, Map<String, dynamic>? controls) {
+  final controlRoom = _mapValue(controls?['room']);
+  final fromControls = _intValue(controlRoom?['max_mic_count']);
+  final fromSeatSummary = _intValue(
+    _mapValue(controls?['seat_summary'])?['total_count'],
+  );
+  final count = fromControls ?? fromSeatSummary ?? room.maxMicCount;
+  return count.clamp(1, 20);
+}
+
+Set<int> _lockedStageSeatNumbers(Map<String, dynamic>? controls) {
+  final seats = _mapList(controls?['seats']);
+  return seats
+      .where((seat) => _signalBool(seat['locked']))
+      .map((seat) => _intValue(seat['seat_number']))
+      .whereType<int>()
+      .toSet();
+}
+
+class _ReferenceStageSeat extends StatelessWidget {
+  const _ReferenceStageSeat({
+    required this.number,
+    required this.label,
+    required this.state,
+    this.image,
+    this.asset,
+    this.onTap,
+  });
+
+  final int number;
+  final String label;
+  final RtcSeatState state;
+  final ImageProvider? image;
+  final String? asset;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final occupied =
+        state == RtcSeatState.occupied ||
+        state == RtcSeatState.speaking ||
+        state == RtcSeatState.muted;
+    final active = state == RtcSeatState.speaking;
+    final locked = state == RtcSeatState.locked;
+    final open = state == RtcSeatState.open;
+    return Semantics(
+      button: onTap != null,
+      label: occupied ? label : 'Seat $number',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(4, 7, 4, 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: locked
+                    ? const [Color(0xFF8560B6), Color(0xFF5C368F)]
+                    : active
+                    ? const [Color(0xFFFFC84A), Color(0xFF8E2E2C)]
+                    : open
+                    ? const [Color(0xFF8B5FD0), Color(0xFF5F35A0)]
+                    : const [Color(0xFFA96FE0), Color(0xFF6D3AA2)],
+              ),
+              border: Border.all(
+                color: locked
+                    ? const Color.fromRGBO(255, 255, 255, 0.18)
+                    : open
+                    ? const Color.fromRGBO(255, 255, 255, 0.28)
+                    : const Color.fromRGBO(255, 218, 115, 0.46),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color.fromRGBO(0, 0, 0, 0.2),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color.fromRGBO(255, 255, 255, 0.13),
+                    border: Border.all(
+                      color: open
+                          ? const Color.fromRGBO(255, 255, 255, 0.32)
+                          : const Color.fromRGBO(255, 255, 255, 0.22),
+                    ),
+                  ),
+                  child: occupied
+                      ? RtcAvatarToken(
+                          label: label,
+                          image: image,
+                          asset: asset,
+                          size: 36,
+                          borderRadius: RtcRadius.pill,
+                        )
+                      : Icon(
+                          locked ? Icons.lock_rounded : Icons.mic_none_rounded,
+                          size: 18,
+                          color: const Color.fromRGBO(255, 255, 255, 0.78),
+                        ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  occupied ? label : 'No.$number',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color.fromRGBO(255, 255, 255, 0.78),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1909,23 +3009,40 @@ class _LiveGuideRow extends StatelessWidget {
       children: [
         Expanded(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: const Color.fromRGBO(20, 0, 0, 0.76),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              room.description.isEmpty
-                  ? 'Come on mic and chat together~'
-                  : room.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFFFFD06B),
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                height: 1.25,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF145B54), Color(0xFF2D6A2A)],
               ),
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(
+                color: const Color.fromRGBO(0, 255, 204, 0.18),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.campaign_rounded,
+                  color: Color(0xFF9CF7D6),
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    room.description.isEmpty
+                        ? 'Room notice: violators will be banned.'
+                        : room.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFFFD06B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1938,6 +3055,7 @@ class _LiveGuideRow extends StatelessWidget {
             onTap: stageRequestSending ? null : action,
             child: Container(
               width: 72,
+              height: 56,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
@@ -2036,156 +3154,285 @@ class _LiveCommentPreview extends StatelessWidget {
   }
 }
 
-class _ConnectSteps extends StatelessWidget {
-  const _ConnectSteps({required this.active});
+class _LiveControlBar extends StatelessWidget {
+  const _LiveControlBar({
+    required this.joined,
+    required this.mediaUpdating,
+    required this.micOn,
+    required this.audioVolume,
+    required this.room,
+    required this.canPublishStage,
+    required this.stageRequestStatus,
+    required this.stageRequestsEnabled,
+    required this.stageRequestSending,
+    required this.onToggleMic,
+    required this.onRequestStage,
+    required this.onCancelStageRequest,
+    required this.onOpenTools,
+  });
 
-  final String active;
+  final bool joined;
+  final bool mediaUpdating;
+  final bool micOn;
+  final double audioVolume;
+  final Room room;
+  final bool canPublishStage;
+  final String stageRequestStatus;
+  final bool stageRequestsEnabled;
+  final bool stageRequestSending;
+  final VoidCallback? onToggleMic;
+  final VoidCallback? onRequestStage;
+  final VoidCallback? onCancelStageRequest;
+  final ValueChanged<String> onOpenTools;
 
   @override
   Widget build(BuildContext context) {
-    final activeIndex = _connectSteps.indexWhere(
-      (step) => step.value == active,
-    );
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _connectSteps.asMap().entries.map((entry) {
-        final done = activeIndex >= 0 && entry.key <= activeIndex;
-        return _TinyStatusChip(
-          label: entry.value.label,
-          active: done,
-          icon: done ? Icons.check : Icons.circle_outlined,
-        );
-      }).toList(),
+    final audienceMode = joined && !canPublishStage;
+    final pending = stageRequestStatus == 'pending';
+    final requestAction = pending ? onCancelStageRequest : onRequestStage;
+    final micAction = audienceMode
+        ? stageRequestSending || !stageRequestsEnabled && !pending
+              ? null
+              : requestAction
+        : onToggleMic;
+    final micIcon = audienceMode
+        ? pending
+              ? Icons.hourglass_top_rounded
+              : Icons.record_voice_over_rounded
+        : micOn
+        ? Icons.mic
+        : Icons.mic_off;
+    final micTooltip = audienceMode
+        ? pending
+              ? 'Cancel mic request'
+              : 'Request mic'
+        : mediaUpdating
+        ? 'Saving microphone'
+        : micOn
+        ? 'Turn microphone off'
+        : 'Turn microphone on';
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(18, 7, 33, 0.78),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color.fromRGBO(255, 255, 255, 0.08)),
+      ),
+      child: Row(
+        children: [
+          _LiveBottomIconButton(
+            tooltip: 'Room audio volume ${(audioVolume * 100).round()}%',
+            icon: audioVolume == 0
+                ? Icons.volume_off_rounded
+                : audioVolume < 0.5
+                ? Icons.volume_down_rounded
+                : Icons.volume_up_rounded,
+            active: audioVolume > 0,
+            onPressed: () => onOpenTools('audio'),
+          ),
+          const SizedBox(width: 8),
+          _LiveBottomIconButton(
+            tooltip: micTooltip,
+            icon: micIcon,
+            active: micOn || pending,
+            onPressed: mediaUpdating ? null : micAction,
+          ),
+          const SizedBox(width: 8),
+          _LiveBottomIconButton(
+            tooltip: room.chatEnabled ? 'Open live chat' : 'Live chat off',
+            icon: Icons.chat_bubble_rounded,
+            onPressed: room.chatEnabled
+                ? () => onOpenTools('quick-chat')
+                : null,
+          ),
+          const SizedBox(width: 8),
+          _LiveBottomIconButton(
+            tooltip: 'Open emoji',
+            icon: Icons.emoji_emotions_rounded,
+            onPressed: () => onOpenTools('emoji'),
+          ),
+          const Spacer(),
+          _LiveBottomIconButton(
+            tooltip: 'Open room menu',
+            icon: Icons.menu_rounded,
+            onPressed: () => onOpenTools('ops'),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _ParticipantTile extends StatelessWidget {
-  const _ParticipantTile({
-    required this.label,
-    required this.detail,
-    required this.initials,
+class _LiveBottomIconButton extends StatelessWidget {
+  const _LiveBottomIconButton({
+    required this.tooltip,
     required this.icon,
-    required this.active,
-    required this.micOn,
-    required this.cameraOn,
-    this.renderer,
+    required this.onPressed,
+    this.active = false,
   });
 
-  final String label;
-  final String detail;
-  final String initials;
+  final String tooltip;
   final IconData icon;
+  final VoidCallback? onPressed;
   final bool active;
-  final bool micOn;
-  final bool cameraOn;
-  final RTCVideoRenderer? renderer;
 
   @override
   Widget build(BuildContext context) {
-    final showRenderer = renderer != null && cameraOn;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGBO(15, 23, 42, active ? 0.72 : 0.36),
-          border: Border.all(
-            color: active
-                ? const Color.fromRGBO(52, 211, 153, 0.26)
-                : const Color.fromRGBO(148, 163, 184, 0.18),
+    final color = active ? RtcPalette.mint : Colors.white;
+    return Tooltip(
+      message: tooltip,
+      child: Opacity(
+        opacity: onPressed == null ? 0.42 : 1,
+        child: Material(
+          color: active
+              ? const Color.fromRGBO(39, 215, 170, 0.16)
+              : const Color.fromRGBO(255, 255, 255, 0.08),
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: SizedBox.square(
+              dimension: 36,
+              child: Icon(icon, color: color, size: 22),
+            ),
           ),
         ),
-        child: Stack(
+      ),
+    );
+  }
+}
+
+class _QuickChatComposer extends StatelessWidget {
+  const _QuickChatComposer({
+    required this.room,
+    required this.joined,
+    required this.controller,
+    required this.focusNode,
+    required this.sending,
+    required this.onSend,
+    required this.onAttach,
+    required this.onOpenMenu,
+  });
+
+  final Room room;
+  final bool joined;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool sending;
+  final VoidCallback onSend;
+  final VoidCallback onAttach;
+  final VoidCallback onOpenMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = joined && room.chatEnabled && !sending;
+    return Material(
+      color: Colors.white,
+      elevation: 10,
+      shadowColor: Colors.black.withValues(alpha: 0.22),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.fromLTRB(6, 5, 6, 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color.fromRGBO(15, 23, 42, 0.08)),
+        ),
+        child: Row(
           children: [
-            if (showRenderer)
-              Positioned.fill(
-                child: RTCVideoView(
-                  renderer!,
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                ),
-              )
-            else
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: active
-                          ? const [Color(0xFF243B55), Color(0xFF141E30)]
-                          : const [
-                              Color.fromRGBO(15, 23, 42, 0.72),
-                              Color.fromRGBO(2, 6, 23, 0.8),
-                            ],
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      initials,
-                      style: TextStyle(
-                        color: active ? RtcPalette.text : RtcPalette.muted,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            Positioned(
-              top: 10,
-              left: 10,
-              child: Icon(
-                icon,
-                color: active ? RtcPalette.mint : RtcPalette.muted,
-                size: 18,
+            IconButton(
+              tooltip: 'Send picture',
+              onPressed: enabled ? onAttach : null,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              icon: const Icon(
+                Icons.image_outlined,
+                color: RtcPalette.lobbyMuted,
+                size: 22,
               ),
             ),
-            Positioned(
-              right: 8,
-              top: 8,
-              child: Wrap(
-                spacing: 4,
-                children: [
-                  _MiniMediaBadge(
-                    icon: micOn ? Icons.mic : Icons.mic_off,
-                    active: micOn,
+            const SizedBox(width: 4),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                enabled: enabled,
+                autofocus: true,
+                textInputAction: TextInputAction.send,
+                onSubmitted: enabled ? (_) => onSend() : null,
+                style: const TextStyle(
+                  color: RtcPalette.lobbyInk,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+                decoration: InputDecoration(
+                  hintText: room.chatEnabled
+                      ? joined
+                            ? 'Type a message...'
+                            : 'Join room to chat'
+                      : 'Chat is disabled',
+                  hintStyle: const TextStyle(
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
                   ),
-                  _MiniMediaBadge(
-                    icon: cameraOn ? Icons.videocam : Icons.videocam_off,
-                    active: cameraOn,
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 9,
                   ),
-                ],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                    borderSide: const BorderSide(color: RtcPalette.lobbyGold),
+                  ),
+                ),
               ),
             ),
-            Positioned(
-              left: 10,
-              right: 10,
-              bottom: 10,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    detail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: RtcPalette.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 6),
+            FilledButton(
+              onPressed: enabled ? onSend : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: RtcPalette.lobbyGold,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFE2E8F0),
+                disabledForegroundColor: const Color(0xFF94A3B8),
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(52, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              child: Text(sending ? '...' : 'Send'),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Open room menu',
+              onPressed: onOpenMenu,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              icon: const Icon(
+                Icons.menu_rounded,
+                color: RtcPalette.lobbyInk,
+                size: 24,
               ),
             ),
           ],
@@ -2195,204 +3442,18 @@ class _ParticipantTile extends StatelessWidget {
   }
 }
 
-class _MiniMediaBadge extends StatelessWidget {
-  const _MiniMediaBadge({required this.icon, required this.active});
-
-  final IconData icon;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 26,
-      height: 26,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: RtcPalette.panelScrim.withValues(alpha: 0.7),
-        border: Border.all(color: active ? RtcPalette.mint : RtcPalette.line),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        icon,
-        color: active ? RtcPalette.mint : RtcPalette.muted,
-        size: 14,
-      ),
-    );
-  }
-}
-
-class _LiveControlBar extends StatelessWidget {
-  const _LiveControlBar({
-    required this.joined,
-    required this.joining,
-    required this.leaving,
-    required this.mediaUpdating,
-    required this.micOn,
-    required this.cameraOn,
-    required this.screenSharing,
-    required this.room,
-    required this.rtcMode,
-    required this.canPublishStage,
-    required this.stageRequestStatus,
-    required this.stageRequestsEnabled,
-    required this.stageRequestSending,
-    required this.onLeave,
-    required this.onToggleMic,
-    required this.onToggleCamera,
-    required this.onRequestStage,
-    required this.onCancelStageRequest,
-    required this.onOpenTools,
-  });
-
-  final bool joined;
-  final bool joining;
-  final bool leaving;
-  final bool mediaUpdating;
-  final bool micOn;
-  final bool cameraOn;
-  final bool screenSharing;
-  final Room room;
-  final String rtcMode;
-  final bool canPublishStage;
-  final String stageRequestStatus;
-  final bool stageRequestsEnabled;
-  final bool stageRequestSending;
-  final VoidCallback? onLeave;
-  final VoidCallback? onToggleMic;
-  final VoidCallback? onToggleCamera;
-  final VoidCallback? onRequestStage;
-  final VoidCallback? onCancelStageRequest;
-  final ValueChanged<String> onOpenTools;
-
-  @override
-  Widget build(BuildContext context) {
-    final audienceMode = joined && !canPublishStage;
-    final pending = stageRequestStatus == 'pending';
-    final requestLabel = stageRequestSending
-        ? 'Sending'
-        : pending
-        ? 'Cancel'
-        : stageRequestsEnabled
-        ? 'Request'
-        : 'Closed';
-    final requestAction = pending ? onCancelStageRequest : onRequestStage;
-    return Column(
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              if (audienceMode) ...[
-                RtcStageActionButton(
-                  icon: pending
-                      ? Icons.hourglass_top_rounded
-                      : Icons.record_voice_over_rounded,
-                  label: requestLabel,
-                  active: pending,
-                  onPressed:
-                      stageRequestSending || !stageRequestsEnabled && !pending
-                      ? null
-                      : requestAction,
-                ),
-                const SizedBox(width: 8),
-              ],
-              RtcStageActionButton(
-                icon: micOn ? Icons.mic : Icons.mic_off,
-                label: audienceMode
-                    ? 'Locked'
-                    : mediaUpdating
-                    ? 'Saving'
-                    : micOn
-                    ? 'Mic on'
-                    : 'Mic off',
-                active: micOn,
-                onPressed: onToggleMic,
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: cameraOn ? Icons.videocam : Icons.videocam_off,
-                label: audienceMode
-                    ? 'Locked'
-                    : rtcMode == 'video'
-                    ? cameraOn
-                          ? 'Camera on'
-                          : 'Camera off'
-                    : 'Audio room',
-                active: cameraOn,
-                onPressed: onToggleCamera,
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: Icons.graphic_eq,
-                label: 'Voice',
-                onPressed: () => onOpenTools('audio'),
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: Icons.auto_awesome,
-                label: 'Filter',
-                onPressed: rtcMode == 'video'
-                    ? () => onOpenTools('beauty')
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: screenSharing
-                    ? Icons.stop_screen_share_outlined
-                    : Icons.screen_share_outlined,
-                label: 'Share',
-                active: screenSharing,
-                onPressed: room.screenShareEnabled && canPublishStage
-                    ? () => onOpenTools('screen')
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: Icons.admin_panel_settings_outlined,
-                label: 'Host',
-                onPressed: () => onOpenTools('ops'),
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: Icons.shield_outlined,
-                label: 'Safety',
-                active: room.aiSecurityEnabled,
-                onPressed: () => onOpenTools('guard'),
-              ),
-              const SizedBox(width: 8),
-              RtcStageActionButton(
-                icon: Icons.chat_bubble_outline,
-                label: 'Chat',
-                active: room.chatEnabled,
-                onPressed: () => onOpenTools('chat'),
-              ),
-              if (joined || joining || leaving) ...[
-                const SizedBox(width: 8),
-                RtcStageActionButton(
-                  icon: Icons.call_end,
-                  label: leaving ? 'Leaving' : 'Leave',
-                  destructive: true,
-                  onPressed: onLeave,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _LiveToolPanel extends StatelessWidget {
   const _LiveToolPanel({
     required this.panel,
     required this.room,
+    required this.user,
     required this.joined,
     required this.passwordController,
     required this.chatController,
     required this.chatMessages,
     required this.chatLoading,
     required this.chatSending,
+    required this.audioVolume,
     required this.roomControls,
     required this.controlsLoading,
     required this.moderatingUserIds,
@@ -2402,8 +3463,30 @@ class _LiveToolPanel extends StatelessWidget {
     required this.status,
     required this.onJoin,
     required this.onSendChat,
-    required this.onSendGift,
+    required this.onSendReaction,
+    required this.onSendPicture,
+    required this.onChangeAudioVolume,
+    required this.youtubeConnected,
+    required this.youtubeOpening,
+    required this.youtubeTab,
+    required this.youtubeFilter,
+    required this.onConnectYouTube,
+    required this.onChangeYouTubeTab,
+    required this.onChangeYouTubeFilter,
+    required this.onOpenYouTubeSearch,
+    required this.onOpenYouTubeChoice,
+    required this.onSelectYouTube,
+    required this.onDeleteChatMessage,
     required this.onLoadControls,
+    required this.onChangeRoomMicCount,
+    required this.onToggleRoomLock,
+    required this.onChangeRoomPassword,
+    required this.onChangeRoomTheme,
+    required this.onToggleRoomSeat,
+    required this.onToggleAllRoomSeats,
+    required this.onAssignRoomAdmin,
+    required this.onRemoveRoomRole,
+    required this.onClearRoomComments,
     required this.onModerateParticipant,
     required this.onToggleScreenSharing,
     required this.onApplyStagePermission,
@@ -2411,12 +3494,14 @@ class _LiveToolPanel extends StatelessWidget {
 
   final String panel;
   final Room room;
+  final AppUser user;
   final bool joined;
   final TextEditingController passwordController;
   final TextEditingController chatController;
   final List<Map<String, dynamic>> chatMessages;
   final bool chatLoading;
   final bool chatSending;
+  final double audioVolume;
   final Map<String, dynamic>? roomControls;
   final bool controlsLoading;
   final Set<int> moderatingUserIds;
@@ -2426,8 +3511,30 @@ class _LiveToolPanel extends StatelessWidget {
   final String status;
   final VoidCallback? onJoin;
   final VoidCallback onSendChat;
-  final VoidCallback? onSendGift;
+  final ValueChanged<String> onSendReaction;
+  final VoidCallback onSendPicture;
+  final ValueChanged<double> onChangeAudioVolume;
+  final bool youtubeConnected;
+  final bool youtubeOpening;
+  final String youtubeTab;
+  final String youtubeFilter;
+  final VoidCallback onConnectYouTube;
+  final ValueChanged<String> onChangeYouTubeTab;
+  final ValueChanged<String> onChangeYouTubeFilter;
+  final VoidCallback onOpenYouTubeSearch;
+  final ValueChanged<_YouTubeChoice> onOpenYouTubeChoice;
+  final ValueChanged<_YouTubeChoice> onSelectYouTube;
+  final void Function(Map<String, dynamic> message) onDeleteChatMessage;
   final VoidCallback onLoadControls;
+  final VoidCallback onChangeRoomMicCount;
+  final VoidCallback onToggleRoomLock;
+  final VoidCallback onChangeRoomPassword;
+  final VoidCallback onChangeRoomTheme;
+  final void Function(Map<String, dynamic> seat) onToggleRoomSeat;
+  final ValueChanged<bool> onToggleAllRoomSeats;
+  final VoidCallback onAssignRoomAdmin;
+  final void Function(Map<String, dynamic> role) onRemoveRoomRole;
+  final VoidCallback onClearRoomComments;
   final void Function(Map<String, dynamic> participant, String action)
   onModerateParticipant;
   final VoidCallback? onToggleScreenSharing;
@@ -2438,10 +3545,12 @@ class _LiveToolPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = switch (panel) {
       'access' => 'Room Access',
-      'audio' => 'Voice Effects',
+      'audio' => 'Audio Volume',
+      'emoji' => 'Emoji',
+      'youtube' => 'YouTube',
       'beauty' => 'Filters',
       'screen' => 'Screen Share',
-      'ops' => 'Host Controls',
+      'ops' => 'Room Admin Controls',
       'guard' => 'Safety',
       'chat' => 'Live Chat',
       _ => 'Room Menu',
@@ -2516,13 +3625,32 @@ class _LiveToolPanel extends StatelessWidget {
         else if (panel == 'chat')
           _ChatPreview(
             room: room,
+            user: user,
             joined: joined,
             controller: chatController,
             messages: chatMessages,
             loading: chatLoading,
             sending: chatSending,
             onSend: onSendChat,
-            onSendGift: onSendGift,
+            onSendPicture: onSendPicture,
+            onDeleteMessage: onDeleteChatMessage,
+          )
+        else if (panel == 'audio')
+          _AudioVolumePanel(value: audioVolume, onChanged: onChangeAudioVolume)
+        else if (panel == 'emoji')
+          _EmojiPanel(onReaction: onSendReaction)
+        else if (panel == 'youtube')
+          _YouTubePickerPanel(
+            connected: youtubeConnected,
+            opening: youtubeOpening,
+            activeTab: youtubeTab,
+            activeFilter: youtubeFilter,
+            onConnect: onConnectYouTube,
+            onTabChanged: onChangeYouTubeTab,
+            onFilterChanged: onChangeYouTubeFilter,
+            onSearch: onOpenYouTubeSearch,
+            onOpen: onOpenYouTubeChoice,
+            onSelect: onSelectYouTube,
           )
         else if (panel == 'ops')
           _RoomOpsPanel(
@@ -2531,6 +3659,15 @@ class _LiveToolPanel extends StatelessWidget {
             moderatingUserIds: moderatingUserIds,
             stageActionIds: stageActionIds,
             onRefresh: onLoadControls,
+            onChangeMicCount: onChangeRoomMicCount,
+            onToggleRoomLock: onToggleRoomLock,
+            onChangePassword: onChangeRoomPassword,
+            onChangeTheme: onChangeRoomTheme,
+            onToggleSeat: onToggleRoomSeat,
+            onToggleAllSeats: onToggleAllRoomSeats,
+            onAssignAdmin: onAssignRoomAdmin,
+            onRemoveRole: onRemoveRoomRole,
+            onClearComments: onClearRoomComments,
             onModerate: onModerateParticipant,
             onApplyStagePermission: onApplyStagePermission,
           )
@@ -2553,30 +3690,1321 @@ class _LiveToolPanel extends StatelessWidget {
   }
 }
 
+enum _RoomMenuAction {
+  micCount,
+  lock,
+  password,
+  theme,
+  share,
+  admin,
+  clearComments,
+  gatherFollowers,
+}
+
+class _RoomMenuActionSheet extends StatelessWidget {
+  const _RoomMenuActionSheet({
+    required this.room,
+    required this.controls,
+    required this.loading,
+  });
+
+  final Room room;
+  final Map<String, dynamic>? controls;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final roomControls = _mapValue(controls?['room']);
+    final privacy =
+        roomControls?['privacy_type']?.toString() ?? room.privacyType;
+    final locked = roomControls == null ? room.isLocked : privacy == 'password';
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    final items = [
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.micCount,
+        icon: Icons.mic_none_rounded,
+        label: 'Number of Mic',
+        color: Color(0xFFD66DE8),
+      ),
+      _RoomMenuItemData(
+        action: _RoomMenuAction.lock,
+        icon: locked ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+        label: locked ? 'Unlock' : 'Lock room',
+        color: const Color(0xFFE8A15D),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.password,
+        icon: Icons.key_rounded,
+        label: 'Password',
+        color: Color(0xFF65C6E6),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.theme,
+        icon: Icons.palette_outlined,
+        label: 'Theme',
+        color: Color(0xFF9D7AEF),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.share,
+        icon: Icons.share_rounded,
+        label: 'Share',
+        color: Color(0xFFEBA067),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.admin,
+        icon: Icons.group_add_outlined,
+        label: 'Admin',
+        color: Color(0xFF5EC6D6),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.clearComments,
+        icon: Icons.delete_sweep_outlined,
+        label: 'Clear comments history',
+        color: Color(0xFFE57D96),
+      ),
+      const _RoomMenuItemData(
+        action: _RoomMenuAction.gatherFollowers,
+        icon: Icons.campaign_outlined,
+        label: 'Gather followers',
+        color: Color(0xFFE4C34D),
+      ),
+    ];
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxWidth: 520),
+        padding: EdgeInsets.fromLTRB(12, 8, 12, bottom + 8),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(
+              color: Color.fromRGBO(0, 0, 0, 0.22),
+              blurRadius: 22,
+              offset: Offset(0, -8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 2, bottom: 4),
+                  child: SizedBox(
+                    width: 20,
+                    height: 2,
+                    child: LinearProgressIndicator(
+                      minHeight: 2,
+                      color: RtcPalette.lobbyTealDark,
+                      backgroundColor: Color(0xFFE9F4F1),
+                    ),
+                  ),
+                ),
+              for (final item in items)
+                _RoomMenuActionTile(
+                  item: item,
+                  onTap: () => Navigator.of(context).pop(item.action),
+                ),
+              _RoomMenuCancelTile(onTap: () => Navigator.of(context).pop()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomMenuItemData {
+  const _RoomMenuItemData({
+    required this.action,
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final _RoomMenuAction action;
+  final IconData icon;
+  final String label;
+  final Color color;
+}
+
+class _RoomMenuActionTile extends StatelessWidget {
+  const _RoomMenuActionTile({required this.item, required this.onTap});
+
+  final _RoomMenuItemData item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: item.label,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 42,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 36,
+                child: Icon(item.icon, color: item.color, size: 19),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 178,
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1F2937),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomMenuCancelTile extends StatelessWidget {
+  const _RoomMenuCancelTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: const SizedBox(
+        height: 38,
+        child: Center(
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MicCountChooserScreen extends StatefulWidget {
+  const _MicCountChooserScreen({required this.current, required this.options});
+
+  final int current;
+  final List<_MicLayoutOption> options;
+
+  @override
+  State<_MicCountChooserScreen> createState() => _MicCountChooserScreenState();
+}
+
+class _MicCountChooserScreenState extends State<_MicCountChooserScreen> {
+  late _MicLayoutOption _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.options.firstWhere(
+      (option) => option.count == widget.current,
+      orElse: () => widget.options.first,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111827),
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.chevron_left_rounded, size: 30),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Choose number of mic',
+          style: TextStyle(
+            color: Color(0xFF111827),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final previewHeight = (constraints.maxHeight * 0.48).clamp(
+                    230.0,
+                    330.0,
+                  );
+                  return Column(
+                    children: [
+                      const SizedBox(height: 18),
+                      Expanded(
+                        child: Center(
+                          child: SizedBox(
+                            width: previewHeight * 0.56,
+                            height: previewHeight,
+                            child: _MicLayoutPhonePreview(
+                              option: _selected,
+                              large: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 148,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: widget.options.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 12),
+                          itemBuilder: (context, index) {
+                            final option = widget.options[index];
+                            return _MicLayoutThumbnail(
+                              option: option,
+                              selected: identical(option, _selected),
+                              onTap: () => setState(() => _selected = option),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(36, 10, 36, 22),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(RtcRadius.pill),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFB323), Color(0xFFF59E0B)],
+                  ),
+                ),
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(_selected.count),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(RtcRadius.pill),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  child: const Text('Use'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MicLayoutThumbnail extends StatelessWidget {
+  const _MicLayoutThumbnail({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _MicLayoutOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: option.label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(7),
+        child: SizedBox(
+          width: 74,
+          child: Column(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: 66,
+                    height: 106,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? RtcPalette.lobbyTealDark
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: _MicLayoutPhonePreview(option: option),
+                  ),
+                  if (selected)
+                    const Positioned(
+                      right: -5,
+                      bottom: -5,
+                      child: _MicLayoutCheckmark(),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 9),
+              Text(
+                option.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF1F2937),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MicLayoutCheckmark extends StatelessWidget {
+  const _MicLayoutCheckmark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: RtcPalette.lobbyTeal,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: const Icon(Icons.check_rounded, color: Colors.white, size: 12),
+    );
+  }
+}
+
+class _MicLayoutPhonePreview extends StatelessWidget {
+  const _MicLayoutPhonePreview({required this.option, this.large = false});
+
+  final _MicLayoutOption option;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = option.colors;
+    final columns = option.count <= 8
+        ? 4
+        : option.count <= 16
+        ? 4
+        : 5;
+    final seatCount = option.count.clamp(1, 20);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(large ? 12 : 5),
+        border: Border.all(
+          color: large
+              ? const Color(0xFFE5E7EB)
+              : const Color.fromRGBO(17, 24, 39, 0.16),
+          width: large ? 1.5 : 0.6,
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: colors,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _MicPreviewAtmosphere(variant: option.variant),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              large ? 10 : 4,
+              large ? 10 : 4,
+              large ? 10 : 4,
+              large ? 8 : 4,
+            ),
+            child: Column(
+              children: [
+                _MicPreviewHeader(large: large),
+                SizedBox(height: large ? 10 : 4),
+                Expanded(
+                  child: GridView.builder(
+                    padding: EdgeInsets.zero,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: large ? 8 : 3,
+                      crossAxisSpacing: large ? 8 : 3,
+                    ),
+                    itemCount: seatCount,
+                    itemBuilder: (context, index) {
+                      return _MicPreviewSeat(index: index, large: large);
+                    },
+                  ),
+                ),
+                SizedBox(height: large ? 8 : 3),
+                _MicPreviewFooter(large: large),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MicPreviewAtmosphere extends StatelessWidget {
+  const _MicPreviewAtmosphere({required this.variant});
+
+  final int variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final warm = variant.isEven;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: warm
+              ? const Alignment(0.8, -0.6)
+              : const Alignment(-0.7, 0.1),
+          radius: 0.95,
+          colors: warm
+              ? const [
+                  Color.fromRGBO(255, 198, 76, 0.34),
+                  Color.fromRGBO(130, 54, 190, 0.18),
+                  Color.fromRGBO(0, 0, 0, 0),
+                ]
+              : const [
+                  Color.fromRGBO(40, 212, 255, 0.26),
+                  Color.fromRGBO(69, 32, 158, 0.22),
+                  Color.fromRGBO(0, 0, 0, 0),
+                ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MicPreviewHeader extends StatelessWidget {
+  const _MicPreviewHeader({required this.large});
+
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: large ? 18 : 7,
+          height: large ? 18 : 7,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFFFFD36B),
+          ),
+        ),
+        SizedBox(width: large ? 6 : 2),
+        Expanded(
+          child: Container(
+            height: large ? 8 : 3,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(RtcRadius.pill),
+            ),
+          ),
+        ),
+        SizedBox(width: large ? 6 : 2),
+        Icon(
+          Icons.more_horiz_rounded,
+          size: large ? 15 : 6,
+          color: Colors.white.withValues(alpha: 0.84),
+        ),
+      ],
+    );
+  }
+}
+
+class _MicPreviewSeat extends StatelessWidget {
+  const _MicPreviewSeat({required this.index, required this.large});
+
+  final int index;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarColors = const [
+      Color(0xFFFFD166),
+      Color(0xFF52D6C5),
+      Color(0xFFFF8FAB),
+      Color(0xFFB8F2E6),
+      Color(0xFF9AD1FF),
+    ];
+    final color = avatarColors[index % avatarColors.length];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : large
+            ? 26.0
+            : 8.0;
+        final height = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : large
+            ? 32.0
+            : 8.0;
+        final labelHeight = large ? 6.0 : 0.0;
+        final availableHeight = (height - labelHeight).clamp(4.0, height);
+        final maxCircle = availableHeight < width ? availableHeight : width;
+        final circleSize = (large ? 26.0 : 7.0)
+            .clamp(4.0, maxCircle < 4.0 ? 4.0 : maxCircle)
+            .toDouble();
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: circleSize,
+              height: circleSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.76),
+                  width: large ? 1.4 : 0.35,
+                ),
+              ),
+              child: Icon(
+                index == 0 ? Icons.mic_rounded : Icons.person_rounded,
+                color: const Color.fromRGBO(54, 22, 80, 0.82),
+                size: large ? circleSize * 0.5 : circleSize * 0.46,
+              ),
+            ),
+            if (large) ...[
+              const SizedBox(height: 3),
+              Container(
+                width: 24,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.54),
+                  borderRadius: BorderRadius.circular(RtcRadius.pill),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MicPreviewFooter extends StatelessWidget {
+  const _MicPreviewFooter({required this.large});
+
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(5, (index) {
+        return Container(
+          width: large ? 12 : 5,
+          height: large ? 12 : 5,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: index == 4
+                ? const Color(0xFFFFC928)
+                : Colors.white.withValues(alpha: 0.82),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+class _MicLayoutOption {
+  const _MicLayoutOption({
+    required this.count,
+    required this.variant,
+    required this.colors,
+  });
+
+  final int count;
+  final int variant;
+  final List<Color> colors;
+
+  String get label => '$count people';
+}
+
+List<_MicLayoutOption> _micLayoutOptions({
+  required List<int> allowedCounts,
+  required int current,
+  required int maxPackageMic,
+}) {
+  final source = allowedCounts.isNotEmpty
+      ? allowedCounts
+      : const [8, 12, 15, 20];
+  final options = <_MicLayoutOption>[];
+  for (final count in source) {
+    if (count < 1 || count > maxPackageMic) continue;
+    options.add(_micLayoutOption(count, options.length));
+  }
+  if (current > 0 &&
+      current <= maxPackageMic &&
+      !options.any((option) => option.count == current)) {
+    options.insert(0, _micLayoutOption(current, 0));
+  }
+  if (options.isEmpty) {
+    options.add(_micLayoutOption(maxPackageMic.clamp(1, 20), 0));
+  }
+  return options;
+}
+
+_MicLayoutOption _micLayoutOption(int count, int variant) {
+  const palettes = [
+    [Color(0xFF29116D), Color(0xFF9D31F3)],
+    [Color(0xFF1E0A5F), Color(0xFF8018D8)],
+    [Color(0xFF0E315C), Color(0xFF1B76A4)],
+    [Color(0xFF2E3443), Color(0xFF9CA3AF)],
+    [Color(0xFF161B54), Color(0xFF4120A6)],
+  ];
+  return _MicLayoutOption(
+    count: count,
+    variant: variant,
+    colors: palettes[variant % palettes.length],
+  );
+}
+
+class _AudioVolumePanel extends StatelessWidget {
+  const _AudioVolumePanel({required this.value, required this.onChanged});
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (value * 100).round().clamp(0, 100);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RtcSheetActionTile(
+          icon: value == 0
+              ? Icons.volume_off_rounded
+              : value < 0.5
+              ? Icons.volume_down_rounded
+              : Icons.volume_up_rounded,
+          title: 'Room audio',
+          subtitle: 'Music and video listening volume.',
+          onTap: null,
+          trailing: RtcMiniBadge(
+            label: '$percent%',
+            color: RtcPalette.lobbyTealDark,
+            subtle: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: RtcPalette.lobbyLine),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: value == 0 ? 'Unmute room audio' : 'Mute room audio',
+                onPressed: () => onChanged(value == 0 ? 0.72 : 0),
+                icon: Icon(
+                  value == 0
+                      ? Icons.volume_off_rounded
+                      : Icons.volume_mute_rounded,
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: value.clamp(0, 1),
+                  onChanged: onChanged,
+                  activeColor: RtcPalette.lobbyTealDark,
+                  inactiveColor: const Color(0xFFDDE7E7),
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '$percent%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: RtcPalette.lobbyInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmojiPanel extends StatelessWidget {
+  const _EmojiPanel({required this.onReaction});
+
+  final ValueChanged<String> onReaction;
+
+  static const _reactions = [
+    _ReactionChoice('😊', 'Smile'),
+    _ReactionChoice('🥳', 'Party'),
+    _ReactionChoice('😘', 'Kiss'),
+    _ReactionChoice('🤗', 'Hug'),
+    _ReactionChoice('😎', 'Cool'),
+    _ReactionChoice('🙏', 'Thanks'),
+    _ReactionChoice('👏', 'Clap'),
+    _ReactionChoice('😂', 'Laugh'),
+    _ReactionChoice('😢', 'Sad'),
+    _ReactionChoice('🤩', 'Wow'),
+    _ReactionChoice('👍', 'Like'),
+    _ReactionChoice('💬', 'Chat'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RtcSheetActionTile(
+          icon: Icons.emoji_emotions_outlined,
+          title: 'Free reactions',
+          subtitle: 'Available for every room member.',
+          onTap: null,
+          trailing: const RtcMiniBadge(
+            label: 'Free',
+            color: RtcPalette.lobbyTealDark,
+            subtle: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          crossAxisCount: 4,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            for (final reaction in _reactions)
+              Material(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onReaction(reaction.emoji),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        reaction.emoji,
+                        style: const TextStyle(fontSize: 25, height: 1),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        reaction.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: RtcPalette.lobbyInk,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _YouTubePickerPanel extends StatelessWidget {
+  const _YouTubePickerPanel({
+    required this.connected,
+    required this.opening,
+    required this.activeTab,
+    required this.activeFilter,
+    required this.onConnect,
+    required this.onTabChanged,
+    required this.onFilterChanged,
+    required this.onSearch,
+    required this.onOpen,
+    required this.onSelect,
+  });
+
+  final bool connected;
+  final bool opening;
+  final String activeTab;
+  final String activeFilter;
+  final VoidCallback onConnect;
+  final ValueChanged<String> onTabChanged;
+  final ValueChanged<String> onFilterChanged;
+  final VoidCallback onSearch;
+  final ValueChanged<_YouTubeChoice> onOpen;
+  final ValueChanged<_YouTubeChoice> onSelect;
+
+  static const music = [
+    _YouTubeChoice(
+      title: 'Live Music Room Mix',
+      detail: 'YouTube Music room playlist',
+      asset: 'assets/rtc/rooms/music-room.png',
+      duration: '24:12',
+      url: 'https://music.youtube.com/search?q=Live%20Music%20Room%20Mix',
+      tab: 'music',
+      tags: ['All', 'Music', 'Live'],
+    ),
+    _YouTubeChoice(
+      title: 'Bengali Chill Music Set',
+      detail: 'Bangla music for room listening',
+      asset: 'assets/rtc/rooms/stage-moods.png',
+      duration: '31:20',
+      url: 'https://music.youtube.com/search?q=Bengali%20Chill%20Music%20Set',
+      tab: 'music',
+      tags: ['All', 'Music', 'Bengali'],
+    ),
+    _YouTubeChoice(
+      title: 'Morning Lo-Fi Focus',
+      detail: 'Soft music for chat rooms',
+      asset: 'assets/rtc/rooms/video-room.png',
+      duration: '42:00',
+      url: 'https://music.youtube.com/search?q=Morning%20Lo-Fi%20Focus',
+      tab: 'music',
+      tags: ['All', 'Music'],
+    ),
+  ];
+
+  static const videos = [
+    _YouTubeChoice(
+      title: 'Popular 90s Hit Playlist',
+      detail: 'Music video playlist',
+      asset: 'assets/rtc/rooms/video-room.png',
+      duration: '36:08',
+      url:
+          'https://www.youtube.com/results?search_query=Popular%2090s%20Hit%20Playlist',
+      tab: 'video',
+      tags: ['All', 'Music'],
+    ),
+    _YouTubeChoice(
+      title: 'Live Music Room Mix',
+      detail: 'Room music video collection',
+      asset: 'assets/rtc/rooms/music-room.png',
+      duration: '24:12',
+      url:
+          'https://www.youtube.com/results?search_query=Live%20Music%20Room%20Mix',
+      tab: 'video',
+      tags: ['All', 'Music', 'Live'],
+    ),
+    _YouTubeChoice(
+      title: 'Stage Mood Playlist',
+      detail: 'Background room video',
+      asset: 'assets/rtc/rooms/stage-moods.png',
+      duration: '18:45',
+      url:
+          'https://www.youtube.com/results?search_query=Stage%20Mood%20Playlist',
+      tab: 'video',
+      tags: ['All'],
+    ),
+  ];
+
+  static const filters = ['All', 'Music', 'Bengali', 'Live'];
+
+  @override
+  Widget build(BuildContext context) {
+    final choices = activeTab == 'music' ? music : videos;
+    final visibleChoices = activeFilter == 'All'
+        ? choices
+        : choices
+              .where((choice) => choice.tags.contains(activeFilter))
+              .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _YouTubeTab(
+                label: 'Music',
+                active: activeTab == 'music',
+                onTap: connected ? () => onTabChanged('music') : null,
+              ),
+            ),
+            Expanded(
+              child: _YouTubeTab(
+                label: 'Video',
+                active: activeTab == 'video',
+                onTap: connected ? () => onTabChanged('video') : null,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Search YouTube',
+              onPressed: connected && !opening ? onSearch : null,
+              icon: const Icon(Icons.search_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (!connected) ...[
+          RtcSheetActionTile(
+            icon: Icons.smart_display_outlined,
+            title: 'Connect YouTube',
+            subtitle: 'Enable YouTube Music and video picks for this room.',
+            onTap: onConnect,
+            trailing: const Icon(
+              Icons.link_rounded,
+              color: RtcPalette.lobbyTealDark,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GradientButton(
+            onPressed: onConnect,
+            icon: const Icon(Icons.play_circle_rounded, color: Colors.white),
+            child: const Text('Connect YouTube'),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'After connecting, Music and Video tabs can be used from this room.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: RtcPalette.lobbyMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+        if (connected) ...[
+          Row(
+            children: [
+              const Icon(Icons.smart_display, color: Color(0xFFFF1F1F)),
+              const SizedBox(width: 6),
+              const Text(
+                'YouTube',
+                style: TextStyle(
+                  color: RtcPalette.lobbyInk,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              RtcMiniBadge(
+                label: activeTab == 'music' ? 'Room music' : 'Room video',
+                color: RtcPalette.lobbyTealDark,
+                subtle: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final filter in filters)
+                  _YouTubeFilterChip(
+                    label: filter,
+                    active: activeFilter == filter,
+                    onTap: () => onFilterChanged(filter),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          RtcSheetActionTile(
+            icon: activeTab == 'music'
+                ? Icons.library_music_outlined
+                : Icons.video_library_outlined,
+            title: activeTab == 'music'
+                ? 'Music room-ready tracks'
+                : 'Room video picks',
+            subtitle: opening
+                ? 'Opening YouTube...'
+                : 'Select for the room, or open directly in YouTube.',
+            onTap: null,
+            trailing: RtcMiniBadge(
+              label: '${visibleChoices.length}',
+              color: RtcPalette.lobbyTealDark,
+              subtle: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final video in visibleChoices) ...[
+            _YouTubeVideoTile(
+              video: video,
+              opening: opening,
+              onSelect: onSelect,
+              onOpen: onOpen,
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _YouTubeTab extends StatelessWidget {
+  const _YouTubeTab({required this.label, this.active = false, this.onTap});
+
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      key: ValueKey('youtube-tab-${label.toLowerCase()}'),
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? RtcPalette.lobbyInk : RtcPalette.lobbyMuted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Container(
+                width: 38,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: active ? RtcPalette.lobbyGold : Colors.transparent,
+                  borderRadius: BorderRadius.circular(RtcRadius.pill),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _YouTubeFilterChip extends StatelessWidget {
+  const _YouTubeFilterChip({
+    required this.label,
+    this.active = false,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: active ? RtcPalette.lobbyInk : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(RtcRadius.pill),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: active ? Colors.white : RtcPalette.lobbyInk,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _YouTubeVideoTile extends StatelessWidget {
+  const _YouTubeVideoTile({
+    required this.video,
+    required this.opening,
+    required this.onSelect,
+    required this.onOpen,
+  });
+
+  final _YouTubeChoice video;
+  final bool opening;
+  final ValueChanged<_YouTubeChoice> onSelect;
+  final ValueChanged<_YouTubeChoice> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onSelect(video),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  children: [
+                    Image.asset(
+                      video.asset,
+                      width: 112,
+                      height: 70,
+                      fit: BoxFit.cover,
+                    ),
+                    Positioned(
+                      right: 5,
+                      bottom: 5,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          video.duration,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      video.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbyInk,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      video.detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbyMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Open in YouTube',
+                onPressed: opening ? null : () => onOpen(video),
+                icon: const Icon(
+                  Icons.open_in_new_rounded,
+                  color: RtcPalette.lobbyMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ChatPreview extends StatelessWidget {
   const _ChatPreview({
     required this.room,
+    required this.user,
     required this.joined,
     required this.controller,
     required this.messages,
     required this.loading,
     required this.sending,
     required this.onSend,
-    required this.onSendGift,
+    required this.onSendPicture,
+    required this.onDeleteMessage,
   });
 
   final Room room;
+  final AppUser user;
   final bool joined;
   final TextEditingController controller;
   final List<Map<String, dynamic>> messages;
   final bool loading;
   final bool sending;
   final VoidCallback onSend;
-  final VoidCallback? onSendGift;
+  final VoidCallback onSendPicture;
+  final void Function(Map<String, dynamic> message) onDeleteMessage;
 
   @override
   Widget build(BuildContext context) {
-    final visibleMessages = _recentChatMessages(messages, 6);
+    final visibleMessages = _recentChatMessages(messages, 3);
     final enabled = joined && room.chatEnabled && !sending;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2608,7 +5036,7 @@ class _ChatPreview extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Container(
-          constraints: const BoxConstraints(maxHeight: 240),
+          constraints: const BoxConstraints(maxHeight: 170),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: RtcPalette.stageBg,
@@ -2635,11 +5063,11 @@ class _ChatPreview extends StatelessWidget {
                   )
                 else
                   ...visibleMessages.map(
-                    (message) => RtcChatBubble(
-                      sender: _chatSenderName(message),
-                      message: _chatMessageText(message),
-                      mine: false,
-                      accent: _chatMessageAccent(message),
+                    (message) => _ChatMessageRow(
+                      message: message,
+                      user: user,
+                      sending: sending,
+                      onDelete: onDeleteMessage,
                     ),
                   ),
               ],
@@ -2650,7 +5078,7 @@ class _ChatPreview extends StatelessWidget {
         RtcChatComposer(
           controller: controller,
           onSend: onSend,
-          onGift: onSendGift,
+          onAttach: onSendPicture,
           enabled: enabled,
           hintText: room.chatEnabled
               ? joined
@@ -2663,6 +5091,69 @@ class _ChatPreview extends StatelessWidget {
   }
 }
 
+class _ChatMessageRow extends StatelessWidget {
+  const _ChatMessageRow({
+    required this.message,
+    required this.user,
+    required this.sending,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> message;
+  final AppUser user;
+  final bool sending;
+  final void Function(Map<String, dynamic> message) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final mine = _isOwnChatMessage(message, user);
+    final messageId = _chatMessageId(message);
+    final imageProvider = _chatImageProvider(message);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: mine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          RtcChatBubble(
+            sender: _chatSenderName(message, user),
+            message: _chatMessageText(message),
+            mine: mine,
+            accent: _chatMessageAccent(message),
+          ),
+          if (imageProvider != null) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image(
+                image: imageProvider,
+                width: 184,
+                height: 110,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ],
+          if (mine && messageId != null)
+            TextButton.icon(
+              onPressed: sending ? null : () => onDelete(message),
+              icon: const Icon(Icons.undo_rounded, size: 14),
+              label: const Text('Unsend'),
+              style: TextButton.styleFrom(
+                foregroundColor: RtcPalette.lobbyTealDark,
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RoomOpsPanel extends StatelessWidget {
   const _RoomOpsPanel({
     required this.controls,
@@ -2670,6 +5161,15 @@ class _RoomOpsPanel extends StatelessWidget {
     required this.moderatingUserIds,
     required this.stageActionIds,
     required this.onRefresh,
+    required this.onChangeMicCount,
+    required this.onToggleRoomLock,
+    required this.onChangePassword,
+    required this.onChangeTheme,
+    required this.onToggleSeat,
+    required this.onToggleAllSeats,
+    required this.onAssignAdmin,
+    required this.onRemoveRole,
+    required this.onClearComments,
     required this.onModerate,
     required this.onApplyStagePermission,
   });
@@ -2679,6 +5179,15 @@ class _RoomOpsPanel extends StatelessWidget {
   final Set<int> moderatingUserIds;
   final Set<int> stageActionIds;
   final VoidCallback onRefresh;
+  final VoidCallback onChangeMicCount;
+  final VoidCallback onToggleRoomLock;
+  final VoidCallback onChangePassword;
+  final VoidCallback onChangeTheme;
+  final void Function(Map<String, dynamic> seat) onToggleSeat;
+  final ValueChanged<bool> onToggleAllSeats;
+  final VoidCallback onAssignAdmin;
+  final void Function(Map<String, dynamic> role) onRemoveRole;
+  final VoidCallback onClearComments;
   final void Function(Map<String, dynamic> participant, String action)
   onModerate;
   final void Function(Map<String, dynamic> request, bool approve)
@@ -2703,8 +5212,8 @@ class _RoomOpsPanel extends StatelessWidget {
             ),
           RtcSheetActionTile(
             icon: Icons.admin_panel_settings_outlined,
-            title: 'Room controls',
-            subtitle: 'Available to the room owner, admins, and moderators.',
+            title: 'Room admin controls',
+            subtitle: 'Available to room owners and room admins.',
             onTap: loading ? null : onRefresh,
             trailing: Icon(
               loading ? Icons.hourglass_top_rounded : Icons.refresh_rounded,
@@ -2717,25 +5226,57 @@ class _RoomOpsPanel extends StatelessWidget {
 
     final participants = _mapList(data['participants']);
     final stageRequests = _mapList(data['stage_requests']);
-    final role = data['role']?.toString() ?? 'member';
+    final seats = _mapList(data['seats']);
+    final roles = _mapList(data['roles']);
+    final room = _mapValue(data['room']);
+    final package = _mapValue(data['package']);
+    final seatSummary = _mapValue(data['seat_summary']);
+    final role = _roomRoleLabel(data['role']);
+    final micCount = _intValue(room?['max_mic_count']) ?? seats.length;
+    final packageName = package?['plan_name']?.toString() ?? 'Current package';
+    final lifecycle = package?['room_lifecycle']?.toString() ?? 'permanent';
+    final maxAdmins = _intValue(package?['max_room_admins']);
+    final assignedAdmins =
+        _intValue(package?['assigned_room_admins']) ?? roles.length;
+    final remainingAdminSlots = _intValue(
+      package?['remaining_room_admin_slots'],
+    );
+    final maxMicCount = _intValue(package?['max_mic_count']);
+    final privacy = room?['privacy_type']?.toString() ?? 'public';
+    final theme = room?['theme']?.toString() ?? 'default';
+    final lockedSeatCount =
+        _intValue(seatSummary?['locked_count']) ??
+        seats.where((seat) => _signalBool(seat['locked'])).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            RtcMiniBadge(
-              label: role,
-              color: RtcPalette.lobbyTealDark,
-              subtle: true,
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  RtcMiniBadge(
+                    label: role,
+                    color: RtcPalette.lobbyTealDark,
+                    subtle: true,
+                  ),
+                  RtcMiniBadge(
+                    label:
+                        '${participants.length} active participant${participants.length == 1 ? '' : 's'}',
+                    color: RtcPalette.lobbySoft,
+                    subtle: true,
+                  ),
+                  RtcMiniBadge(
+                    label: packageName,
+                    color: RtcPalette.lobbyMint,
+                    subtle: true,
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 8),
-            RtcMiniBadge(
-              label:
-                  '${participants.length} active participant${participants.length == 1 ? '' : 's'}',
-              color: RtcPalette.lobbySoft,
-              subtle: true,
-            ),
-            const Spacer(),
             if (loading)
               const SizedBox.square(
                 dimension: 18,
@@ -2752,6 +5293,106 @@ class _RoomOpsPanel extends StatelessWidget {
               ),
           ],
         ),
+        const SizedBox(height: 8),
+        RtcSheetActionTile(
+          icon: Icons.mic_external_on_outlined,
+          title: 'Number of Mic',
+          subtitle: maxMicCount == null
+              ? '$micCount mic seat${micCount == 1 ? '' : 's'} in this $lifecycle room.'
+              : '$micCount of $maxMicCount mic seats in this $lifecycle room.',
+          onTap: loading ? null : onChangeMicCount,
+          trailing: RtcMiniBadge(
+            label: '$micCount',
+            color: RtcPalette.lobbyTealDark,
+            subtle: true,
+          ),
+        ),
+        RtcSheetActionTile(
+          icon: privacy == 'password'
+              ? Icons.lock_open_rounded
+              : Icons.lock_outline_rounded,
+          title: privacy == 'password' ? 'Unlock' : 'Lock room',
+          subtitle: privacy == 'password'
+              ? 'Remove the room password gate.'
+              : 'Protect this room with a password.',
+          onTap: loading ? null : onToggleRoomLock,
+        ),
+        RtcSheetActionTile(
+          icon: Icons.key_rounded,
+          title: 'Password',
+          subtitle: privacy == 'password'
+              ? 'Change the current room password.'
+              : 'Set a password to make the room locked.',
+          onTap: loading ? null : onChangePassword,
+        ),
+        RtcSheetActionTile(
+          icon: Icons.palette_outlined,
+          title: 'Theme',
+          subtitle: theme == 'default' ? 'Choose room theme.' : theme,
+          onTap: loading ? null : onChangeTheme,
+        ),
+        RtcSheetActionTile(
+          icon: Icons.admin_panel_settings_outlined,
+          title: 'Admin',
+          subtitle: maxAdmins == null || maxAdmins == 0
+              ? '$assignedAdmins room admin/moderator${assignedAdmins == 1 ? '' : 's'} assigned.'
+              : '$assignedAdmins of $maxAdmins admin slots used${remainingAdminSlots == null ? '' : ' · $remainingAdminSlots open'}.',
+          onTap: loading ? null : onAssignAdmin,
+        ),
+        RtcSheetActionTile(
+          icon: Icons.delete_sweep_outlined,
+          title: 'Clear comments history',
+          subtitle: 'Remove visible comments without deleting the room.',
+          destructive: true,
+          onTap: loading ? null : onClearComments,
+        ),
+        const SizedBox(height: 8),
+        RtcSheetActionTile(
+          icon: Icons.event_seat_outlined,
+          title: 'Mic seat locks',
+          subtitle:
+              '$lockedSeatCount locked · ${seats.length - lockedSeatCount} open',
+          onTap: null,
+          trailing: const Icon(
+            Icons.lock_outline_rounded,
+            color: RtcPalette.lobbyTealDark,
+          ),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            RtcCompactActionButton(
+              label: 'Lock All',
+              icon: Icons.lock_rounded,
+              onPressed: loading ? null : () => onToggleAllSeats(true),
+            ),
+            RtcCompactActionButton(
+              label: 'Unlock All',
+              icon: Icons.lock_open_rounded,
+              onPressed: loading ? null : () => onToggleAllSeats(false),
+            ),
+            for (final seat in seats)
+              RtcCompactActionButton(
+                label:
+                    'No.${_intValue(seat['seat_number']) ?? seats.indexOf(seat) + 1}',
+                icon: _signalBool(seat['locked'])
+                    ? Icons.lock_rounded
+                    : Icons.lock_open_rounded,
+                onPressed: loading ? null : () => onToggleSeat(seat),
+              ),
+          ],
+        ),
+        if (roles.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...roles.map(
+            (roomRole) => _RoomRoleTile(
+              role: roomRole,
+              loading: loading,
+              onRemove: onRemoveRole,
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         if (stageRequests.isNotEmpty) ...[
           RtcSheetActionTile(
@@ -2776,12 +5417,10 @@ class _RoomOpsPanel extends StatelessWidget {
           const SizedBox(height: 8),
         ],
         if (participants.isEmpty)
-          const Text(
-            'No active participants yet.',
-            style: TextStyle(
-              color: RtcPalette.lobbySoft,
-              fontWeight: FontWeight.w800,
-            ),
+          const RtcInlineNotice(
+            icon: Icons.groups_2_outlined,
+            title: 'No active participants yet.',
+            detail: 'People will appear here after they join the room.',
           )
         else
           ...participants.map(
@@ -2792,6 +5431,42 @@ class _RoomOpsPanel extends StatelessWidget {
               ),
               onModerate: onModerate,
             ),
+          ),
+      ],
+    );
+  }
+}
+
+class _RoomRoleTile extends StatelessWidget {
+  const _RoomRoleTile({
+    required this.role,
+    required this.loading,
+    required this.onRemove,
+  });
+
+  final Map<String, dynamic> role;
+  final bool loading;
+  final void Function(Map<String, dynamic> role) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final roleName = _roomRoleLabel(role['role']);
+    final name =
+        role['user_name']?.toString() ??
+        role['user_email']?.toString() ??
+        'User #${role['user_id']}';
+    return RtcParticipantTile(
+      label: name,
+      detail: roleName,
+      image: _opsParticipantAvatar(role),
+      locked: role['role']?.toString() == 'owner',
+      actions: [
+        if (role['role']?.toString() != 'owner')
+          RtcCompactActionButton(
+            label: 'Remove',
+            icon: Icons.remove_circle_outline,
+            destructive: true,
+            onPressed: loading ? null : () => onRemove(role),
           ),
       ],
     );
@@ -2813,104 +5488,37 @@ class _OpsParticipantTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canModerate = _signalBool(participant['can_moderate']);
-    final role = participant['role_in_room']?.toString() ?? 'end_user';
+    final role = _roomRoleLabel(participant['role_in_room']);
     final enabled = canModerate && !busy;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        border: Border.all(color: RtcPalette.lobbyLine),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              RtcAvatarToken(
-                label: _opsParticipantName(participant),
-                image: _opsParticipantAvatar(participant),
-                size: 34,
-                borderRadius: RtcRadius.pill,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _opsParticipantName(participant),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: RtcPalette.lobbyInk,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$role · ${_signalBool(participant['mic_enabled']) ? 'mic on' : 'mic off'} · ${_signalBool(participant['camera_enabled']) ? 'cam on' : 'cam off'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: RtcPalette.lobbySoft,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (busy)
-                const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (!canModerate)
-                const Icon(
-                  Icons.lock_outline_rounded,
-                  color: RtcPalette.lobbyMuted,
-                  size: 18,
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _OpsActionButton(
-                label: 'Mute',
-                onPressed: enabled
-                    ? () => onModerate(participant, 'mute_mic')
-                    : null,
-              ),
-              _OpsActionButton(
-                label: 'Camera',
-                onPressed: enabled
-                    ? () => onModerate(participant, 'disable_camera')
-                    : null,
-              ),
-              _OpsActionButton(
-                label: 'Kick',
-                destructive: true,
-                onPressed: enabled
-                    ? () => onModerate(participant, 'kick')
-                    : null,
-              ),
-              _OpsActionButton(
-                label: 'Ban',
-                destructive: true,
-                onPressed: enabled
-                    ? () => onModerate(participant, 'ban')
-                    : null,
-              ),
-            ],
-          ),
-        ],
-      ),
+    return RtcParticipantTile(
+      label: _opsParticipantName(participant),
+      detail:
+          '$role · ${_signalBool(participant['mic_enabled']) ? 'mic on' : 'mic off'} · ${_signalBool(participant['camera_enabled']) ? 'cam on' : 'cam off'}',
+      image: _opsParticipantAvatar(participant),
+      busy: busy,
+      locked: !canModerate,
+      actions: [
+        RtcCompactActionButton(
+          label: 'Mute',
+          onPressed: enabled ? () => onModerate(participant, 'mute_mic') : null,
+        ),
+        RtcCompactActionButton(
+          label: 'Camera',
+          onPressed: enabled
+              ? () => onModerate(participant, 'disable_camera')
+              : null,
+        ),
+        RtcCompactActionButton(
+          label: 'Kick',
+          destructive: true,
+          onPressed: enabled ? () => onModerate(participant, 'kick') : null,
+        ),
+        RtcCompactActionButton(
+          label: 'Ban',
+          destructive: true,
+          onPressed: enabled ? () => onModerate(participant, 'ban') : null,
+        ),
+      ],
     );
   }
 }
@@ -2994,11 +5602,11 @@ class _StageRequestTile extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _OpsActionButton(
+              RtcCompactActionButton(
                 label: 'Approve',
                 onPressed: busy ? null : () => onApply(request, true),
               ),
-              _OpsActionButton(
+              RtcCompactActionButton(
                 label: 'Decline',
                 destructive: true,
                 onPressed: busy ? null : () => onApply(request, false),
@@ -3011,167 +5619,38 @@ class _StageRequestTile extends StatelessWidget {
   }
 }
 
-class _OpsActionButton extends StatelessWidget {
-  const _OpsActionButton({
-    required this.label,
-    required this.onPressed,
-    this.destructive = false,
-  });
-
-  final String label;
-  final VoidCallback? onPressed;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = destructive ? RtcPalette.red : RtcPalette.lobbyTealDark;
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: color,
-        side: BorderSide(color: color.withValues(alpha: 0.3)),
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-      ),
-      child: Text(label),
-    );
-  }
-}
-
-class _RoomInfoPanel extends StatelessWidget {
-  const _RoomInfoPanel({
-    required this.room,
-    required this.peers,
-    required this.joined,
-    required this.rtcMode,
-  });
-
-  final Room room;
-  final List<Map<String, dynamic>> peers;
-  final bool joined;
-  final String rtcMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassPanel(
-      color: RtcPalette.stagePanel,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          RtcSectionHeader(
-            eyebrow: 'LIVE ROOM',
-            title: 'On Stage',
-            detail: room.description.isEmpty
-                ? room.displayHost
-                : room.description,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              MetricChip(label: 'Signal', value: joined ? 'Connected' : 'Idle'),
-              MetricChip(label: 'Mode', value: _modeLabel(rtcMode)),
-              MetricChip(label: 'Host', value: room.displayHost),
-              MetricChip(label: 'Region', value: room.displayRegion),
-              MetricChip(
-                label: 'People',
-                value: '${peers.length + (joined ? 1 : 0)}',
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: room.featureTags
-                .map((tag) => _TinyStatusChip(label: tag, active: true))
-                .toList(),
-          ),
-          const SizedBox(height: 14),
-          if (peers.isEmpty)
-            const Text(
-              'No other connected peers yet.',
-              style: TextStyle(
-                color: RtcPalette.muted,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else
-            ...peers.map(
-              (peer) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: StatusPill(
-                  label: _peerName(peer),
-                  detail:
-                      '${_signalBool(peer['micEnabled'], true) ? 'mic on' : 'mic off'} · ${_signalBool(peer['cameraEnabled'], false) ? 'cam on' : 'cam off'}',
-                  state: RtcStatusState.good,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TinyStatusChip extends StatelessWidget {
-  const _TinyStatusChip({required this.label, required this.active, this.icon});
-
-  final String label;
-  final bool active;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? RtcPalette.hoverBg : RtcPalette.panelGlass,
-        border: Border.all(
-          color: active ? RtcPalette.hoverBorder : RtcPalette.line,
-        ),
-        borderRadius: BorderRadius.circular(RtcRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(
-              icon,
-              size: 13,
-              color: active ? RtcPalette.mint : RtcPalette.muted,
-            ),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              color: active ? RtcPalette.text : RtcPalette.muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ConnectStep {
-  const _ConnectStep({required this.value, required this.label});
-
-  final String value;
-  final String label;
-}
-
 class _ToolChip {
   const _ToolChip(this.label, this.value);
 
   final String label;
   final String value;
+}
+
+class _ReactionChoice {
+  const _ReactionChoice(this.emoji, this.label);
+
+  final String emoji;
+  final String label;
+}
+
+class _YouTubeChoice {
+  const _YouTubeChoice({
+    required this.title,
+    required this.detail,
+    required this.asset,
+    required this.duration,
+    required this.url,
+    required this.tab,
+    this.tags = const ['All'],
+  });
+
+  final String title;
+  final String detail;
+  final String asset;
+  final String duration;
+  final String url;
+  final String tab;
+  final List<String> tags;
 }
 
 List<Map<String, dynamic>> _recentChatMessages(
@@ -3192,6 +5671,17 @@ List<Map<String, dynamic>> _mapList(Object? value) {
             .map((item) => Map<String, dynamic>.from(item))
             .toList()
       : <Map<String, dynamic>>[];
+}
+
+List<int> _intList(Object? value) {
+  if (value is! List) return const [];
+  return value
+      .map(_intValue)
+      .whereType<int>()
+      .where((count) => count > 0)
+      .toSet()
+      .toList()
+    ..sort();
 }
 
 Map<String, dynamic>? _mapValue(Object? value) {
@@ -3343,11 +5833,7 @@ ImageProvider? _opsParticipantAvatar(Map<String, dynamic> participant) {
       (participant['user_avatar_url'] ?? participant['userAvatarUrl'] ?? '')
           .toString()
           .trim();
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    return NetworkImage(value);
-  }
-  if (value.startsWith('assets/')) return AssetImage(value);
-  return null;
+  return RtcAssets.imageProviderFromValue(value);
 }
 
 String _moderationPastTense(String action) {
@@ -3357,6 +5843,18 @@ String _moderationPastTense(String action) {
     'kick' => 'removed',
     'ban' => 'banned',
     _ => 'moderated',
+  };
+}
+
+String _roomRoleLabel(Object? role) {
+  return switch (role?.toString()) {
+    'owner' => 'Room owner',
+    'admin' || 'room_admin' => 'Room admin',
+    'moderator' => 'Room moderator',
+    'speaker' => 'Speaker',
+    'end_user' || 'audience' => 'Audience',
+    final value when value != null && value.trim().isNotEmpty => value,
+    _ => 'Participant',
   };
 }
 
@@ -3389,7 +5887,7 @@ String _chatMessageText(Map<String, dynamic> message) {
       .toString()
       .trim();
   return switch (type) {
-    'gift' => body.isEmpty ? 'sent a gift' : '$body gift sent',
+    'gift' => body.isEmpty ? 'sent a reaction' : body,
     'image' => body.isEmpty ? 'sent a photo' : body,
     'voice' => body.isEmpty ? 'sent a voice message' : body,
     'system' => body.isEmpty ? 'System message' : body,
@@ -3397,30 +5895,63 @@ String _chatMessageText(Map<String, dynamic> message) {
   };
 }
 
+ImageProvider? _chatImageProvider(Map<String, dynamic> message) {
+  final type = (message['message_type'] ?? message['messageType'] ?? 'text')
+      .toString();
+  if (type != 'image') return null;
+  final mediaUrl = (message['media_url'] ?? message['mediaUrl'] ?? '')
+      .toString()
+      .trim();
+  if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+    return NetworkImage(mediaUrl);
+  }
+  if (mediaUrl.startsWith('assets/')) return AssetImage(mediaUrl);
+  if (mediaUrl.startsWith('data:image/')) {
+    final commaIndex = mediaUrl.indexOf(',');
+    if (commaIndex > 0) {
+      try {
+        return MemoryImage(base64Decode(mediaUrl.substring(commaIndex + 1)));
+      } on FormatException {
+        return const AssetImage('assets/rtc/rooms/video-room.png');
+      }
+    }
+  }
+  return const AssetImage('assets/rtc/rooms/video-room.png');
+}
+
+String _imageMimeType(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
 Color _chatMessageAccent(Map<String, dynamic> message) {
   final type = (message['message_type'] ?? message['messageType'] ?? 'text')
       .toString();
   return switch (type) {
-    'gift' => RtcPalette.lobbyGold,
     'system' => RtcPalette.amber,
     'image' || 'voice' => RtcPalette.sky,
     _ => RtcPalette.chatPurple,
   };
 }
 
-const _connectSteps = [
-  _ConnectStep(value: 'ready', label: 'Ready'),
-  _ConnectStep(value: 'media', label: 'Media'),
-  _ConnectStep(value: 'backend', label: 'Room'),
-  _ConnectStep(value: 'signaling', label: 'Connect'),
-  _ConnectStep(value: 'connected', label: 'Live'),
-];
-
 String _modeLabel(String rtcMode) => rtcMode == 'video' ? 'Video' : 'Audio';
 
 String _peerName(Map<String, dynamic> peer) {
-  return (peer['userName'] ?? peer['name'] ?? peer['userId'] ?? 'Peer')
+  return (peer['userName'] ??
+          peer['user_name'] ??
+          peer['name'] ??
+          peer['userId'] ??
+          peer['user_id'] ??
+          'Peer')
       .toString();
+}
+
+String? _peerSocketId(Map<String, dynamic> peer) {
+  final text = (peer['socketId'] ?? peer['socket_id'])?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
 }
 
 String _initials(String value) {
@@ -3447,7 +5978,9 @@ bool _signalBool(Object? value, [bool fallback = false]) {
 String _toolDetail(String panel, Room room, bool joined) {
   return switch (panel) {
     'access' => 'Private and password room entry.',
-    'audio' => 'Voice style and sound controls.',
+    'audio' => 'Music and video listening volume.',
+    'emoji' => 'Quick room reactions.',
+    'youtube' => 'Select music or video for this room.',
     'beauty' => 'Camera filters and background options.',
     'screen' =>
       room.screenShareEnabled
@@ -3464,6 +5997,8 @@ String _toolDetail(String panel, Room room, bool joined) {
 IconData _toolPanelIcon(String panel) {
   return switch (panel) {
     'audio' => Icons.graphic_eq_rounded,
+    'emoji' => Icons.emoji_emotions_outlined,
+    'youtube' => Icons.smart_display_outlined,
     'beauty' => Icons.auto_awesome_rounded,
     'screen' => Icons.screen_share_outlined,
     'ops' => Icons.admin_panel_settings_outlined,
@@ -3473,12 +6008,24 @@ IconData _toolPanelIcon(String panel) {
   };
 }
 
+bool _supportsYouTubeRoom(Room room) {
+  return room.supportsVideo ||
+      musicRoomTypes.contains(room.roomType) ||
+      liveRoomTypes.contains(room.roomType);
+}
+
 List<_ToolChip> _toolChips(String panel, Room room) {
   return switch (panel) {
     'audio' => const [
       _ToolChip('Noise', 'Ready'),
       _ToolChip('Voice', 'Natural'),
       _ToolChip('Mode', 'Mic stage'),
+    ],
+    'emoji' => const [
+      _ToolChip('Smile', 'Ready'),
+      _ToolChip('Love', 'Ready'),
+      _ToolChip('Clap', 'Ready'),
+      _ToolChip('Wow', 'Ready'),
     ],
     'beauty' => const [
       _ToolChip('Filter', 'Normal'),
@@ -3493,7 +6040,7 @@ List<_ToolChip> _toolChips(String panel, Room room) {
     'guard' => [
       _ToolChip('Safety', room.aiSecurityEnabled ? 'Active' : 'Off'),
       _ToolChip('Chat', room.chatEnabled ? 'On' : 'Off'),
-      _ToolChip('Gifts', room.giftEnabled ? 'On' : 'Off'),
+      _ToolChip('Stage', 'Native RTC'),
     ],
     _ => const [],
   };

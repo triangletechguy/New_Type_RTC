@@ -12,7 +12,7 @@ frontend in a WebView.
 - The mobile app has no WebView frontend dependency.
 - Flutter calls the rtc-enterprise backend APIs directly through `API_BASE_URL`.
 - Flutter connects to RTC signaling directly through `SIGNALING_URL`.
-- Login, signup, rooms, live room, profile, admin, and SDK docs have native
+- Login, signup, rooms, live room, profile, and admin have native
   Flutter screens.
 - The native Flutter UI matches the web/mobile reference for layout, colors,
   actions, loading states, empty states, and error states.
@@ -32,10 +32,6 @@ frontend in a WebView.
 
 - [WEB_REFERENCE.md](WEB_REFERENCE.md) freezes the web/mobile app as the native
   Flutter parity target.
-- [FLUTTER_AUDIT.md](FLUTTER_AUDIT.md) records the current native Flutter app
-  state and parity gaps.
-- [FEATURE_MAP.md](FEATURE_MAP.md) maps each web feature to its native Flutter
-  owner, status, API needs, and acceptance criteria.
 - [NATIVE_ROUTES.md](NATIVE_ROUTES.md) records the native route registry and
   routing rules.
 - [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) records the native Flutter UI tokens and
@@ -64,6 +60,6 @@ frontend in a WebView.
 - [x] 15. Build native live room screen.
 - [x] 16. Connect native RTC signaling.
 - [x] 17. Build native profile and settings.
-- [x] 18. Build native admin and SDK screens.
+- [x] 18. Build native service console screens.
 - [x] 19. Test screen-by-screen against web.
 - [x] 20. Remove WebView dependency.

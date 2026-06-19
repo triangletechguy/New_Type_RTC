@@ -437,9 +437,6 @@
   .buzzcast-feedback-row,
   .buzzcast-choice-grid,
   .buzzcast-toggle-grid,
-  .sdk-form-grid,
-  .sdk-reference-grid,
-  .sdk-token-grid,
   .admin-readiness-grid,
   .admin-account-grid,
   .company-directory-grid,
@@ -449,9 +446,7 @@
   }
 
   .admin-table-scroll,
-  .admin-room-table,
-  .sdk-code-card pre,
-  .sdk-config-card pre {
+  .admin-room-table {
     max-width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -477,15 +472,12 @@
     overflow-x: hidden !important;
   }
 
-  .admin-dashboard-view,
-  .sdk-view,
-  .sdk-sample-layout {
+  .admin-dashboard-view {
     width: 100% !important;
     max-width: 100% !important;
   }
 
   .admin-dashboard-view .page-header,
-  .sdk-header,
   .admin-header-actions,
   .admin-panel-header,
   .admin-scope-summary,
@@ -498,8 +490,7 @@
   }
 
   .admin-dashboard-tabs,
-  .admin-section-tabs,
-  .sdk-tab-row {
+  .admin-section-tabs {
     width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
@@ -507,8 +498,7 @@
   }
 
   .admin-dashboard-tabs::-webkit-scrollbar,
-  .admin-section-tabs::-webkit-scrollbar,
-  .sdk-tab-row::-webkit-scrollbar {
+  .admin-section-tabs::-webkit-scrollbar {
     display: none;
   }
 }

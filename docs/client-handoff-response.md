@@ -1,15 +1,15 @@
 # Client Handoff Response
 
-Use this when a client asks whether the RTC is AI-generated, unorganized, or missing a Flutter SDK.
+Use this when a client asks whether the RTC is AI-generated or unorganized.
 
 ```text
 This is not a random AI-generated UI. It is a browser-based WebRTC platform organized into clear layers:
 
-1. React web frontend for login, room list, live room UI, mic/camera controls, chat, and admin views.
+1. React web frontend for login, room list, live room UI, mic/camera controls, chat, and service admin views.
 2. Browser media layer for camera and microphone permission/capture.
 3. Native WebRTC peer connection layer using RTCPeerConnection for audio/video.
 4. Socket.IO signaling server for room presence, offer/answer exchange, ICE candidates, chat, and media state events.
-5. Express backend APIs for auth, rooms, join/leave sessions, client-company API, admin, and RTC config.
+5. Express backend APIs for auth, rooms, join/leave sessions, client-company API, service admin, and RTC config.
 6. MySQL persistence for users, rooms, sessions, participants, chat, events, tenants, and usage.
 7. STUN/TURN configuration for production WebRTC reliability.
 
@@ -40,4 +40,3 @@ Flutter is not part of the current web delivery. Flutter would be a separate nat
 6. Frontend connects to Socket.IO signaling.
 7. Browsers exchange WebRTC offer/answer/ICE candidates.
 8. Audio/video flows peer-to-peer where possible, or through TURN when direct connection is blocked.
-

@@ -374,6 +374,22 @@ CREATE TABLE IF NOT EXISTS room_roles (
     CONSTRAINT fk_room_roles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS room_seats (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    room_id BIGINT UNSIGNED NOT NULL,
+    seat_number INT NOT NULL,
+    locked BOOLEAN DEFAULT FALSE,
+    locked_by BIGINT UNSIGNED NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_room_seat_number (room_id, seat_number),
+    INDEX idx_room_seats_room_locked (room_id, locked),
+    CONSTRAINT fk_room_seats_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_seats_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_room_seats_locked_by FOREIGN KEY (locked_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS room_bans (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     tenant_id BIGINT UNSIGNED NOT NULL,
@@ -693,6 +709,7 @@ INSERT INTO service_plans (
     max_room_admins,
     max_rooms,
     max_apps,
+    max_participants_per_room,
     included_features,
     status
 )
@@ -707,7 +724,8 @@ VALUES
     15,
     25,
     1,
-    JSON_ARRAY('normal_audio_room', 'normal_video_group_chat', 'group_voice_chat', 'one_to_one_voice_calling', 'one_to_one_video_calling', 'message_chat', 'room_roles', 'private_room_password', 'rtc_connection_indicator'),
+    15,
+    JSON_ARRAY('normal_audio_room', 'normal_video_group_chat', 'group_voice_chat', 'one_to_one_voice_calling', 'one_to_one_video_calling', 'message_chat', 'picture_message', 'room_roles', 'mic_layout_picker', 'mic_seat_locks', 'private_room_password', 'rtc_connection_indicator'),
     'active'
 ),
 (
@@ -720,24 +738,37 @@ VALUES
     20,
     120,
     3,
-    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'admin_panel_analytics', 'rtc_connection_indicator'),
+    20,
+    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'audio_player', 'youtube_player', 'one_to_one_voice_calling', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'picture_message', 'premium_reactions', 'room_roles', 'mic_layout_picker', 'mic_seat_locks', 'private_room_password', 'room_theme', 'room_share', 'admin_panel_analytics', 'rtc_connection_indicator'),
     'active'
 ),
 (
     'enterprise',
     'Enterprise RTC',
-    'Full multi-app RTC service with AI security, SDK controls, client-company billing analytics, moderation history, and global monitoring.',
+    'Full multi-app RTC service with AI security, app access controls, client-company billing analytics, moderation history, and global monitoring.',
     1999.00,
     0.0060,
     500000,
-    50,
+    25,
     500,
     10,
-    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'one_to_one_voice_calling', 'ai_security_audio', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'ai_security_video', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'room_roles', 'private_room_password', 'room_theme', 'room_share', 'comment_reply', 'company_billing', 'admin_panel_analytics', 'rtc_connection_indicator'),
+    25,
+    JSON_ARRAY('normal_audio_room', 'youtube_audio_room', 'noise_cancellation', 'voice_changer', 'audio_player', 'youtube_player', 'one_to_one_voice_calling', 'ai_security_audio', 'group_voice_chat', 'normal_video_group_chat', 'live_video_pk', 'ai_security_video', 'one_to_one_video_calling', 'solo_video_live', 'screen_share', 'video_filter_beauty', 'message_chat', 'picture_message', 'premium_reactions', 'room_roles', 'mic_layout_picker', 'mic_seat_locks', 'private_room_password', 'room_theme', 'room_share', 'comment_reply', 'company_billing', 'admin_panel_analytics', 'rtc_connection_indicator'),
     'active'
 )
 ON DUPLICATE KEY UPDATE
-    code = VALUES(code);
+    name = VALUES(name),
+    description = VALUES(description),
+    monthly_base_price = VALUES(monthly_base_price),
+    minute_rate = VALUES(minute_rate),
+    monthly_minute_allowance = VALUES(monthly_minute_allowance),
+    max_room_admins = VALUES(max_room_admins),
+    max_rooms = VALUES(max_rooms),
+    max_apps = VALUES(max_apps),
+    max_participants_per_room = VALUES(max_participants_per_room),
+    included_features = VALUES(included_features),
+    status = VALUES(status),
+    updated_at = NOW();
 
 SET @growth_plan_id := (
     SELECT id
@@ -803,9 +834,9 @@ INSERT IGNORE INTO roles (id, name, label) VALUES
 (1, 'end_user', 'End User'),
 (2, 'room_owner', 'Room Owner'),
 (3, 'moderator', 'Moderator'),
-(4, 'client_admin', 'Client Admin'),
-(5, 'super_admin', 'Platform Super Admin'),
-(6, 'sdk_developer', 'SDK Developer');
+(4, 'client_admin', 'Company Service Admin'),
+(5, 'super_admin', 'Platform Service Admin'),
+(6, 'app_access_user', 'App Access User');
 
 INSERT INTO users (
     tenant_id,
@@ -819,7 +850,7 @@ INSERT INTO users (
 )
 VALUES (
     1,
-    'TalkEachOther Super Admin',
+    'TalkEachOther Platform Service Admin',
     'admin@gmail.com',
     NULL,
     '$2b$10$oKTKn19/ZYmFFN4l4hGmy.PmxCbjKGlTbvrThSTvVeLU/zkVfTFim',
@@ -845,7 +876,7 @@ INSERT INTO users (
 )
 VALUES (
     1,
-    'Accenture Admin',
+    'Accenture Service Admin',
     'admin@accenture.com',
     NULL,
     '$2b$10$oKTKn19/ZYmFFN4l4hGmy.PmxCbjKGlTbvrThSTvVeLU/zkVfTFim',

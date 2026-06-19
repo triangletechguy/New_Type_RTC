@@ -9,7 +9,6 @@ import 'screens/login_screen.dart';
 import 'screens/native_route_error_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/room_list_screen.dart';
-import 'screens/sdk_docs_screen.dart';
 import 'services/api_client.dart';
 import 'ui/rtc_mobile_ui.dart';
 
@@ -145,23 +144,8 @@ class RtcEnterpriseApp extends StatelessWidget {
         }
         return _routeError(
           settings,
-          'Admin route requires a client_admin or super_admin user.',
+          'Service console route requires a client_admin or super_admin user.',
         );
-      case AppRoutes.sdk:
-        final args = settings.arguments;
-        if (args is SdkRouteArgs) {
-          return AppRoutes.page<void>(
-            name: AppRoutes.sdk,
-            arguments: args,
-            child: Builder(
-              builder: (context) => SdkDocsScreen(
-                api: args.api,
-                onBack: () => Navigator.of(context).pop(),
-              ),
-            ),
-          );
-        }
-        return _routeError(settings, 'SDK docs route needs API access.');
       case AppRoutes.settings:
         final args = settings.arguments;
         if (args is ProfileRouteArgs) {
@@ -339,14 +323,6 @@ class _NativeRtcShellState extends State<NativeRtcShell> {
     );
   }
 
-  void _openSdk() {
-    final navigator = Navigator.of(context);
-    navigator.pushNamed<void>(
-      AppRoutes.sdk,
-      arguments: SdkRouteArgs(api: _api),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_booting) return _BootScreen(status: _bootStatus);
@@ -367,7 +343,6 @@ class _NativeRtcShellState extends State<NativeRtcShell> {
       onOpenProfile: _openProfile,
       onOpenSettings: _openSettings,
       onOpenAdmin: user.canUseAdminDashboard ? _openAdmin : null,
-      onOpenSdk: _openSdk,
     );
   }
 }

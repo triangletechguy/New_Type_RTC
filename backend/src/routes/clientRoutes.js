@@ -3,13 +3,14 @@ const bcrypt = require('bcryptjs')
 const crypto = require('crypto')
 const jwt = require('jsonwebtoken')
 const { query, transaction } = require('../config/db')
+const { isTemporaryVideoRoom } = require('../services/rtcSessionLifecycle')
 
 const router = express.Router()
 const EXTERNAL_USER_STATUSES = new Set(['active', 'inactive', 'banned'])
 const RTC_ROLES = new Set(['audience', 'publisher', 'moderator', 'admin', 'owner'])
 const ROOM_TYPES = ['audio', 'youtube_audio', 'one_to_one_audio', 'video', 'one_to_one_video', 'group_audio', 'group_video', 'solo_live', 'pk_live']
 const CLIENT_ROOM_TYPES = new Set(ROOM_TYPES)
-const CLIENT_VIDEO_ROOM_TYPES = new Set(ROOM_TYPES)
+const CLIENT_VIDEO_ROOM_TYPES = new Set(['video', 'one_to_one_video', 'group_video', 'solo_live', 'pk_live'])
 const CLIENT_ONE_TO_ONE_ROOM_TYPES = new Set(['one_to_one_audio', 'one_to_one_video'])
 const CLIENT_PRIVACY_TYPES = new Set(['public', 'private', 'password'])
 const CLIENT_ROOM_STATUSES = new Set(['active', 'inactive', 'ended'])
@@ -1809,6 +1810,8 @@ async function endClientRtcSession(clientApp, clientTenant, payload) {
     const activeCount = Number(activeCountRows[0]?.active_count || 0)
     const totalParticipantMinutes = Number((Number(totalRows[0]?.total_seconds || 0) / 60).toFixed(2))
     let roomMinutes = 0
+    let roomEnded = false
+    let roomStatus = room.status
 
     if (activeCount === 0) {
       const [sessionDurationRows] = await connection.execute(
@@ -1828,6 +1831,21 @@ async function endClientRtcSession(clientApp, clientTenant, payload) {
         `,
         [totalParticipantMinutes, participant.session_id]
       )
+
+      if (isTemporaryVideoRoom(room.room_type)) {
+        const [roomUpdate] = await connection.execute(
+          `
+          UPDATE rooms
+          SET status = 'ended',
+              updated_at = NOW()
+          WHERE id = ?
+          AND status = 'active'
+          `,
+          [room.id]
+        )
+        roomEnded = roomUpdate.affectedRows > 0
+        roomStatus = 'ended'
+      }
     } else {
       await connection.execute(
         `
@@ -1874,17 +1892,21 @@ async function endClientRtcSession(clientApp, clientTenant, payload) {
       },
     })
     if (activeCount === 0) {
-      await queueWebhookEvent(connection, {
-        tenantId: room.tenant_id,
-        appId: clientApp.id,
-        eventType: 'room.ended',
-        payload: {
-          room_id: room.id,
-          session_id: participant.session_id,
-          room_minutes: roomMinutes,
-          participant_minutes: totalParticipantMinutes,
-        },
-      })
+      if (isTemporaryVideoRoom(room.room_type)) {
+        await queueWebhookEvent(connection, {
+          tenantId: room.tenant_id,
+          appId: clientApp.id,
+          eventType: 'room.ended',
+          payload: {
+            room_id: room.id,
+            session_id: participant.session_id,
+            room_minutes: roomMinutes,
+            participant_minutes: totalParticipantMinutes,
+            room_ended: roomEnded,
+            room_status: roomStatus,
+          },
+        })
+      }
     }
     await writeClientAuditLog(connection, {
       tenantId: room.tenant_id,
@@ -1911,6 +1933,8 @@ async function endClientRtcSession(clientApp, clientTenant, payload) {
       billable_minutes: billableMinutes,
       room_minutes: roomMinutes,
       active_participants: activeCount,
+      room_ended: roomEnded,
+      room_status: roomStatus,
     }
   })
 }

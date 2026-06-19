@@ -25,18 +25,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     'Command',
     'Companies',
     'Packages',
-    'SDK Access',
+    'App Access',
     'Rooms',
     'Usage',
     'Health',
   ];
 
   late Future<Map<String, dynamic>> _overview;
-  final _sdkNameController = TextEditingController(text: 'Flutter SDK App');
+  final _appAccessNameController = TextEditingController(
+    text: 'Flutter Client App',
+  );
   final _originsController = TextEditingController(
     text: 'https://client.example.com',
   );
-  final _roomNameController = TextEditingController(text: 'Native admin room');
+  final _roomNameController = TextEditingController(text: 'Native RTC room');
   final _roomPasswordController = TextEditingController();
   final _roomSeatsController = TextEditingController(text: '8');
 
@@ -58,7 +60,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   void dispose() {
-    _sdkNameController.dispose();
+    _appAccessNameController.dispose();
     _originsController.dispose();
     _roomNameController.dispose();
     _roomPasswordController.dispose();
@@ -132,7 +134,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               future: _overview,
               builder: (context, snapshot) {
                 final data = snapshot.data ?? const <String, dynamic>{};
-                final scope = data['scope']?.toString() ?? 'admin';
+                final scope = data['scope']?.toString() ?? 'client_admin';
                 final isSuperAdmin = scope == 'super_admin';
                 final enterprise = _map(data['enterprise']);
                 final dashboard = _map(data['dashboard']);
@@ -149,8 +151,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     BrandHeader(
                       title: isSuperAdmin
                           ? 'Client Company Dashboard'
-                          : 'Admin Dashboard',
-                      subtitle: 'Native RTC service console',
+                          : 'Company Service Console',
+                      subtitle: 'Native RTC service management',
                       trailing: RtcIconButton(
                         icon: Icons.arrow_back,
                         tooltip: 'Rooms',
@@ -159,11 +161,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(height: 14),
                     if (snapshot.connectionState != ConnectionState.done)
-                      const RtcLoadingPanel(label: 'Loading admin dashboard...')
+                      const RtcLoadingPanel(label: 'Loading service console...')
                     else if (snapshot.hasError)
                       RtcMessagePanel(
                         icon: Icons.admin_panel_settings_outlined,
-                        title: 'Could not load admin',
+                        title: 'Could not load service console',
                         detail: apiErrorMessage(snapshot.error!),
                         actionLabel: 'Retry',
                         onAction: _refresh,
@@ -186,7 +188,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       if (_statusMessage.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         StatusPill(
-                          label: _lastActionFailed ? 'Attention' : 'Admin',
+                          label: _lastActionFailed ? 'Attention' : 'Console',
                           detail: _statusMessage,
                           state: _lastActionFailed
                               ? RtcStatusState.error
@@ -222,7 +224,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return switch (_activeTab) {
       'Companies' => _buildCompanies(enterprise),
       'Packages' => _buildPackages(enterprise, isSuperAdmin),
-      'SDK Access' => _buildSdkAccess(enterprise, data, isSuperAdmin),
+      'App Access' => _buildAppAccess(enterprise, data, isSuperAdmin),
       'Rooms' => _buildRooms(data, enterprise, isSuperAdmin),
       'Usage' => _buildUsage(data, dashboard),
       'Health' => _buildHealth(enterprise, dashboard),
@@ -271,7 +273,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ),
             MetricChip(
-              label: 'SDK apps',
+              label: 'Apps',
               value: _number(totals['active_apps'] ?? apps.length),
             ),
           ],
@@ -286,7 +288,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 title: 'RTC Control Center',
                 detail:
                     _map(enterprise['service_model'])['purpose']?.toString() ??
-                    'Rooms, usage, SDK access, feature controls, and billing.',
+                    'Rooms, usage, app access, feature controls, and billing.',
               ),
               const SizedBox(height: 12),
               _InfoRow(
@@ -325,7 +327,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 eyebrow: 'Flow',
                 title: 'Company app service flow',
                 detail:
-                    'The native admin follows the same enterprise workflow as the web dashboard.',
+                    'The native company-service console follows the same enterprise workflow as the web dashboard.',
               ),
               const SizedBox(height: 12),
               if (serviceFlow.isEmpty)
@@ -363,7 +365,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 eyebrow: 'Companies',
                 title: '${clients.length} client companies',
                 detail:
-                    'Review tenant status, select companies for SDK generation, and open company detail payloads.',
+                    'Review tenant status, select companies for app access, and open company detail payloads.',
               ),
               const SizedBox(height: 12),
               if (clients.isEmpty)
@@ -432,7 +434,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   eyebrow: 'Detail',
                   title: 'Selected company payload',
                   detail:
-                      'Native admin can fetch the same detailed company data used by web.',
+                      'Native service console can fetch the same detailed company data used by web.',
                 ),
                 const SizedBox(height: 12),
                 _InfoRow(
@@ -462,16 +464,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 RtcSectionHeader(
                   eyebrow: 'Admins',
-                  title: '${admins.length} client admins',
-                  detail: 'Mirrors the web admin list for managed tenants.',
+                  title: '${admins.length} company service admins',
+                  detail:
+                      'Mirrors the web company-admin list for managed tenants.',
                 ),
                 const SizedBox(height: 12),
                 ...admins.take(8).map((admin) {
                   final row = _map(admin);
                   return _AdminRow(
-                    title: row['name']?.toString() ?? 'Client admin',
+                    title: row['name']?.toString() ?? 'Company service admin',
                     subtitle:
-                        '${row['email'] ?? 'admin account'} · ${row['tenant_name'] ?? 'Company'}',
+                        '${row['email'] ?? 'company service account'} · ${row['tenant_name'] ?? 'Company'}',
                     meta: _number(row['active_rooms'] ?? row['total_rooms']),
                   );
                 }),
@@ -524,7 +527,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   'Package request sent.',
                                   () => widget.api.adminRequestPlan(
                                     planId: id,
-                                    note: 'Requested from Flutter admin.',
+                                    note:
+                                        'Requested from Flutter service console.',
                                   ),
                                 ),
                         ),
@@ -599,14 +603,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildSdkAccess(
+  Widget _buildAppAccess(
     Map<String, dynamic> enterprise,
     Map<String, dynamic> data,
     bool isSuperAdmin,
   ) {
     final apps = _list(enterprise['apps']);
     final clients = _list(enterprise['clients']);
-    final sdkStatus = _map(enterprise['sdk_status']);
+    final accessStatus = _map(enterprise['sdk_status']);
     final tenantId = _tenantIdForAction(enterprise, data);
 
     return Column(
@@ -617,11 +621,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               RtcSectionHeader(
-                eyebrow: 'SDK',
+                eyebrow: 'Access',
                 title: 'Generate company app credentials',
                 detail:
-                    sdkStatus['auth_flow']?.toString() ??
-                    'Create an app key, API key, and SDK token for a client backend.',
+                    accessStatus['auth_flow']?.toString() ??
+                    'Create an app key, API key, and access token for a client backend.',
               ),
               const SizedBox(height: 12),
               if (isSuperAdmin && clients.isNotEmpty) ...[
@@ -633,7 +637,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 12),
               ],
               _AdminInput(
-                controller: _sdkNameController,
+                controller: _appAccessNameController,
                 label: 'App name',
                 icon: Icons.apps_outlined,
               ),
@@ -648,9 +652,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 onPressed: _busy
                     ? null
                     : () => _perform(
-                        'SDK access generated.',
+                        'App access generated.',
                         () => widget.api.adminCreateClientApp(
-                          name: _sdkNameController.text,
+                          name: _appAccessNameController.text,
                           tenantId: isSuperAdmin ? tenantId : null,
                           allowedOrigins: _originsController.text,
                         ),
@@ -659,7 +663,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         },
                       ),
                 icon: const Icon(Icons.vpn_key_outlined, color: Colors.white),
-                child: const Text('Generate SDK access'),
+                child: const Text('Generate app access'),
               ),
               if (_lastCredentials != null) ...[
                 const SizedBox(height: 12),
@@ -675,13 +679,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             children: [
               RtcSectionHeader(
                 eyebrow: 'Apps',
-                title: '${apps.length} client SDK apps',
+                title: '${apps.length} client apps',
                 detail:
                     'Rotate credentials, suspend access, and verify generated app capacity.',
               ),
               const SizedBox(height: 12),
               if (apps.isEmpty)
-                const _MutedText('No SDK apps have been generated yet.')
+                const _MutedText('No apps have been generated yet.')
               else
                 ...apps.map((app) {
                   final row = _map(app);
@@ -700,11 +704,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             ? null
                             : () => _perform(
                                 'Credentials rotated.',
-                                () =>
-                                    widget.api.adminRotateClientAppCredentials(
-                                      id,
-                                      reason: 'Rotated from Flutter admin.',
-                                    ),
+                                () => widget.api.adminRotateClientAppCredentials(
+                                  id,
+                                  reason:
+                                      'Rotated from Flutter service console.',
+                                ),
                                 onSuccess: (result) {
                                   _lastCredentials = _map(
                                     result['credentials'],
@@ -720,7 +724,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onPressed: id == 0
                             ? null
                             : () => _perform(
-                                'SDK app updated.',
+                                'App access updated.',
                                 () => widget.api.adminUpdateClientApp(
                                   id,
                                   status: status == 'active'
@@ -758,7 +762,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 eyebrow: 'Rooms',
                 title: 'Create managed RTC room',
                 detail:
-                    'This uses the native admin endpoint from the web room management panel.',
+                    'This uses the native service endpoint from the web room management panel.',
               ),
               const SizedBox(height: 12),
               _AdminInput(
@@ -819,7 +823,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                 icon: const Icon(Icons.add_home_outlined, color: Colors.white),
-                child: const Text('Create admin room'),
+                child: const Text('Create RTC room'),
               ),
             ],
           ),
@@ -903,7 +907,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 eyebrow: 'Usage',
                 title: 'Participant-minute billing',
                 detail:
-                    'The Flutter admin reads the same daily usage and recent log data as web.',
+                    'The Flutter service console reads the same daily usage and recent log data as web.',
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -1066,7 +1070,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               RtcSectionHeader(
                 eyebrow: 'Features',
                 title: '${features.length} feature controls',
-                detail: 'Package-driven feature flags exposed in native admin.',
+                detail:
+                    'Package-driven feature flags exposed in the native service console.',
               ),
               const SizedBox(height: 12),
               if (features.isEmpty)
@@ -1141,8 +1146,8 @@ class _AdminHero extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   scope == 'super_admin'
-                      ? 'Platform-wide admin scope'
-                      : 'Client admin scope',
+                      ? 'Platform service admin scope'
+                      : 'Company service admin scope',
                   style: const TextStyle(
                     color: RtcPalette.muted,
                     fontWeight: FontWeight.w800,
@@ -1267,7 +1272,7 @@ class _SecretBox extends StatelessWidget {
     final lines = [
       'APP_KEY=${credentials['app_key'] ?? ''}',
       'API_KEY=${credentials['api_key'] ?? ''}',
-      'SDK_TOKEN=${credentials['sdk_token'] ?? ''}',
+      'ACCESS_TOKEN=${credentials['sdk_token'] ?? ''}',
     ].join('\n');
 
     return Container(

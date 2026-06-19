@@ -22,17 +22,25 @@ class RtcMediaService {
     }
   }
 
-  Future<MediaStream> openLocalMedia({required bool video}) {
-    return navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': video
-          ? {
-              'facingMode': 'user',
-              'width': {'ideal': 1280},
-              'height': {'ideal': 720},
-            }
-          : false,
-    });
+  Future<MediaStream> openLocalMedia({required bool video}) async {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': video
+            ? {
+                'facingMode': 'user',
+                'width': {'ideal': 1280},
+                'height': {'ideal': 720},
+              }
+            : false,
+      });
+    } catch (_) {
+      throw RtcMediaPermissionException(
+        video
+            ? 'Could not start microphone and camera. Check app permissions and try again.'
+            : 'Could not start microphone. Check app permissions and try again.',
+      );
+    }
   }
 
   void _requireGranted(PermissionStatus? status, String message) {

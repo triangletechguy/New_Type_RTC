@@ -166,7 +166,7 @@ function registerSignaling(io) {
       closeActiveParticipantForUser({
         roomId: databaseRoomId,
         userId: user.userId,
-        eventType: 'disconnect',
+        eventType: 'connection_lost',
         reason,
       }).catch((error) => {
         console.error('[signaling] stale participant cleanup failed', error)

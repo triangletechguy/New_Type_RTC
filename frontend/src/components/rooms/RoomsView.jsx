@@ -4498,7 +4498,7 @@ export function RoomsView({ onEnterRoom, user, onLogout, onUserUpdated, onView, 
         </div>
         <div className="buzzcast-actions">
           {showAdminDashboard ? (
-            <IconButton label={t('Admin dashboard')} onClick={() => onView?.('admin')}>
+            <IconButton label={t('Service dashboard')} onClick={() => onView?.('admin')}>
               <SvgIcon id="icon-adminDashboardIcon" />
             </IconButton>
           ) : null}

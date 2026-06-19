@@ -18,8 +18,7 @@ The route constants and typed arguments live in:
 | `/rooms` | Authenticated room lobby | `RoomListScreen` | Reserved by shell |
 | `/room` | Live room detail | `LiveRoomScreen` | Active named route |
 | `/profile` | Profile editor | `ProfileScreen` | Active named route |
-| `/admin` | Admin dashboard | `AdminDashboardScreen` | Active named route |
-| `/sdk` | Developer docs | `SdkDocsScreen` | Active named route |
+| `/admin` | Service console | `AdminDashboardScreen` | Active named route |
 | `/settings` | Profile/settings parity work | Future settings screen | Reserved |
 | `/error` | Native route error state | `NativeRouteErrorScreen` | Active |
 
@@ -28,9 +27,9 @@ The route constants and typed arguments live in:
 - Normal app startup opens `NativeRtcShell`.
 - `NativeRtcShell` owns auth restoration and decides whether to show login or
   rooms.
-- Live room, profile, admin, and SDK docs open through named routes.
+- Live room, profile, and admin open through named routes.
 - Unknown or malformed routes render a native route error screen.
-- Admin routes require a `client_admin` or `super_admin` user.
+- Service console routes require a `client_admin` or `super_admin` user.
 
 ## Next Routing Work
 

@@ -1,0 +1,159 @@
+Phase 9 Flutter release build
+Generated: 2026-06-17T21:55:21-04:00
+Workspace: /home/triangletechguy/rtc-enterprise
+API_BASE_URL: https://funint.online/api
+SIGNALING_URL: https://funint.online
+
+Note: mobile/android/app/build.gradle.kts currently signs release with the debug signing config.
+Use a production keystore before Play Store or client production distribution.
+
+Verified 100 frames
+Frame index: /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/frames_100/index.tsv
+Contact sheet: /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/images/new_mobile_RTC_100_contact_sheet.jpg
+
+Running flutter analyze...
+Resolving dependencies...
+Downloading packages...
+  flutter_secure_storage_darwin 0.3.2 (0.4.0 available)
+  flutter_webrtc 1.4.1 (1.5.1 available)
+  matcher 0.12.19 (0.12.20 available)
+  meta 1.18.0 (1.18.3 available)
+  package_config 2.2.0 (3.0.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  path_provider_platform_interface 2.1.2 (2.1.3 available)
+  permission_handler_apple 9.4.9 (9.4.10 available)
+  socket_io_client 3.1.5 (3.1.6 available)
+  test_api 0.7.11 (0.7.12 available)
+  vector_graphics_compiler 1.2.5 (1.2.6 available)
+  vector_math 2.2.0 (2.4.0 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing mobile...                                             
+No issues found! (ran in 1.1s)
+
+Running flutter test...
+Resolving dependencies...
+Downloading packages...
+  flutter_secure_storage_darwin 0.3.2 (0.4.0 available)
+  flutter_webrtc 1.4.1 (1.5.1 available)
+  matcher 0.12.19 (0.12.20 available)
+  meta 1.18.0 (1.18.3 available)
+  package_config 2.2.0 (3.0.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  path_provider_platform_interface 2.1.2 (2.1.3 available)
+  permission_handler_apple 9.4.9 (9.4.10 available)
+  socket_io_client 3.1.5 (3.1.6 available)
+  test_api 0.7.11 (0.7.12 available)
+  vector_graphics_compiler 1.2.5 (1.2.6 available)
+  vector_math 2.2.0 (2.4.0 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart
+00:00 +0: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: login saves bearer session and normalizes user email
+00:00 +1: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: restoreSession reloads saved token and normalized user
+00:00 +2: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: 401 responses clear session and notify auth expiry
+00:00 +3: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: logout calls backend when token exists and always clears local state
+00:00 +4: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +5: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +6: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +7: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +8: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +9: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: issues RTC tokens through the client API
+00:00 +10: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: room controls APIs load controls and moderate participants
+00:00 +11: /home/triangletechguy/rtc-enterprise/mobile/test/rtc_enterprise_client_sdk_test.dart: maps client API errors to typed exceptions
+00:00 +12: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: stage request APIs use the room permission endpoints
+00:00 +13: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: updateProfile can remove avatar with a null web payload
+00:00 +14: /home/triangletechguy/rtc-enterprise/mobile/test/api_client_test.dart: admin APIs send web admin routes and payloads
+00:00 +15: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+unhandled element <filter/>; Picture key: Svg loader
+00:00 +16: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:00 +17: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:00 +17: /home/triangletechguy/rtc-enterprise/mobile/test/profile_screen_test.dart: profile edit removes avatar and saves web payload
+unhandled element <filter/>; Picture key: Svg loader
+00:00 +18: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:00 +19: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:00 +20: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:00 +21: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:01 +22: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:01 +23: /home/triangletechguy/rtc-enterprise/mobile/test/admin_app_access_screen_test.dart: native service console creates app access and reviews package requests
+00:01 +24: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +25: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +26: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +27: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +28: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +29: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +29: /home/triangletechguy/rtc-enterprise/mobile/test/login_screen_test.dart: login screen matches web mobile showcase and auth card
+unhandled element <filter/>; Picture key: Svg loader
+00:01 +30: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +31: /home/triangletechguy/rtc-enterprise/mobile/test/live_room_screen_test.dart: live room joins with password, syncs media, and leaves
+00:01 +32: /home/triangletechguy/rtc-enterprise/mobile/test/login_screen_test.dart: login screen matches web mobile showcase and auth card
+00:01 +33: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: room lobby shows mobile tabs, filters, and room metadata
+00:01 +34: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: room lobby shows mobile tabs, filters, and room metadata
+00:01 +35: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: room lobby shows mobile tabs, filters, and room metadata
+00:02 +36: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: room lobby shows mobile tabs, filters, and room metadata
+00:02 +37: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: room lobby shows mobile tabs, filters, and room metadata
+00:02 +38: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: popular mobile feed keeps every returned room visible
+00:02 +39: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: bottom navigation opens the requested mobile tabs
+00:02 +40: /home/triangletechguy/rtc-enterprise/mobile/test/room_lobby_test.dart: create room sheet matches web host validation and payload
+unhandled element <filter/>; Picture key: Svg loader
+00:03 +41: All tests passed!
+
+Building release APK...
+Resolving dependencies...
+Downloading packages...
+  flutter_secure_storage_darwin 0.3.2 (0.4.0 available)
+  flutter_webrtc 1.4.1 (1.5.1 available)
+  matcher 0.12.19 (0.12.20 available)
+  meta 1.18.0 (1.18.3 available)
+  package_config 2.2.0 (3.0.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  path_provider_platform_interface 2.1.2 (2.1.3 available)
+  permission_handler_apple 9.4.9 (9.4.10 available)
+  socket_io_client 3.1.5 (3.1.6 available)
+  test_api 0.7.11 (0.7.12 available)
+  vector_graphics_compiler 1.2.5 (1.2.6 available)
+  vector_math 2.2.0 (2.4.0 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleRelease'...                        
+Running Gradle task 'assembleRelease'...                         2,943ms
+✓ Built build/app/outputs/flutter-apk/app-release.apk (290.5MB)
+
+Building release AAB...
+Resolving dependencies...
+Downloading packages...
+  flutter_secure_storage_darwin 0.3.2 (0.4.0 available)
+  flutter_webrtc 1.4.1 (1.5.1 available)
+  matcher 0.12.19 (0.12.20 available)
+  meta 1.18.0 (1.18.3 available)
+  package_config 2.2.0 (3.0.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  path_provider_platform_interface 2.1.2 (2.1.3 available)
+  permission_handler_apple 9.4.9 (9.4.10 available)
+  socket_io_client 3.1.5 (3.1.6 available)
+  test_api 0.7.11 (0.7.12 available)
+  vector_graphics_compiler 1.2.5 (1.2.6 available)
+  vector_math 2.2.0 (2.4.0 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Running Gradle task 'bundleRelease'...                          
+Running Gradle task 'bundleRelease'...                           1,638ms
+✓ Built build/app/outputs/bundle/release/app-release.aab (192.6MB)
+
+Release artifacts:
+-rw-r--r-- 1 triangletechguy triangletechguy 184M Jun 17 21:55 /home/triangletechguy/rtc-enterprise/mobile/build/app/outputs/bundle/release/app-release.aab
+-rw-r--r-- 1 triangletechguy triangletechguy 278M Jun 17 21:55 /home/triangletechguy/rtc-enterprise/mobile/build/app/outputs/flutter-apk/app-release.apk
+
+Copied artifacts:
+-rw-r--r-- 1 triangletechguy triangletechguy 184M Jun 17 21:55 /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/phase9_release/app-release.aab
+-rw-r--r-- 1 triangletechguy triangletechguy 278M Jun 17 21:55 /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/phase9_release/app-release.apk
+
+SHA-256:
+1b7064f5e447bc29b0afa706af10b16ac647ad2f32ad4fd281a0bf1a3a2e0a68  /home/triangletechguy/rtc-enterprise/mobile/build/app/outputs/flutter-apk/app-release.apk
+f8fd0dcaf4018b0bf8be55191ad91797d3d7f84b9d7ef797af46f183e9a1ad87  /home/triangletechguy/rtc-enterprise/mobile/build/app/outputs/bundle/release/app-release.aab
+1b7064f5e447bc29b0afa706af10b16ac647ad2f32ad4fd281a0bf1a3a2e0a68  /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/phase9_release/app-release.apk
+f8fd0dcaf4018b0bf8be55191ad91797d3d7f84b9d7ef797af46f183e9a1ad87  /home/triangletechguy/rtc-enterprise/mobile/sdk_reference/phase9_release/app-release.aab

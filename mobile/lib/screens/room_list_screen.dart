@@ -17,7 +17,6 @@ class RoomListScreen extends StatefulWidget {
     this.onOpenProfile,
     this.onOpenSettings,
     this.onOpenAdmin,
-    this.onOpenSdk,
   });
 
   final ApiClient api;
@@ -26,7 +25,6 @@ class RoomListScreen extends StatefulWidget {
   final VoidCallback? onOpenProfile;
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenAdmin;
-  final VoidCallback? onOpenSdk;
 
   @override
   State<RoomListScreen> createState() => _RoomListScreenState();
@@ -80,7 +78,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Future<void> _refresh() async {
     final future = _loadRooms();
-    setState(() => _rooms = future);
+    setState(() {
+      _rooms = future;
+    });
     await future;
   }
 
@@ -391,6 +391,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   user: widget.user,
                   activeFeed: _activeFeed,
                   featuredRoom: featuredRoom,
+                  onOpenRoom: _openRoom,
                   onFeedChanged: (value) =>
                       _changeFeed(_feedTabForValue(value)),
                   onHome: _returnToLiveFeed,
@@ -417,6 +418,17 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     onSortChanged: _changeSort,
                   ),
                 ),
+                if (snapshot.connectionState == ConnectionState.done &&
+                    !snapshot.hasError &&
+                    visibleRooms.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                    child: _FeedScopeSummary(
+                      feed: _feedTabForValue(_activeFeed),
+                      rooms: visibleRooms,
+                      query: _query,
+                    ),
+                  ),
                 const SizedBox(height: 10),
                 if (snapshot.connectionState != ConnectionState.done)
                   const Padding(
@@ -541,7 +553,6 @@ class _CreateRoomSheetState extends State<_CreateRoomSheet> {
   String _privacyType = 'public';
   String _theme = _defaultRoomTheme;
   bool _chatEnabled = true;
-  bool _giftEnabled = false;
   bool _screenShareEnabled = false;
   bool _aiSecurityEnabled = false;
   bool _creating = false;
@@ -602,9 +613,6 @@ class _CreateRoomSheetState extends State<_CreateRoomSheet> {
       switch (field) {
         case 'chat_enabled':
           _chatEnabled = value;
-          break;
-        case 'gift_enabled':
-          _giftEnabled = value;
           break;
         case 'screen_share_enabled':
           _screenShareEnabled = value;
@@ -674,7 +682,7 @@ class _CreateRoomSheetState extends State<_CreateRoomSheet> {
         maxMicCount: seats,
         theme: _theme,
         chatEnabled: _chatEnabled,
-        giftEnabled: _giftEnabled,
+        giftEnabled: false,
         screenShareEnabled: _screenShareEnabled,
         aiSecurityEnabled: _aiSecurityEnabled,
       );
@@ -850,7 +858,6 @@ class _CreateRoomSheetState extends State<_CreateRoomSheet> {
               _FeatureToggleGrid(
                 values: {
                   'chat_enabled': _chatEnabled,
-                  'gift_enabled': _giftEnabled,
                   'screen_share_enabled': _screenShareEnabled,
                   'ai_security_enabled': _aiSecurityEnabled,
                 },
@@ -1121,6 +1128,7 @@ class _MobileHomeHero extends StatelessWidget {
     required this.user,
     required this.activeFeed,
     required this.featuredRoom,
+    required this.onOpenRoom,
     required this.onFeedChanged,
     required this.onHome,
     required this.onSearch,
@@ -1132,6 +1140,7 @@ class _MobileHomeHero extends StatelessWidget {
   final AppUser user;
   final String activeFeed;
   final Room? featuredRoom;
+  final ValueChanged<Room> onOpenRoom;
   final ValueChanged<String> onFeedChanged;
   final VoidCallback onHome;
   final VoidCallback onSearch;
@@ -1207,6 +1216,9 @@ class _MobileHomeHero extends StatelessWidget {
             room: featuredRoom,
             user: user,
             ribbon: activeFeed == 'following' ? 'Follow' : 'Mine',
+            onTap: featuredRoom == null
+                ? null
+                : () => onOpenRoom(featuredRoom!),
           ),
         ],
       ),
@@ -1309,11 +1321,13 @@ class _FeaturedRoomCard extends StatelessWidget {
     required this.room,
     required this.user,
     required this.ribbon,
+    required this.onTap,
   });
 
   final Room? room;
   final AppUser user;
   final String ribbon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1324,114 +1338,124 @@ class _FeaturedRoomCard extends StatelessWidget {
         : RtcAssets.coverImageForRoom(room!, room!.id);
     final count = room?.activeParticipants ?? 0;
 
-    return Container(
-      height: 82,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: RtcPalette.lobbySurface,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(9),
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(15, 23, 42, 0.08),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+        child: Ink(
+          height: 82,
+          decoration: BoxDecoration(
+            color: RtcPalette.lobbySurface,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(15, 23, 42, 0.08),
+                blurRadius: 18,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Row(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: Stack(
               children: [
-                RtcAvatarToken(label: title, image: image, size: 60),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
                     children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: RtcPalette.lobbyInk,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Image.asset(
-                            RtcAssets.smartBars,
-                            width: 18,
-                            height: 18,
-                          ),
-                          const SizedBox(width: 5),
-                          Image.asset(
-                            RtcAssets.smartGroupIcon,
-                            width: 18,
-                            height: 18,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            compactNumber(count),
-                            style: const TextStyle(
-                              color: RtcPalette.lobbySoft,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
+                      RtcAvatarToken(label: title, image: image, size: 60),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: RtcPalette.lobbyInk,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                height: 1,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Image.asset(
-                            RtcAssets.smartLockIcon,
-                            width: 17,
-                            height: 17,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        type,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: RtcPalette.lobbyTealDark,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                Image.asset(
+                                  RtcAssets.smartBars,
+                                  width: 18,
+                                  height: 18,
+                                ),
+                                const SizedBox(width: 5),
+                                Image.asset(
+                                  RtcAssets.smartGroupIcon,
+                                  width: 18,
+                                  height: 18,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  compactNumber(count),
+                                  style: const TextStyle(
+                                    color: RtcPalette.lobbySoft,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Image.asset(
+                                  RtcAssets.smartLockIcon,
+                                  width: 17,
+                                  height: 17,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              type,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: RtcPalette.lobbyTealDark,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
+                Positioned(
+                  right: -34,
+                  top: -1,
+                  child: Transform.rotate(
+                    angle: 0.78,
+                    child: Container(
+                      width: 94,
+                      height: 25,
+                      alignment: Alignment.center,
+                      color: const Color(0xFFFF6686),
+                      child: Text(
+                        ribbon,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          Positioned(
-            right: -34,
-            top: -1,
-            child: Transform.rotate(
-              angle: 0.78,
-              child: Container(
-                width: 94,
-                height: 25,
-                alignment: Alignment.center,
-                color: const Color(0xFFFF6686),
-                child: Text(
-                  ribbon,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1485,6 +1509,183 @@ class _MobileRoomGroupTabs extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _FeedScopeSummary extends StatelessWidget {
+  const _FeedScopeSummary({
+    required this.feed,
+    required this.rooms,
+    required this.query,
+  });
+
+  final _FeedTab feed;
+  final List<Room> rooms;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeParticipants = rooms.fold<int>(
+      0,
+      (total, room) => total + room.activeParticipants,
+    );
+    final videoRooms = rooms.where((room) => room.supportsVideo).length;
+    final lockedRooms = rooms
+        .where((room) => room.isLocked || room.isPrivate)
+        .length;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: RtcPalette.lobbySurface,
+        border: Border.all(color: RtcPalette.lobbyLine),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: RtcPalette.lobbyMint,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: RtcPalette.lobbyTealDark,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${feed.mobileLabel} rooms',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbyInk,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      query.isEmpty ? feed.detail : 'Filtered by "$query".',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: RtcPalette.lobbySoft,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _FeedMetricTile(
+                  label: 'Rooms',
+                  value: compactNumber(rooms.length),
+                  icon: Icons.meeting_room_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FeedMetricTile(
+                  label: 'Live now',
+                  value: compactNumber(activeParticipants),
+                  icon: Icons.graphic_eq_rounded,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FeedMetricTile(
+                  label: 'Video',
+                  value: compactNumber(videoRooms),
+                  icon: Icons.videocam_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FeedMetricTile(
+                  label: 'Locked',
+                  value: compactNumber(lockedRooms),
+                  icon: Icons.lock_outline_rounded,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedMetricTile extends StatelessWidget {
+  const _FeedMetricTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: RtcPalette.lobbyBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: RtcPalette.lobbyTealDark),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: RtcPalette.lobbyInk,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: RtcPalette.lobbySoft,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3047,6 +3248,14 @@ class _RoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final meta = room.roomTypeLabel;
+    final mediaLabel = room.supportsVideo ? 'Video' : 'Audio';
+    final mediaIcon = room.supportsVideo
+        ? Icons.videocam_rounded
+        : Icons.mic_rounded;
+    final privacyLabel = _roomAccessLabel(room);
+    final liveLabel = room.activeParticipants > 0 ? 'LIVE NOW' : 'READY';
+    final featureChips = _roomFeatureChips(room);
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
@@ -3055,10 +3264,13 @@ class _RoomCard extends StatelessWidget {
         onTap: onTap,
         onLongPress: canDelete && !deleting ? onDelete : null,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 92),
+          constraints: const BoxConstraints(minHeight: 116),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            border: Border.all(color: RtcPalette.lobbyLine),
+            border: Border.all(
+              color: featured ? RtcPalette.lobbyTeal : RtcPalette.lobbyLine,
+              width: featured ? 1.2 : 1,
+            ),
             borderRadius: BorderRadius.circular(12),
             boxShadow: const [
               BoxShadow(
@@ -3069,40 +3281,99 @@ class _RoomCard extends StatelessWidget {
             ],
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              RtcAvatarToken(
-                label: room.name,
-                image: RtcAssets.coverImageForRoom(room, index),
-                size: 80,
-                borderRadius: 9,
+              SizedBox(
+                width: 92,
+                height: 92,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    RtcAvatarToken(
+                      label: room.name,
+                      image: RtcAssets.coverImageForRoom(room, index),
+                      size: 92,
+                      borderRadius: 10,
+                    ),
+                    Positioned(
+                      left: 6,
+                      top: 6,
+                      child: _RoomStatusChip(
+                        label: liveLabel,
+                        active: room.activeParticipants > 0,
+                      ),
+                    ),
+                    Positioned(
+                      left: 6,
+                      bottom: 6,
+                      child: _RoomIconChip(icon: mediaIcon, label: mediaLabel),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      room.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: RtcPalette.lobbyInk,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            room.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: RtcPalette.lobbyInk,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              height: 1.05,
+                            ),
+                          ),
+                        ),
+                        if (featured) ...[
+                          const SizedBox(width: 6),
+                          const _RoomMiniBadge(label: 'Featured'),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 7),
-                    Text(
-                      room.displayHost,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: RtcPalette.lobbySoft,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.person_rounded,
+                          color: RtcPalette.lobbySoft,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            room.displayHost,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: RtcPalette.lobbySoft,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            room.displayRegion,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: RtcPalette.lobbyMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 7),
                     Row(
@@ -3121,9 +3392,7 @@ class _RoomCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          room.isLocked
-                              ? 'password'
-                              : '${compactNumber(room.activeParticipants)} watching',
+                          privacyLabel,
                           style: const TextStyle(
                             color: RtcPalette.lobbySoft,
                             fontSize: 11,
@@ -3132,41 +3401,89 @@ class _RoomCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: featureChips
+                          .map((chip) => _RoomFeatureChip(chip: chip))
+                          .toList(),
+                    ),
+                    if (room.activeParticipantPreviews.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _ParticipantPreviewRow(room: room),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.graphic_eq_rounded,
-                        color: RtcPalette.lobbyGold,
-                        size: 15,
+              SizedBox(
+                width: 52,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 48,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: RtcPalette.lobbyMint,
+                        borderRadius: BorderRadius.circular(9),
                       ),
-                      Text(
-                        compactNumber(room.activeParticipants),
-                        style: const TextStyle(
-                          color: RtcPalette.lobbySoft,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                      child: Column(
+                        children: [
+                          const Icon(
+                            Icons.graphic_eq_rounded,
+                            color: RtcPalette.lobbyTealDark,
+                            size: 16,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            compactNumber(room.activeParticipants),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: RtcPalette.lobbyInk,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: RtcPalette.lobbyMuted,
+                      size: 24,
+                    ),
+                    if (canDelete) ...[
+                      const SizedBox(height: 6),
+                      Tooltip(
+                        message: deleting ? 'Deleting' : 'Delete room',
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: deleting ? null : onDelete,
+                          child: SizedBox.square(
+                            dimension: 34,
+                            child: deleting
+                                ? const Padding(
+                                    padding: EdgeInsets.all(9),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: RtcPalette.lobbyTealDark,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: RtcPalette.lobbyMuted,
+                                    size: 18,
+                                  ),
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                  if (deleting) ...[
-                    const SizedBox(height: 12),
-                    const SizedBox.square(
-                      dimension: 15,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: RtcPalette.lobbyTealDark,
-                      ),
-                    ),
                   ],
-                ],
+                ),
               ),
             ],
           ),
@@ -3174,6 +3491,198 @@ class _RoomCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RoomStatusChip extends StatelessWidget {
+  const _RoomStatusChip({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: active
+            ? RtcPalette.hot.withValues(alpha: 0.92)
+            : RtcPalette.lobbyInk.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomIconChip extends StatelessWidget {
+  const _RoomIconChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: RtcPalette.lobbyInk),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              color: RtcPalette.lobbyInk,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomMiniBadge extends StatelessWidget {
+  const _RoomMiniBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: RtcPalette.lobbyGoldSoft,
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: RtcPalette.lobbyInk,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomFeatureChip extends StatelessWidget {
+  const _RoomFeatureChip({required this.chip});
+
+  final _RoomFeature chip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: chip.color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(RtcRadius.pill),
+        border: Border.all(color: chip.color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(chip.icon, size: 12, color: chip.color),
+          const SizedBox(width: 4),
+          Text(
+            chip.label,
+            style: TextStyle(
+              color: chip.color,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParticipantPreviewRow extends StatelessWidget {
+  const _ParticipantPreviewRow({required this.room});
+
+  final Room room;
+
+  @override
+  Widget build(BuildContext context) {
+    final previews = room.activeParticipantPreviews.take(3).toList();
+    return Row(
+      children: [
+        SizedBox(
+          width: previews.length <= 1 ? 24 : 24 + (previews.length - 1) * 16,
+          height: 24,
+          child: Stack(
+            children: [
+              for (final entry in previews.asMap().entries)
+                Positioned(
+                  left: entry.key * 16,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    padding: const EdgeInsets.all(1.5),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: ClipOval(
+                      child: RtcAvatarToken(
+                        label: entry.value.name,
+                        image: _participantImage(entry.value, entry.key),
+                        size: 21,
+                        borderRadius: 99,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '${compactNumber(room.activeParticipantPreviews.length)} active on stage',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: RtcPalette.lobbyMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomFeature {
+  const _RoomFeature({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
 }
 
 class _FeedTab {
@@ -3295,11 +3804,6 @@ const _themeOptions = [
 
 const _featureOptions = [
   _CreateOption(value: 'chat_enabled', label: 'Chat', detail: 'Live messages'),
-  _CreateOption(
-    value: 'gift_enabled',
-    label: 'Gifts',
-    detail: 'Room reactions',
-  ),
   _CreateOption(
     value: 'screen_share_enabled',
     label: 'Screen share',
@@ -3475,6 +3979,66 @@ ImageProvider _contactImage(Map<String, dynamic>? contact) {
   return AssetImage(
     RtcAssets.avatarForIndex(_mapInt(contact?['peer_id']) ?? 0),
   );
+}
+
+ImageProvider _participantImage(RoomParticipantPreview preview, int index) {
+  final avatarUrl = preview.avatarUrl.trim();
+  if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+    return NetworkImage(avatarUrl);
+  }
+  if (avatarUrl.startsWith('assets/')) return AssetImage(avatarUrl);
+  return AssetImage(RtcAssets.avatarForIndex(preview.userId + index));
+}
+
+String _roomAccessLabel(Room room) {
+  if (room.isLocked) return 'Password';
+  if (room.isPrivate) return 'Private';
+  return 'Public';
+}
+
+List<_RoomFeature> _roomFeatureChips(Room room) {
+  return [
+    _RoomFeature(
+      label: _roomFeatureTypeLabel(room),
+      icon: room.supportsVideo
+          ? Icons.videocam_outlined
+          : Icons.spatial_audio_off_outlined,
+      color: room.supportsVideo ? RtcPalette.lobbyTealDark : RtcPalette.violet,
+    ),
+    if (room.chatEnabled)
+      const _RoomFeature(
+        label: 'Chat',
+        icon: Icons.chat_bubble_outline_rounded,
+        color: RtcPalette.lobbyTealDark,
+      ),
+    if (room.screenShareEnabled)
+      const _RoomFeature(
+        label: 'Share',
+        icon: Icons.screen_share_outlined,
+        color: RtcPalette.sky,
+      ),
+    if (room.aiSecurityEnabled)
+      const _RoomFeature(
+        label: 'Guard',
+        icon: Icons.shield_outlined,
+        color: RtcPalette.amber,
+      ),
+  ];
+}
+
+String _roomFeatureTypeLabel(Room room) {
+  return switch (room.roomType) {
+    'group_video' => 'Group room',
+    'group_audio' => 'Music stage',
+    'one_to_one_video' => 'Video call',
+    'one_to_one_audio' => 'Voice call',
+    'pk_live' => 'PK stage',
+    'solo_live' => 'Solo stage',
+    'youtube_audio' => 'YouTube room',
+    'audio' => 'Audio room',
+    'video' => 'Video room',
+    _ => '${room.roomTypeShortLabel} room',
+  };
 }
 
 String _messageBody(Map<dynamic, dynamic>? message, {String fallback = ''}) {

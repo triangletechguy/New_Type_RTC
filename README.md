@@ -29,8 +29,8 @@ flutter run \
 
 Client companies can invite users from their own platform into TalkEachOther RTC.
 Those invited users are synced as external RTC users and do not pay this
-platform directly. RTC usage is logged against the client tenant/app, and admin
-or superadmin dashboards calculate package usage, overage, and invoice estimates
+platform directly. RTC usage is logged against the client tenant/app, and service
+dashboards calculate package usage, overage, and invoice estimates
 for the client company.
 
 ## Local Windows run order
@@ -74,7 +74,7 @@ http://localhost:5173
 ## Default account
 
 ```txt
-Superadmin: admin@gmail.com / admin@gmail.com
+Platform service admin: admin@gmail.com / admin@gmail.com
 ```
 
 ## Seed data
@@ -158,12 +158,10 @@ This is a browser-based RTC platform. It is organized into:
 - Express room/session APIs
 - MySQL persistence
 - STUN/TURN configuration for production RTC reliability
-- client-company API for external app integration
 
 Read:
 
 - [`docs/webrtc-architecture.md`](docs/webrtc-architecture.md)
-- [`docs/client-rtc-integration.md`](docs/client-rtc-integration.md)
 - [`docs/client-handoff-response.md`](docs/client-handoff-response.md)
 
 Client-facing summary:
@@ -222,7 +220,7 @@ Useful root scripts:
 npm run check        # backend syntax check + frontend production build
 npm run health       # backend, database, and frontend health checks
 npm run db:host:wsl  # refresh backend/.env DB_HOST after WSL restarts
-npm run db:init      # create/refresh database tables and seed admin user
+npm run db:init      # create/refresh database tables and seed service admin user
 npm run db:seed      # create/refresh production bootstrap data; removes demo rooms
 npm run db:seed:demo # opt-in local demo rooms and sample RTC history
 npm run e2e          # run full API + DB end-to-end smoke with cleanup

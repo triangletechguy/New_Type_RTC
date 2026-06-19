@@ -1,0 +1,101 @@
+frame	timestamp	surface	sdk_boundary	sdk_commitment	app_or_later_scope	evidence_note
+001	00:00:28.107	live_media	sdk_core	Join room, render local/remote media handles, track active session.	Do not own stage layout or note overlay.	Initial active room state.
+002	00:00:56.215	live_media	sdk_core	Keep media state stable during overlays and desktop sharing.	Do not own note overlay.	Active RTC room remains connected.
+003	00:01:24.322	live_media	sdk_core	Expose join status, local participant, remote participant, and errors.	Do not own visual tile composition.	Active room with floating notes.
+004	00:01:52.430	mobile_room_interop	sdk_core	Support same room identity across mobile and desktop clients.	App chooses mirrored/mobile layout.	Mobile surface appears beside desktop room.
+005	00:02:20.537	mobile_room_interop	sdk_core	Expose room metadata and active participant state to mobile app.	App owns room list visual treatment.	Mobile room surface visible with active RTC.
+006	00:02:48.645	mobile_room_interop	sdk_core	Keep client API and media join independent of UI shell.	App owns navigation chrome.	Mobile and desktop share same room state.
+007	00:03:16.752	mobile_room_interop	sdk_core	Normalize connection state for mobile and desktop parity.	App owns screen composition.	Mobile mirror plus active desktop session.
+008	00:03:44.859	mobile_room_interop	sdk_core	Expose reconnect and diagnostics events.	App owns debug overlay placement.	Mobile screen remains connected.
+009	00:04:12.967	mobile_room_interop	sdk_core	Expose local/remote participant IDs and media state.	App owns RTC tiles.	Multiple clients in one room.
+010	00:04:41.074	build_debug	sdk_build_test	Use as evidence for scripts, docs, and issue workflow.	GitHub/browser pages are not SDK runtime UI.	Debug and repository workflow visible.
+011	00:05:09.182	mobile_room_interop	sdk_core	Support mobile foreground join while desktop remains in room.	App owns mobile container.	Mobile screen beside RTC room.
+012	00:05:37.289	mobile_room_interop	sdk_core	Keep session and media state when app surfaces change.	App owns page transitions.	Mobile view changes during active call.
+013	00:06:05.397	mobile_participant_controls	sdk_events	Expose participant list and role/mute actions as events or APIs.	App owns action sheet UI.	Participant or action controls visible.
+014	00:06:33.504	mobile_participant_controls	sdk_events	Expose safe moderation state while media remains joined.	App owns modal copy and layout.	Role/action state changes during call.
+015	00:07:01.611	creator_preflight	app_ui_plus_sdk_data	Expose prejoin room metadata and create/join inputs.	App owns tabs and setup form.	Prejoin music/video style screen.
+016	00:07:29.719	mobile_room_list	app_ui_plus_sdk_data	List rooms, active previews, room type, privacy, and controls.	App owns feed cards.	Mobile room/feed state.
+017	00:07:57.826	mobile_chat	sdk_events	Expose chat/message event stream and participant metadata.	App owns timeline and reactions UI.	Chat timeline visible in live room.
+018	00:08:25.934	mobile_room_list	app_ui_plus_sdk_data	Support list refresh while a desktop session stays active.	App owns mobile list visual language.	Room list and active RTC in same workflow.
+019	00:08:54.041	build_debug	sdk_build_test	Capture build/debug workflow requirements for SDK testing.	Editor and local IDE are out of runtime scope.	Code editor visible.
+020	00:09:22.149	build_debug	sdk_build_test	Require reproducible build scripts and diagnostics.	IDE/debug UI is not SDK surface.	Editor plus active RTC room.
+021	00:09:50.256	build_debug	sdk_build_test	Keep scripts able to validate SDK source and artifacts.	IDE UI is out of scope.	Code implementation frame.
+022	00:10:18.363	build_debug	sdk_build_test	Track error messages and API contract failures in tests.	Editor UI is out of scope.	Code and active room.
+023	00:10:46.471	build_debug	sdk_build_test	Use mocked backend and media adapter tests for regressions.	Editor UI is out of scope.	Code review while call continues.
+024	00:11:14.578	mobile_room_list	app_ui_plus_sdk_data	Expose rooms, participant previews, and room status.	App owns feed/search/filter UI.	Mobile feed with active session.
+025	00:11:42.686	mobile_participant_controls	sdk_events	Expose room admin, moderator, mute, and remove actions.	App owns admin sheet UI.	Admin participant sheet visible.
+026	00:12:10.793	mobile_room_interop	sdk_core	Keep room metadata separate from media connection.	App owns profile/landing presentation.	Room landing/profile beside desktop RTC.
+027	00:12:38.900	mobile_room_interop	sdk_core	Expose room controls and current participant state.	App owns room screen layout.	Mobile live room state.
+028	00:13:07.008	mobile_room_interop	sdk_core	Support toggles without rebuilding session.	App owns control layout.	Mobile live controls visible.
+029	00:13:35.115	mobile_room_interop	sdk_core	Expose local mic/camera state and remote subscriptions.	App owns tile layout.	Desktop and mobile room parity.
+030	00:14:03.223	mobile_room_interop	sdk_core	Keep mobile and desktop participants synchronized.	App owns mobile room styling.	Shared room state with mobile screen.
+031	00:14:31.330	mobile_room_list	app_ui_plus_sdk_data	List active rooms and participant counts.	App owns list design.	Mobile feed and room state.
+032	00:14:59.438	mobile_room_list	app_ui_plus_sdk_data	Expose pagination/search filters through client API.	App owns filtering controls.	Room feed state continues.
+033	00:15:27.545	mobile_room_list	app_ui_plus_sdk_data	Expose reaction/chat counters as optional event data.	App owns animated reactions.	Room list with social state.
+034	00:15:55.652	build_debug	sdk_build_test	Use issue tracking as QA input for SDK acceptance.	GitHub page is not SDK runtime.	Repository issue list visible.
+035	00:16:23.760	build_debug	sdk_build_test	Ensure SDK work is scriptable and traceable.	GitHub page is not SDK runtime.	Issue/task review while RTC persists.
+036	00:16:51.867	build_debug	sdk_build_test	Add contract tests for backend/client API failures.	Browser doc UI is out of runtime scope.	Task review and active call.
+037	00:17:19.975	build_debug	sdk_build_test	Require regression coverage for active-session state.	Issue tracker is not SDK UI.	GitHub issue list visible.
+038	00:17:48.082	build_debug	sdk_build_test	Keep media session alive during testing and debug flows.	Debug pages are not SDK runtime.	GitHub plus active mobile view.
+039	00:18:16.190	build_debug	sdk_build_test	Record SDK acceptance items from issue workflow.	GitHub page is out of runtime scope.	Task workflow visible.
+040	00:18:44.297	build_debug	sdk_build_test	Use CI scripts for build, package, and verifier output.	GitHub page is not shipped UI.	Issue list and mobile preview.
+041	00:19:12.404	build_debug	sdk_build_test	Validate API payloads against backend routes.	Browser/testing UI is out of SDK.	Backend/API review view.
+042	00:19:40.512	build_debug	sdk_build_test	Keep SDK docs tied to observed behavior.	Docs page is not runtime UI.	Documentation/testing screen.
+043	00:20:08.619	build_debug	sdk_build_test	Make SDK build workflow auditable from scripts.	Docs/admin browser UI is out of SDK.	Planning page visible.
+044	00:20:36.727	mobile_identity_profile	app_ui_plus_sdk_data	Sync external users and expose profile fields.	App owns login/profile UI.	Mobile profile/login style screen.
+045	00:21:04.834	mobile_identity_profile	app_ui_plus_sdk_data	Expose external user identity, avatar, and room role.	App owns profile sheet.	Member/profile surface.
+046	00:21:32.942	mobile_identity_profile	app_ui_plus_sdk_data	Support session restore and identity refresh.	App owns authentication screen.	Mobile identity screen.
+047	00:22:01.049	mobile_identity_profile	app_ui_plus_sdk_data	Expose user status and blocked/banned state from API.	App owns visual status sheet.	Profile/status screen.
+048	00:22:29.156	mobile_identity_profile	app_ui_plus_sdk_data	Expose room membership and follow/invite data later.	App owns social controls.	Profile/member screen visible.
+049	00:22:57.264	mobile_identity_profile	app_ui_plus_sdk_data	Support notifications and foreground state without losing session.	App owns OS notification UX.	Notification/profile state.
+050	00:23:25.371	mobile_chat	sdk_events	Expose chat messages, deleted messages, and participant IDs.	App owns chat timeline UI.	Mobile chat timeline visible.
+051	00:23:53.479	mobile_chat	sdk_events	Keep chat independent from audio/video media join.	App owns input composer.	Chat continues beside active room.
+052	00:24:21.586	mobile_chat	sdk_events	Expose moderation events for chat.	App owns message rendering.	Chat and call state.
+053	00:24:49.694	mobile_chat	sdk_events	Support message history and live updates later.	App owns scroll behavior.	Chat surface visible.
+054	00:25:17.801	mobile_chat	sdk_events	Expose connection-safe message send failure states later.	App owns retry UI.	Chat and live room state.
+055	00:25:45.908	creator_preflight	app_ui_plus_sdk_data	Expose create room and preflight data before media join.	App owns setup wizard.	Creator setup/login flow.
+056	00:26:14.016	creator_preflight	app_ui_plus_sdk_data	Support room type, privacy, and media mode selection.	App owns setup list UI.	Creator/live setup list.
+057	00:26:42.123	creator_preflight	app_ui_plus_sdk_data	Expose media permission/preflight errors.	App owns permission prompt UI.	Dark prejoin/live setup state.
+058	00:27:10.231	creator_preflight	app_ui_plus_sdk_data	Create or join room only after preflight passes.	App owns setup CTA.	Creator setup continues.
+059	00:27:38.338	long_running_session	sdk_core	Keep active media session alive through overlays.	App owns overlay content.	Stable RTC session.
+060	00:28:06.446	long_running_session	sdk_core	Track active session, foreground state, and leave cleanup.	App owns full-screen layout.	Long-running room state.
+061	00:28:34.553	long_running_session	sdk_core	Emit connection health and reconnect state.	App owns health banner.	Stable multi-tile call.
+062	00:29:02.660	long_running_session	sdk_core	End usage session reliably on leave.	App owns final confirmation.	Long-running room continues.
+063	00:29:30.768	app_visual_asset	app_ui	No SDK runtime requirement except room metadata can reference images.	App owns artwork/assets.	Visual asset/page shown.
+064	00:29:58.875	rich_live_controls	sdk_events	Expose participant state, controls, and diagnostics to app.	App owns rich live room UI.	Dark live room with controls.
+065	00:30:26.983	rich_live_controls	sdk_events	Expose local user, remote users, and room controls.	App owns control bar.	Live stage and controls.
+066	00:30:55.090	rich_live_controls	sdk_events	Support token expiry and reconnect events.	App owns status copy.	Live room profile/controls.
+067	00:31:23.198	rich_live_controls	sdk_events	Expose member/profile selection events.	App owns profile panel.	Live room with profile panel.
+068	00:31:51.305	rich_live_controls	sdk_events	Expose room controls as data, not fixed UI.	App owns controls panel.	Control panel visible.
+069	00:32:19.412	rich_live_controls	sdk_events	Support moderation state changes during active media.	App owns modal/panel UI.	Live controls continue.
+070	00:32:47.520	rich_live_controls	sdk_events	Expose current participant and connection diagnostics.	App owns detail panel.	Participant/profile panel visible.
+071	00:33:15.627	build_debug	sdk_build_test	Keep docs and debug views as test evidence.	Browser/admin UI not SDK runtime.	Debug screen and active room.
+072	00:33:43.735	build_debug	sdk_build_test	Use this segment for acceptance and regression notes.	Docs/browser UI is out of SDK.	Debug workflow visible.
+073	00:34:11.842	integration_docs	sdk_build_test	Document API contracts and SDK packaging.	Docs page is not SDK runtime.	Integration doc page.
+074	00:34:39.950	integration_docs	sdk_build_test	Lock terminology for platform, company, and room admins.	Documentation UI is not SDK runtime.	Docs/admin review visible.
+075	00:35:08.057	integration_docs	sdk_build_test	Track build workflow and test script requirements.	Docs browser UI is out of SDK.	Documentation planning.
+076	00:35:36.164	integration_docs	sdk_build_test	Use scripts to verify artifacts and frame coverage.	Docs page is not SDK runtime.	Workflow/doc view.
+077	00:36:04.272	integration_docs	sdk_build_test	Maintain SDK build and QA checklist.	Docs page is not runtime UI.	Docs with mobile preview.
+078	00:36:32.379	integration_docs	sdk_build_test	Keep SDK scope separate from web/admin features.	Web docs UI out of Android SDK.	Docs/admin state.
+079	00:37:00.487	integration_docs	sdk_build_test	Use CI-friendly scripts for extraction, audit, and build.	Docs page is not SDK runtime.	Planning doc visible.
+080	00:37:28.594	build_debug	sdk_build_test	Use repository workflow as QA evidence only.	GitHub/browser UI out of SDK.	Issue list and active room.
+081	00:37:56.701	long_running_session	sdk_core	Keep media session active across long idle windows.	App owns idle visual state.	Stable live room.
+082	00:38:24.809	long_running_session	sdk_core	Expose local/remote participant state for long calls.	App owns visual tile layout.	Long-running room with overlays.
+083	00:38:52.916	long_running_session	sdk_core	Support reconnect and heartbeat handling.	App owns status display.	Stable connected room.
+084	00:39:21.024	long_running_session	sdk_core	Keep usage session active until explicit leave/end.	App owns stage layout.	Long-running room continues.
+085	00:39:49.131	long_running_session	sdk_core	Protect against duplicate start/end session calls.	App owns visible controls.	Long-running call state.
+086	00:40:17.239	long_running_session	sdk_core	Renew token before expiry and report failures.	App owns warning banner.	Extended call.
+087	00:40:45.346	long_running_session	sdk_core	Emit connection state changes for diagnostics.	App owns diagnostic panel.	Extended session with notes.
+088	00:41:13.453	long_running_session	sdk_core	Keep participant membership correct over time.	App owns member display.	Long-running room.
+089	00:41:41.561	long_running_session	sdk_core	Support background/foreground safe cleanup.	App owns OS lifecycle UI.	Long-running call.
+090	00:42:09.668	long_running_session	sdk_core	Track active session state and leave readiness.	App owns final-screen layout.	Stable room near end.
+091	00:42:37.776	long_running_session	sdk_core	Continue media and session health tracking.	App owns visual state.	Late-session room state.
+092	00:43:05.883	long_running_session	sdk_core	Ensure no stale participant remains after disconnect.	App owns participant UI.	Late-session active room.
+093	00:43:33.991	long_running_session	sdk_core	Handle network loss and token expiry without orphaning usage.	App owns error UI.	Late-session room.
+094	00:44:02.098	long_running_session	sdk_core	Keep final leave/session end path idempotent.	App owns leave confirmation.	Late-session room state.
+095	00:44:30.205	long_running_session	sdk_core	End usage session and preserve usage logs.	App owns post-call screen.	Late-session call.
+096	00:44:58.313	long_running_session	sdk_core	Record duration and billable minutes on session end.	App owns summary UI.	Final extended call period.
+097	00:45:26.420	long_running_session	sdk_core	Protect against duplicate end calls during teardown.	App owns finish UX.	Final RTC state.
+098	00:45:54.528	long_running_session	sdk_core	Release Agora engine safely after leave.	App owns closing visual state.	Near-final active room.
+099	00:46:22.635	long_running_session	sdk_core	Surface teardown errors to app.	App owns error display.	Final active state.
+100	00:46:50.743	long_running_session	sdk_core	Clean up active session, media engine, and local state.	App owns final toast/notification.	End of reference sequence.

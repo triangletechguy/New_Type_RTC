@@ -426,7 +426,7 @@ async function ensureRoleIds(connection) {
     INSERT IGNORE INTO roles (name, label, created_at)
     VALUES
       ('end_user', 'End User', NOW()),
-      ('client_admin', 'Client Admin', NOW())
+      ('client_admin', 'Company Service Admin', NOW())
     `
   )
 
@@ -689,7 +689,7 @@ async function createClientAppForTenant(user, body = {}) {
   const allowedOrigins = parseAllowedOrigins(readBodyValue(body, 'allowed_origins', 'allowedOrigins'))
 
   if (!Number.isInteger(tenantId) || tenantId <= 0) {
-    const error = new Error('Choose a client company before generating SDK access.')
+    const error = new Error('Choose a client company before generating app access.')
     error.status = 422
     throw error
   }
@@ -729,13 +729,13 @@ async function createClientAppForTenant(user, body = {}) {
     }
 
     if (!tenant.plan_id) {
-      const error = new Error('Assign a package before generating SDK access.')
+      const error = new Error('Assign a package before generating app access.')
       error.status = 422
       throw error
     }
 
     if (!['active', 'pending'].includes(tenant.status)) {
-      const error = new Error('SDK access cannot be generated for this company status.')
+      const error = new Error('App access cannot be generated for this company status.')
       error.status = 422
       throw error
     }
@@ -761,7 +761,7 @@ async function createClientAppForTenant(user, body = {}) {
     const appKey = await uniqueAppKey(connection, tenant)
     const apiKey = makeCredential('rtc_api')
     const apiKeyHash = hashSecret(apiKey)
-    const sdkToken = makeCredential('rtc_sdk')
+    const accessToken = makeCredential('rtc_access')
     const appName = name || `${tenant.name} ${platform.replace(/_/g, ' ')} app`
     const [result] = await connection.execute(
       `
@@ -779,7 +779,7 @@ async function createClientAppForTenant(user, body = {}) {
         appKey,
         maskSecret(apiKey),
         apiKeyHash,
-        sdkToken,
+        accessToken,
         allowedOrigins.length ? JSON.stringify(allowedOrigins) : null,
       ]
     )
@@ -808,13 +808,13 @@ async function createClientAppForTenant(user, body = {}) {
       platform,
       app_key: appKey,
       api_key_masked: maskSecret(apiKey),
-      sdk_token_masked: maskSecret(sdkToken),
+      sdk_token_masked: maskSecret(accessToken),
       allowed_origins: allowedOrigins,
       status: 'active',
       credentials: {
         app_key: appKey,
         api_key: apiKey,
-        sdk_token: sdkToken,
+        sdk_token: accessToken,
       },
     }
   })
@@ -925,13 +925,13 @@ async function createClientCompany(payload) {
     )
 
     const adminAccount = await createClientAdmin(connection, tenantId, payload.status, {
-      name: payload.primaryContactName || `${payload.companyName} Admin`,
+      name: payload.primaryContactName || `${payload.companyName} Service Admin`,
       email: payload.primaryContactEmail,
       phone: payload.phone,
       password: payload.primaryContactPassword,
     })
     const adminInvite = await createCompanyAdminInvite(connection, tenantId, {
-      name: payload.primaryContactName || `${payload.companyName} Admin`,
+      name: payload.primaryContactName || `${payload.companyName} Service Admin`,
       email: payload.primaryContactEmail,
     })
 
@@ -1467,11 +1467,11 @@ async function rotateClientAppCredentials(user, appId, body = {}) {
 
   const scope = cleanString(readBodyValue(body, 'scope') || readBodyValue(body, 'credential'), 30).toLowerCase() || 'all'
   const shouldRotateApiKey = ['all', 'both', 'api_key', 'api'].includes(scope)
-  const shouldRotateSdkToken = ['all', 'both', 'sdk_token', 'sdk'].includes(scope)
+  const shouldRotateAccessToken = ['all', 'both', 'access_token', 'sdk_token', 'sdk'].includes(scope)
   const isSuperAdmin = hasAnyRole(user, ['super_admin'])
 
-  if (!shouldRotateApiKey && !shouldRotateSdkToken) {
-    const error = new Error('Choose api_key, sdk_token, or all credentials to rotate.')
+  if (!shouldRotateApiKey && !shouldRotateAccessToken) {
+    const error = new Error('Choose api_key, access_token, or all credentials to rotate.')
     error.status = 422
     throw error
   }
@@ -1509,7 +1509,7 @@ async function rotateClientAppCredentials(user, appId, body = {}) {
 
     const apiKey = shouldRotateApiKey ? makeCredential('rtc_api') : app.api_key
     const apiKeyHash = shouldRotateApiKey ? hashSecret(apiKey) : app.api_key_hash
-    const sdkToken = shouldRotateSdkToken ? makeCredential('rtc_sdk') : app.sdk_token
+    const accessToken = shouldRotateAccessToken ? makeCredential('rtc_access') : app.sdk_token
 
     await connection.execute(
       `
@@ -1524,7 +1524,7 @@ async function rotateClientAppCredentials(user, appId, body = {}) {
       [
         shouldRotateApiKey ? maskSecret(apiKey) : app.api_key,
         apiKeyHash,
-        sdkToken,
+        accessToken,
         appId,
       ]
     )
@@ -1541,14 +1541,14 @@ async function rotateClientAppCredentials(user, appId, body = {}) {
         platform: app.platform,
         app_key: app.app_key,
         api_key_masked: shouldRotateApiKey ? maskSecret(apiKey) : maskSecret(app.api_key),
-        sdk_token_masked: maskSecret(sdkToken),
+        sdk_token_masked: maskSecret(accessToken),
         allowed_origins: parseJsonArray(app.allowed_origins),
         status: app.status,
       },
       credentials: {
         app_key: app.app_key,
         api_key: shouldRotateApiKey ? apiKey : null,
-        sdk_token: shouldRotateSdkToken ? sdkToken : null,
+        sdk_token: shouldRotateAccessToken ? accessToken : null,
       },
       tenant_id: app.tenant_id,
     }
@@ -1603,7 +1603,7 @@ async function findRoomOwnerForTenant(connection, tenantId, preferredOwnerId = n
 
   if (users.length) return users[0]
 
-  const error = new Error('Create or invite a company admin before creating rooms for this client.')
+  const error = new Error('Create or invite a company service admin before creating rooms for this client.')
   error.status = 422
   throw error
 }
@@ -2682,7 +2682,7 @@ function buildBillingSummary({ dashboard, clients, plan }) {
       usage_percent: 0,
       estimated_invoice: clients.reduce((total, client) => total + Number(client.estimated_invoice || 0), 0),
       overage_minutes: clients.reduce((total, client) => total + Number(client.overage_minutes || 0), 0),
-      note: 'Superadmin aggregate across active client plans.',
+      note: 'Platform service admin aggregate across active client plans.',
     }
   }
 
@@ -2743,9 +2743,9 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
   return {
     service_model: {
       provider_name: 'TalkEachOther',
-      product: 'Enterprise RTC SDK and API service',
+      product: 'Enterprise RTC app access service',
       purpose: 'Client companies integrate TalkEachOther audio, video, chat, moderation, filters, and usage billing into their own apps.',
-      selling_unit: 'Company app package with SDK credentials, feature controls, and participant-minute billing.',
+      selling_unit: 'Company app package with app credentials, feature controls, and participant-minute billing.',
       rtc_provider: dashboard?.rtc_status || 'online',
       connection_indicator: dashboard?.rtc_status === 'online' ? 'online' : 'attention',
     },
@@ -2779,8 +2779,8 @@ async function buildEnterprisePayload({ scope, tenantId = null, dashboard }) {
     sdk_status: {
       generated_apps: apps.length,
       active_apps: apps.filter((app) => app.status === 'active').length,
-      token_strategy: 'App key + API key + SDK token per client app',
-      auth_flow: 'Client app requests a room token, then initializes the WebRTC SDK with that token.',
+      token_strategy: 'App key + API key + access token per client app',
+      auth_flow: 'Client app requests a room token, then connects to the RTC room with that token.',
     },
   }
 }
@@ -2981,11 +2981,11 @@ async function inviteClientCompanyAdmin(companyId, body = {}) {
       throw error
     }
 
-    const invitedName = cleanString(readBodyValue(body, 'primary_contact_name', 'primaryContactName') || tenant.primary_contact_name || `${tenant.name} Admin`, 150)
+    const invitedName = cleanString(readBodyValue(body, 'primary_contact_name', 'primaryContactName') || tenant.primary_contact_name || `${tenant.name} Service Admin`, 150)
     const invitedEmail = normalizeEmail(readBodyValue(body, 'primary_contact_email', 'primaryContactEmail') || tenant.primary_contact_email)
 
     if (!invitedEmail || !isValidEmail(invitedEmail)) {
-      const error = new Error('Primary contact email is required before creating an admin invite.')
+      const error = new Error('Primary contact email is required before creating a company service admin invite.')
       error.status = 422
       throw error
     }

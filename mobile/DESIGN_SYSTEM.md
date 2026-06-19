@@ -116,14 +116,12 @@ duplicates:
 
 - `RoomListScreen`
 - `AdminDashboardScreen`
-- `SdkDocsScreen`
 - `LiveRoomScreen`
 
 Remaining future design-system work:
 
 - Screen integration of the new lobby and live-room primitives.
 - Admin tables/lists.
-- SDK code panels and copy controls.
 - Settings rows and grouped forms.
 
 ## New Step 2 Widgets

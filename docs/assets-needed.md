@@ -32,22 +32,16 @@ Use this checklist for the high-quality TalkEachOther visual pass. Put final fil
 - Message state icons: sent, delivered, unsent/deleted, moderation notice.
 - Optional reaction/gift images.
 
-## Admin Dashboard
+## Service Dashboard
 
-- Product logo mark for admin sidebar.
+- Product logo mark for service dashboard sidebar.
 - Metric/monitor icon style references.
 - Empty-state image for no active sessions.
 - Brand-specific status colors for verified, live, warning, failed.
 
-## SDK Page
-
-- SDK/product wordmark.
-- Developer diagram style reference.
-- Code sample screenshot style, if there is a preferred docs brand.
-
 ## Marketing/Store Readiness
 
-- App screenshots: desktop lobby, live room, admin dashboard, SDK page.
+- App screenshots: desktop lobby, live room, service dashboard.
 - Short product tagline.
 - One-paragraph product description.
 - Target customer/persona.

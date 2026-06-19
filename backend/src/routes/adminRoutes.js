@@ -45,7 +45,7 @@ router.use(authMiddleware, requireAnyRole(ADMIN_ROLES))
 router.get('/companies/generate-tenant-id', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can generate tenant IDs.' })
+      return res.status(403).json({ message: 'Only the platform service admin can generate tenant IDs.' })
     }
 
     await ensureTenantCompanyColumns()
@@ -65,7 +65,7 @@ router.get('/companies/generate-tenant-id', async (req, res, next) => {
 router.get('/companies', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can view all client companies.' })
+      return res.status(403).json({ message: 'Only the platform service admin can view all client companies.' })
     }
 
     return res.json({ companies: await getClientRows() })
@@ -77,7 +77,7 @@ router.get('/companies', async (req, res, next) => {
 router.post('/companies', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can create client companies.' })
+      return res.status(403).json({ message: 'Only the platform service admin can create client companies.' })
     }
 
     const { errors, payload } = parseCompanyPayload(req.body || {})
@@ -93,7 +93,7 @@ router.post('/companies', async (req, res, next) => {
       company,
       admin_account: created.admin_account,
       admin_invite: created.admin_invite,
-      next_step: 'Generate SDK access for this company.',
+      next_step: 'Generate app access for this company.',
     })
   } catch (error) {
     return next(error)
@@ -103,7 +103,7 @@ router.post('/companies', async (req, res, next) => {
 router.patch('/companies/:companyId', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can edit client companies.' })
+      return res.status(403).json({ message: 'Only the platform service admin can edit client companies.' })
     }
 
     const companyId = Number(req.params.companyId)
@@ -133,7 +133,7 @@ router.patch('/companies/:companyId', async (req, res, next) => {
 router.post('/companies/:companyId/admin-invite', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can invite company admins.' })
+      return res.status(403).json({ message: 'Only the platform service admin can invite company service admins.' })
     }
 
     const companyId = Number(req.params.companyId)
@@ -145,7 +145,7 @@ router.post('/companies/:companyId/admin-invite', async (req, res, next) => {
     const [company] = await getClientRows(companyId)
 
     return res.status(201).json({
-      message: `Admin invite created for ${adminInvite.invited_email}.`,
+      message: `Company service admin invite created for ${adminInvite.invited_email}.`,
       company,
       admin_account: adminAccount,
       admin_invite: adminInvite,
@@ -158,7 +158,7 @@ router.post('/companies/:companyId/admin-invite', async (req, res, next) => {
 router.get('/companies/:companyId', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can inspect client companies.' })
+      return res.status(403).json({ message: 'Only the platform service admin can inspect client companies.' })
     }
 
     const companyId = Number(req.params.companyId)
@@ -178,7 +178,7 @@ router.get('/companies/:companyId', async (req, res, next) => {
 router.get('/companies/:companyId/detail', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can inspect client companies.' })
+      return res.status(403).json({ message: 'Only the platform service admin can inspect client companies.' })
     }
 
     const companyId = Number(req.params.companyId)
@@ -213,7 +213,7 @@ router.get('/companies/:companyId/detail', async (req, res, next) => {
 router.patch('/companies/:companyId/status', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can change company status.' })
+      return res.status(403).json({ message: 'Only the platform service admin can change company status.' })
     }
 
     const companyId = Number(req.params.companyId)
@@ -255,7 +255,7 @@ router.get('/plan-requests', async (req, res, next) => {
 router.patch('/service-plans/:planId', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can edit service packages.' })
+      return res.status(403).json({ message: 'Only the platform service admin can edit service packages.' })
     }
 
     await ensureTenantCompanyColumns()
@@ -321,7 +321,7 @@ router.patch('/service-plans/:planId', async (req, res, next) => {
 router.post('/plan-requests', async (req, res, next) => {
   try {
     if (hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Superadmin assigns packages from the client company editor.' })
+      return res.status(403).json({ message: 'The platform service admin assigns packages from the client company editor.' })
     }
 
     const requestId = await createPlanRequest(req.user, req.body || {})
@@ -340,7 +340,7 @@ router.post('/plan-requests', async (req, res, next) => {
 router.patch('/plan-requests/:requestId', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can review package purchase requests.' })
+      return res.status(403).json({ message: 'Only the platform service admin can review package purchase requests.' })
     }
 
     const requestId = Number(req.params.requestId)
@@ -367,7 +367,7 @@ router.post('/client-apps', async (req, res, next) => {
     const { credentials, ...publicApp } = app
 
     return res.status(201).json({
-      message: `${app.name} SDK access generated.`,
+      message: `${app.name} app access generated.`,
       app: publicApp,
       credentials,
     })
@@ -530,18 +530,18 @@ router.get('/overview', async (req, res, next) => {
 router.get('/admins/:adminId', async (req, res, next) => {
   try {
     if (!hasAnyRole(req.user, ['super_admin'])) {
-      return res.status(403).json({ message: 'Only the super admin can inspect another admin.' })
+      return res.status(403).json({ message: 'Only the platform service admin can inspect another company service admin.' })
     }
 
     const adminId = Number(req.params.adminId)
     if (!Number.isInteger(adminId) || adminId <= 0) {
-      return res.status(400).json({ message: 'Invalid admin id.' })
+      return res.status(400).json({ message: 'Invalid company service admin id.' })
     }
 
     const adminRow = await getAdminUser(adminId)
     const adminRoles = String(adminRow?.roles || '').split(',')
     if (!adminRow || !adminRoles.includes('client_admin') || adminRoles.includes('super_admin')) {
-      return res.status(404).json({ message: 'Admin was not found.' })
+      return res.status(404).json({ message: 'Company service admin was not found.' })
     }
 
     const roomIds = await getScopedRoomIds(adminId, adminRow.tenant_id)

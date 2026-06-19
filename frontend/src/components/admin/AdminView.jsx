@@ -8,19 +8,15 @@ import { ActiveSessionsMonitor } from './ActiveSessionsMonitor'
 import { DashboardMetrics } from './DashboardMetrics'
 import { UsageLogCard } from './UsageLogCard'
 import { UsageVerificationCard } from './UsageVerificationCard'
-import { AdminCopyButton, AdminEmptyState, ApiSnippetCard, DashboardTabs } from './adminUiBits'
+import { AdminEmptyState, DashboardTabs } from './adminUiBits'
 import {
   BILLING_TYPE_OPTIONS,
-  CLIENT_API_ERROR_CODES,
-  CLIENT_API_TOKEN_CLAIMS,
-  CLIENT_API_WEBHOOK_EVENTS,
   COMPANY_STATUS_OPTIONS,
   FEATURE_CATALOG,
   INITIAL_COMPANY_FORM,
   INITIAL_ROOM_FORM,
   PLAN_STATUS_OPTIONS,
   buildDashboardTabs,
-  clientApiBaseUrl,
   companyToForm,
   formatCurrency,
   formatPercent,
@@ -111,13 +107,13 @@ function buildClientReadiness({ enterprise, dashboard, mode }) {
         tab: 'packages',
       },
       {
-        key: 'sdk',
-        label: 'SDK access',
+        key: 'access',
+        label: 'App access',
         value: formatNumber(totals.active_apps || apps.length),
         detail: 'Generated apps can issue API keys and RTC tokens.',
         state: Number(totals.active_apps || apps.length || 0) > 0 ? 'good' : 'todo',
-        action: 'Open integration',
-        tab: 'sdk',
+        action: 'Open app access',
+        tab: 'access',
       },
       {
         key: 'billing',
@@ -151,13 +147,13 @@ function buildClientReadiness({ enterprise, dashboard, mode }) {
       tab: mode === 'company_detail' ? 'packages' : 'purchase',
     },
     {
-      key: 'sdk',
-      label: 'Integration',
+      key: 'access',
+      label: 'App access',
       value: `${formatNumber(apps.length)} apps`,
-      detail: apps.length ? 'App credentials are ready for backend integration.' : 'Generate app credentials for API and SDK access.',
+      detail: apps.length ? 'App credentials are ready.' : 'Generate app credentials for app access.',
       state: apps.length ? 'good' : 'todo',
-      action: 'Open integration',
-      tab: 'sdk',
+      action: 'Open app access',
+      tab: 'access',
     },
     {
       key: 'users',
@@ -196,7 +192,7 @@ function AdminReadinessPanel({ enterprise, dashboard, mode, onTabChange }) {
   const isPlatform = mode === 'super_admin'
   const title = isPlatform ? 'Operations readiness' : 'Setup progress'
   const subtitle = isPlatform
-    ? 'Keep package approvals, SDK access, billing, and service health ready for client companies.'
+    ? 'Keep package approvals, app access, billing, and service health ready for client companies.'
     : 'Follow these checks to make the client RTC service production-ready.'
 
   return (
@@ -260,12 +256,12 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
   const invoice = isPlatform ? totals.estimated_invoice : billing.estimated_invoice
   const title = isPlatform ? 'Sell and operate RTC service' : 'RTC service console'
   const subtitle = isPlatform
-    ? 'Create client companies, approve package purchases, issue SDK access, and monitor usage from one focused place.'
+    ? 'Create client companies, approve package purchases, issue app access, and monitor usage from one focused place.'
     : 'Purchase a package, generate app credentials, sync invited users, and track their company-paid minutes.'
   const actionCards = isPlatform ? [
     {
       title: 'Create client company',
-      detail: 'Tenant, package, billing scope, admin invite, and default limits.',
+      detail: 'Tenant, package, billing scope, company service admin invite, and default limits.',
       meta: `${formatNumber(totals.total_clients)} total clients`,
       state: totals.total_clients ? 'good' : 'todo',
       action: 'Open companies',
@@ -280,12 +276,12 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
       onClick: () => onTabChange('packages'),
     },
     {
-      title: 'Generate SDK access',
-      detail: 'Create app key, API key, SDK token, and allowed origins.',
+      title: 'Generate app access',
+      detail: 'Create app key, API key, access token, and allowed origins.',
       meta: `${formatNumber(totals.active_apps)} active apps`,
       state: totals.active_apps ? 'good' : 'todo',
-      action: 'Open SDK',
-      onClick: () => onTabChange('sdk'),
+      action: 'Open access',
+      onClick: () => onTabChange('access'),
     },
     {
       title: 'Track billing',
@@ -305,12 +301,12 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
       onClick: () => onTabChange('purchase'),
     },
     {
-      title: 'SDK access',
+      title: 'App access',
       detail: apps.length ? 'App credentials are ready for integration.' : 'Generate app credentials before connecting your app.',
       meta: `${formatNumber(apps.length)} apps`,
       state: apps.length ? 'good' : 'todo',
-      action: 'Open SDK',
-      onClick: () => onTabChange('sdk'),
+      action: 'Open access',
+      onClick: () => onTabChange('access'),
     },
     {
       title: 'Invited users',
@@ -346,7 +342,7 @@ function CommandCenterPanel({ enterprise, dashboard, mode, onTabChange }) {
           <strong>{isPlatform ? formatNumber(totals.active_clients) : currentPlan?.name || 'No package'}</strong>
         </div>
         <div>
-          <span>{isPlatform ? 'Pending purchases' : 'SDK apps'}</span>
+          <span>{isPlatform ? 'Pending purchases' : 'Apps'}</span>
           <strong>{isPlatform ? formatNumber(pendingRequests.length) : formatNumber(apps.length)}</strong>
         </div>
         <div>
@@ -598,41 +594,26 @@ function PackagePurchasePanel({ enterprise, mode, selectedPlanId, onSelectPlan, 
   )
 }
 
-function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = 'create' }) {
+function AppAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = 'create' }) {
   const clients = enterprise?.clients || []
   const apps = enterprise?.apps || []
   const [tenantId, setTenantId] = useState('')
   const [appName, setAppName] = useState('')
   const [platform, setPlatform] = useState('web_mobile')
   const [allowedOrigins, setAllowedOrigins] = useState('')
-  const [selectedDocsAppId, setSelectedDocsAppId] = useState('')
   const [creating, setCreating] = useState(false)
   const [createdApp, setCreatedApp] = useState(null)
   const [message, setMessage] = useState('')
-  const docsApp = useMemo(() => {
-    return apps.find((app) => String(app.id) === String(selectedDocsAppId))
-      || createdApp?.app
-      || apps[0]
-      || null
-  }, [apps, createdApp, selectedDocsAppId])
-  const docsCredentials = createdApp?.app && String(createdApp.app.id) === String(docsApp?.id)
-    ? createdApp.credentials
-    : null
 
   useEffect(() => {
     if (!tenantId && clients[0]?.id) setTenantId(String(clients[0].id))
   }, [clients, tenantId])
 
-  useEffect(() => {
-    if (selectedDocsAppId || !apps[0]?.id) return
-    setSelectedDocsAppId(String(apps[0].id))
-  }, [apps, selectedDocsAppId])
-
   async function createApp(event) {
     event.preventDefault()
     setCreating(true)
     setCreatedApp(null)
-    setMessage('Generating SDK access...')
+    setMessage('Generating app access...')
 
     try {
       const body = {
@@ -647,7 +628,6 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = '
         body: JSON.stringify(body),
       })
       setCreatedApp(data)
-      if (data.app?.id) setSelectedDocsAppId(String(data.app.id))
       setMessage(data.message)
       setAppName('')
       setAllowedOrigins('')
@@ -661,23 +641,22 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = '
 
   function handleCredentialsResult(data) {
     setCreatedApp(data)
-    if (data.app?.id) setSelectedDocsAppId(String(data.app.id))
     setMessage(data.message)
   }
 
   return (
     <div className="dashboard-tab-panel">
       {section === 'create' ? (
-      <section className="enterprise-panel sdk-access-panel glass-card">
+      <section className="enterprise-panel app-access-panel glass-card">
         <div className="admin-panel-header">
           <div>
-            <span className="eyebrow">SDK Access</span>
+            <span className="eyebrow">App Access</span>
             <h2>Generate App Credentials</h2>
           </div>
           <span>{formatNumber(apps.length)} apps</span>
         </div>
 
-        <form className="sdk-access-form" onSubmit={createApp}>
+        <form className="app-access-form" onSubmit={createApp}>
           {isSuperAdmin && clients.length > 1 ? (
             <label>
               <span>Client company</span>
@@ -700,24 +679,24 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = '
               <option value="server">Server</option>
             </select>
           </label>
-          <label className="sdk-origin-field">
+          <label className="app-access-origin-field">
             <span>Allowed origins</span>
             <textarea value={allowedOrigins} onChange={(event) => setAllowedOrigins(event.target.value)} placeholder="https://client-app.com" />
           </label>
           <button className="primary-button" type="submit" disabled={creating || (isSuperAdmin && !tenantId)}>
-            {creating ? 'Generating...' : 'Generate SDK access'}
+            {creating ? 'Generating...' : 'Generate app access'}
           </button>
         </form>
 
         {createdApp?.credentials ? (
-          <div className="sdk-created-credentials">
+          <div className="app-access-created-credentials">
             <strong>New credentials</strong>
             <dl>
               <dt>App key</dt>
               <dd>{createdApp.credentials.app_key}</dd>
               <dt>API key</dt>
               <dd>{createdApp.credentials.api_key}</dd>
-              <dt>SDK token</dt>
+              <dt>Access token</dt>
               <dd>{createdApp.credentials.sdk_token}</dd>
             </dl>
           </div>
@@ -735,234 +714,14 @@ function SdkAccessPanel({ enterprise, mode, isSuperAdmin, onRefresh, section = '
         onCredentialsRotated={handleCredentialsResult}
       />
       ) : null}
-      {section === 'docs' ? (
-      <ClientApiDocsPanel
-        app={docsApp}
-        apps={apps}
-        credentials={docsCredentials}
-        selectedAppId={selectedDocsAppId}
-        onSelectApp={setSelectedDocsAppId}
-      />
-      ) : null}
-      {section !== 'create' && !apps.length ? <AdminEmptyState title="No SDK apps found" detail="Generate SDK access to connect a client app." /> : null}
+      {section !== 'create' && !apps.length ? <AdminEmptyState title="No apps found" detail="Generate app access to connect a client app." /> : null}
     </div>
-  )
-}
-
-function ClientApiDocsPanel({ app, apps, credentials, selectedAppId, onSelectApp }) {
-  const apiBase = clientApiBaseUrl()
-  const publicApiBase = apiBase.endsWith('/client') ? apiBase.slice(0, -7) : apiBase
-  const apiKey = credentials?.api_key || 'CLIENT_API_KEY'
-  const apiKeyLabel = credentials?.api_key ? 'Full key available from the new credentials above.' : 'Use the full API key saved when this app was generated.'
-  const verifyCurl = `curl ${apiBase}/me \\
-  -H "Authorization: Bearer ${apiKey}"`
-  const syncCurl = `curl -X POST ${apiBase}/users/sync \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "external_user_id": "user_42",
-    "name": "Mina Carter",
-    "email": "mina@example.com",
-    "avatar_url": "https://client-app.com/avatar/user_42.png",
-    "status": "active",
-    "metadata": { "vip": true }
-  }'`
-  const createRoomCurl = `curl -X POST ${apiBase}/rooms \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "external_user_id": "user_42",
-    "name": "Mina Live Room",
-    "room_type": "video",
-    "privacy_type": "public",
-    "max_mic_count": 8,
-    "chat_enabled": true
-  }'`
-  const updateRoomCurl = `curl -X PATCH ${apiBase}/rooms/123 \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "name": "Mina VIP Room",
-    "privacy_type": "password",
-    "password": "2468",
-    "chat_enabled": true,
-    "screen_share_enabled": true
-  }'`
-  const closeRoomCurl = `curl -X DELETE ${apiBase}/rooms/123 \\
-  -H "Authorization: Bearer ${apiKey}"`
-  const tokenCurl = `curl -X POST ${apiBase}/rtc/token \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "external_user_id": "user_42",
-    "room_id": 123,
-    "role": "publisher",
-    "rtc_mode": "video",
-    "permissions": ["join", "publish_audio", "publish_video", "chat"]
-  }'`
-  const startSessionCurl = `curl -X POST ${apiBase}/rtc/session/start \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "external_user_id": "user_42",
-    "room_id": 123,
-    "role": "publisher",
-    "rtc_mode": "video",
-    "mic_enabled": true,
-    "camera_enabled": true
-  }'`
-  const endSessionCurl = `curl -X POST ${apiBase}/rtc/session/end \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "external_user_id": "user_42",
-    "room_id": 123
-  }'`
-  const webSample = `import { io } from 'socket.io-client'
-
-const apiBaseUrl = '${publicApiBase}'
-const signalingUrl = new URL(apiBaseUrl, window.location.origin).origin
-
-// This endpoint lives in your app backend and keeps CLIENT_API_KEY private.
-const tokenResponse = await fetch('/my-app/rtc-token', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    roomId: 123,
-    externalUserId: 'user_42',
-    mode: 'video',
-  }),
-})
-const tokenData = await tokenResponse.json()
-if (!tokenResponse.ok) throw new Error(tokenData.message || 'RTC token failed')
-
-const rtcConfig = await fetch(apiBaseUrl + '/rtc/config').then((response) => response.json())
-const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-const socket = io(signalingUrl, { transports: ['websocket', 'polling'] })
-
-socket.emit('join-room', {
-  roomId: tokenData.room.signaling_room,
-  databaseRoomId: tokenData.room.id,
-  userId: tokenData.user.user_id,
-  userName: tokenData.user.name,
-  rtcMode: tokenData.room.rtc_profile.media_type,
-  micEnabled: true,
-  cameraEnabled: true,
-})
-
-console.log('create RTCPeerConnection with', rtcConfig.iceServers, localStream)`
-
-  return (
-    <section className="enterprise-panel client-api-docs-panel glass-card">
-      <div className="admin-panel-header">
-        <div>
-          <span className="eyebrow">Client API</span>
-          <h2>Integration Test Guide</h2>
-        </div>
-        {apps.length > 1 ? (
-          <select value={selectedAppId} onChange={(event) => onSelectApp?.(event.target.value)}>
-            {apps.map((item) => (
-              <option value={item.id} key={item.id}>{item.name}</option>
-            ))}
-          </select>
-        ) : app ? <span>{app.name}</span> : <span>Generate app first</span>}
-      </div>
-
-      <div className="client-api-summary">
-        <div>
-          <span>API base</span>
-          <strong>{apiBase}</strong>
-          <AdminCopyButton value={apiBase} label="Copy URL" />
-        </div>
-        <div>
-          <span>Auth header</span>
-          <strong>Authorization: Bearer CLIENT_API_KEY</strong>
-          <small>{apiKeyLabel}</small>
-        </div>
-        <div>
-          <span>Browser rule</span>
-          <strong>Never expose the API key</strong>
-          <small>Browser apps receive only the short-lived RTC token.</small>
-        </div>
-        <div>
-          <span>Billing rule</span>
-          <strong>Client company pays</strong>
-          <small>Invited and synced users spend the company's package minutes.</small>
-        </div>
-      </div>
-
-      <div className="client-api-flow-grid">
-        <div><b>1</b><strong>Verify key</strong><span>Call `/me` from the company backend.</span></div>
-        <div><b>2</b><strong>Sync invited user</strong><span>Map the client app user into this company's user ledger.</span></div>
-        <div><b>3</b><strong>Create RTC resource</strong><span>Create or reuse an app-side room resource for token scope.</span></div>
-        <div><b>4</b><strong>Issue room token</strong><span>Create a short-lived token for one user and one room.</span></div>
-        <div><b>5</b><strong>Join RTC</strong><span>Use the room token with Socket.IO signaling and native WebRTC.</span></div>
-      </div>
-
-      <div className="api-snippet-grid">
-        <ApiSnippetCard eyebrow="GET" title="/api/client/me" detail="Checks tenant, app, billing scope, and API key status." code={verifyCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/users/sync" detail="Adds or updates an invited company user; minutes from this user are billed to the company package." code={syncCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rooms" detail="Creates an app-side RTC resource for token scope. Company billing still follows the synced user ledger." code={createRoomCurl} />
-        <ApiSnippetCard eyebrow="PATCH" title="/api/client/rooms/:id" detail="Updates room name, privacy, password, seats, theme, and enabled features." code={updateRoomCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/token" detail="Use the returned `room.id`; returns `rtc_token`, controls, grants, and expiry." code={tokenCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/start" detail="Starts usage tracking when the frontend enters RTC." code={startSessionCurl} />
-        <ApiSnippetCard eyebrow="POST" title="/api/client/rtc/session/end" detail="Closes usage tracking and adds the user's billable minutes to the company package." code={endSessionCurl} />
-        <ApiSnippetCard eyebrow="DELETE" title="/api/client/rooms/:id" detail="Closes room availability for the client API; in-app owner delete removes the room record." code={closeRoomCurl} />
-        <ApiSnippetCard eyebrow="WEB" title="Join with issued token" detail="Install `socket.io-client`; the browser uses your backend token response, not the API key." code={webSample} />
-      </div>
-
-      <div className="api-contract-grid">
-        <div><span>API key storage</span><strong>Raw key shown once</strong><small>The backend stores a SHA-256 hash and a masked display value.</small></div>
-        <div><span>Allowed origins</span><strong>Checked on browser-origin calls</strong><small>Server-to-server calls can omit the Origin header.</small></div>
-        <div><span>Token ledger</span><strong>Hashed RTC token records</strong><small>Issued room tokens are recorded without storing the raw bearer token.</small></div>
-        <div><span>User ledger</span><strong>Synced invited users</strong><small>Company admins see the users their app synced and the minutes those users spent.</small></div>
-        <div><span>Usage ledger</span><strong>Company aggregates</strong><small>Session start/end updates user minutes, room minutes, and peak concurrency for billing checks.</small></div>
-        <div><span>Billing owner</span><strong>Client company</strong><small>External users can be invited from the client platform; the company package pays for their minutes.</small></div>
-        <div><span>Webhook queue</span><strong>Pending delivery events</strong><small>Room, participant, and usage events are queued for the delivery worker.</small></div>
-        <div><span>Token TTL</span><strong>15 minutes default</strong><small>Configurable with CLIENT_RTC_TOKEN_TTL_SECONDS.</small></div>
-        <div><span>User statuses</span><strong>active, inactive, banned</strong><small>Inactive or banned external users cannot receive room tokens.</small></div>
-        <div><span>Package limit</span><strong>Company minutes</strong><small>Included minutes and overage are evaluated against synced users' billable usage.</small></div>
-        <div><span>Room creation</span><strong>API resource only</strong><small>Rooms scope RTC tokens and sessions; they are not the company admin's billing object.</small></div>
-        <div><span>Room lifecycle</span><strong>Update or end by API</strong><small>Ending a room closes active sessions but preserves billing history.</small></div>
-        <div><span>Roles</span><strong>audience, publisher, moderator, admin, owner</strong><small>Publisher includes media publish and chat permissions.</small></div>
-        <div><span>Room access</span><strong>Room-scoped token</strong><small>Password/private checks are satisfied only for that exact room.</small></div>
-      </div>
-
-      <div className="client-api-section-title">
-        <span className="eyebrow">Token contract</span>
-        <strong>Claims encoded in each RTC token</strong>
-      </div>
-      <div className="api-contract-grid">
-        {CLIENT_API_TOKEN_CLAIMS.map(([claim, detail]) => (
-          <div key={claim}>
-            <span>{claim}</span>
-            <strong>{detail}</strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="client-api-section-title">
-        <span className="eyebrow">Errors and webhooks</span>
-        <strong>Integration surface for production clients</strong>
-      </div>
-      <div className="api-contract-grid">
-        {CLIENT_API_ERROR_CODES.map(([code, detail]) => (
-          <div key={code}>
-            <span>{code}</span>
-            <strong>{detail}</strong>
-          </div>
-        ))}
-      </div>
-      <div className="api-chip-list">
-        {CLIENT_API_WEBHOOK_EVENTS.map((event) => <code key={event}>{event}</code>)}
-      </div>
-    </section>
   )
 }
 
 function CompanyProfilePanel({ enterprise }) {
   const client = getPrimaryClient(enterprise)
-  if (!client) return <AdminEmptyState title="No company profile found" detail="This admin account is not attached to a client company." />
+  if (!client) return <AdminEmptyState title="No company profile found" detail="This company service admin account is not attached to a client company." />
 
   return (
     <section className="enterprise-panel company-profile-panel glass-card">
@@ -1097,7 +856,7 @@ function SimpleHealthPanel({ dashboard, enterprise, rooms, onTabChange }) {
       <div className="simple-health-actions">
         <button type="button" className="secondary-button" onClick={() => onTabChange(hasCompanyScope ? 'users' : 'rooms')}>{hasCompanyScope ? 'View users' : 'Manage RTC API'}</button>
         <button type="button" className="secondary-button" onClick={() => onTabChange('usage')}>Review usage</button>
-        <button type="button" className="secondary-button" onClick={() => onTabChange('sdk')}>Check SDK access</button>
+        <button type="button" className="secondary-button" onClick={() => onTabChange('access')}>Check app access</button>
       </div>
     </section>
   )
@@ -1107,7 +866,7 @@ function AdminSectionTabs({ sections, activeSection, onChange }) {
   if (!sections?.length) return null
 
   return (
-    <nav className="admin-section-tabs glass-card" aria-label="Admin section tasks">
+    <nav className="admin-section-tabs glass-card" aria-label="Service console section tasks">
       {sections.map((section) => (
         <button
           type="button"
@@ -1129,14 +888,14 @@ function ScopeSummary({ payload, scope }) {
   const admin = payload?.admin
   const companyScope = dashboard?.company_scope
   const companyUsers = companyScope?.users || {}
-  const label = scope === 'super_admin' && !admin ? 'Platform scope' : admin?.tenant_name || 'Company scope'
+  const label = scope === 'super_admin' && !admin ? 'Platform service scope' : admin?.tenant_name || 'Company scope'
 
   return (
     <section className="admin-scope-summary glass-card">
       <div>
         <span className="eyebrow">{label}</span>
-        <h2>{admin ? admin.name : companyScope ? 'Company users and package minutes' : 'All admins and rooms'}</h2>
-        <p>{admin ? admin.email : companyScope ? 'Company-admin overview across invited users, live sessions, and package usage.' : 'Superadmin overview across every admin-owned room.'}</p>
+        <h2>{admin ? admin.name : companyScope ? 'Company users and package minutes' : 'All company admins and rooms'}</h2>
+        <p>{admin ? admin.email : companyScope ? 'Company service admin overview across invited users, live sessions, and package usage.' : 'Platform service admin overview across every company-owned room.'}</p>
       </div>
       <div className="admin-scope-pills">
         {companyScope ? (
@@ -1177,7 +936,7 @@ function EnterpriseServicePanel({ enterprise, mode }) {
           <strong>{isPlatform ? formatNumber(totals.active_clients) : plan?.name || 'No plan'}</strong>
         </div>
         <div>
-          <span>{isPlatform ? 'Active SDK apps' : 'Invited users'}</span>
+          <span>{isPlatform ? 'Active apps' : 'Invited users'}</span>
           <strong>{formatNumber(isPlatform ? totals.active_apps : companyUsers.invited || companyUsers.synced || companyUsers.total || 0)}</strong>
         </div>
         <div>
@@ -1255,7 +1014,7 @@ function ServicePlansPanel({ plans, currentPlan, selectedPlanId, onSelectPlan, m
               </div>
               <div className="service-plan-limits">
                 <span>{plan.status}</span>
-                {mode === 'super_admin' ? <span>{formatNumber(plan.max_room_admins)} room admins</span> : null}
+                {mode === 'super_admin' ? <span>{formatNumber(plan.max_room_admins)} room admin roles</span> : null}
                 {mode === 'super_admin' ? <span>{formatNumber(plan.max_rooms)} API rooms</span> : null}
                 <span>{formatNumber(plan.max_apps)} apps</span>
                 <span>{formatNumber(plan.max_participants_per_room)} participants/room</span>
@@ -1381,7 +1140,7 @@ function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
             <input type="number" min="0" step="1" value={form.monthly_minute_allowance} onChange={(event) => change('monthly_minute_allowance', event.target.value)} />
           </label>
           <label>
-            <span>Room admins</span>
+            <span>Room admin roles</span>
             <input type="number" min="0" step="1" value={form.max_room_admins} onChange={(event) => change('max_room_admins', event.target.value)} />
           </label>
           <label>
@@ -1441,7 +1200,7 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
   if (!apps?.length) return null
 
   async function rotateCredentials(app) {
-    const confirmed = window.confirm(`Rotate API key and SDK token for ${app.name}? Old backend credentials will stop working immediately.`)
+    const confirmed = window.confirm(`Rotate API key and access token for ${app.name}? Old backend credentials will stop working immediately.`)
     if (!confirmed) return
 
     setRotatingId(app.id)
@@ -1466,8 +1225,8 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
     <section className="enterprise-panel glass-card">
       <div className="admin-panel-header">
         <div>
-          <span className="eyebrow">SDK Access</span>
-          <h2>{mode === 'super_admin' ? 'Client Apps And Generated Keys' : 'Your App Key, API Key, And SDK Token'}</h2>
+          <span className="eyebrow">App Access</span>
+          <h2>{mode === 'super_admin' ? 'Client Apps And Generated Keys' : 'Your App Key, API Key, And Access Token'}</h2>
         </div>
         <span>{formatNumber(apps.length)} apps</span>
       </div>
@@ -1485,7 +1244,7 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
               <dd>{app.app_key}</dd>
               <dt>API key</dt>
               <dd>{app.api_key_masked}</dd>
-              <dt>SDK token</dt>
+              <dt>Access token</dt>
               <dd>{app.sdk_token_masked}</dd>
               <dt>Allowed origins</dt>
               <dd>{app.allowed_origins?.join(', ') || 'Any configured origin'}</dd>
@@ -1751,7 +1510,7 @@ function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, 
               <input
                 value={form.primary_contact_name}
                 onChange={(event) => onChange('primary_contact_name', event.target.value)}
-                placeholder="Jane Admin"
+                placeholder="Jane Manager"
               />
             </label>
             <label>
@@ -1761,7 +1520,7 @@ function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, 
                 type="email"
                 value={form.primary_contact_email}
                 onChange={(event) => onChange('primary_contact_email', event.target.value)}
-                placeholder="admin@company.com"
+                placeholder="service-admin@company.com"
               />
               {errors.primary_contact_email ? <small className="form-error">{errors.primary_contact_email}</small> : null}
             </label>
@@ -1790,7 +1549,7 @@ function CompanySetupPanel({ plans, form, errors, creating, generatingTenantId, 
               <dd>{result.company.tenant_uid}</dd>
               <dt>Package</dt>
               <dd>{result.company.plan?.name || 'No plan'}</dd>
-              <dt>Admin</dt>
+              <dt>Company service admin</dt>
               <dd>{result.admin_account?.email || 'Not created'}</dd>
               <dt>Password</dt>
               <dd>{result.admin_account?.temporary_password || '-'}</dd>
@@ -1950,7 +1709,7 @@ function CompanyDirectoryPanel({ clients, selectedCompanyId, loadingCompanyId, o
               <div className="company-directory-stats">
                 <span><b>{formatNumber(client.synced_user_count || client.invited_user_count)}</b> invited users</span>
                 <span><b>{formatNumber(client.user_count)}</b> total users</span>
-                <span><b>{formatNumber(client.active_app_count)}</b> SDK apps</span>
+                <span><b>{formatNumber(client.active_app_count)}</b> apps</span>
                 <span><b>{formatMinutes(client.minutes_month)}</b> this month</span>
               </div>
               <div className="company-directory-contact">
@@ -1991,11 +1750,11 @@ function CompanyDetailSummary({ company, dashboard, users, onTabChange }) {
       tab: 'usage',
     },
     {
-      title: 'SDK apps',
+      title: 'Apps',
       value: formatNumber(company.active_app_count),
       detail: 'App key, API key, token, allowed origins',
-      action: 'Manage SDK',
-      tab: 'sdk',
+      action: 'Manage apps',
+      tab: 'access',
     },
     {
       title: 'Live sessions',
@@ -2179,7 +1938,7 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
     if (!selectedCompany) return
 
     setInviting(true)
-    setMessage('Creating admin invite...')
+    setMessage('Creating company service admin invite...')
 
     try {
       const data = await apiRequest(`/admin/companies/${selectedCompany.id}/admin-invite`, {
@@ -2351,7 +2110,7 @@ function CompanyManagementPanel({ clients, plans, onSaved }) {
           <div className="company-edit-actions">
             <button className="primary-button" type="submit" disabled={saving}>{saving ? <LoadingMovie label="Saving" inline /> : 'Save company'}</button>
             <button className="secondary-button" type="button" disabled={inviting || !form.primary_contact_email} onClick={sendInvite}>
-              {inviting ? <LoadingMovie label="Inviting" inline /> : 'Create admin invite'}
+              {inviting ? <LoadingMovie label="Inviting" inline /> : 'Create company service admin invite'}
             </button>
           </div>
 
@@ -2401,15 +2160,15 @@ function AdminList({ admins, selectedAdminId, onSelect, onPlatform }) {
     <section className="admin-list-panel glass-card">
       <div className="admin-panel-header">
         <div>
-          <span className="eyebrow">Super Admin</span>
-          <h2>Company Admins</h2>
+          <span className="eyebrow">Platform Service Admin</span>
+          <h2>Company Service Admins</h2>
         </div>
         <button type="button" className={!selectedAdminId ? 'active' : ''} onClick={onPlatform}>All companies</button>
       </div>
 
       <div className="admin-account-grid">
         {admins.length === 0 ? (
-          <div className="empty-control">No company admins found.</div>
+          <div className="empty-control">No company service admins found.</div>
         ) : admins.map((admin) => (
           <button
             type="button"
@@ -2896,9 +2655,9 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
   const dashboardTabs = useMemo(() => buildDashboardTabs(enterpriseMode), [enterpriseMode])
   const pageTitle = useMemo(() => {
     if (isSuperAdmin && selectedCompanyDetail?.company) return `${selectedCompanyDetail.company.name} RTC Dashboard`
-    if (isSuperAdmin && selectedDetail?.admin) return `${selectedDetail.admin.name} Dashboard`
+    if (isSuperAdmin && selectedDetail?.admin) return `${selectedDetail.admin.name} Service Dashboard`
     if (isSuperAdmin) return 'Client Company Dashboard'
-    return 'Admin Dashboard'
+    return 'Company Service Dashboard'
   }, [isSuperAdmin, selectedCompanyDetail, selectedDetail])
   const headerFacts = useMemo(() => {
     const client = getPrimaryClient(enterprise)
@@ -2913,7 +2672,7 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
       return [
         ['Clients', formatNumber(enterprise?.platform_totals?.active_clients || 0)],
         ['Pending', formatNumber((enterprise?.plan_requests || []).filter((request) => request.status === 'pending').length)],
-        ['SDK apps', formatNumber(enterprise?.platform_totals?.active_apps || apps.length)],
+        ['Apps', formatNumber(enterprise?.platform_totals?.active_apps || apps.length)],
         ['Invoice', formatCurrency(invoice)],
       ]
     }
@@ -2946,10 +2705,9 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     { key: 'history', label: 'History', detail: `${formatNumber(enterprise?.plan_requests?.length)} requests` },
     { key: 'features', label: 'Features', detail: 'Included tools' },
   ]
-  const sdkSections = [
+  const accessSections = [
     { key: 'create', label: 'Create Access', detail: 'App key and API key' },
     { key: 'apps', label: 'Apps', detail: `${formatNumber(enterprise?.apps?.length)} configured` },
-    { key: 'docs', label: 'API Guide', detail: 'Integration tests' },
   ]
   const usageSections = [
     { key: 'billing', label: 'Billing', detail: formatCurrency(enterprise?.billing?.estimated_invoice || enterprise?.platform_totals?.estimated_invoice) },
@@ -2958,7 +2716,7 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
   ]
   const activeCompanySection = activeSectionFor('companies', companySections)
   const activePackageSection = activeSectionFor(activeTab === 'purchase' ? 'purchase' : 'packages', packageSections)
-  const activeSdkSection = activeSectionFor('sdk', sdkSections)
+  const activeAccessSection = activeSectionFor('access', accessSections)
   const activeUsageSection = activeSectionFor('usage', usageSections)
 
   function subsectionKey(tab) {
@@ -3147,12 +2905,12 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
     <div className="view-stack admin-dashboard-view">
       <header className="page-header glass-card">
         <div>
-          <span className="eyebrow">{isSuperAdmin ? selectedCompanyDetail ? 'Company Scope' : 'Super Admin' : 'Client Admin'}</span>
+          <span className="eyebrow">{isSuperAdmin ? selectedCompanyDetail ? 'Company Scope' : 'Platform Service Admin' : 'Company Service Admin'}</span>
           <h1>{pageTitle}</h1>
           <p>
             {isSuperAdmin
               ? selectedCompanyDetail
-                ? 'Inspect this company users, SDK apps, package minutes, and billing usage.'
+                ? "Inspect this company's users, apps, package minutes, and billing usage."
                 : 'Start with client companies, then open one company to manage its RTC service.'
               : 'Purchase RTC, connect your app, sync invited users, and track company-paid minutes.'}
           </p>
@@ -3170,8 +2928,8 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
             <button className="secondary-button" onClick={() => {
               setSelectedDetail(null)
               setSelectedAdminId(null)
-              setStatus('Showing all admin data')
-            }}>All admins</button>
+              setStatus('Showing all company admin data')
+            }}>All company admins</button>
           ) : null}
           <button
             type="button"
@@ -3324,19 +3082,19 @@ export default function AdminView({ onView, onOpenRoom, user, onProfile }) {
         </div>
       ) : null}
 
-      {activeTab === 'sdk' ? (
+      {activeTab === 'access' ? (
         <div className="dashboard-tab-panel">
           <AdminSectionTabs
-            sections={sdkSections}
-            activeSection={activeSdkSection}
-            onChange={(section) => setSectionFor('sdk', section)}
+            sections={accessSections}
+            activeSection={activeAccessSection}
+            onChange={(section) => setSectionFor('access', section)}
           />
-          <SdkAccessPanel
+          <AppAccessPanel
             enterprise={enterprise}
             mode={enterpriseMode}
             isSuperAdmin={isSuperAdmin}
             onRefresh={() => load({ silent: true })}
-            section={activeSdkSection}
+            section={activeAccessSection}
           />
         </div>
       ) : null}
