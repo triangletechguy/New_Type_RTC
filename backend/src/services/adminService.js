@@ -1462,6 +1462,57 @@ async function updateClientAppForTenant(user, appId, body = {}) {
   })
 }
 
+async function deleteClientAppForTenant(user, appId) {
+  await ensureTenantCompanyColumns()
+
+  const isSuperAdmin = hasAnyRole(user, ['super_admin'])
+
+  return transaction(async (connection) => {
+    const [apps] = await connection.execute(
+      `
+      SELECT id, tenant_id, name, platform, status, app_key
+      FROM client_apps
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [appId]
+    )
+    const app = apps[0]
+
+    if (!app) {
+      const error = new Error('Client app was not found.')
+      error.status = 404
+      throw error
+    }
+
+    if (!isSuperAdmin && Number(app.tenant_id) !== Number(user.tenant_id)) {
+      const error = new Error('You can only delete apps for your company.')
+      error.status = 403
+      throw error
+    }
+
+    await connection.execute(
+      `
+      DELETE FROM client_apps
+      WHERE id = ?
+      `,
+      [appId]
+    )
+
+    return {
+      tenant_id: app.tenant_id,
+      app: {
+        id: app.id,
+        tenant_id: app.tenant_id,
+        name: app.name,
+        platform: app.platform,
+        status: app.status,
+        app_key: app.app_key,
+      },
+    }
+  })
+}
+
 async function rotateClientAppCredentials(user, appId, body = {}) {
   await ensureTenantCompanyColumns()
 
@@ -3021,6 +3072,7 @@ module.exports = {
   createAdminRoom,
   createClientAppForTenant,
   createClientCompany,
+  deleteClientAppForTenant,
   createPlanRequest,
   ensureTenantCompanyColumns,
   getAdminStats,

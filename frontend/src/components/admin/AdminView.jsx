@@ -1195,6 +1195,7 @@ function ServicePlanEditorPanel({ plan, onSaved, onSelectPlan }) {
 
 function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
   const [rotatingId, setRotatingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [message, setMessage] = useState('')
 
   if (!apps?.length) return null
@@ -1218,6 +1219,26 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
       setMessage(error.message)
     } finally {
       setRotatingId(null)
+    }
+  }
+
+  async function deleteApp(app) {
+    const confirmed = window.confirm(`Delete ${app.name}? This removes the app key, API key, and access token. Client backends using this app will stop working immediately.`)
+    if (!confirmed) return
+
+    setDeletingId(app.id)
+    setMessage(`Deleting ${app.name}...`)
+
+    try {
+      const data = await apiRequest(`/admin/client-apps/${app.id}`, {
+        method: 'DELETE',
+      })
+      setMessage(data.message || `${app.name} deleted.`)
+      await onRefresh?.()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -1253,10 +1274,18 @@ function ClientAppsPanel({ apps, mode, onRefresh, onCredentialsRotated }) {
               <button
                 type="button"
                 className="secondary-button"
-                disabled={rotatingId === app.id}
+                disabled={Boolean(rotatingId || deletingId)}
                 onClick={() => rotateCredentials(app)}
               >
                 {rotatingId === app.id ? 'Rotating...' : 'Rotate keys'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button danger"
+                disabled={Boolean(rotatingId || deletingId)}
+                onClick={() => deleteApp(app)}
+              >
+                {deletingId === app.id ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </article>

@@ -7,6 +7,7 @@ const {
   createAdminRoom,
   createClientAppForTenant,
   createClientCompany,
+  deleteClientAppForTenant,
   createPlanRequest,
   ensureTenantCompanyColumns,
   getAdminStats,
@@ -411,6 +412,27 @@ router.patch('/client-apps/:appId', async (req, res, next) => {
     return res.json({
       message: `${app?.name || 'Client app'} updated.`,
       app,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+router.delete('/client-apps/:appId', async (req, res, next) => {
+  try {
+    const appId = Number(req.params.appId)
+    if (!Number.isInteger(appId) || appId <= 0) {
+      return res.status(400).json({ message: 'Invalid client app id.' })
+    }
+
+    const result = await deleteClientAppForTenant(req.user, appId)
+    const apps = await getClientApps(result.tenant_id)
+
+    return res.json({
+      message: `${result.app?.name || 'Client app'} deleted. Old app key, API key, and access token are no longer accepted.`,
+      app_id: appId,
+      app: result.app,
+      apps,
     })
   } catch (error) {
     return next(error)
